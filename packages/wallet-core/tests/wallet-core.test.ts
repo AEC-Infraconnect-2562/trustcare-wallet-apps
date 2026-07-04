@@ -132,7 +132,7 @@ describe("wallet-core", () => {
     expect(portalUser.avatarSource).toBe("trustcare_portal");
     expect(portalUser.avatarUrl).toContain("/api/storage-proxy/patient_male_realistic_opt_e9b1630b.jpg");
     expect(nativeUser.avatarSource).toBe("wallet_generated");
-    expect(nativeUser.avatarUrl).toBe("assets/users/wallet-native-01.png");
+    expect(nativeUser.avatarUrl).toBe("assets/users/wallet-native-02.png");
   });
 
   it("creates Portal interoperability fixtures for wallet-native users", () => {

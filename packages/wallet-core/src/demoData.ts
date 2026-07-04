@@ -53,8 +53,8 @@ export const trustCarePortalPersonImages = {
 } as const;
 
 export const walletNativePersonImages = {
-  nativeFemale: "assets/users/wallet-native-01.png",
-  nativeMale: "assets/users/wallet-native-02.png"
+  nativeFemale: "assets/users/wallet-native-02.png",
+  nativeMale: "assets/users/wallet-native-01.png"
 } as const;
 
 export const walletDemoUsers: WalletDemoUser[] = [

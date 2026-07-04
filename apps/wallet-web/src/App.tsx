@@ -475,6 +475,7 @@ export default function App() {
         <NavButton active={view === "share"} icon={<QrCode />} label="Verify" onClick={() => setView("share")} />
         <NavButton active={view === "prepare"} icon={<Activity />} label="Prepare" onClick={() => setView("prepare")} />
         <NavButton active={view === "store"} icon={<Database />} label="Store" onClick={() => setView("store")} />
+        <NavButton active={view === "history"} icon={<History />} label="Activity" onClick={() => setView("history")} />
         <NavButton active={view === "settings"} icon={<Settings />} label="Settings" onClick={() => setView("settings")} />
       </nav>
 

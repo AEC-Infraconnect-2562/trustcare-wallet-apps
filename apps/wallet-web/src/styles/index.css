@@ -1586,7 +1586,7 @@ button:disabled {
     bottom: 0;
     height: 76px;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     border-top: 1px solid var(--border);
     background: var(--card);
   }
@@ -1597,6 +1597,16 @@ button:disabled {
     justify-content: center;
     border-radius: 0;
     gap: 4px;
+  }
+
+  .bottom-nav .nav-button {
+    padding: 0 3px;
+    font-size: 10.5px;
+  }
+
+  .bottom-nav .nav-button svg {
+    width: 17px;
+    height: 17px;
   }
 
   .partner-overview {
@@ -2305,5 +2315,575 @@ body {
 
   .wallet-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* All-page premium density pass */
+body {
+  font-size: 14px;
+}
+
+.app-shell {
+  grid-template-columns: 226px 1fr;
+}
+
+.brand-block {
+  gap: 9px;
+}
+
+.brand-copy strong {
+  font-size: 13px;
+}
+
+.brand-copy small {
+  font-size: 11px;
+}
+
+.main-pane {
+  padding: 24px 28px 80px;
+}
+
+.topbar {
+  min-height: 52px;
+}
+
+.topbar h1 {
+  font-size: clamp(23px, 1.65vw, 29px);
+  font-weight: 850;
+  line-height: 1.14;
+}
+
+.topbar p {
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.round-action {
+  width: 38px;
+  height: 38px;
+}
+
+.topbar-avatar {
+  width: 42px;
+  height: 42px;
+}
+
+.status-strip {
+  min-height: 50px;
+  margin: 16px -28px 20px;
+  padding: 7px 28px;
+}
+
+.status-strip > div,
+.status-strip > button {
+  min-height: 32px;
+  font-size: 11.5px;
+}
+
+.tc-surface {
+  border-radius: 8px;
+  box-shadow: var(--shadow-xs);
+}
+
+.tc-button {
+  min-height: 36px;
+  border-radius: 7px;
+  gap: 7px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.tc-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tc-icon-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 7px;
+}
+
+.tc-badge {
+  min-height: 22px;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 10.5px;
+  font-weight: 850;
+}
+
+.view-stack {
+  gap: 13px;
+}
+
+.partner-overview {
+  grid-template-columns: minmax(0, 1.18fr) minmax(340px, 0.82fr);
+  gap: 12px;
+}
+
+.partner-copy {
+  padding: 18px 20px;
+}
+
+.partner-copy h2 {
+  margin: 7px 0 5px;
+  font-size: clamp(22px, 1.85vw, 30px);
+  line-height: 1.12;
+}
+
+.partner-copy p {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.scope-grid {
+  margin-top: 14px;
+}
+
+.fixture-panel,
+.credential-section {
+  padding: 13px;
+}
+
+.metric-grid .tc-surface,
+.fixture-grid button {
+  min-height: 68px;
+}
+
+.wallet-grid {
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+}
+
+.wallet-card-tile {
+  min-height: 108px;
+  padding: 12px;
+}
+
+.wallet-card-tile strong {
+  font-size: 15px;
+}
+
+.section-title-row {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.section-title-row h2,
+.share-command h2 {
+  font-size: 19px;
+  line-height: 1.25;
+}
+
+.section-title-row p,
+.share-command p {
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.portal-card-header {
+  min-height: 52px;
+  padding: 12px 16px;
+}
+
+.portal-card-title {
+  gap: 8px;
+  font-size: 15px;
+}
+
+.portal-card-title svg {
+  width: 18px;
+  height: 18px;
+}
+
+.verifier-mode-section .mode-grid,
+.credential-id-panel {
+  padding: 14px;
+}
+
+.mode-grid {
+  gap: 10px;
+}
+
+.mode-card {
+  min-height: 104px;
+  grid-template-columns: 34px 1fr;
+  column-gap: 10px;
+  row-gap: 4px;
+  border-width: 1px;
+  padding: 13px;
+}
+
+.mode-card svg {
+  width: 34px;
+  height: 34px;
+  padding: 7px;
+}
+
+.mode-card strong {
+  font-size: 14.5px;
+}
+
+.mode-card span {
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.verifier-grid {
+  gap: 12px;
+}
+
+.credential-id-panel {
+  gap: 10px;
+}
+
+.credential-id-panel label {
+  font-size: 13px;
+}
+
+.credential-id-panel input,
+.credential-id-panel select {
+  min-height: 38px;
+  border-radius: 7px;
+  font-size: 12.5px;
+}
+
+.credential-id-panel p {
+  font-size: 12px;
+}
+
+.button-row {
+  gap: 8px;
+}
+
+.button-row .tc-button {
+  min-height: 38px;
+}
+
+.upload-zone {
+  min-height: 112px;
+  margin: 14px;
+  padding: 18px;
+  border-radius: 8px;
+}
+
+.upload-zone svg {
+  width: 24px;
+  height: 24px;
+}
+
+.upload-zone span {
+  font-size: 12.5px;
+}
+
+.request-preview {
+  gap: 10px;
+  padding: 10px;
+}
+
+.request-preview .qr-inline {
+  width: 86px;
+  height: 86px;
+}
+
+.shl-grid {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.shl-card {
+  padding: 16px;
+}
+
+.shl-card h3 {
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.shl-card p,
+.shl-card li {
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.segmented {
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.segmented button {
+  min-height: 34px;
+  border-radius: 7px;
+  padding: 0 11px;
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.readiness-card {
+  grid-template-columns: 104px minmax(0, 1fr) auto auto;
+  gap: 14px;
+  min-height: 116px;
+  padding: 16px 18px;
+}
+
+.readiness-score {
+  width: 104px;
+  height: 104px;
+  font-size: 28px;
+}
+
+.readiness-card h3 {
+  margin: 0 0 5px;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.readiness-card p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.prepare-grid,
+.store-grid {
+  gap: 12px;
+}
+
+.prepare-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.prepare-grid.wide {
+  grid-template-columns: repeat(3, minmax(260px, 1fr));
+}
+
+.prepare-grid > .tc-surface {
+  min-height: 0;
+  padding: 16px;
+}
+
+.prepare-grid > .tc-surface h3,
+.store-object h3,
+.settings-grid h3 {
+  margin: 0 0 8px;
+  font-size: 16.5px;
+  line-height: 1.25;
+}
+
+.pill-list {
+  gap: 7px;
+}
+
+.pill-list .tc-badge {
+  min-height: 23px;
+  font-size: 11px;
+}
+
+.action-stack {
+  gap: 8px;
+}
+
+.action-stack .tc-button {
+  min-height: 38px;
+}
+
+.packet-preview {
+  min-height: 0;
+  gap: 10px;
+}
+
+.packet-preview .payload {
+  max-height: 210px;
+  padding: 10px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.qr-inline {
+  width: 122px;
+  height: 122px;
+}
+
+.share-command {
+  padding: 16px 18px;
+}
+
+.import-panel {
+  gap: 10px;
+}
+
+.import-panel textarea {
+  min-height: 78px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.store-grid {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.store-object {
+  min-height: 178px;
+  gap: 8px;
+  padding: 16px;
+}
+
+.store-object p {
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.store-object small {
+  font-size: 11.5px;
+}
+
+.object-actions {
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.object-actions .tc-button {
+  min-height: 36px;
+}
+
+.history-list.large {
+  gap: 10px;
+}
+
+.history-list.large .history-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  min-height: 62px;
+  padding: 13px 16px;
+  border-radius: 8px;
+}
+
+.history-row strong {
+  font-size: 14px;
+}
+
+.history-row small {
+  font-size: 11.5px;
+}
+
+.settings-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.settings-grid .tc-surface {
+  min-height: 150px;
+  gap: 8px;
+  padding: 16px;
+}
+
+.settings-grid .tc-surface > svg {
+  width: 22px;
+  height: 22px;
+}
+
+.settings-grid p {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+@media (max-width: 1180px) {
+  .prepare-grid,
+  .prepare-grid.wide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .readiness-card {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .readiness-score {
+    width: 96px;
+    height: 96px;
+    font-size: 26px;
+  }
+
+  .readiness-card .tc-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 940px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .main-pane {
+    padding: 20px 16px 92px;
+  }
+
+  .topbar h1 {
+    font-size: 24px;
+  }
+
+  .partner-copy h2 {
+    font-size: 24px;
+  }
+
+  .status-strip {
+    margin-left: -16px;
+    margin-right: -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+    overflow-x: auto;
+  }
+
+  .partner-overview,
+  .verifier-grid,
+  .prepare-grid,
+  .prepare-grid.wide,
+  .store-grid,
+  .settings-grid,
+  .shl-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .readiness-card,
+  .share-command,
+  .import-panel,
+  .button-row {
+    grid-template-columns: 1fr;
+  }
+
+  .readiness-score {
+    width: 90px;
+    height: 90px;
+    font-size: 24px;
+  }
+
+  .segmented {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .segmented button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    align-items: flex-start;
+  }
+
+  .mode-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-card-header,
+  .section-title-row,
+  .share-command {
+    align-items: flex-start;
+  }
+
+  .credential-dialog {
+    width: calc(100vw - 20px);
   }
 }
