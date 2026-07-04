@@ -1,5 +1,5 @@
 import * as SQLite from "expo-sqlite";
-import type { WalletCard } from "@trustcare/wallet-core";
+import type { WalletCard, WalletStoredObject } from "@trustcare/wallet-core";
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -22,6 +22,12 @@ export async function initOfflineWallet() {
       presentation_id TEXT NOT NULL,
       expires_at TEXT,
       generated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS wallet_objects (
+      id TEXT PRIMARY KEY NOT NULL,
+      type TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL
     );
   `);
 }
@@ -62,9 +68,43 @@ export async function cacheQr(cardId: number, qrData: string, presentationId: st
   );
 }
 
+export async function cacheStoredObject(object: WalletStoredObject) {
+  const database = await db();
+  await initOfflineWallet();
+  await database.runAsync(
+    "INSERT OR REPLACE INTO wallet_objects (id, type, payload, created_at) VALUES (?, ?, ?, ?)",
+    object.id,
+    object.type,
+    JSON.stringify(object),
+    object.createdAt
+  );
+}
+
+export async function cacheStoredObjects(objects: WalletStoredObject[]) {
+  const database = await db();
+  await initOfflineWallet();
+  await database.withTransactionAsync(async () => {
+    for (const object of objects) {
+      await database.runAsync(
+        "INSERT OR REPLACE INTO wallet_objects (id, type, payload, created_at) VALUES (?, ?, ?, ?)",
+        object.id,
+        object.type,
+        JSON.stringify(object),
+        object.createdAt
+      );
+    }
+  });
+}
+
+export async function loadStoredObjects(): Promise<WalletStoredObject[]> {
+  const database = await db();
+  await initOfflineWallet();
+  const rows = await database.getAllAsync<{ payload: string }>("SELECT payload FROM wallet_objects ORDER BY created_at DESC");
+  return rows.map(row => JSON.parse(row.payload) as WalletStoredObject);
+}
+
 export async function clearOfflineWallet() {
   const database = await db();
   await initOfflineWallet();
-  await database.execAsync("DELETE FROM wallet_cards; DELETE FROM qr_cache;");
+  await database.execAsync("DELETE FROM wallet_cards; DELETE FROM qr_cache; DELETE FROM wallet_objects;");
 }
-

@@ -5,6 +5,7 @@ import type { WalletCard } from "@trustcare/wallet-core";
 
 export function MobileWalletCard({ card, stacked = false, onPress }: { card: WalletCard; stacked?: boolean; onPress?: () => void }) {
   const [from, to] = gradientForCardType(card.cardType);
+  const holderName = holderNameFromCard(card);
   return (
     <Pressable onPress={onPress} style={[styles.wrap, stacked && styles.stacked]}>
       <LinearGradient colors={[from, to]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.card}>
@@ -14,13 +15,20 @@ export function MobileWalletCard({ card, stacked = false, onPress }: { card: Wal
           <Text style={styles.title}>{card.displayName}</Text>
         </View>
         <View style={styles.footer}>
-          <Text style={styles.name}>นายธนกร เรียนดี</Text>
+          <Text style={styles.name}>{holderName}</Text>
           <Text style={styles.meta}>หมดอายุ {card.expiresAt ? new Date(card.expiresAt).toLocaleDateString("th-TH") : "-"}</Text>
           <Text style={styles.verified}>Verified</Text>
         </View>
       </LinearGradient>
     </Pressable>
   );
+}
+
+function holderNameFromCard(card: WalletCard): string {
+  const subject = (card.credentialData?.credentialSubject ?? card.credentialData ?? {}) as Record<string, any>;
+  const renderData = subject.humanDocument?.renderData;
+  const person = renderData?.patient ?? subject.patient ?? subject.student ?? subject.staff ?? {};
+  return person.fullNameTh ?? person.nameTh ?? person.fullNameEn ?? person.nameEn ?? card.displayNameEn ?? card.displayName;
 }
 
 const styles = StyleSheet.create({

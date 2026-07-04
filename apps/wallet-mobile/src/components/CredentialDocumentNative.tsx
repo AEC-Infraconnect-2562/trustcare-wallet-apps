@@ -5,9 +5,11 @@ import { initialsFromName } from "@trustcare/wallet-core";
 
 export function CredentialDocumentNative({ card, qrValue }: { card: WalletCard; qrValue?: string }) {
   const subject = (card.credentialData?.credentialSubject ?? card.credentialData ?? {}) as Record<string, any>;
-  const patient = subject.patient ?? subject.student ?? {};
-  const nameTh = patient.fullNameTh ?? patient.nameTh ?? "นายธนกร เรียนดี";
-  const nameEn = patient.fullNameEn ?? patient.nameEn ?? "Mr. Thanakorn Riandee";
+  const renderData = subject.humanDocument?.renderData;
+  const patient = renderData?.patient ?? subject.patient ?? subject.student ?? subject.staff ?? {};
+  const nameTh = patient.fullNameTh ?? patient.nameTh ?? patient.fullNameEn ?? patient.nameEn ?? "Wallet Test User";
+  const nameEn = patient.fullNameEn ?? patient.nameEn ?? patient.fullNameTh ?? patient.nameTh ?? "Wallet Test User";
+  const identityText = patient.carepassId ?? patient.studentId ?? patient.staffId ?? patient.hn ?? String(card.credentialId);
 
   return (
     <View style={styles.doc}>
@@ -24,7 +26,7 @@ export function CredentialDocumentNative({ card, qrValue }: { card: WalletCard; 
           <Text style={styles.label}>ชื่อ-นามสกุล</Text>
           <Text style={styles.name}>{nameTh}</Text>
           <Text style={styles.nameEn}>{nameEn}</Text>
-          <Text style={styles.big}>{patient.carepassId ?? patient.studentId ?? "TC-6501001001"}</Text>
+          <Text style={styles.big}>{identityText}</Text>
         </View>
         <Text style={styles.watermark}>DEMO ONLY</Text>
       </View>
@@ -133,4 +135,3 @@ const styles = StyleSheet.create({
     fontSize: 12
   }
 });
-

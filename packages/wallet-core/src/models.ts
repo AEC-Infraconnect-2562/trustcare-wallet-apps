@@ -11,7 +11,7 @@ export type WalletCard = {
   displayName: string;
   displayNameEn?: string | null;
   documentCategory: string;
-  credentialId: number;
+  credentialId: number | string;
   credentialStatus: CredentialStatus;
   credentialData?: Record<string, unknown> | null;
   credentialType?: string | null;
@@ -19,6 +19,10 @@ export type WalletCard = {
   issuerDid?: string | null;
   holderDid?: string | null;
   patientAvatarUrl?: string | null;
+  ownerUserId?: string | null;
+  patientId?: number | string | null;
+  sourceSystem?: "trustcare_portal" | "partner_wallet" | string | null;
+  scopeLabel?: string | null;
   issuedAt?: string | null;
   expiresAt?: string | null;
   createdAt: string;
@@ -146,6 +150,9 @@ export type VerifierResult = {
   trustLevel: TrustLevel;
   issuer?: string;
   holderDid?: string;
+  protocol?: "trustcare-vp" | "oid4vp" | "oid4vci" | "shl" | "jwt" | "json" | "unknown";
+  requestSummary?: string;
+  matchedCredentialIds?: Array<number | string>;
   credentials?: unknown[];
   credential?: unknown;
   warnings?: string[];
@@ -163,3 +170,198 @@ export type ReadinessContext =
   | "insurance_claim"
   | "pharmacy_dispense";
 
+export type ReadinessRequirement = {
+  key: string;
+  label: string;
+  labelEn: string;
+  category: string;
+  required: boolean;
+  cardTypes: string[];
+  action: string;
+  sourceHint: string;
+};
+
+export type ReadinessResult = {
+  context: ReadinessContext;
+  label: string;
+  labelEn: string;
+  score: number;
+  criticalReady: boolean;
+  requiredTotal: number;
+  requiredReady: number;
+  recommendedTotal: number;
+  recommendedReady: number;
+  ready: Array<ReadinessRequirement & { status: "ready"; matchedCards: WalletCard[] }>;
+  missing: Array<ReadinessRequirement & { status: "missing" }>;
+  selectedCardIds: number[];
+  recommendedActions: string[];
+};
+
+export type ServiceReadinessContract = {
+  contractId: string;
+  context: ReadinessContext;
+  version: string;
+  status: "active" | "draft" | "deprecated" | string;
+  label: string;
+  labelEn: string;
+  patientLabel: string;
+  patientLabelEn: string;
+  hospitalLabel: string;
+  hospitalLabelEn: string;
+  patientVisible: boolean;
+  hospitalVisible: boolean;
+  patientDirection: string;
+  hospitalDirection: string;
+  bundleTypes: { patient: string; hospital: string };
+  recommendedTransports: string[];
+  packetTrustPolicy?: Record<string, unknown>;
+  requirements: ReadinessRequirement[];
+  questionnaire?: Record<string, unknown>;
+  vcTypes: string[];
+  fhirResources: string[];
+  consentPolicy: {
+    legalBasis: string[];
+    pdpaControls: string[];
+    minimumNecessary: string;
+    defaultExpiryMinutes: number;
+  };
+};
+
+export type ContractHubCatalog = {
+  version: string;
+  status: string;
+  contracts: ServiceReadinessContract[];
+  singleDocumentCredentialContracts: unknown[];
+  artifactTypes: Array<{ type: string; purpose: string; owner: string }>;
+  compatibilityRules: string[];
+};
+
+export type ServiceBundleEnvelope = {
+  bundleId: string;
+  contractId: string;
+  templateId: string;
+  bundleType: string;
+  context: ReadinessContext;
+  audience: string;
+  direction: string;
+  status: "ready" | "partial" | "building" | string;
+  readinessScore: number;
+  requiredMissing: string[];
+  createdAt: string;
+  expiresAt: string;
+  receiver: string;
+  items: Array<{
+    key: string;
+    documentType: string;
+    category: string;
+    label: string;
+    labelEn: string;
+    required: boolean;
+    status: "ready" | "missing" | string;
+    matchedCardIds: Array<number | string>;
+  }>;
+  trustLayer?: Record<string, unknown>;
+  fhirBundle?: Record<string, unknown>;
+  operationOutcome?: Record<string, unknown>;
+};
+
+export type ServicePacketResponse = {
+  checkId: number | string;
+  patientId: number;
+  readiness: ReadinessResult;
+  presentationId: string;
+  expiresAt: string;
+  credentialCount: number;
+  qrData: string;
+};
+
+export type CheckinQrResponse = {
+  checkId: number | string;
+  shlId: number | string;
+  shlUrl: string;
+  qrPayload: string;
+  viewerUrl?: string;
+  expiresAt: string;
+  maxAccessCount?: number;
+  passcodeRequired: boolean;
+  readinessScore: number;
+  credentialCount: number;
+  status: "ready" | "pending_review" | string;
+};
+
+export type WalletDocumentRequest = {
+  id?: number | string;
+  requestId?: string;
+  context?: ReadinessContext;
+  documentType: string;
+  documentCategory?: string | null;
+  sourceType?: string;
+  sourceName?: string | null;
+  status: string;
+  notes?: string | null;
+  createdAt?: string | null;
+};
+
+export type WalletImportJob = {
+  importId: string;
+  status: string;
+  context: ReadinessContext;
+  sourceType: string;
+  documentType?: string;
+  dqiScore?: number;
+  hash?: string;
+  documentReference?: Record<string, unknown>;
+};
+
+export type WalletStoredObjectType =
+  | "vc"
+  | "vp"
+  | "shl"
+  | "document_reference"
+  | "oid4vci_offer"
+  | "oid4vp_request"
+  | "service_packet";
+
+export type WalletStoredObject = {
+  id: string;
+  type: WalletStoredObjectType;
+  title: string;
+  subtitle?: string;
+  status: "active" | "pending" | "expired" | "verified" | "invalid" | string;
+  protocol?: "trustcare" | "oid4vci" | "oid4vp" | "shl";
+  createdAt: string;
+  expiresAt?: string | null;
+  source?: string;
+  payload: unknown;
+};
+
+export type WalletExchangeFormat =
+  | "trustcare-vc-json"
+  | "trustcare-vp-json"
+  | "shl-link"
+  | "shl-json"
+  | "oid4vci-offer"
+  | "oid4vp-request"
+  | "jwt"
+  | "raw-json"
+  | "unknown";
+
+export type WalletImportResult = {
+  ok: boolean;
+  format: WalletExchangeFormat;
+  protocol?: "trustcare" | "oid4vci" | "oid4vp" | "shl";
+  object?: WalletStoredObject;
+  matchedCredentialIds?: Array<number | string>;
+  warnings: string[];
+  errors: string[];
+};
+
+export type WalletExportResult = {
+  ok: boolean;
+  format: WalletExchangeFormat;
+  fileName: string;
+  mimeType: string;
+  data: string;
+  qrPayload?: string;
+  warnings: string[];
+};

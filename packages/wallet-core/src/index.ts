@@ -7,5 +7,8 @@ export * from "./qr";
 export * from "./photoSources";
 export * from "./shl";
 export * from "./readiness";
+export * from "./prepareService";
+export * from "./oid4vc";
+export * from "./store";
+export * from "./exchange";
 export * from "./demoData";
-

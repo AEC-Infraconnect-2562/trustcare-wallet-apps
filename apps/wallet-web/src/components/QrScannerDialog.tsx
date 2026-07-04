@@ -29,7 +29,7 @@ export function QrScannerDialog({
         if (!videoRef.current) return;
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
-        setStatus(detector ? "หันกล้องไปที่ QR Code" : "กล้องพร้อมแล้ว กรุณาวางค่า QR ด้วยตนเองหากเบราว์เซอร์ไม่รองรับการอ่าน QR");
+        setStatus(detector ? "หันกล้องไปที่ QR Code" : "กล้องพร้อมแล้ว หากเบราว์เซอร์ไม่รองรับ QR detection ให้วาง payload ด้านล่าง");
         const scan = async () => {
           if (!active || !videoRef.current || !detector) return;
           try {
@@ -40,7 +40,7 @@ export function QrScannerDialog({
               return;
             }
           } catch {
-            setStatus("ยังอ่าน QR ไม่ได้ ลองจัดให้อยู่ในกรอบ");
+            setStatus("ยังอ่าน QR ไม่ได้ ลองจัดให้อยู่ในกรอบและมีแสงเพียงพอ");
           }
           frame = requestAnimationFrame(scan);
         };
@@ -56,6 +56,7 @@ export function QrScannerDialog({
       cancelAnimationFrame(frame);
       streamRef.current?.getTracks().forEach(track => track.stop());
       streamRef.current = null;
+      setManual("");
     };
   }, [open, onClose, onScan]);
 
@@ -77,9 +78,10 @@ export function QrScannerDialog({
         </div>
         <p className="scanner-help">{status}</p>
         <div className="manual-scan">
-          <label htmlFor="manual-qr">วาง QR / VP URL</label>
+          <label htmlFor="manual-qr">วาง QR / VC / VP / SHL / OID4VC payload</label>
           <textarea id="manual-qr" value={manual} onChange={event => setManual(event.target.value)} placeholder="https://trustcare.example.com/verifier?vp=..." />
           <Button
+            disabled={!manual.trim()}
             onClick={() => {
               if (manual.trim()) {
                 onScan(manual.trim());
@@ -94,4 +96,3 @@ export function QrScannerDialog({
     </div>
   );
 }
-

@@ -1,6 +1,6 @@
-import { Calendar, Hospital, IdCard, QrCode, ShieldCheck, UserRound } from "lucide-react";
+import { Calendar, GraduationCap, Hospital, IdCard, QrCode, ShieldCheck, UserRound } from "lucide-react";
 import type { WalletCard } from "@trustcare/wallet-core";
-import { initialsFromName } from "@trustcare/wallet-core";
+import { initialsFromName, photoCandidatesForCard } from "@trustcare/wallet-core";
 import { Badge } from "./primitives";
 
 export function CredentialDocument({ card, qrDataUrl, compact = false }: { card: WalletCard; qrDataUrl?: string; compact?: boolean }) {
@@ -8,11 +8,13 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
   const renderData = subject.humanDocument?.renderData;
   const patient = renderData?.patient ?? subject.patient ?? subject.student ?? {};
   const hospital = renderData?.hospital ?? subject.organization ?? {};
-  const displayNameTh = patient.fullNameTh ?? patient.nameTh ?? "นายธนกร เรียนดี";
-  const displayNameEn = patient.fullNameEn ?? patient.nameEn ?? "Mr. Thanakorn Riandee";
-  const idText = patient.carepassId ?? patient.studentId ?? patient.hn ?? "TC-6501001001";
-  const issuer = hospital.nameTh ?? card.issuerHospitalName ?? "TrustCare Central Hospital";
+  const displayNameTh = patient.fullNameTh ?? patient.nameTh ?? patient.name ?? "Test Wallet User";
+  const displayNameEn = patient.fullNameEn ?? patient.nameEn ?? "Test Wallet User";
+  const idText = patient.carepassId ?? patient.studentId ?? patient.hn ?? String(card.credentialId);
+  const issuer = hospital.nameTh ?? card.issuerHospitalName ?? "TrustCare Network";
   const issuerEn = hospital.nameEn ?? "TRUSTCARE HOSPITAL NETWORK";
+  const isEducation = card.documentCategory === "education" || card.cardType.includes("badge");
+  const photoUrl = photoCandidatesForCard(card)[0]?.url;
 
   return (
     <article className={compact ? "credential-doc credential-doc-compact" : "credential-doc"}>
@@ -31,14 +33,14 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
           <strong>{issuer}</strong>
         </div>
         <div>
-          <IdCard size={20} />
+          {isEducation ? <GraduationCap size={20} /> : <IdCard size={20} />}
           <span>TYPE</span>
-          <strong>{card.displayName}</strong>
+          <strong>{card.displayNameEn ?? card.displayName}</strong>
         </div>
       </div>
       <div className="credential-body">
-        <div className="credential-photo" aria-label="patient photo fallback">
-          {initialsFromName(displayNameTh)}
+        <div className="credential-photo" aria-label="credential holder photo">
+          {photoUrl ? <img src={photoUrl} alt={displayNameEn} /> : initialsFromName(displayNameTh)}
         </div>
         <div className="credential-person">
           <span className="muted-row"><UserRound size={16} /> ชื่อ-นามสกุล</span>
@@ -61,11 +63,11 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
         <div>
           <span>สถานะ / STATUS</span>
           <Badge tone={card.credentialStatus === "active" ? "green" : "red"}>
-            <ShieldCheck size={14} /> {card.credentialStatus === "active" ? "ปกติ" : card.credentialStatus}
+            <ShieldCheck size={14} /> {card.credentialStatus === "active" ? "ใช้งานได้" : card.credentialStatus}
           </Badge>
         </div>
         <div>
-          <span>วันหมดอายุ</span>
+          <span>หมดอายุ</span>
           <strong>{card.expiresAt ? new Date(card.expiresAt).toLocaleDateString("th-TH") : "-"}</strong>
         </div>
         <div className="credential-qr">
@@ -76,4 +78,3 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
     </article>
   );
 }
-

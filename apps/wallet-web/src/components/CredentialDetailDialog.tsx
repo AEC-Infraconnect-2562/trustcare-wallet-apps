@@ -43,7 +43,7 @@ export function CredentialDetailDialog({
           <CredentialDocument card={card} qrDataUrl={qrDataUrl} />
           <div className="credential-action-grid">
             <Button onClick={onGenerateQr}><QrCode size={18} /> QR Code</Button>
-            <Button className="purple" onClick={onSelectiveDisclosure}><Eye size={18} /> SD (ZKP)</Button>
+            <Button className="purple" onClick={onSelectiveDisclosure}><Eye size={18} /> SD / ZKP</Button>
             <Button
               className="secondary"
               onClick={() => void navigator.clipboard?.writeText(String(card.credentialId))}
@@ -61,7 +61,7 @@ export function CredentialDetailDialog({
                 <h3>Verifiable Presentation</h3>
                 <p className="mono">{presentation.presentationId}</p>
                 <p>หมดอายุ {new Date(presentation.expiresAt).toLocaleString("th-TH")}</p>
-                <p>{presentation.mode} · {presentation.credentialCount} credential · {presentation.selectedFields.length || "Full"} fields</p>
+                <p>{presentation.mode} / {presentation.credentialCount} credential / {presentation.selectedFields.length || "Full"} fields</p>
               </div>
             </section>
           )}
@@ -113,4 +113,3 @@ export function CredentialDetailDialog({
     </div>
   );
 }
-
