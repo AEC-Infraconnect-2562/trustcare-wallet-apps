@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Copy, Database, Download, FileJson, ShieldCheck } from "lucide-react-native";
 import {
-  demoCardsByCategory,
-  demoHistory,
-  demoShlPackages,
   flattenCardsByCategory,
+  getDemoCardsByCategory,
+  getDemoHistory,
+  getDemoShlPackages,
   importWalletExchange,
   mergeWalletObjects,
   walletObjectsFromCards,
@@ -16,17 +16,18 @@ import {
 import { cacheStoredObject, cacheStoredObjects, loadStoredObjects } from "../storage/offlineWallet";
 
 type Filter = "all" | "vc" | "vp" | "shl" | "oid";
+const userId = "demo-patient-complete-001";
 
 export function StoreScreen() {
   const [cached, setCached] = useState<WalletStoredObject[]>([]);
   const [payload, setPayload] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [message, setMessage] = useState("");
-  const cards = useMemo(() => flattenCardsByCategory(demoCardsByCategory), []);
+  const cards = useMemo(() => flattenCardsByCategory(getDemoCardsByCategory(userId)), []);
   const baseObjects = useMemo(() => mergeWalletObjects(
     walletObjectsFromCards(cards),
-    walletObjectsFromHistory(demoHistory),
-    walletObjectsFromShl(demoShlPackages)
+    walletObjectsFromHistory(getDemoHistory(userId)),
+    walletObjectsFromShl(getDemoShlPackages(userId))
   ), [cards]);
   const objects = useMemo(() => mergeWalletObjects(baseObjects, cached), [baseObjects, cached]);
   const filtered = useMemo(() => {
@@ -46,7 +47,7 @@ export function StoreScreen() {
       await cacheStoredObject(result.object);
       setCached(await loadStoredObjects());
     }
-    setMessage(result.ok ? `Imported ${result.format}` : result.errors.join(", "));
+    setMessage(result.ok ? `นำเข้า ${result.format} แล้ว` : result.errors.join(", "));
     setPayload("");
   };
 
@@ -54,25 +55,25 @@ export function StoreScreen() {
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.eyebrow}>STORE</Text>
-          <Text style={styles.title}>VC/VP/SHL Wallet</Text>
-          <Text style={styles.subtitle}>{objects.length} stored objects</Text>
+          <Text style={styles.eyebrow}>คลังพกพา</Text>
+          <Text style={styles.title}>VC/VP/SHL</Text>
+          <Text style={styles.subtitle}>{objects.length} รายการในคลัง</Text>
         </View>
         <View style={styles.iconCircle}><Database color="#4f67f2" /></View>
       </View>
 
       <View style={styles.importPanel}>
-        <Text style={styles.panelTitle}>Import</Text>
+        <Text style={styles.panelTitle}>นำเข้า payload</Text>
         <TextInput
           value={payload}
           onChangeText={setPayload}
-          placeholder="Paste shlink:/, OID4VCI, OID4VP, VC/VP JSON, JWT..."
+          placeholder="วาง shlink:/, OID4VCI, OID4VP, VC/VP JSON, JWT..."
           multiline
           style={styles.input}
         />
         <Pressable style={[styles.importButton, !payload.trim() && styles.disabled]} disabled={!payload.trim()} onPress={() => void importPayload()}>
           <FileJson color="#fff" />
-          <Text style={styles.importText}>Import to wallet</Text>
+          <Text style={styles.importText}>นำเข้า Wallet</Text>
         </Pressable>
         {!!message && <Text style={styles.message}>{message}</Text>}
       </View>
@@ -97,8 +98,8 @@ export function StoreScreen() {
           <Text style={styles.objectTitle}>{object.title}</Text>
           <Text style={styles.objectSub} numberOfLines={2}>{object.subtitle ?? object.source ?? object.id}</Text>
           <View style={styles.objectActions}>
-            <Action icon={<Copy color="#4f67f2" />} label="Copy" />
-            <Action icon={<Download color="#4f67f2" />} label="Export" />
+            <Action icon={<Copy color="#4f67f2" />} label="คัดลอก" />
+            <Action icon={<Download color="#4f67f2" />} label="ส่งออก" />
           </View>
         </View>
       ))}
@@ -120,7 +121,7 @@ const styles = StyleSheet.create({
   content: { padding: 22, paddingBottom: 120, gap: 14 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingTop: 24 },
   eyebrow: { color: "#4f67f2", fontSize: 12, fontWeight: "900", letterSpacing: 1 },
-  title: { color: "#111827", fontSize: 34, fontWeight: "900" },
+  title: { color: "#111827", fontSize: 30, fontWeight: "900" },
   subtitle: { color: "#647084", marginTop: 4 },
   iconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#eef3ff", alignItems: "center", justifyContent: "center" },
   importPanel: { borderRadius: 14, backgroundColor: "#fff", borderWidth: 1, borderColor: "#d8dfe4", padding: 16, gap: 12 },

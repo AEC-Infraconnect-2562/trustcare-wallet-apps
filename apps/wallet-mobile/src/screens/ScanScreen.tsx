@@ -45,11 +45,11 @@ export function ScanScreen() {
         <Text style={styles.help}>วาง QR Code ให้อยู่ในกรอบเพื่อ import หรือ verify wallet payload</Text>
         {result && (
           <View style={styles.result}>
-            <Text style={[styles.resultTitle, !result.verified && styles.resultTitleError]}>{result.verified ? "Verified" : "Invalid"}</Text>
+            <Text style={[styles.resultTitle, !result.verified && styles.resultTitleError]}>{result.verified ? "ตรวจสอบผ่าน" : "ไม่ถูกต้อง"}</Text>
             <Text style={styles.resultText}>{result.issuer}</Text>
             {!!result.protocol && <Text style={styles.protocol}>{result.protocol}</Text>}
             {!!result.requestSummary && <Text style={styles.resultText}>{result.requestSummary}</Text>}
-            {!!result.matchedCredentialIds?.length && <Text style={styles.mono}>Matched: {result.matchedCredentialIds.join(", ")}</Text>}
+            {!!result.matchedCredentialIds?.length && <Text style={styles.mono}>ตรงกับ: {result.matchedCredentialIds.join(", ")}</Text>}
             {result.warnings?.map(item => <Text key={item} style={styles.warning}>{item}</Text>)}
             {result.errors?.map(item => <Text key={item} style={styles.error}>{item}</Text>)}
             <Pressable style={styles.button} onPress={() => setLocked(false)}><Text style={styles.buttonText}>สแกนอีกครั้ง</Text></Pressable>
@@ -66,11 +66,11 @@ const styles = StyleSheet.create({
   centerHelp: { color: "#cbd5e1", textAlign: "center", marginBottom: 18 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.34)", justifyContent: "space-between", padding: 24, paddingTop: 60 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  scanTitle: { color: "#fff", fontSize: 26, fontWeight: "900" },
-  close: { color: "#fff", fontSize: 18, fontWeight: "800" },
-  frame: { alignSelf: "center", width: 280, height: 280, borderWidth: 5, borderColor: "#fff", borderRadius: 14 },
-  help: { color: "#fff", textAlign: "center", fontSize: 17, marginBottom: 22 },
-  title: { color: "#fff", fontSize: 28, fontWeight: "900", marginBottom: 8 },
+  scanTitle: { color: "#fff", fontSize: 24, fontWeight: "900" },
+  close: { color: "#fff", fontSize: 17, fontWeight: "800" },
+  frame: { alignSelf: "center", width: 270, height: 270, borderWidth: 5, borderColor: "#fff", borderRadius: 14 },
+  help: { color: "#fff", textAlign: "center", fontSize: 16, marginBottom: 22 },
+  title: { color: "#fff", fontSize: 26, fontWeight: "900", marginBottom: 8 },
   button: { minHeight: 50, borderRadius: 10, backgroundColor: "#4f67f2", alignItems: "center", justifyContent: "center", paddingHorizontal: 18 },
   buttonText: { color: "#fff", fontWeight: "900" },
   result: { borderRadius: 14, backgroundColor: "#fff", padding: 18, gap: 8 },

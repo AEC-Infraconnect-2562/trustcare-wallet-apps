@@ -1,5 +1,25 @@
 import type { PresentationHistoryItem, ShlPackageDetail, WalletCard, WalletCardsByCategory, WalletPresentationResponse } from "./models";
+import {
+  completeWalletPresentationHistory,
+  completeWalletShlPackages,
+  getCompleteWalletCardsByCategory,
+  getCompleteWalletSeed
+} from "./completeSeedData";
 import { demoPresentationUrl } from "./qr";
+
+export {
+  completeCardsByCategory,
+  completeSeedDocumentDefinitions,
+  completeWalletPresentationHistory,
+  completeWalletSeedCards,
+  completeWalletShlPackages,
+  getCompleteSeedSummary,
+  getCompleteWalletCardsByCategory,
+  getCompleteWalletSeed,
+  type CompleteSeedDocumentCategory,
+  type CompleteSeedDocumentDefinition,
+  type CompleteSeedDocumentType
+} from "./completeSeedData";
 
 const now = new Date("2026-07-04T09:41:00+07:00");
 
@@ -63,7 +83,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     patientId: 1100500123456,
     portalOpenId: "demo-patient-001",
     source: "trustcare_portal",
-    sourceLabel: "TrustCare Portal seed",
+    sourceLabel: "ข้อมูลจาก TrustCare Portal",
     role: "patient",
     hospitalCode: "TCC",
     hospitalName: "TrustCare Central Hospital",
@@ -82,7 +102,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:trustcare.network:hospital:tcc",
     avatarUrl: trustCarePortalPersonImages.patientMale,
     avatarSource: "trustcare_portal",
-    persona: "Portal patient with OPD, referral, claim and pharmacy scope",
+    persona: "ผู้ป่วยจาก TrustCare Portal สำหรับทดสอบ OPD การส่งต่อ เคลม และงานยา",
     tags: ["opd", "referral", "claim", "pharmacy", "medical_certificate"],
     conditions: ["E11", "I10"],
     allergies: ["Penicillin severe"],
@@ -93,7 +113,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     patientId: 1100500234567,
     portalOpenId: "demo-patient-002",
     source: "trustcare_portal",
-    sourceLabel: "TrustCare Portal seed",
+    sourceLabel: "ข้อมูลจาก TrustCare Portal",
     role: "patient",
     hospitalCode: "TCC",
     hospitalName: "TrustCare Central Hospital",
@@ -112,7 +132,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:trustcare.network:hospital:tcc",
     avatarUrl: trustCarePortalPersonImages.patientFemale,
     avatarSource: "trustcare_portal",
-    persona: "Portal patient with OPD, emergency and lab scope",
+    persona: "ผู้ป่วยจาก TrustCare Portal สำหรับทดสอบ OPD เหตุฉุกเฉิน และผลแล็บ",
     tags: ["opd", "emergency", "lab"],
     conditions: ["J45"],
     allergies: ["Sulfonamide rash"],
@@ -123,7 +143,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     patientId: 1100500345678,
     portalOpenId: "demo-patient-003",
     source: "trustcare_portal",
-    sourceLabel: "TrustCare Portal seed",
+    sourceLabel: "ข้อมูลจาก TrustCare Portal",
     role: "patient",
     hospitalCode: "TCP",
     hospitalName: "TrustCare Phuket International Hospital",
@@ -143,7 +163,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:trustcare.network:hospital:tcp",
     avatarUrl: trustCarePortalPersonImages.patientMale,
     avatarSource: "trustcare_portal",
-    persona: "Portal medical tourist with insurance and travel document scope",
+    persona: "ผู้ป่วยต่างชาติจาก TrustCare Portal สำหรับทดสอบประกันและเอกสารเดินทาง",
     tags: ["medical_tourist", "insurance", "travel_document"],
     conditions: ["M17.1"],
     allergies: ["No known drug allergy"],
@@ -154,7 +174,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     patientId: 1100100000002,
     portalOpenId: "demo-hospadmin-001",
     source: "trustcare_portal",
-    sourceLabel: "TrustCare Portal seed",
+    sourceLabel: "ข้อมูลจาก TrustCare Portal",
     role: "staff",
     hospitalCode: "TCC",
     hospitalName: "TrustCare Central Hospital",
@@ -173,17 +193,78 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:trustcare.network:hospital:tcc",
     avatarUrl: trustCarePortalPersonImages.doctorFemale,
     avatarSource: "trustcare_portal",
-    persona: "Portal hospital administrator staff credential",
+    persona: "เจ้าหน้าที่โรงพยาบาลจาก TrustCare Portal สำหรับทดสอบสิทธิ์ผู้ปฏิบัติงาน",
     tags: ["staff_identity", "maker_checker"],
     conditions: [],
     allergies: [],
     cardBase: 4000
   },
   {
+    id: "demo-patient-complete-001",
+    patientId: 9900700100017,
+    portalOpenId: "demo-patient-complete-001",
+    source: "trustcare_portal",
+    sourceLabel: "ข้อมูลครบชุดจาก TrustCare Portal",
+    role: "patient",
+    hospitalCode: "TCC",
+    hospitalName: "TrustCare Central Hospital",
+    hospitalNameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
+    nameTh: "นายสมชาย ใจดี",
+    nameEn: "Mr. Somchai Jaidee",
+    initials: "ส",
+    gender: "male",
+    birthDate: "1978-03-15",
+    email: "somchai.jaidee.demo@example.test",
+    phone: "089-123-4567",
+    thaiId: "9900700100017",
+    passport: "M12345678",
+    carepassId: "CP-TH-2026-COMPLETE-001",
+    hn: "HN-TCC-670001",
+    holderDid: "did:key:z6MkhTrustCareCompletePatient001",
+    issuerDid: "did:web:trustcare.network:hospital:tcc",
+    avatarUrl: trustCarePortalPersonImages.patientMale,
+    avatarSource: "trustcare_portal",
+    persona: "Wallet ผู้ป่วยครบชุด ครอบคลุมเอกสารสุขภาพทุกประเภทที่เกี่ยวข้องกับผู้ป่วย",
+    tags: ["complete_seed", "opd", "emergency", "referral", "claim", "pharmacy", "medical_tourist", "insurance", "travel_document", "shl"],
+    conditions: ["E11", "I10", "E78.5"],
+    allergies: ["Penicillin severe", "Shellfish moderate"],
+    cardBase: 900000
+  },
+  {
+    id: "demo-staff-complete-001",
+    patientId: 9900700200017,
+    portalOpenId: "demo-staff-complete-001",
+    source: "trustcare_portal",
+    sourceLabel: "ข้อมูลครบชุดจาก TrustCare Portal",
+    role: "staff",
+    hospitalCode: "TCC",
+    hospitalName: "TrustCare Central Hospital",
+    hospitalNameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
+    nameTh: "พญ.สิริรักษ์ รักษาดี",
+    nameEn: "Dr. Sirirak Raksadee",
+    initials: "ส",
+    gender: "female",
+    birthDate: "1982-11-09",
+    email: "sirirak.r@trustcare-central.example.test",
+    phone: "02-123-4567",
+    thaiId: "9900700200017",
+    carepassId: "STAFF-TCC-MD-14527",
+    hn: "STAFF-TCC-MD-14527",
+    holderDid: "did:key:z6MkhTrustCareStaffDoctor001",
+    issuerDid: "did:web:trustcare.network:hospital:tcc",
+    avatarUrl: trustCarePortalPersonImages.doctorFemale,
+    avatarSource: "trustcare_portal",
+    persona: "Wallet เจ้าหน้าที่ครบชุดสำหรับทดสอบ staff_identity การตรวจสอบ และการเข้าถึงบริการ",
+    tags: ["complete_seed", "staff_identity", "credential_checker", "service_verifier"],
+    conditions: [],
+    allergies: [],
+    cardBase: 901000
+  },
+  {
     id: "partner-patient-001",
     patientId: 880001000001,
     source: "partner_wallet",
-    sourceLabel: "Partner wallet native",
+    sourceLabel: "ข้อมูลที่สร้างใน Wallet นี้",
     role: "patient",
     hospitalCode: "PXH",
     hospitalName: "HealthPass Partner Clinic",
@@ -202,7 +283,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:partner-wallet.example:issuer:pxh",
     avatarUrl: walletNativePersonImages.nativeFemale,
     avatarSource: "wallet_generated",
-    persona: "Wallet-native patient used for external partner import/export testing",
+    persona: "ผู้ป่วยที่สร้างใน Wallet นี้ สำหรับทดสอบการนำเข้าและส่งออกกับ partner ภายนอก",
     tags: ["opd", "lab", "cross_border"],
     conditions: ["Z34"],
     allergies: ["No known drug allergy"],
@@ -212,7 +293,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     id: "partner-patient-002",
     patientId: 880001000002,
     source: "partner_wallet",
-    sourceLabel: "Partner wallet native",
+    sourceLabel: "ข้อมูลที่สร้างใน Wallet นี้",
     role: "patient",
     hospitalCode: "PXH",
     hospitalName: "HealthPass Partner Clinic",
@@ -231,7 +312,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:partner-wallet.example:issuer:pxh",
     avatarUrl: walletNativePersonImages.nativeMale,
     avatarSource: "wallet_generated",
-    persona: "Wallet-native medical tourist used for TrustCare Portal linking tests",
+    persona: "ผู้ป่วยต่างชาติที่สร้างใน Wallet นี้ สำหรับทดสอบการเชื่อมโยงกลับไป TrustCare Portal",
     tags: ["medical_tourist", "insurance", "travel_document", "guarantee_letter"],
     conditions: ["M16"],
     allergies: ["No known drug allergy"],
@@ -248,11 +329,16 @@ export function getDemoUser(userId?: string | number): WalletDemoUser {
 
 export function getDemoWalletCards(userId?: string | number): WalletCard[] {
   const user = getDemoUser(userId);
+  if (user.tags.includes("complete_seed")) {
+    return getCompleteWalletSeed(user.id).sort((a, b) => a.id - b.id);
+  }
   const cards = user.role === "staff" ? buildStaffCards(user) : buildPatientCards(user);
   return cards.sort((a, b) => a.id - b.id);
 }
 
 export function getDemoCardsByCategory(userId?: string | number): WalletCardsByCategory {
+  const user = getDemoUser(userId);
+  if (user.tags.includes("complete_seed")) return getCompleteWalletCardsByCategory(user.id);
   return getDemoWalletCards(userId).reduce<WalletCardsByCategory>((acc, card) => {
     acc[card.documentCategory] ??= [];
     acc[card.documentCategory].push(card);
@@ -262,6 +348,8 @@ export function getDemoCardsByCategory(userId?: string | number): WalletCardsByC
 
 export function getDemoHistory(userId?: string | number): PresentationHistoryItem[] {
   const user = getDemoUser(userId);
+  if (user.id === "demo-patient-complete-001") return completeWalletPresentationHistory;
+  if (user.id === "demo-staff-complete-001") return [];
   return [
     {
       id: `${user.id}:hist:single`,
@@ -284,6 +372,8 @@ export function getDemoHistory(userId?: string | number): PresentationHistoryIte
 
 export function getDemoShlPackages(userId?: string | number): ShlPackageDetail[] {
   const user = getDemoUser(userId);
+  if (user.id === "demo-patient-complete-001") return completeWalletShlPackages;
+  if (user.id === "demo-staff-complete-001") return [];
   if (user.role !== "patient") return [];
   return [
     {
@@ -353,7 +443,11 @@ export function buildPortalInteroperabilityFixtures(userId?: string | number, or
   const shl = getDemoShlPackages(user.id)[0];
   const state = `state-${user.id}`;
   const nonce = `nonce-${user.id}`;
-  const requestedType = user.tags.includes("insurance") ? "InsuranceEligibilityCredential" : "PatientSummaryCredential";
+  const requestedType = cards.some(card => card.credentialType === "CoverageEligibilityCredential")
+    ? "CoverageEligibilityCredential"
+    : user.tags.includes("insurance")
+      ? "InsuranceEligibilityCredential"
+      : "PatientSummaryCredential";
   const credentialOffer = {
     credential_issuer: user.source === "trustcare_portal" ? "https://trustcarehealth-tylvb5l8.manus.space" : origin,
     credential_configuration_ids: cards.map(card => card.credentialType).filter(Boolean),
@@ -567,7 +661,7 @@ function medicalCertificateCard(user: WalletDemoUser): WalletCard {
     cardType: "medical_certificate",
     displayName: "ใบรับรองแพทย์",
     displayNameEn: "Medical Certificate",
-    documentCategory: "certificates_and_forms",
+    documentCategory: "clinical_summary",
     credentialType: "MedicalCertificateCredential",
     expiresAt: "2027-01-01T09:30:00.000Z",
     subject: { patient: patientSubject(user), certificate: { fitForWork: true, issuedFor: "service readiness demo" } }
@@ -580,7 +674,7 @@ function referralCard(user: WalletDemoUser): WalletCard {
     cardType: "referral_vc",
     displayName: "ใบส่งต่อการรักษา",
     displayNameEn: "Referral Credential",
-    documentCategory: "care_transitions",
+    documentCategory: "care_transition",
     credentialType: "ReferralCredential",
     expiresAt: "2026-10-01T09:30:00.000Z",
     subject: { patient: patientSubject(user), referral: { from: user.hospitalName, to: "TrustCare compatible hospital", reason: diagnosisText(user.conditions[0]) } }
@@ -593,7 +687,7 @@ function insuranceCard(user: WalletDemoUser): WalletCard {
     cardType: "insurance_eligibility",
     displayName: "สิทธิประกันสุขภาพ",
     displayNameEn: "Insurance Eligibility",
-    documentCategory: "claims_and_billing",
+    documentCategory: "claims_and_finance",
     credentialType: "InsuranceEligibilityCredential",
     expiresAt: "2027-07-01T09:30:00.000Z",
     subject: { patient: patientSubject(user), payer: { name: user.source === "trustcare_portal" ? "NHSO Demo" : "Partner International Plan", status: "eligible" } }
@@ -606,7 +700,7 @@ function travelCard(user: WalletDemoUser): WalletCard {
     cardType: "travel_document_verification",
     displayName: "เอกสารผู้ป่วยต่างชาติ",
     displayNameEn: "Travel Document Verification",
-    documentCategory: "identity_and_access",
+    documentCategory: "medical_tourism",
     credentialType: "TravelDocumentVerificationCredential",
     expiresAt: "2026-12-31T09:30:00.000Z",
     subject: { patient: patientSubject(user), travel: { passport: user.passport ?? "PX-PASSPORT-DEMO", nationality: user.passport ? "international" : "THA" } }

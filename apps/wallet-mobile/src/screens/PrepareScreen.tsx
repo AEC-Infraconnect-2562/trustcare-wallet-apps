@@ -37,9 +37,9 @@ export function PrepareScreen() {
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.eyebrow}>PREPARE FOR SERVICE</Text>
+          <Text style={styles.eyebrow}>เตรียมเข้ารับบริการ</Text>
           <Text style={styles.title}>พร้อมก่อนรับบริการ</Text>
-          <Text style={styles.subtitle}>{cards.length} credentials in wallet</Text>
+          <Text style={styles.subtitle}>{cards.length} เอกสารใน Wallet</Text>
         </View>
         <View style={styles.score}>
           <Text style={styles.scoreText}>{readiness?.readiness?.score ?? 0}%</Text>
@@ -58,19 +58,19 @@ export function PrepareScreen() {
         <View style={styles.panelHeader}>
           <Activity color="#4f67f2" />
           <View>
-            <Text style={styles.panelTitle}>{readinessContextLabels[context].en}</Text>
+            <Text style={styles.panelTitle}>{readinessContextLabels[context].th}</Text>
             <Text style={styles.panelSub}>{readinessContextLabels[context].purpose}</Text>
           </View>
         </View>
         <View style={styles.statGrid}>
-          <MiniStat label="Required" value={`${readiness?.readiness?.requiredReady ?? 0}/${readiness?.readiness?.requiredTotal ?? 0}`} />
-          <MiniStat label="Recommended" value={`${readiness?.readiness?.recommendedReady ?? 0}/${readiness?.readiness?.recommendedTotal ?? 0}`} />
+          <MiniStat label="จำเป็น" value={`${readiness?.readiness?.requiredReady ?? 0}/${readiness?.readiness?.requiredTotal ?? 0}`} />
+          <MiniStat label="แนะนำ" value={`${readiness?.readiness?.recommendedReady ?? 0}/${readiness?.readiness?.recommendedTotal ?? 0}`} />
         </View>
       </View>
 
       <View style={styles.grid}>
-        <ChecklistCard title="Ready VC" tone="green" items={ready.map((item: any) => item.label)} empty="ยังไม่มี VC ที่ตรง contract" />
-        <ChecklistCard title="Missing" tone="red" items={missing.map((item: any) => item.label)} empty="ครบถ้วน" />
+        <ChecklistCard title="VC ที่พร้อมใช้" tone="green" items={ready.map((item: any) => item.label)} empty="ยังไม่มี VC ที่ตรง contract" />
+        <ChecklistCard title="เอกสารที่ขาด" tone="red" items={missing.map((item: any) => item.label)} empty="ครบถ้วน" />
       </View>
 
       <View style={styles.actionPanel}>
@@ -80,8 +80,8 @@ export function PrepareScreen() {
         </Pressable>
         <View style={styles.actionRow}>
           <ActionButton icon={<QrCode color="#2f855a" />} label="Check-in SHL" onPress={() => void walletApi.generateCheckinQR(apiOptions, { context, consentAttested: true }).then(setCheckinQr)} />
-          <ActionButton icon={<Upload color="#4f67f2" />} label="Import" onPress={() => void walletApi.importForService(apiOptions, { context, documentType: missing[0]?.key ?? "patient_summary" }).then(setImportJob)} />
-          <ActionButton icon={<FilePlus2 color="#4f67f2" />} label="Request" onPress={() => undefined} />
+          <ActionButton icon={<Upload color="#4f67f2" />} label="นำเข้า" onPress={() => void walletApi.importForService(apiOptions, { context, documentType: missing[0]?.key ?? "patient_summary" }).then(setImportJob)} />
+          <ActionButton icon={<FilePlus2 color="#4f67f2" />} label="ขอเอกสาร" onPress={() => undefined} />
         </View>
       </View>
 
@@ -95,7 +95,7 @@ export function PrepareScreen() {
 
       {importJob && (
         <View style={styles.panel}>
-          <Text style={styles.panelTitle}>Import job</Text>
+          <Text style={styles.panelTitle}>งานนำเข้า</Text>
           <Text style={styles.mono}>{importJob.importId} / {importJob.status}</Text>
         </View>
       )}
@@ -108,7 +108,7 @@ async function buildServicePacket(context: ReadinessContext, readiness: any) {
     context,
     consentAttested: true,
     selectedCardIds: readiness?.readiness?.selectedCardIds,
-    receiverName: "TrustCare compatible hospital"
+    receiverName: "โรงพยาบาลที่รองรับ TrustCare"
   });
 }
 

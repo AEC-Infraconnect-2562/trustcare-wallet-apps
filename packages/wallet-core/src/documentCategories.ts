@@ -7,11 +7,9 @@ export const documentCategories = {
   claims_and_finance: { th: "เคลมและการเงิน", en: "Claims & Finance", icon: "ReceiptText" },
   medical_tourism: { th: "ผู้ป่วยต่างชาติ", en: "Medical Tourism", icon: "Globe2" },
   sharing_and_sync: { th: "แชร์และซิงก์", en: "Sharing & Sync", icon: "RefreshCcw" },
-  operations: { th: "ปฏิบัติการ", en: "Operations", icon: "CalendarDays" },
-  education: { th: "การศึกษา", en: "Education", icon: "GraduationCap" }
+  operations: { th: "ปฏิบัติการ", en: "Operations", icon: "CalendarDays" }
 } as const;
 
 export type DocumentCategory = keyof typeof documentCategories;
 
 export const allDocumentCategories = Object.keys(documentCategories) as DocumentCategory[];
-
