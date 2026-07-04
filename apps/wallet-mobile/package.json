@@ -1,0 +1,41 @@
+{
+  "name": "wallet-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@trustcare/api-client": "workspace:*",
+    "@trustcare/design-tokens": "workspace:*",
+    "@trustcare/i18n": "workspace:*",
+    "@trustcare/ui-mobile": "workspace:*",
+    "@trustcare/wallet-core": "workspace:*",
+    "expo": "^57.0.2",
+    "expo-camera": "^57.0.0",
+    "expo-linear-gradient": "^57.0.0",
+    "expo-local-authentication": "^57.0.0",
+    "expo-router": "^57.0.3",
+    "expo-screen-capture": "^57.0.0",
+    "expo-secure-store": "^57.0.0",
+    "expo-sqlite": "^57.0.0",
+    "lucide-react-native": "^1.23.0",
+    "react": "^19.2.7",
+    "react-native": "^0.86.0",
+    "react-native-qrcode-svg": "^6.3.21",
+    "react-native-safe-area-context": "^5.8.0",
+    "react-native-screens": "^4.25.2",
+    "react-native-svg": "^15.15.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.12",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

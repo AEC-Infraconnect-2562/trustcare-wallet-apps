@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "TrustCare Wallet",
+    "slug": "trustcare-wallet",
+    "scheme": "trustcare-wallet",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "network.trustcare.wallet",
+      "infoPlist": {
+        "NSCameraUsageDescription": "TrustCare Wallet uses the camera to scan VP and SHL QR codes.",
+        "NSFaceIDUsageDescription": "TrustCare Wallet uses biometric confirmation before showing sensitive QR codes."
+      }
+    },
+    "android": {
+      "package": "network.trustcare.wallet",
+      "permissions": ["CAMERA", "USE_BIOMETRIC"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-local-authentication",
+      "expo-screen-capture",
+      "expo-sqlite",
+      "expo-camera"
+    ]
+  }
+}
+
