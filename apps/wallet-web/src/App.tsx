@@ -561,7 +561,12 @@ function WalletView({ cards, counts, user, fixtures, onImportFixture, onCopyFixt
         <div className="partner-copy">
           <span className="eyebrow">External Partner Wallet</span>
           <h2>{user.nameEn}</h2>
-          <p>{user.persona}. This login only sees credentials, VP history, SHL packages and store objects scoped to <strong>{user.id}</strong>.</p>
+          <p>{user.sourceLabel} · {user.hospitalName}</p>
+          <div className="scope-grid" aria-label="Active wallet scope">
+            <span><small>User</small><strong>{user.id}</strong></span>
+            <span><small>Holder DID</small><strong>{shortDid(user.holderDid)}</strong></span>
+            <span><small>Patient ID</small><strong>{user.patientId}</strong></span>
+          </div>
           <div className="chip-row">
             <span>{user.source === "trustcare_portal" ? "Portal imported" : "Wallet native"}</span>
             <span>{user.hospitalCode}</span>
@@ -587,8 +592,8 @@ function WalletView({ cards, counts, user, fixtures, onImportFixture, onCopyFixt
       <Surface className="fixture-panel">
         <div className="section-title-row">
           <div>
-            <h2>TrustCare Portal Test Fixtures</h2>
-            <p>Payloads below are generated from the active login scope only. Switch user to validate isolation before importing into Store or pasting into the Portal verifier.</p>
+            <h2>Interop payloads</h2>
+            <p>{user.id} · OID4VCI, OID4VP and SHL payloads are generated from this active scope.</p>
           </div>
           <Badge tone={user.source === "trustcare_portal" ? "green" : "blue"}>{user.sourceLabel}</Badge>
         </div>
@@ -621,7 +626,7 @@ function WalletView({ cards, counts, user, fixtures, onImportFixture, onCopyFixt
         <div className="section-title-row">
           <div>
             <h2>Credentials</h2>
-            <p>เลือกเอกสารเพื่อสร้าง VP, QR, selective disclosure หรือ export ออกไปยัง partner flow</p>
+            <p>เลือกเอกสารเพื่อสร้าง VP, QR, selective disclosure หรือ export ไปยัง partner flow</p>
           </div>
           <Badge tone="blue">{readyCount} ready</Badge>
         </div>
