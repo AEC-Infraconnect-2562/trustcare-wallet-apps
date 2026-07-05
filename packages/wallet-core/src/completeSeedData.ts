@@ -1,4 +1,5 @@
 import type { PresentationHistoryItem, ShlPackageDetail, WalletCard, WalletCardsByCategory } from "./models";
+import { createTrustCareShlGatewayPublication } from "./shlGateway";
 
 /**
  * TrustCare Wallet complete realistic seed data.
@@ -993,93 +994,76 @@ export const completeWalletPresentationHistory: PresentationHistoryItem[] = [
   }
 ];
 
-export const completeWalletShlPackages: ShlPackageDetail[] = [
-  {
-    id: 7001,
-    label: "OPD readiness SHL - Somchai Jaidee",
-    purpose: "opd_visit",
+export const completeWalletShlPackages: ShlPackageDetail[] = createCompleteWalletShlPackages();
+
+function createCompleteWalletShlPackages(): ShlPackageDetail[] {
+  const shlCards = completeWalletSeedCards.filter(card =>
+    card.ownerUserId === completePatient.ownerUserId &&
+    [
+      "patient_identity",
+      "patient_summary",
+      "allergy_alert",
+      "medication_summary",
+      "lab_result",
+      "insurance_eligibility"
+    ].includes(card.cardType)
+  );
+  const publication = createTrustCareShlGatewayPublication({
     context: "opd_visit",
-    status: "active",
-    viewerUrl: "https://trustcare.example.test/shl/view/shl_TCC_20260701_00045",
-    shlUrl: "shlink:/eyJ1cmwiOiJodHRwczovL3RydXN0Y2FyZS5leGFtcGxlLnRlc3QvbWFuaWZlc3RzL2RlbW8iLCJrIjoiZGVtby1zaGwtMzItYnl0ZS1rZXktYmFzZTY0dXJsIiwiZmxhZ3MiOiJMUCIifQ",
-    qrPayload: "shlink:/eyJ1cmwiOiJodHRwczovL3RydXN0Y2FyZS5leGFtcGxlLnRlc3QvbWFuaWZlc3RzL2RlbW8iLCJrIjoiZGVtby1zaGwtMzItYnl0ZS1rZXktYmFzZTY0dXJsIiwiZmxhZ3MiOiJMUCIifQ",
-    manifestCredentialId: "urn:uuid:TCW-COMPLETE-0023-shl_manifest",
-    presentationId: "vp_shl_complete_opd_20260701_001",
-    trustcareCertification: {
-      status: "maker_checker_approved",
-      ownerConfirmed: true,
-      makerId: "maker-tcc-001",
-      makerName: "TrustCare Central Hospital Maker",
-      makerApprovedAt: "2026-07-01T04:44:00.000Z",
-      checkerId: "checker-tcc-001",
-      checkerName: "TrustCare Central Hospital Checker",
-      checkerApprovedAt: "2026-07-01T04:48:00.000Z",
-      networkHospitalDid: "did:web:trustcare.network:hospital:tcc",
-      consentReceiptId: "urn:uuid:TCW-COMPLETE-0003-consent_receipt",
-      policyVersion: "trustcare-shl-governance-2026.07"
-    },
-    passcodeRequired: true,
-    currentAccessCount: 1,
-    maxAccessCount: 5,
-    expiresAt: "2026-07-15T16:59:59.000Z",
-    files: [
-      { fileId: "file-ips-summary", contentType: "application/fhir+json", hash: "sha256:demo-file-ips" },
-      { fileId: "file-lab-result", contentType: "application/fhir+json", hash: "sha256:demo-file-lab" },
-      { fileId: "file-holder-vp", contentType: "application/vp+jwt", hash: "sha256:demo-file-vp" }
-    ],
-    versions: [{ version: 1, createdAt: "2026-07-01T04:50:00.000Z", manifestHash: "sha256:demo-manifest-9a3f1bd45c0f" }],
-    accessLogs: [
-      { id: "log-1", recipient: "TrustCare Phuket International Hospital", accessedAt: "2026-07-01T05:00:00.000Z", result: "granted" }
-    ],
-    documentBundle: {
-      bundleId: "Bundle/shl_TCC_20260701_00045/v1",
-      manifestVersion: 1,
-      source: "derived_from_complete_wallet_seed",
-      bindingModel: "SHL transport + Manifest VC + Holder VP + DocumentReference",
-      standards: ["SMART Health Links", "W3C VC Data Model v2.0", "HL7 FHIR R4 DocumentReference"],
-      status: "active",
-      documents: ["patient_identity", "patient_summary", "allergy_alert", "medication_summary", "lab_result", "insurance_eligibility"].map((documentType, index) => ({
-        id: `shl-doc-${documentType}`,
-        sequence: index + 1,
-        title: definitionFor(documentType as CompleteSeedDocumentType).displayName,
-        documentType,
-        category: definitionFor(documentType as CompleteSeedDocumentType).documentCategory,
-        status: "available_in_manifest",
-        sourceRole: "issuer",
-        fhirResource: documentType === "lab_result" ? "DiagnosticReport" : "DocumentReference",
-        contentType: "application/fhir+json",
-        manifestFileId: index < 4 ? "file-ips-summary" : "file-lab-result",
-        manifestVersion: 1,
-        hash: {
-          contentHash: `sha256:demo-content-${documentType}`,
-          plaintextHash: `sha256:demo-plain-${documentType}`,
-          sourceBundleHash: "sha256:demo-fhir-bundle-4883c9e8af11"
-        },
-        objectLinks: {
-          manifest: "shl://7001/versions/1",
-          shlFile: `shl://7001/versions/1/files/${index < 4 ? "file-ips-summary" : "file-lab-result"}`,
-          fhirDocumentReference: `DocumentReference/${documentType}-complete-001`,
-          fhirBundle: "Bundle/sha256:demo-fhir-bundle-4883c9e8af11",
-          manifestCredential: "Credential/urn:uuid:TCW-COMPLETE-0023-shl_manifest",
-          holderPresentation: "Presentation/vp_shl_complete_opd_20260701_001",
-          futureApi: `/api/shl/7001/manifest-documents/${documentType}`
-        },
-        vcBinding: {
-          recommendedCredentialType: definitionFor(documentType as CompleteSeedDocumentType).credentialType,
-          manifestCredentialId: "urn:uuid:TCW-COMPLETE-0023-shl_manifest",
-          presentationId: "vp_shl_complete_opd_20260701_001"
-        },
-        accessBinding: {
-          passcodeRequired: true,
-          expiresAt: "2026-07-15T16:59:59.000Z",
-          currentAccessCount: 1,
-          maxAccessCount: 5
-        }
-      })),
-      files: []
+    ownerUserId: completePatient.ownerUserId,
+    patientId: completePatient.patientId,
+    selectedCardIds: shlCards.map(card => card.id),
+    cards: shlCards,
+    receiver: "TrustCare Phuket International Hospital",
+    purpose: "opd_visit",
+    origin: "https://aec-infraconnect-2562.github.io/trustcare-wallet-apps",
+    includeTrustCareManifestVp: true,
+    policy: {
+      expiresAt: "2026-07-15T16:59:59.000Z",
+      passcodeRequired: false,
+      passcodeHint: null,
+      accessCodeDelivery: "not_required",
+      maxAccessCount: 5
     }
-  }
-];
+  });
+  return [
+    {
+      ...publication,
+      id: 7001,
+      label: "OPD readiness SHL - Somchai Jaidee",
+      purpose: "opd_visit",
+      context: "opd_visit",
+      status: "active",
+      manifestCredentialId: publication.manifest.trustcare.manifestCredentialId,
+      presentationId: publication.manifest.trustcare.holderPresentationId,
+      manifestCredential: publication.manifest.trustcare.manifestCredential,
+      holderAuthorizationCredential: publication.manifest.trustcare.holderAuthorizationCredential,
+      manifestVp: publication.manifest.trustcare.manifestVp,
+      manifestVpUrl: publication.manifest.trustcare.manifestVpUrl,
+      manifestVpHash: publication.manifest.trustcare.manifestVpHash,
+      trustcareCertification: {
+        status: "maker_checker_approved",
+        ownerConfirmed: true,
+        makerId: "maker-tcc-001",
+        makerName: "TrustCare Central Hospital Maker",
+        makerApprovedAt: "2026-07-01T04:44:00.000Z",
+        checkerId: "checker-tcc-001",
+        checkerName: "TrustCare Central Hospital Checker",
+        checkerApprovedAt: "2026-07-01T04:48:00.000Z",
+        networkHospitalDid: hospital.issuerDid,
+        consentReceiptId: "urn:uuid:TCW-COMPLETE-0003-consent_receipt",
+        policyVersion: "trustcare-shl-governance-2026.07"
+      },
+      currentAccessCount: 1,
+      files: publication.manifest.files,
+      versions: [{ version: 1, createdAt: "2026-07-01T04:50:00.000Z", manifestHash: publication.manifest.trustcare.manifestVpHash }],
+      accessLogs: [
+        { id: "log-1", recipient: "TrustCare Phuket International Hospital", accessedAt: "2026-07-01T05:00:00.000Z", result: "granted" }
+      ],
+      documentBundle: publication.manifest.documentBundle
+    }
+  ];
+}
 
 export function completeCardsByCategory(cards: WalletCard[] = completeWalletSeedCards): WalletCardsByCategory {
   return cards.reduce<WalletCardsByCategory>((acc, card) => {

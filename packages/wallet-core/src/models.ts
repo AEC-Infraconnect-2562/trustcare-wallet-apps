@@ -126,6 +126,11 @@ export type ShlPackage = {
   webViewerUrl?: string | null;
   manifestCredentialId?: string | null;
   presentationId?: string | null;
+  manifestCredential?: Record<string, unknown> | null;
+  holderAuthorizationCredential?: Record<string, unknown> | null;
+  manifestVp?: Record<string, unknown> | null;
+  manifestVpUrl?: string | null;
+  manifestVpHash?: string | null;
   passcodeRequired?: boolean;
   currentAccessCount?: number;
   maxAccessCount?: number | null;
@@ -349,6 +354,10 @@ export type WalletStoredObjectType =
   | "vc"
   | "vp"
   | "shl"
+  | "shl_manifest"
+  | "manifest_vp"
+  | "holder_vc"
+  | "sync_receipt"
   | "document_reference"
   | "oid4vci_offer"
   | "oid4vp_request"

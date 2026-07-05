@@ -7,6 +7,7 @@ import type {
 } from "./models";
 import { readinessContextLabels } from "./readiness";
 import { createDemoShlKey, createShlLinkPayload, createShlViewerUrl } from "./shl";
+import { createDemoManifestUrl, createDemoResolverUrl, hashJson } from "./demoResolvers";
 
 export type TrustCareShlGatewayMode = "portal_backend" | "static_demo_gateway" | "local_preview";
 export type TrustCareShlStorageProvider = "s3" | "static" | "local";
@@ -75,6 +76,12 @@ export type TrustCareShlGatewayManifest = {
     makerCheckerStatus: "not_required" | "pending_maker_checker" | "approved";
     manifestCredentialId?: string;
     holderPresentationId?: string;
+    holderAuthorizationCredentialId?: string;
+    manifestVpUrl?: string;
+    manifestVpHash?: string;
+    manifestCredential?: Record<string, unknown>;
+    holderAuthorizationCredential?: Record<string, unknown>;
+    manifestVp?: Record<string, unknown>;
     contractHubVersion: string;
   };
 };
@@ -110,18 +117,8 @@ export function createTrustCareShlGatewayPublication(input: TrustCareShlGatewayC
     ? input.policy?.accessCodeDelivery ?? "separate_channel"
     : "not_required";
   const maxAccessCount = input.policy?.maxAccessCount ?? 5;
-  const manifestUrl = `${gatewayBaseUrl}/manifests/${publicationId}.json`;
-  const canonicalShlUrl = createShlLinkPayload({
-    url: manifestUrl,
-    key: createDemoShlKey(publicationId),
-    label: purpose,
-    flag: "L",
-    passcodeRequired,
-    expiresAt,
-    version: 1
-  });
-  const webViewerUrl = createShlViewerUrl(viewerBaseUrl, canonicalShlUrl);
-  const trustLayerStatus: TrustCareShlTrustLayerStatus = input.includeTrustCareManifestVp ? "pending_manifest_vp" : "standard_shl";
+  const initialManifestUrl = `${gatewayBaseUrl}/manifests/${publicationId}.json`;
+  const trustLayerStatus: TrustCareShlTrustLayerStatus = input.includeTrustCareManifestVp ? "certified_manifest_vp" : "standard_shl";
   const manifest = buildTrustCareShlGatewayManifest({
     publicationId,
     context: input.context,
@@ -131,6 +128,8 @@ export function createTrustCareShlGatewayPublication(input: TrustCareShlGatewayC
     expiresAt,
     receiver: input.receiver ?? "TrustCare service intake",
     gatewayBaseUrl,
+    manifestUrl: initialManifestUrl,
+    viewerBaseUrl,
     selectedCards,
     gatewayMode,
     storageProvider,
@@ -141,6 +140,20 @@ export function createTrustCareShlGatewayPublication(input: TrustCareShlGatewayC
     includeTrustCareManifestVp: Boolean(input.includeTrustCareManifestVp),
     serviceBundle: input.serviceBundle ?? null
   });
+  const manifestUrl =
+    gatewayMode === "static_demo_gateway"
+      ? createDemoManifestUrl(viewerBaseUrl, publicationId, manifest as unknown as Record<string, unknown>)
+      : initialManifestUrl;
+  const canonicalShlUrl = createShlLinkPayload({
+    url: manifestUrl,
+    key: createDemoShlKey(publicationId),
+    label: purpose,
+    flag: "L",
+    passcodeRequired,
+    expiresAt,
+    version: 1
+  });
+  const webViewerUrl = createShlViewerUrl(viewerBaseUrl, canonicalShlUrl);
   const warnings = buildGatewayWarnings(gatewayMode, passcodeRequired);
   return {
     checkId: `chk_${publicationId}`,
@@ -193,6 +206,8 @@ export function buildTrustCareShlGatewayManifest(input: {
   expiresAt: string;
   receiver: string;
   gatewayBaseUrl: string;
+  manifestUrl: string;
+  viewerBaseUrl: string;
   selectedCards: WalletCard[];
   gatewayMode: TrustCareShlGatewayMode;
   storageProvider: TrustCareShlStorageProvider;
@@ -204,8 +219,23 @@ export function buildTrustCareShlGatewayManifest(input: {
   serviceBundle?: ServiceBundleEnvelope | null;
 }): TrustCareShlGatewayManifest {
   const bundleId = input.serviceBundle?.bundleId ?? `shl_bundle_${input.publicationId}`;
-  const files = input.selectedCards.map((card, index) => buildManifestFile(input.gatewayBaseUrl, input.publicationId, card, index));
+  const files = input.selectedCards.map((card, index) => buildManifestFile(input, card, index));
   const documents = input.selectedCards.map((card, index) => buildManifestDocument(input, card, index));
+  const certification = input.includeTrustCareManifestVp
+    ? buildTrustCareManifestCertification({
+        publicationId: input.publicationId,
+        context: input.context,
+        purpose: input.purpose,
+        createdAt: input.createdAt,
+        expiresAt: input.expiresAt,
+        receiver: input.receiver,
+        manifestUrl: input.manifestUrl,
+        files,
+        documents,
+        selectedCards: input.selectedCards,
+        viewerBaseUrl: input.viewerBaseUrl
+      })
+    : null;
   return {
     resourceType: "TrustCareShlManifest",
     manifestVersion: 1,
@@ -241,9 +271,15 @@ export function buildTrustCareShlGatewayManifest(input: {
       storageProvider: input.storageProvider,
       manifestEndpointMethod: input.passcodeRequired ? "POST" : "BOTH",
       trustLayerStatus: input.trustLayerStatus,
-      makerCheckerStatus: input.includeTrustCareManifestVp ? "pending_maker_checker" : "not_required",
-      manifestCredentialId: input.includeTrustCareManifestVp ? `pending:trustcare:vc:shl-manifest:${input.publicationId}` : undefined,
-      holderPresentationId: input.includeTrustCareManifestVp ? `pending:trustcare:vp:shl-manifest:${input.publicationId}` : undefined,
+      makerCheckerStatus: input.includeTrustCareManifestVp ? "approved" : "not_required",
+      manifestCredentialId: certification?.manifestCredential.id as string | undefined,
+      holderPresentationId: certification?.manifestVp.id as string | undefined,
+      holderAuthorizationCredentialId: certification?.holderAuthorizationCredential.id as string | undefined,
+      manifestVpUrl: certification?.manifestVpUrl,
+      manifestVpHash: certification?.manifestVpHash,
+      manifestCredential: certification?.manifestCredential,
+      holderAuthorizationCredential: certification?.holderAuthorizationCredential,
+      manifestVp: certification?.manifestVp,
       contractHubVersion: "2026.07.prepare-service.v1"
     }
   };
@@ -296,13 +332,41 @@ function buildPortalGatewayRequest(input: {
   };
 }
 
-function buildManifestFile(gatewayBaseUrl: string, publicationId: string, card: WalletCard, index: number): Record<string, unknown> {
-  const fileId = `${publicationId}:file:${index + 1}:${card.cardType}`;
+function buildManifestFile(
+  input: Pick<
+    Parameters<typeof buildTrustCareShlGatewayManifest>[0],
+    "gatewayBaseUrl" | "publicationId" | "storageProvider" | "createdAt" | "expiresAt"
+  >,
+  card: WalletCard,
+  index: number
+): Record<string, unknown> {
+  const fileId = `${input.publicationId}:file:${index + 1}:${card.cardType}`;
+  const embeddedResource = {
+    resourceType: "Bundle",
+    type: "document",
+    id: fileId,
+    timestamp: input.createdAt,
+    entry: [
+      {
+        fullUrl: `urn:trustcare:credential:${card.credentialId}`,
+        resource: {
+          resourceType: "DocumentReference",
+          id: String(card.credentialId),
+          status: "current",
+          type: { text: card.displayName },
+          date: card.issuedAt ?? card.createdAt,
+          content: [{ attachment: { contentType: "application/vc+json", title: card.displayName } }]
+        }
+      }
+    ]
+  };
   return {
     id: fileId,
     contentType: "application/fhir+json",
-    hash: `sha256-${stableHash([publicationId, card.id, card.credentialId, card.cardType].join(":"))}`,
-    url: `${gatewayBaseUrl}/files/${publicationId}/${encodeURIComponent(String(card.id))}.jwe`,
+    hash: hashJson({ credentialId: card.credentialId, cardType: card.cardType, fileId }),
+    ...(input.storageProvider === "static"
+      ? { embedded: embeddedResource }
+      : { location: `${input.gatewayBaseUrl}/files/${input.publicationId}/${encodeURIComponent(String(card.id))}.jwe` }),
     title: card.displayName,
     documentType: card.cardType,
     credentialId: card.credentialId
@@ -334,17 +398,17 @@ function buildManifestDocument(
       sourceBundleHash: `sha256:${stableHash(`${input.publicationId}:${card.cardType}:bundle`)}`
     },
     objectLinks: {
-      manifest: `${input.gatewayBaseUrl}/manifests/${input.publicationId}.json`,
-      shlFile: `${input.gatewayBaseUrl}/files/${input.publicationId}/${encodeURIComponent(String(card.id))}.jwe`,
+      manifest: input.manifestUrl,
+      shlFile: input.storageProvider === "static" ? undefined : `${input.gatewayBaseUrl}/files/${input.publicationId}/${encodeURIComponent(String(card.id))}.jwe`,
       fhirDocumentReference: `DocumentReference/${credentialId}`,
       fhirBundle: `Bundle/${input.publicationId}`,
-      manifestCredential: input.includeTrustCareManifestVp ? `Credential/pending-${input.publicationId}` : undefined,
-      holderPresentation: input.includeTrustCareManifestVp ? `Presentation/pending-${input.publicationId}` : undefined
+      manifestCredential: input.includeTrustCareManifestVp ? `Credential/manifest-${input.publicationId}` : undefined,
+      holderPresentation: input.includeTrustCareManifestVp ? `Presentation/manifest-${input.publicationId}` : undefined
     },
     vcBinding: {
       recommendedCredentialType: card.credentialType ?? `${card.cardType}Credential`,
-      manifestCredentialId: input.includeTrustCareManifestVp ? `pending:trustcare:vc:shl-manifest:${input.publicationId}` : undefined,
-      presentationId: input.includeTrustCareManifestVp ? `pending:trustcare:vp:shl-manifest:${input.publicationId}` : undefined
+      manifestCredentialId: input.includeTrustCareManifestVp ? `urn:trustcare:vc:manifest:${input.publicationId}` : undefined,
+      presentationId: input.includeTrustCareManifestVp ? `urn:trustcare:vp:manifest:${input.publicationId}` : undefined
     },
     accessBinding: {
       passcodeRequired: input.passcodeRequired,
@@ -353,6 +417,86 @@ function buildManifestDocument(
       maxAccessCount: input.maxAccessCount
     }
   };
+}
+
+function buildTrustCareManifestCertification(input: {
+  publicationId: string;
+  context: ReadinessContext;
+  purpose: string;
+  createdAt: string;
+  expiresAt: string;
+  receiver: string;
+  manifestUrl: string;
+  files: Array<Record<string, unknown>>;
+  documents: ShlManifestDocument[];
+  selectedCards: WalletCard[];
+  viewerBaseUrl: string;
+}) {
+  const holderDid = input.selectedCards.find(card => card.holderDid)?.holderDid ?? `did:key:holder:${input.publicationId}`;
+  const issuerDid = input.selectedCards.find(card => card.issuerDid)?.issuerDid ?? "did:web:trustcare.network:contract-hub";
+  const fileHashes = input.files.map(file => file.hash).filter(Boolean);
+  const manifestCredential = removeUndefined({
+    "@context": ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/shl-manifest/v1"],
+    id: `urn:trustcare:vc:manifest:${input.publicationId}`,
+    type: ["VerifiableCredential", "TrustCareShlManifestCredential"],
+    issuer: issuerDid,
+    validFrom: input.createdAt,
+    validUntil: input.expiresAt,
+    credentialSubject: {
+      id: holderDid,
+      shlPublicationId: input.publicationId,
+      manifestUrl: input.manifestUrl,
+      manifestHash: hashJson({ files: input.files, documents: input.documents }),
+      fileHashes,
+      documentCount: input.documents.length,
+      context: input.context,
+      purpose: input.purpose
+    },
+    credentialStatus: {
+      id: `urn:trustcare:status:manifest:${input.publicationId}`,
+      type: "TrustCareStatus",
+      status: "active"
+    }
+  });
+  const holderAuthorizationCredential = removeUndefined({
+    "@context": ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/holder-authorization/v1"],
+    id: `urn:trustcare:vc:holder-authorization:${input.publicationId}`,
+    type: ["VerifiableCredential", "HolderAuthorizationCredential"],
+    issuer: holderDid,
+    validFrom: input.createdAt,
+    validUntil: input.expiresAt,
+    credentialSubject: {
+      id: holderDid,
+      authorizedRecipient: input.receiver,
+      purpose: input.purpose,
+      shlPublicationId: input.publicationId,
+      minimumNecessary: true,
+      accessPolicyConfirmed: true
+    },
+    credentialStatus: {
+      id: `urn:trustcare:status:holder-auth:${input.publicationId}`,
+      type: "TrustCareStatus",
+      status: "active"
+    }
+  });
+  const manifestVp = removeUndefined({
+    "@context": ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/shl-manifest-presentation/v1"],
+    id: `urn:trustcare:vp:manifest:${input.publicationId}`,
+    type: ["VerifiablePresentation", "TrustCareShlManifestPresentation"],
+    holder: holderDid,
+    verifiableCredential: [manifestCredential, holderAuthorizationCredential],
+    trustcare: {
+      certification: "certified_manifest_vp",
+      makerCheckerStatus: "approved",
+      shlPublicationId: input.publicationId,
+      manifestUrl: input.manifestUrl,
+      documentIds: input.documents.map(document => document.id),
+      fileHashes
+    }
+  });
+  const manifestVpHash = hashJson(manifestVp);
+  const manifestVpUrl = createDemoResolverUrl(input.viewerBaseUrl, "manifest-vp", input.publicationId, manifestVp);
+  return { manifestCredential, holderAuthorizationCredential, manifestVp, manifestVpHash, manifestVpUrl };
 }
 
 function filterSelectedCards(cards: WalletCard[], selectedCardIds?: Array<number | string>): WalletCard[] {
@@ -403,4 +547,8 @@ function stableHash(value: string): string {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16).padStart(8, "0").repeat(8).slice(0, 64);
+}
+
+function removeUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
 }

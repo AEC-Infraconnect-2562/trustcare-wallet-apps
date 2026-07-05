@@ -21,6 +21,7 @@ import {
   type WalletPresentationRequest,
   type WalletPresentationResponse,
   assessLocalReadiness,
+  buildSharePackage,
   buildPortalInteroperabilityFixtures
 } from "@trustcare/wallet-core";
 import type { TrustCareClientOptions } from "./trpc";
@@ -209,15 +210,26 @@ export async function buildServicePacket(options: WalletApiOptions, input: {
     const user = getDemoUser(options.userId ?? input.patientId);
     const cards = getDemoWalletCards(user.id);
     const readiness = assessLocalReadiness(cards, input.context);
-    const presentationId = `vp_service_${input.context}_${Date.now().toString(36)}`;
+    const selectedCardIds = input.selectedCardIds?.length ? input.selectedCardIds : readiness.selectedCardIds;
+    const packageResult = buildSharePackage({
+      mode: "PurposeVP",
+      context: input.context,
+      cards,
+      selectedCardIds,
+      recipient: input.receiverName ?? input.serviceName ?? "TrustCare service intake",
+      purpose: input.serviceName ?? readiness.label,
+      expiresAt: new Date(Date.now() + (input.validMinutes ?? 1440) * 60_000).toISOString(),
+      origin: options.demoOrigin
+    });
+    const presentation = "presentation" in packageResult ? packageResult.presentation : undefined;
     return {
       checkId: `check_${Date.now().toString(36)}`,
       patientId: input.patientId ?? user.patientId,
       readiness,
-      presentationId,
-      expiresAt: new Date(Date.now() + (input.validMinutes ?? 1440) * 60_000).toISOString(),
-      credentialCount: input.selectedCardIds?.length ?? readiness.selectedCardIds.length,
-      qrData: `${options.demoOrigin ?? "https://trustcare.example.com"}/verifier?vp=${presentationId}`
+      presentationId: presentation?.presentationId ?? `vp_service_${input.context}`,
+      expiresAt: presentation?.expiresAt ?? new Date(Date.now() + (input.validMinutes ?? 1440) * 60_000).toISOString(),
+      credentialCount: selectedCardIds.length,
+      qrData: presentation?.qrData ?? ""
     };
   }
   return callTrpcProcedure<ServicePacketResponse>(options, "wallet.buildServicePacket", input);

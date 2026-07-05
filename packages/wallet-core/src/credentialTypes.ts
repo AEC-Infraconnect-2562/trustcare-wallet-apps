@@ -25,11 +25,9 @@ export const credentialTypeLabels: Record<string, { th: string; en: string }> = 
   lab_result: { th: "ผลตรวจแล็บ", en: "Lab Result" },
   medical_certificate: { th: "ใบรับรองแพทย์", en: "Medical Certificate" },
   shl_manifest: { th: "SHL Manifest", en: "SHL Manifest" },
-  transcript: { th: "Transcript", en: "Transcript" },
-  open_badge: { th: "Open Badge", en: "Open Badge" }
+  transcript: { th: "Transcript", en: "Transcript" }
 };
 
 export function labelForCredentialType(type: string, lang: "th" | "en" = "th"): string {
   return credentialTypeLabels[type]?.[lang] ?? type;
 }
-

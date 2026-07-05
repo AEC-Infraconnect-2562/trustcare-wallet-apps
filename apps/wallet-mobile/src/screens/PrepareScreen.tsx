@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import QRCode from "react-native-qrcode-svg";
-import { Activity, FilePlus2, QrCode, Send, Upload } from "lucide-react-native";
+import { router } from "expo-router";
+import { Activity, FilePlus2, Send, Upload } from "lucide-react-native";
 import { walletApi } from "@trustcare/api-client";
 import {
   flattenCardsByCategory,
   getDemoCardsByCategory,
   readinessContextLabels,
-  type CheckinQrResponse,
   type ReadinessContext,
-  type ServicePacketResponse,
   type WalletImportJob
 } from "@trustcare/wallet-core";
 import { env } from "../env";
@@ -23,8 +21,6 @@ export function PrepareScreen() {
   const cards = useMemo(() => flattenCardsByCategory(getDemoCardsByCategory(user.id)), [user.id]);
   const [context, setContext] = useState<ReadinessContext>("opd_visit");
   const [readiness, setReadiness] = useState<any>(null);
-  const [servicePacket, setServicePacket] = useState<ServicePacketResponse | null>(null);
-  const [checkinQr, setCheckinQr] = useState<CheckinQrResponse | null>(null);
   const [importJob, setImportJob] = useState<WalletImportJob | null>(null);
 
   useEffect(() => {
@@ -33,7 +29,6 @@ export function PrepareScreen() {
 
   const missing = readiness?.readiness?.missing ?? [];
   const ready = readiness?.readiness?.ready ?? [];
-  const qrPayload = checkinQr?.qrPayload ?? servicePacket?.qrData;
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
@@ -76,24 +71,15 @@ export function PrepareScreen() {
       </View>
 
       <View style={styles.actionPanel}>
-        <Pressable style={styles.primaryAction} onPress={() => void buildServicePacket(apiOptions, context, readiness).then(setServicePacket)}>
+        <Pressable style={styles.primaryAction} onPress={() => router.push({ pathname: "/share", params: { context } })}>
           <Send color="#fff" />
-          <Text style={styles.primaryActionText}>สร้าง Service VP</Text>
+          <Text style={styles.primaryActionText}>ไปหน้าแชร์เพื่อสร้าง VP / SHL</Text>
         </Pressable>
         <View style={styles.actionRow}>
-          <ActionButton icon={<QrCode color="#2f855a" />} label="Check-in SHL" onPress={() => void walletApi.generateCheckinQR(apiOptions, { context, patientId: user.patientId, consentAttested: true }).then(setCheckinQr)} />
           <ActionButton icon={<Upload color="#4f67f2" />} label="นำเข้า" onPress={() => void walletApi.importForService(apiOptions, { context, patientId: user.patientId, documentType: missing[0]?.key ?? "patient_summary" }).then(setImportJob)} />
           <ActionButton icon={<FilePlus2 color="#4f67f2" />} label="ขอเอกสาร" onPress={() => undefined} />
         </View>
       </View>
-
-      {qrPayload && (
-        <View style={styles.qrPanel}>
-          <QRCode value={qrPayload} size={180} />
-          <Text style={styles.qrTitle}>{checkinQr ? "Check-in SHL QR" : "Service VP QR"}</Text>
-          <Text style={styles.mono} numberOfLines={3}>{qrPayload}</Text>
-        </View>
-      )}
 
       {importJob && (
         <View style={styles.panel}>
@@ -103,15 +89,6 @@ export function PrepareScreen() {
       )}
     </ScrollView>
   );
-}
-
-async function buildServicePacket(apiOptions: { url: string; demoMode: boolean; demoOrigin: string; userId: string }, context: ReadinessContext, readiness: any) {
-  return walletApi.buildServicePacket(apiOptions, {
-    context,
-    consentAttested: true,
-    selectedCardIds: readiness?.readiness?.selectedCardIds,
-    receiverName: "โรงพยาบาลที่รองรับ TrustCare"
-  });
 }
 
 function MiniStat({ label, value }: { label: string; value: string }) {

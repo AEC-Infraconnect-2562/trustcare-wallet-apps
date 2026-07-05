@@ -38,7 +38,7 @@ export function importWalletExchange(raw: string, walletCards: WalletCard[] = []
       currentAccessCount: 0,
       expiresAt: shl.expiresAt
     };
-    const payload = withPendingTrustCareManifest(shlPackage, shl.raw);
+    const payload = withTrustCareBindingPending(shlPackage, shl.raw);
     return {
       ok: true,
       format: "shl-link",
@@ -57,7 +57,7 @@ export function importWalletExchange(raw: string, walletCards: WalletCard[] = []
       },
       warnings: [
         ...(shl.url ? [] : ["ยัง decode SHL payload ในเครื่องนี้ได้ไม่ครบ จึงเก็บ QR payload เดิมไว้ให้ backend ตรวจสอบต่อ."]),
-        "นำเข้า Standard SHL โดยไม่แก้ canonical shlink เดิม และสร้าง TrustCare Manifest VP binding เป็นสถานะรอ Maker/Checker ก่อนใช้เป็นหลักฐานใน TrustCare ecosystem."
+        "นำเข้า Standard SHL โดยไม่แก้ canonical shlink เดิม และบันทึกสถานะรอ TrustCare Maker/Checker ก่อนยกระดับเป็น Certified SHL ภายใน TrustCare ecosystem."
       ],
       errors: []
     };
@@ -150,7 +150,7 @@ export function exportWalletPresentation(input: PresentationHistoryItem | Servic
 
 export function exportWalletObject(object: WalletStoredObject): WalletExportResult {
   if (object.type === "shl" && looksLikeShlPackage(object.payload)) return exportShlPackage(object.payload);
-  if (object.type === "vc" && looksLikeWalletCard(object.payload)) return exportWalletCard(object.payload);
+  if ((object.type === "vc" || object.type === "shl_manifest" || object.type === "sync_receipt" || object.type === "holder_vc") && looksLikeWalletCard(object.payload)) return exportWalletCard(object.payload);
   if ((object.type === "vp" || object.type === "service_packet") && looksLikeServicePacket(object.payload)) return exportWalletPresentation(object.payload);
   const format = formatForStoredObject(object.type);
   return {
@@ -202,7 +202,7 @@ function importJsonObject(raw: string, json: Record<string, unknown>): WalletImp
       passcodeRequired: typeof json.passcodeRequired === "boolean" ? json.passcodeRequired : parsed?.passcodeRequired,
       currentAccessCount: typeof json.currentAccessCount === "number" ? json.currentAccessCount : 0
     } as ShlPackage;
-    const shlPayloadWithManifest = parsed ? withPendingTrustCareManifest(shlPayload, parsed.raw) : shlPayload;
+    const shlPayloadWithManifest = parsed ? withTrustCareBindingPending(shlPayload, parsed.raw) : shlPayload;
     return {
       ok: true,
       format: "shl-json",
@@ -333,8 +333,8 @@ function getStringish(value: unknown, key: string): string | undefined {
 
 function formatForStoredObject(type: WalletStoredObjectType) {
   if (type === "shl") return "shl-json";
-  if (type === "vp" || type === "service_packet") return "trustcare-vp-json";
-  if (type === "vc") return "trustcare-vc-json";
+  if (type === "vp" || type === "service_packet" || type === "manifest_vp") return "trustcare-vp-json";
+  if (type === "vc" || type === "shl_manifest" || type === "sync_receipt" || type === "holder_vc") return "trustcare-vc-json";
   if (type === "oid4vci_offer") return "oid4vci-offer";
   if (type === "oid4vp_request") return "oid4vp-request";
   return "raw-json";
@@ -360,14 +360,10 @@ function extractViewerUrl(value: string, canonicalShl: string): string | undefin
   }
 }
 
-function withPendingTrustCareManifest(shl: ShlPackage, canonicalShl: string): ShlPackageDetail {
+function withTrustCareBindingPending(shl: ShlPackage, canonicalShl: string): ShlPackageDetail {
   const suffix = stableId(canonicalShl);
-  const manifestCredentialId = shl.manifestCredentialId ?? `pending:trustcare:vc:shl-manifest:${suffix}`;
-  const presentationId = shl.presentationId ?? `pending:trustcare:vp:shl-manifest:${suffix}`;
   return {
     ...shl,
-    manifestCredentialId,
-    presentationId,
     trustcareCertification: shl.trustcareCertification ?? {
       status: "pending_maker_checker",
       ownerConfirmed: false,
@@ -377,8 +373,8 @@ function withPendingTrustCareManifest(shl: ShlPackage, canonicalShl: string): Sh
       bundleId: `imported_shl_bundle_${suffix}`,
       manifestVersion: 1,
       source: shl.manifestUrl ?? shl.viewerUrl ?? "standard_shl_import",
-      bindingModel: "Standard SHL + pending TrustCare Manifest VP",
-      standards: ["SMART Health Links", "FHIR DocumentReference", "W3C VC/VP"],
+      bindingModel: "Standard SHL transport-valid; TrustCare certification pending",
+      standards: ["SMART Health Links", "FHIR DocumentReference"],
       status: "pending_maker_checker",
       files: [],
       documents: [
@@ -396,14 +392,10 @@ function withPendingTrustCareManifest(shl: ShlPackage, canonicalShl: string): Sh
           manifestVersion: 1,
           objectLinks: {
             manifest: shl.manifestUrl ?? undefined,
-            shlFile: canonicalShl,
-            holderPresentation: presentationId,
-            manifestCredential: manifestCredentialId
+            shlFile: canonicalShl
           },
           vcBinding: {
-            recommendedCredentialType: "ShlManifestCredential",
-            manifestCredentialId,
-            presentationId
+            recommendedCredentialType: "ShlManifestCredential"
           },
           accessBinding: {
             passcodeRequired: Boolean(shl.passcodeRequired),

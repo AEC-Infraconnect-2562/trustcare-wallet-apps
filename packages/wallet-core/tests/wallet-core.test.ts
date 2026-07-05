@@ -8,6 +8,10 @@ import {
   createShlLinkPayload,
   createShlViewerUrl,
   createTrustCareShlGatewayPublication,
+  buildSharePackage,
+  canonicalServiceProfiles,
+  CANONICAL_DOCUMENT_CATEGORIES,
+  CANONICAL_DOCUMENT_TYPES,
   completeWalletSeedCards,
   demoShlPackages,
   demoWalletCards,
@@ -22,6 +26,8 @@ import {
   parseOid4vpRequest,
   parseShlLink,
   parseTrustCareQr,
+  fetchShlManifest,
+  getDemoShlPackages,
   sortIdentityFirst,
   getDemoUser,
   getDemoWalletCards,
@@ -183,10 +189,10 @@ describe("wallet-core", () => {
     expect(imported.object?.type).toBe("shl");
     expect((imported.object?.payload as any).canonicalShlUrl).toBe(standardShl);
     expect((imported.object?.payload as any).manifestUrl).toBe("https://example.org/shl");
-    expect((imported.object?.payload as any).manifestCredentialId).toContain("pending:trustcare:vc:shl-manifest");
-    expect((imported.object?.payload as any).presentationId).toContain("pending:trustcare:vp:shl-manifest");
+    expect((imported.object?.payload as any).manifestCredentialId).toBeUndefined();
+    expect((imported.object?.payload as any).presentationId).toBeUndefined();
     expect((imported.object?.payload as any).trustcareCertification.status).toBe("pending_maker_checker");
-    expect((imported.object?.payload as any).documentBundle.bindingModel).toContain("Standard SHL");
+    expect((imported.object?.payload as any).documentBundle.bindingModel).toContain("transport-valid");
     expect((imported.object?.payload as any).qrPayload).toBe(standardShl);
   });
 
@@ -256,6 +262,99 @@ describe("wallet-core", () => {
     expect(publication.manifest.documentBundle.documents.every(document => document.fhirResource)).toBe(true);
     expect(publication.portalRequest.endpoint).toBe("POST /api/wallet/shl-packages");
     expect(JSON.stringify(publication.portalRequest)).toContain("s3://trustcare-shl");
+    expect(publication.trustLayerStatus).toBe("certified_manifest_vp");
+    expect(publication.manifest.trustcare.manifestCredentialId).toContain("urn:trustcare:vc:manifest:");
+    expect(publication.manifest.trustcare.holderAuthorizationCredentialId).toContain("urn:trustcare:vc:holder-authorization:");
+    expect(publication.manifest.trustcare.manifestVpHash).toContain("sha256:");
+    expect(publication.manifest.files.every(file => "location" in file || "embedded" in file)).toBe(true);
+    expect(JSON.stringify(publication.manifest)).not.toContain("pending:trustcare");
+  });
+
+  it("keeps canonical service profiles free of legacy aliases and trust artifacts", () => {
+    const canonical = new Set(CANONICAL_DOCUMENT_TYPES);
+    for (const profile of Object.values(canonicalServiceProfiles)) {
+      for (const requirement of profile.requirements) {
+        expect(requirement.documentTypes.every(type => canonical.has(type))).toBe(true);
+        expect(requirement.documentTypes).not.toContain("shl_manifest");
+        expect(requirement.documentTypes).not.toContain("sync_receipt");
+      }
+    }
+  });
+
+  it("keeps all wallet seed cards canonical with VC-like payloads and DocumentReference evidence", () => {
+    const canonicalTypes = new Set<string>(CANONICAL_DOCUMENT_TYPES);
+    const canonicalCategories = new Set<string>(CANONICAL_DOCUMENT_CATEGORIES);
+    const seedCards = [
+      ...completeWalletSeedCards,
+      ...walletDemoUsers.flatMap(user => getDemoWalletCards(user.id))
+    ];
+
+    for (const card of seedCards) {
+      const credential = card.credentialData as any;
+      const evidence = Array.isArray(credential?.evidence) ? credential.evidence : [];
+      const documentReferences = evidence
+        .map((item: any) => item?.resource ?? item?.documentReference)
+        .filter((item: any) => item?.resourceType === "DocumentReference");
+
+      expect(canonicalTypes.has(card.cardType), `cardType:${card.id}:${card.cardType}`).toBe(true);
+      expect(canonicalCategories.has(card.documentCategory), `category:${card.id}:${card.documentCategory}`).toBe(true);
+      expect(credential?.credentialSubject, `subject:${card.id}`).toBeTruthy();
+      expect(JSON.stringify(credential?.type ?? ""), `vc-type:${card.id}`).toContain("VerifiableCredential");
+      expect(documentReferences.length, `document-reference:${card.id}`).toBeGreaterThan(0);
+      expect(documentReferences[0]?.content?.length ?? 0, `document-reference-content:${card.id}`).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps demo SHL seed packages resolvable without placeholder trust proof", async () => {
+    const shlPackages = walletDemoUsers.flatMap(user => getDemoShlPackages(user.id));
+
+    for (const shl of shlPackages) {
+      const qrPayload = shl.qrPayload ?? shl.shlUrl ?? shl.canonicalShlUrl;
+      expect(JSON.stringify(shl), String(shl.id)).not.toContain("pending:trustcare");
+      expect(shl.canonicalShlUrl ?? shl.shlUrl, String(shl.id)).toMatch(/^shlink:\//);
+      expect(qrPayload, String(shl.id)).toBeTruthy();
+      expect(parseShlLink(qrPayload!)?.kind, String(shl.id)).toBe("shl");
+      const fetched = await fetchShlManifest(qrPayload!);
+      expect(fetched.ok, String(shl.id)).toBe(true);
+      expect(fetched.fileCount, String(shl.id)).toBeGreaterThan(0);
+      if ((shl as any).manifest?.trustcare?.trustLayerStatus === "standard_shl") {
+        expect(shl.manifestCredentialId, String(shl.id)).toBeUndefined();
+        expect(shl.manifestVp, String(shl.id)).toBeUndefined();
+      }
+    }
+  });
+
+  it("builds exactly one share package and resolves static demo SHL manifests", async () => {
+    const cards = getDemoWalletCards("demo-patient-complete-001").slice(0, 4);
+    const vp = buildSharePackage({
+      mode: "PurposeVP",
+      context: "opd_visit",
+      cards,
+      selectedCardIds: cards.slice(0, 2).map(card => card.id),
+      recipient: "TrustCare demo verifier",
+      origin: "https://wallet.example"
+    });
+    expect(vp.mode).toBe("PurposeVP");
+    expect("presentation" in vp).toBe(true);
+    expect(JSON.stringify(vp.payload)).not.toContain("ServiceBundleEnvelope");
+
+    const shl = buildSharePackage({
+      mode: "CertifiedSHLManifestPackage",
+      context: "referral",
+      cards,
+      selectedCardIds: cards.map(card => card.id),
+      recipient: "TrustCare referral verifier",
+      origin: "https://wallet.example",
+      shlPolicy: { maxAccessCount: 3 }
+    });
+    expect(shl.mode).toBe("CertifiedSHLManifestPackage");
+    expect("shl" in shl).toBe(true);
+    if ("shl" in shl) {
+      const fetched = await fetchShlManifest(shl.shl.qrPayload);
+      expect(fetched.ok).toBe(true);
+      expect(fetched.fileCount).toBe(cards.length);
+      expect((fetched.manifest?.trustcare as any)?.trustLayerStatus).toBe("certified_manifest_vp");
+    }
   });
 
   it("builds Contract Hub catalog for all prepare service contexts", () => {

@@ -6,6 +6,7 @@ import {
   getCompleteWalletSeed
 } from "./completeSeedData";
 import { demoPresentationUrl } from "./qr";
+import { createTrustCareShlGatewayPublication } from "./shlGateway";
 
 export {
   completeCardsByCategory,
@@ -376,18 +377,60 @@ export function getDemoShlPackages(userId?: string | number): ShlPackageDetail[]
   if (user.id === "demo-staff-complete-001") return [];
   if (user.role !== "patient") return [];
   const trustcareCertified = user.source === "trustcare_portal";
+  const context = user.tags.includes("medical_tourist")
+    ? "medical_tourist"
+    : user.tags.includes("cross_border")
+      ? "cross_border"
+      : user.tags.includes("referral")
+        ? "referral"
+        : "opd_visit";
+  const cards = getDemoWalletCards(user.id).filter(card =>
+    [
+      "patient_identity",
+      "patient_summary",
+      "allergy_alert",
+      "medication_summary",
+      "prescription",
+      "lab_result",
+      "diagnostic_report",
+      "referral_vc",
+      "insurance_eligibility",
+      "travel_document_verification"
+    ].includes(card.cardType)
+  );
+  const publication = createTrustCareShlGatewayPublication({
+    context,
+    ownerUserId: user.id,
+    patientId: user.patientId,
+    selectedCardIds: cards.map(card => card.id),
+    cards,
+    receiver: user.source === "trustcare_portal" ? "HealthPass Partner Verifier" : "TrustCare Portal",
+    purpose: user.tags.includes("medical_tourist") ? "medical_tourist_intake" : "patient_summary",
+    origin: "https://aec-infraconnect-2562.github.io/trustcare-wallet-apps",
+    includeTrustCareManifestVp: trustcareCertified,
+    policy: {
+      expiresAt: isoOffset(7),
+      passcodeRequired: false,
+      passcodeHint: null,
+      accessCodeDelivery: "not_required",
+      maxAccessCount: 5
+    }
+  });
   return [
     {
+      ...publication,
       id: user.cardBase + 701,
       label: `${user.nameEn} Service Share Package`,
       purpose: user.tags.includes("medical_tourist") ? "medical_tourist_intake" : "patient_summary",
       context: user.tags.includes("insurance") ? "insurance" : "treatment",
       status: "active",
-      viewerUrl: "https://trustcare.example.com/shl-viewer/demo",
-      shlUrl: `shlink:/demo-${user.id}`,
-      qrPayload: `shlink:/demo-${user.id}`,
-      manifestCredentialId: trustcareCertified ? `urn:trustcare:vc:shl:${user.id}` : undefined,
-      presentationId: trustcareCertified ? `vp_shl_${user.id}` : undefined,
+      manifestCredentialId: publication.manifest.trustcare.manifestCredentialId,
+      presentationId: publication.manifest.trustcare.holderPresentationId,
+      manifestCredential: publication.manifest.trustcare.manifestCredential,
+      holderAuthorizationCredential: publication.manifest.trustcare.holderAuthorizationCredential,
+      manifestVp: publication.manifest.trustcare.manifestVp,
+      manifestVpUrl: publication.manifest.trustcare.manifestVpUrl,
+      manifestVpHash: publication.manifest.trustcare.manifestVpHash,
       trustcareCertification: trustcareCertified ? {
         status: "maker_checker_approved",
         ownerConfirmed: true,
@@ -405,47 +448,11 @@ export function getDemoShlPackages(userId?: string | number): ShlPackageDetail[]
         ownerConfirmed: false,
         policyVersion: "standard-shl-transport"
       },
-      passcodeRequired: true,
       currentAccessCount: user.source === "trustcare_portal" ? 1 : 0,
-      maxAccessCount: 5,
-      expiresAt: isoOffset(7),
-      files: [{ id: `${user.id}:file:summary`, contentType: "application/fhir+json", hash: `sha256-${user.id}` }],
+      files: publication.manifest.files,
       versions: [{ version: 1, status: "active" }],
       accessLogs: [{ recipient: user.source === "trustcare_portal" ? "HealthPass Partner Verifier" : "TrustCare Portal Verifier", at: isoOffset(-1) }],
-      documentBundle: trustcareCertified ? {
-        bundleId: `bundle_${user.id}`,
-        manifestVersion: 1,
-        source: "derived_from_shl_manifest_and_fhir_bundle",
-        bindingModel: "SHL + Manifest VC + Holder VP",
-        standards: ["SMART Health Links", "FHIR R4", "W3C VC/VP"],
-        status: "active",
-        files: [{ manifestFileId: `${user.id}:file:summary` }],
-        documents: [
-          {
-            id: `${user.id}:doc:summary`,
-            sequence: 1,
-            title: "Patient Summary",
-            documentType: "patient_summary",
-            category: "clinical_summary",
-            status: "available_in_manifest",
-            sourceRole: "issuer",
-            fhirResource: "Bundle",
-            contentType: "application/fhir+json",
-            manifestVersion: 1,
-            vcBinding: {
-              recommendedCredentialType: "PatientSummaryCredential",
-              manifestCredentialId: `urn:trustcare:vc:shl:${user.id}`,
-              presentationId: `vp_shl_${user.id}`
-            },
-            accessBinding: {
-              passcodeRequired: true,
-              expiresAt: isoOffset(7),
-              currentAccessCount: user.source === "trustcare_portal" ? 1 : 0,
-              maxAccessCount: 5
-            }
-          }
-        ]
-      } : undefined
+      documentBundle: publication.manifest.documentBundle
     }
   ];
 }

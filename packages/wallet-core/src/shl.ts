@@ -1,4 +1,5 @@
 import type { ShlPackage, WalletExportResult } from "./models";
+import { resolveDemoShlManifestFromUrl } from "./demoResolvers";
 
 export type ParsedShlLink = {
   kind: "shl";
@@ -144,6 +145,19 @@ export async function fetchShlManifest(
       fileCount: 0,
       warnings: [],
       errors: ["SHL นี้ต้องใช้ passcode โดย passcode ไม่ได้ฝังอยู่ใน QR และต้องส่งให้ผู้รับผ่านช่องทางแยก."]
+    };
+  }
+
+  const demoManifest = resolveDemoShlManifestFromUrl(shl.url);
+  if (demoManifest) {
+    return {
+      ok: true,
+      shl,
+      manifest: demoManifest,
+      fileCount: countManifestFiles(demoManifest),
+      requestMethod: shl.passcodeRequired ? "POST" : "GET",
+      warnings: ["อ่าน SHL manifest จาก static demo resolver; production ต้อง enforce passcode, expiry และ access count ที่ backend."],
+      errors: []
     };
   }
 

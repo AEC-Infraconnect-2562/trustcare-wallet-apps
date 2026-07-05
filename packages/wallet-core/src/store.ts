@@ -8,11 +8,12 @@ import type {
 } from "./models";
 import type { ParsedCredentialOffer, ParsedPresentationRequest } from "./oid4vc";
 import { credentialOfferLabel, presentationRequestLabel } from "./oid4vc";
+import { normalizeDocumentType } from "./canonicalDocuments";
 
 export function walletObjectsFromCards(cards: WalletCard[]): WalletStoredObject[] {
   return cards.map(card => ({
     id: `vc:${card.credentialId}`,
-    type: "vc",
+    type: storedTypeForCard(card),
     title: card.displayName,
     subtitle: card.displayNameEn ?? card.issuerHospitalName ?? undefined,
     status: card.credentialStatus,
@@ -83,8 +84,8 @@ export function walletObjectFromPresentationRequest(parsed: ParsedPresentationRe
 export function walletObjectFromServicePacket(packet: ServicePacketResponse | CheckinQrResponse): WalletStoredObject {
   const isCheckin = "shlId" in packet;
   return {
-    id: isCheckin ? `service_packet:${packet.checkId}` : `vp:${packet.presentationId}`,
-    type: "service_packet",
+    id: isCheckin ? `shl:${packet.shlId}` : `vp:${packet.presentationId}`,
+    type: isCheckin ? "shl" : "vp",
     title: isCheckin ? "Check-in SHL Packet" : "Service VP Packet",
     subtitle: isCheckin ? `SHL ${packet.shlId}` : packet.presentationId,
     status: isCheckin ? packet.status : "active",
@@ -101,4 +102,11 @@ export function mergeWalletObjects(...groups: WalletStoredObject[][]): WalletSto
     for (const item of group) map.set(item.id, item);
   }
   return Array.from(map.values()).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
+
+function storedTypeForCard(card: WalletCard): WalletStoredObject["type"] {
+  const type = normalizeDocumentType(card.cardType);
+  if (type === "shl_manifest") return "shl_manifest";
+  if (type === "sync_receipt") return "sync_receipt";
+  return "vc";
 }

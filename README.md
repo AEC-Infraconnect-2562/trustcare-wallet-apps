@@ -43,6 +43,7 @@ The current TrustCare backend routes verified from `AEC-Infraconnect-2562/trustc
 
 See `docs/BACKEND_INTEGRATION_GAPS.md` for production gaps that remain outside this standalone wallet repo.
 See `docs/TEST_USERS.md` for the active mock/seed users, per-login wallet scope, photo-source policy, and TrustCare Portal interoperability fixtures.
+See `docs/WALLET_ARCHITECTURE.md` for the canonical wallet document model, Prepare/Share boundary, share-package rules, SHL certification modes, and seed/mock guardrails.
 See `docs/CONTRACT_HUB_FEATURE_UPDATES.md` for the Thai implementation notes that TrustCare Portal and Contract Hub should support later, including Standard SHL, TrustCare Verified SHL, Maker/Checker certification, optional Manifest VP/VC, and document bundle metadata.
 See `docs/SHL_GATEWAY_ARCHITECTURE.md` for the production-shaped SHL Gateway design: canonical SHL, browser viewer wrapper, Portal Backend/S3 publication, passcode handling, Manifest VP certification, and demo-mode limits.
 
