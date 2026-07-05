@@ -60,7 +60,9 @@ AEC-Infraconnect-2562/trustcare-hospital-network main
 153e99bc6788490241c385260f4b3d048a059cdc
 ```
 
-The wallet mirrors the current Contract Hub direction for service readiness contexts, service bundle envelopes, external wallet deployment handshakes, document imports, Service VP packets, and SHL check-in QR packets.
+The wallet mirrors the current Contract Hub direction for service readiness contexts, external wallet deployment handshakes, document imports, canonical share packages, Standard SHL, and Certified SHL + Manifest VP packages.
+
+`ServiceBundleEnvelope`, legacy Service VP packets, and check-in SHL packet routes may remain as backend compatibility contracts while TrustCare Portal catches up. The standalone Wallet UI must not expose them as primary QR/verifier payloads; Prepare only checks readiness and Share creates exactly one resolver-backed package.
 
 ## Auth Strategy
 

@@ -13,7 +13,7 @@ This repository keeps the existing TrustCare Hospital Network backend as the sou
 
 - `packages/design-tokens`: TrustCare semantic colors, gradients, radius, typography.
 - `packages/wallet-core`: wallet models, demo data, sorting, QR expiry, selective disclosure, SHL helpers, Contract Hub helpers, OID4VCI/OID4VP parsers, import/export exchange rules, photo-source rules.
-- `packages/api-client`: tRPC-compatible client facade with demo fallback.
+- `packages/api-client`: tRPC-compatible client facade with explicit demo-mode adapters.
 - `packages/i18n`: Thai-first and English translations.
 - `packages/ui-web`: reusable web UI primitives and credential renderer.
 - `packages/ui-mobile`: reusable React Native UI primitives.

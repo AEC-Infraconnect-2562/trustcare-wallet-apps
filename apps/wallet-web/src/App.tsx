@@ -1140,7 +1140,7 @@ export default function App() {
     },
     store: {
       title: "คลังพกพา",
-      subtitle: "ตรวจดูและส่งออก VC, VP, SHL และ service object ในเครื่อง",
+      subtitle: "ตรวจดูและส่งออก VC, VP, SHL, Manifest VP, Holder VC และ sync receipt ในเครื่อง",
     },
     history: {
       title: "ประวัติ",
@@ -4248,8 +4248,8 @@ function StoreView({
         <div>
           <h2>คลัง VC/VP/SHL</h2>
           <p>
-            เก็บ VC, VP, SHL, service packets, OID4VCI offers และ OID4VP
-            requests ใน wallet เดียว
+            เก็บ VC, VP, SHL, Manifest VP, Holder VC, sync receipts, OID4VCI
+            offers และ OID4VP requests ใน wallet เดียว
           </p>
         </div>
         <Button onClick={() => onExport(exportWalletObjects(allObjects))}>

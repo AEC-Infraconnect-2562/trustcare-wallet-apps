@@ -19,8 +19,9 @@ Each import creates a `WalletStoredObject` with protocol, status, payload, sourc
 The wallet can export:
 
 - Individual VC as `application/vc+json`.
-- Individual VP or Service VP as `application/vp+json`.
-- SHL packet JSON with QR payload when available.
+- DirectVP or PurposeVP as `application/vp+json`.
+- StandardSHL package JSON with SMART Health Links payload when available.
+- CertifiedSHLManifestPackage JSON with SHL transport, Manifest VP, Manifest Credential, and Holder Authorization Credential.
 - Whole wallet JSON bundle for backup or transfer.
 
 ## Prepare for Service
@@ -30,8 +31,10 @@ Prepare for Service is contract-first:
 1. Read Contract Hub context and readiness requirements.
 2. Match active wallet credentials to required/recommended documents.
 3. Request or import missing documents.
-4. Build a Service Bundle envelope.
-5. Build a purpose-bound Service VP or SHL check-in packet.
+4. Let the user choose the intended package family: VP, Standard SHL, or Certified SHL + Manifest VP.
+5. Route to Share with preselected context and documents. Share creates exactly one resolver-backed package.
+
+Prepare must not create a primary verifier QR by itself. `ServiceBundleEnvelope` remains a compatibility object for backend/Contract Hub integration, not the Wallet's share payload.
 
 ## Protocol Support
 

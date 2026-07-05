@@ -933,7 +933,7 @@ export const completeWalletSeedCards: WalletCard[] = [
       syncReceipt: {
         syncId: "SYNC-TCC-PXH-20260701-00019",
         sourceSystem: "TrustCare Portal",
-        targetSystem: "Partner Wallet Native",
+        targetSystem: "TrustCare Wallet Native",
         syncDirection: "portal_to_wallet",
         startedAt: "2026-07-01T04:42:00.000Z",
         completedAt: "2026-07-01T04:42:08.000Z",
@@ -957,7 +957,7 @@ export const completeWalletSeedCards: WalletCard[] = [
         timezone: "Asia/Bangkok",
         location: "TrustCare Phuket International Hospital, International Clinic, Room IC-03",
         practitioner,
-        checkinInstruction: "กรุณามาถึงก่อนเวลานัด 20 นาที พร้อมแสดง Service VP หรือ SHL QR จาก Wallet",
+        checkinInstruction: "กรุณามาถึงก่อนเวลานัด 20 นาที พร้อมแสดง VP QR, Standard SHL หรือ Certified SHL + Manifest VP จาก Wallet",
         requiredDocuments: ["patient_identity", "patient_summary", "medication_summary", "lab_result", "insurance_eligibility"]
       }
     },

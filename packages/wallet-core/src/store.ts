@@ -86,7 +86,7 @@ export function walletObjectFromServicePacket(packet: ServicePacketResponse | Ch
   return {
     id: isCheckin ? `shl:${packet.shlId}` : `vp:${packet.presentationId}`,
     type: isCheckin ? "shl" : "vp",
-    title: isCheckin ? "Check-in SHL Packet" : "Service VP Packet",
+    title: isCheckin ? "Standard SHL Package" : "Purpose VP Package",
     subtitle: isCheckin ? `SHL ${packet.shlId}` : packet.presentationId,
     status: isCheckin ? packet.status : "active",
     protocol: isCheckin ? "shl" : "trustcare",
