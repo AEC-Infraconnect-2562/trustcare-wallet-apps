@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import QRCode from "qrcode";
 import type { WalletCard } from "@trustcare/wallet-core";
 import { isExpired } from "@trustcare/wallet-core";
+import { toQrDataUrl } from "../utils/qrCode";
 
 type QrCacheEntry = {
   cardId: number;
@@ -23,9 +23,12 @@ function openDb(): Promise<IDBDatabase> {
     const request = indexedDB.open(dbName, dbVersion);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(storeCards)) db.createObjectStore(storeCards, { keyPath: "id" });
-      if (!db.objectStoreNames.contains(storeQr)) db.createObjectStore(storeQr, { keyPath: "cardId" });
-      if (!db.objectStoreNames.contains(storeMeta)) db.createObjectStore(storeMeta, { keyPath: "key" });
+      if (!db.objectStoreNames.contains(storeCards))
+        db.createObjectStore(storeCards, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(storeQr))
+        db.createObjectStore(storeQr, { keyPath: "cardId" });
+      if (!db.objectStoreNames.contains(storeMeta))
+        db.createObjectStore(storeMeta, { keyPath: "key" });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -65,7 +68,11 @@ async function setMeta(key: string, value: unknown) {
   const db = await openDb();
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(storeMeta, "readwrite");
-    tx.objectStore(storeMeta).put({ key, value, updatedAt: new Date().toISOString() });
+    tx.objectStore(storeMeta).put({
+      key,
+      value,
+      updatedAt: new Date().toISOString(),
+    });
     tx.oncomplete = () => {
       db.close();
       resolve();
@@ -119,8 +126,12 @@ export function useOfflineWallet() {
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
-    void getAllCards().then(setOfflineCards).catch(() => undefined);
-    void getMeta("lastSyncTime").then(setLastSyncTime).catch(() => undefined);
+    void getAllCards()
+      .then(setOfflineCards)
+      .catch(() => undefined);
+    void getMeta("lastSyncTime")
+      .then(setLastSyncTime)
+      .catch(() => undefined);
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
@@ -135,11 +146,26 @@ export function useOfflineWallet() {
     setLastSyncTime(now);
   }, []);
 
-  const cacheQr = useCallback(async (cardId: number, qrData: string, presentationId: string, expiresAt?: string) => {
-    const qrDataUrl = await QRCode.toDataURL(qrData, { margin: 1, width: 260 });
-    await putCachedQr({ cardId, qrDataUrl, qrData, presentationId, expiresAt, generatedAt: new Date().toISOString() });
-    return qrDataUrl;
-  }, []);
+  const cacheQr = useCallback(
+    async (
+      cardId: number,
+      qrData: string,
+      presentationId: string,
+      expiresAt?: string,
+    ) => {
+      const qrDataUrl = await toQrDataUrl(qrData, { margin: 1, width: 260 });
+      await putCachedQr({
+        cardId,
+        qrDataUrl,
+        qrData,
+        presentationId,
+        expiresAt,
+        generatedAt: new Date().toISOString(),
+      });
+      return qrDataUrl;
+    },
+    [],
+  );
 
   const getOfflineQr = useCallback(async (cardId: number) => {
     const cached = await getCachedQr(cardId);
@@ -155,7 +181,6 @@ export function useOfflineWallet() {
     lastSyncTime,
     syncCards,
     cacheQr,
-    getOfflineQr
+    getOfflineQr,
   };
 }
-

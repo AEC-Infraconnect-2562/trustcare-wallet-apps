@@ -29,7 +29,8 @@
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
-  font-family: "IBM Plex Sans Thai", "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-family:
+    "IBM Plex Sans Thai", "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Premium wallet experience overrides */
@@ -48,8 +49,16 @@
   place-items: center;
   padding: clamp(18px, 3vw, 32px);
   background:
-    radial-gradient(circle at 20% 10%, rgba(66, 103, 214, 0.14), transparent 30%),
-    radial-gradient(circle at 80% 20%, rgba(42, 141, 114, 0.14), transparent 32%),
+    radial-gradient(
+      circle at 20% 10%,
+      rgba(66, 103, 214, 0.14),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at 80% 20%,
+      rgba(42, 141, 114, 0.14),
+      transparent 32%
+    ),
     var(--background);
 }
 
@@ -652,7 +661,8 @@
   top: 50%;
   width: 14px;
   height: 14px;
-  border: 1.5px solid color-mix(in srgb, var(--muted-foreground) 70%, var(--border));
+  border: 1.5px solid
+    color-mix(in srgb, var(--muted-foreground) 70%, var(--border));
   border-radius: 4px;
   transform: translateY(-50%);
 }
@@ -979,7 +989,8 @@
 }
 
 .scan-payload-preview code {
-  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   white-space: pre-wrap;
 }
 
@@ -1318,7 +1329,9 @@ button:disabled {
   border-radius: var(--radius-lg);
   padding: 0 10px;
   text-align: left;
-  transition: background 160ms ease, color 160ms ease;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
 }
 
 .nav-button svg {
@@ -1771,7 +1784,9 @@ button:disabled {
   align-content: space-between;
   box-shadow: var(--shadow-md);
   overflow: hidden;
-  transition: transform 180ms ease, box-shadow 180ms ease;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .wallet-card-tile:hover {
@@ -1897,7 +1912,10 @@ button:disabled {
   background: var(--primary);
   color: var(--primary-foreground);
   font-weight: 800;
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
   box-shadow: var(--shadow-xs);
 }
 
@@ -1978,6 +1996,18 @@ button:disabled {
   place-items: center;
   padding: 20px;
   background: rgba(0, 0, 0, 0.58);
+}
+
+.dialog-loading {
+  min-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: var(--shadow-md);
+  color: var(--foreground);
+  font-weight: 800;
+  padding: 18px 22px;
+  text-align: center;
 }
 
 .credential-dialog,
@@ -2436,13 +2466,18 @@ button:disabled {
   row-gap: 6px;
   padding: 18px;
   text-align: left;
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .mode-card:hover,
 .mode-card.selected {
   border-color: #34446f;
-  box-shadow: 0 0 0 1px #34446f, var(--shadow-sm);
+  box-shadow:
+    0 0 0 1px #34446f,
+    var(--shadow-sm);
   transform: translateY(-1px);
 }
 
@@ -2524,7 +2559,9 @@ button:disabled {
   gap: 8px;
   padding: 24px;
   text-align: center;
-  transition: border-color 160ms ease, background 160ms ease;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
 .upload-zone:hover {
@@ -3011,7 +3048,8 @@ button:disabled {
   --sidebar: #fbfcff;
   --sidebar-accent: #eef3ff;
   --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.04);
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.04);
+  --shadow-sm:
+    0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.04);
   --shadow-md: 0 18px 44px rgba(15, 23, 42, 0.14);
   --radius-md: 6px;
   --radius-lg: 8px;
@@ -3020,7 +3058,11 @@ button:disabled {
 
 body {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(246, 248, 251, 0.94) 260px),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.86),
+      rgba(246, 248, 251, 0.94) 260px
+    ),
     var(--background);
 }
 
@@ -4119,7 +4161,11 @@ body {
   align-items: center;
   border: 1px solid color-mix(in srgb, #4f67f2 28%, var(--border));
   border-radius: 14px;
-  background: linear-gradient(135deg, rgba(79, 103, 242, 0.08), rgba(31, 122, 90, 0.08));
+  background: linear-gradient(
+    135deg,
+    rgba(79, 103, 242, 0.08),
+    rgba(31, 122, 90, 0.08)
+  );
   padding: 14px;
 }
 
@@ -4175,7 +4221,7 @@ body {
   display: none;
 }
 
-  .bottom-nav .nav-button {
+.bottom-nav .nav-button {
   flex: 0 0 72px;
   min-width: 72px;
 }
@@ -4292,7 +4338,11 @@ body {
 .prep-score-card {
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--muted) 36%, var(--card)), var(--card));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--muted) 36%, var(--card)),
+    var(--card)
+  );
   padding: 12px;
   display: grid;
   grid-template-columns: 76px minmax(0, 1fr);
@@ -5036,8 +5086,16 @@ body {
   border: 1px solid var(--border);
   border-radius: 10px;
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--doc-accent) 7%, transparent), transparent 28%),
-    repeating-linear-gradient(0deg, rgba(15, 23, 42, 0.018) 0 1px, transparent 1px 28px),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--doc-accent) 7%, transparent),
+      transparent 28%
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(15, 23, 42, 0.018) 0 1px,
+      transparent 1px 28px
+    ),
     var(--card);
   box-shadow: var(--shadow-md);
 }
@@ -5047,7 +5105,11 @@ body {
   position: absolute;
   inset: 0 0 auto 0;
   height: 6px;
-  background: linear-gradient(90deg, var(--doc-accent), color-mix(in srgb, var(--doc-accent) 42%, #16a34a));
+  background: linear-gradient(
+    90deg,
+    var(--doc-accent),
+    color-mix(in srgb, var(--doc-accent) 42%, #16a34a)
+  );
 }
 
 .hospital-document-header {
@@ -5205,7 +5267,11 @@ body {
 }
 
 .medical-document .document-header {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--doc-accent) 88%, #1f2937), color-mix(in srgb, var(--doc-accent) 66%, #93a4c8));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--doc-accent) 88%, #1f2937),
+    color-mix(in srgb, var(--doc-accent) 66%, #93a4c8)
+  );
 }
 
 .document-header-copy {
@@ -5351,7 +5417,8 @@ body {
 
 .document-note {
   margin: 0;
-  border-left: 4px solid color-mix(in srgb, var(--doc-accent) 65%, var(--border));
+  border-left: 4px solid
+    color-mix(in srgb, var(--doc-accent) 65%, var(--border));
   border-radius: 10px;
   background: color-mix(in srgb, var(--doc-accent) 7%, var(--card));
   padding: 12px;
@@ -5371,7 +5438,11 @@ body {
   margin: 20px 32px 0;
   border: 1px solid color-mix(in srgb, var(--doc-accent) 18%, var(--border));
   border-radius: 14px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--doc-accent) 7%, var(--card)), var(--card));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--doc-accent) 7%, var(--card)),
+    var(--card)
+  );
   padding: 14px;
 }
 
@@ -5625,7 +5696,11 @@ body {
   border-radius: 16px;
   margin: 10px 28px 20px;
   padding: 16px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--doc-accent) 9%, var(--card)), var(--card));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--doc-accent) 9%, var(--card)),
+    var(--card)
+  );
 }
 
 .appointment-ticket > div {
@@ -5780,7 +5855,11 @@ body {
 .shl-manifest-viewer {
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--muted) 38%, var(--card)), var(--card));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--muted) 38%, var(--card)),
+    var(--card)
+  );
   padding: 16px;
   display: grid;
   gap: 14px;
@@ -6915,7 +6994,11 @@ b {
 .branded-share-pass {
   border: 1px dashed color-mix(in srgb, var(--border) 78%, var(--foreground));
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--card) 92%, transparent), color-mix(in srgb, var(--muted) 34%, var(--card))),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--card) 92%, transparent),
+      color-mix(in srgb, var(--muted) 34%, var(--card))
+    ),
     var(--card);
   border-radius: 16px;
   display: grid;
@@ -7438,9 +7521,7 @@ b {
   min-height: 280px;
   border: 1px dashed #d9e1ef;
   border-radius: 16px;
-  background:
-    linear-gradient(180deg, rgba(248, 250, 252, 0.9), #fff),
-    #fff;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.9), #fff), #fff;
   padding: 20px;
 }
 
