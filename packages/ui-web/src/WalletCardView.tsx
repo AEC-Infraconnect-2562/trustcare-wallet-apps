@@ -4,10 +4,12 @@ import { labelForCredentialType, photoCandidatesForCard } from "@trustcare/walle
 import { BadgeCheck, QrCode } from "lucide-react";
 import type { CSSProperties } from "react";
 
+const photoDocumentTypes = new Set(["patient_identity", "staff_identity", "travel_document_verification"]);
+
 export function WalletCardView({ card, onClick }: { card: WalletCard; onClick?: () => void }) {
   const [from, to] = gradientForCardType(card.cardType);
   const disabled = card.credentialStatus !== "active";
-  const photoUrl = photoCandidatesForCard(card)[0]?.url;
+  const photoUrl = photoDocumentTypes.has(card.cardType) ? photoCandidatesForCard(card)[0]?.url : undefined;
   return (
     <button
       type="button"

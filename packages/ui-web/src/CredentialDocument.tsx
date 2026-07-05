@@ -1,65 +1,103 @@
-import { Calendar, GraduationCap, Hospital, IdCard, QrCode, ShieldCheck, UserRound } from "lucide-react";
+import {
+  AlertTriangle,
+  BadgeCheck,
+  Calendar,
+  ClipboardList,
+  CreditCard,
+  FileCheck2,
+  FileText,
+  FlaskConical,
+  HeartPulse,
+  Hospital,
+  IdCard,
+  Link2,
+  Pill,
+  Plane,
+  QrCode,
+  ReceiptText,
+  ShieldCheck,
+  Stethoscope,
+  Syringe,
+  UserRound
+} from "lucide-react";
+import type { CSSProperties, ReactElement } from "react";
 import type { WalletCard } from "@trustcare/wallet-core";
 import { initialsFromName, photoCandidatesForCard } from "@trustcare/wallet-core";
 import { Badge } from "./primitives";
 
+type Field = {
+  label: string;
+  value: unknown;
+  tone?: "normal" | "critical";
+};
+
+type ListItem = Record<string, unknown>;
+
+const photoDocumentTypes = new Set(["patient_identity", "staff_identity", "travel_document_verification"]);
+
 export function CredentialDocument({ card, qrDataUrl, compact = false }: { card: WalletCard; qrDataUrl?: string; compact?: boolean }) {
-  const subject = (card.credentialData?.credentialSubject ?? card.credentialData ?? {}) as Record<string, any>;
-  const renderData = subject.humanDocument?.renderData;
-  const patient = renderData?.patient ?? subject.patient ?? subject.student ?? {};
-  const hospital = renderData?.hospital ?? subject.organization ?? {};
-  const displayNameTh = patient.fullNameTh ?? patient.nameTh ?? patient.name ?? "Test Wallet User";
-  const displayNameEn = patient.fullNameEn ?? patient.nameEn ?? "Test Wallet User";
-  const idText = patient.carepassId ?? patient.studentId ?? patient.hn ?? String(card.credentialId);
-  const issuer = hospital.nameTh ?? card.issuerHospitalName ?? "TrustCare Network";
-  const issuerEn = hospital.nameEn ?? "TRUSTCARE HOSPITAL NETWORK";
-  const isEducation = card.documentCategory === "education" || card.cardType.includes("badge");
-  const photoUrl = photoCandidatesForCard(card)[0]?.url;
+  const credential = card.credentialData ?? {};
+  const subject = getObject(credential, "credentialSubject") ?? credential;
+  const patient = getObject(subject, "patient") ?? getObject(subject, "student") ?? getObject(subject, "staff") ?? {};
+  const issuer = getObject(credential, "issuer");
+  const issuerNameTh = getText(issuer, "nameTh") ?? card.issuerHospitalName ?? "TrustCare Network";
+  const issuerNameEn = getText(issuer, "name") ?? card.issuerHospitalName ?? "TRUSTCARE NETWORK";
+  const displayNameTh = getText(patient, "fullNameTh") ?? getText(patient, "nameTh") ?? getText(patient, "name") ?? "ผู้ใช้ TrustCare";
+  const displayNameEn = getText(patient, "fullNameEn") ?? getText(patient, "nameEn") ?? getText(patient, "name") ?? displayNameTh;
+  const patientId = getText(patient, "carepassId") ?? getText(patient, "hn") ?? getText(patient, "id") ?? String(card.credentialId);
+  const photoUrl = photoDocumentTypes.has(card.cardType) ? photoCandidatesForCard(card)[0]?.url : undefined;
+  const accent = documentAccent(card.cardType);
+  const documentFields = fieldsForDocument(card, subject, patient);
 
   return (
-    <article className={compact ? "credential-doc credential-doc-compact" : "credential-doc"}>
-      <div className="credential-header">
-        <div className="credential-logo">{issuer.includes("Ramkhamhaeng") ? "RU" : "TC"}</div>
-        <div>
-          <h3>{issuer}</h3>
-          <p>{issuerEn}</p>
+    <article className={`${compact ? "credential-doc credential-doc-compact" : "credential-doc"} medical-document document-${documentVariant(card.cardType)}`} style={{ "--doc-accent": accent } as CSSProperties}>
+      <div className="credential-header document-header">
+        <div className="credential-logo">{logoText(issuerNameEn)}</div>
+        <div className="document-header-copy">
+          <p>{issuerNameEn}</p>
+          <h3>{issuerNameTh}</h3>
           <strong>{card.displayName} / {card.displayNameEn ?? card.cardType}</strong>
         </div>
+        <Badge tone={card.credentialStatus === "active" ? "green" : "red"}>{card.credentialStatus === "active" ? "ใช้งานได้" : card.credentialStatus}</Badge>
       </div>
-      <div className="credential-band">
+
+      <div className="credential-band document-meta-band">
         <div>
           <Hospital size={20} />
-          <span>FACILITY</span>
-          <strong>{issuer}</strong>
+          <span>แหล่งที่มา</span>
+          <strong>{issuerNameTh}</strong>
         </div>
         <div>
-          {isEducation ? <GraduationCap size={20} /> : <IdCard size={20} />}
-          <span>TYPE</span>
+          {iconForDocument(card.cardType)}
+          <span>ประเภทเอกสาร</span>
           <strong>{card.displayNameEn ?? card.displayName}</strong>
         </div>
       </div>
-      <div className="credential-body">
-        <div className="credential-photo" aria-label="credential holder photo">
-          {photoUrl ? <img src={photoUrl} alt={displayNameEn} /> : initialsFromName(displayNameTh)}
-        </div>
+
+      <div className={photoUrl ? "document-person-row with-photo" : "document-person-row"}>
+        {photoUrl ? (
+          <div className="credential-photo" aria-label="รูปผู้ถือเอกสาร">
+            <img src={photoUrl} alt={displayNameEn} />
+          </div>
+        ) : (
+          <div className="document-type-mark" aria-hidden="true">{iconForDocument(card.cardType)}</div>
+        )}
         <div className="credential-person">
-          <span className="muted-row"><UserRound size={16} /> ชื่อ-นามสกุล</span>
+          <span className="muted-row"><UserRound size={16} /> ผู้ถือเอกสาร</span>
           <h4>{displayNameTh}</h4>
           <p>{displayNameEn}</p>
-          <div className="credential-grid">
-            <div>
-              <span># รหัส</span>
-              <strong>{idText}</strong>
-            </div>
-            <div>
-              <span><Calendar size={14} /> วันที่ออก</span>
-              <strong>{card.issuedAt ? new Date(card.issuedAt).toLocaleDateString("th-TH") : "-"}</strong>
-            </div>
+          <div className="document-mini-grid">
+            <span><small>รหัสผู้ป่วย</small><strong>{patientId}</strong></span>
+            <span><small>ออกเมื่อ</small><strong>{formatDate(card.issuedAt)}</strong></span>
+            <span><small>หมดอายุ</small><strong>{formatDate(card.expiresAt)}</strong></span>
           </div>
         </div>
         <div className="watermark">DEMO ONLY</div>
       </div>
-      <div className="credential-status-row">
+
+      {renderDocumentBody(card, subject, documentFields)}
+
+      <div className="credential-status-row document-status-row">
         <div>
           <span>สถานะ / STATUS</span>
           <Badge tone={card.credentialStatus === "active" ? "green" : "red"}>
@@ -67,14 +105,448 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
           </Badge>
         </div>
         <div>
-          <span>หมดอายุ</span>
-          <strong>{card.expiresAt ? new Date(card.expiresAt).toLocaleDateString("th-TH") : "-"}</strong>
+          <span>Credential ID</span>
+          <strong className="mono">{String(card.credentialId)}</strong>
         </div>
         <div className="credential-qr">
           {qrDataUrl ? <img src={qrDataUrl} alt="VP QR" /> : <QrCode size={48} />}
         </div>
       </div>
-      <footer>VC: urn:uuid:{String(card.credentialId).padStart(8, "0")}-trustcare-wallet</footer>
+      <footer>VC: {String(card.credentialId)}</footer>
     </article>
   );
+}
+
+function renderDocumentBody(card: WalletCard, subject: Record<string, unknown>, fields: Field[]): ReactElement {
+  switch (card.cardType) {
+    case "lab_result":
+      return <LabResultSection report={getObject(subject, "labReport") ?? { observations: getNested(subject, ["observations"]) }} />;
+    case "diagnostic_report":
+      return <DiagnosticReportSection report={getObject(subject, "diagnosticReport")} />;
+    case "prescription":
+      return <MedicationSection title="รายการยาในใบสั่งยา" items={getArray(getObject(subject, "prescription"), "items").length ? getArray(getObject(subject, "prescription"), "items") : getArray(getObject(subject, "fhir"), "medicationRequests")} />;
+    case "medication_summary":
+      return <MedicationSection title="รายการยาปัจจุบัน" items={getArray(getObject(subject, "medicationSummary"), "medications")} />;
+    case "pharmacy_dispense":
+      return <MedicationSection title="รายการจ่ายยา" items={getArray(getObject(subject, "medicationDispense"), "items")} />;
+    case "allergy_alert":
+      return <AllergySection items={getArray(subject, "allergyIntolerances").length ? getArray(subject, "allergyIntolerances") : getArray(subject, "allergies")} instruction={getText(subject, "emergencyInstruction")} />;
+    case "patient_summary":
+      return <ClinicalSummarySection summary={getObject(subject, "summary") ?? getObject(subject, "clinical")} />;
+    case "claim_package":
+      return <FinancialSection title="รายการค่าใช้จ่ายสำหรับเคลม" items={getArray(getObject(subject, "claimPackage"), "serviceLines")} total={getNested(subject, ["claimPackage", "totalAmount"])} currency={getNested(subject, ["claimPackage", "currency"])} />;
+    case "claim_receipt":
+      return <FinancialSection title="ใบเสร็จรับเงิน" items={getArray(getObject(subject, "receipt"), "items")} total={getNested(subject, ["receipt", "netAmount"])} currency="THB" />;
+    case "quotation":
+      return <FinancialSection title="ใบเสนอราคา" items={getArray(getObject(subject, "quotation"), "lineItems")} total={getNested(subject, ["quotation", "estimatedTotal"])} currency={getNested(subject, ["quotation", "currency"])} />;
+    case "shl_manifest":
+      return <ManifestSection manifest={getObject(subject, "shlManifest")} />;
+    case "appointment":
+      return <AppointmentSection appointment={getObject(subject, "appointment")} />;
+    default:
+      return <FieldGridSection fields={fields} />;
+  }
+}
+
+function FieldGridSection({ fields }: { fields: Field[] }) {
+  return (
+    <section className="document-field-section">
+      <div className="document-field-grid">
+        {fields.filter(field => hasValue(field.value)).map(field => (
+          <div key={field.label} className={field.tone === "critical" ? "document-field critical" : "document-field"}>
+            <span>{field.label}</span>
+            <strong>{formatValue(field.value)}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ClinicalSummarySection({ summary }: { summary?: Record<string, unknown> }) {
+  const conditions = getArray(summary, "conditions");
+  const medications = getArray(summary, "medications");
+  const allergies = getArray(summary, "allergies");
+  const vitalSigns = getArray(summary, "vitalSigns");
+  return (
+    <section className="document-field-section clinical-layout">
+      <InfoList title="ปัญหาสุขภาพสำคัญ" items={conditions} primaryKey="display" secondaryKey="code" />
+      <InfoList title="ยาที่ใช้ประจำ" items={medications} primaryKey="name" secondaryKey="dose" />
+      <InfoList title="ข้อมูลแพ้ยา/แพ้อาหาร" items={allergies} primaryKey="substance" secondaryKey="severity" />
+      <InfoList title="สัญญาณชีพล่าสุด" items={vitalSigns} primaryKey="display" secondaryKey="value" suffixKey="unit" />
+      {getText(summary, "carePlan") && <p className="document-note"><strong>แผนดูแล:</strong> {getText(summary, "carePlan")}</p>}
+    </section>
+  );
+}
+
+function AllergySection({ items, instruction }: { items: ListItem[]; instruction?: string }) {
+  return (
+    <section className="document-field-section allergy-panel">
+      {items.map((item, index) => (
+        <div className="allergy-item" key={`${getText(item, "substance") ?? index}`}>
+          <AlertTriangle size={18} />
+          <span>
+            <strong>{getText(item, "substance") ?? getText(item, "agent") ?? getText(item, "display") ?? "Allergy"}</strong>
+            <small>{[getText(item, "severity"), getText(item, "reaction") ?? getText(item, "manifestation")].filter(Boolean).join(" · ")}</small>
+          </span>
+        </div>
+      ))}
+      {instruction && <p className="document-note critical"><strong>คำแนะนำฉุกเฉิน:</strong> {instruction}</p>}
+    </section>
+  );
+}
+
+function MedicationSection({ title, items }: { title: string; items: ListItem[] }) {
+  return (
+    <section className="document-field-section">
+      <h4>{title}</h4>
+      <div className="medical-table">
+        <div className="medical-table-head"><span>ยา</span><span>ขนาด/วิธีใช้</span><span>จำนวน</span></div>
+        {items.map((item, index) => (
+          <div className="medical-table-row" key={`${getText(item, "medicationName") ?? getText(item, "name") ?? index}`}>
+            <strong>{getText(item, "medicationName") ?? getText(item, "name") ?? "-"}</strong>
+            <span>{[getText(item, "strength"), getText(item, "dosageInstruction") ?? getText(item, "instructions") ?? getText(item, "dose"), getText(item, "frequency")].filter(Boolean).join(" · ") || "-"}</span>
+            <span>{formatValue(getText(item, "quantity") ?? getText(item, "quantityDispensed") ?? getText(item, "daysSupply") ?? "-")}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LabResultSection({ report }: { report?: Record<string, unknown> }) {
+  const observations = getArray(report, "observations");
+  return (
+    <section className="document-field-section">
+      <div className="document-field-grid compact">
+        <InfoField label="เลขที่รายงาน" value={getText(report, "reportNo")} />
+        <InfoField label="ห้องปฏิบัติการ" value={getText(report, "laboratory")} />
+        <InfoField label="เก็บตัวอย่าง" value={formatDateTime(getText(report, "specimenCollectedAt"))} />
+        <InfoField label="รายงานผล" value={formatDateTime(getText(report, "reportedAt"))} />
+      </div>
+      <div className="medical-table lab-table">
+        <div className="medical-table-head"><span>รายการตรวจ</span><span>ผล</span><span>ค่าอ้างอิง</span></div>
+        {observations.map((item, index) => (
+          <div className={getText(item, "interpretation") === "H" ? "medical-table-row abnormal" : "medical-table-row"} key={`${getText(item, "code") ?? index}`}>
+            <strong>{getText(item, "display") ?? "-"}</strong>
+            <span>{[getText(item, "value"), getText(item, "unit")].filter(Boolean).join(" ")}</span>
+            <span>{getText(item, "referenceRange") ?? "-"}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DiagnosticReportSection({ report }: { report?: Record<string, unknown> }) {
+  return (
+    <section className="document-field-section">
+      <div className="document-field-grid compact">
+        <InfoField label="เลขที่รายงาน" value={getText(report, "reportNo")} />
+        <InfoField label="ประเภท" value={getText(report, "category")} />
+        <InfoField label="วิธีตรวจ" value={getText(report, "modality")} />
+        <InfoField label="วันที่ตรวจ" value={formatDateTime(getText(report, "effectiveDateTime"))} />
+      </div>
+      <p className="document-note"><strong>สรุปผล:</strong> {getText(report, "conclusion") ?? "-"}</p>
+      <InfoList title="ค่าที่รายงาน" items={getArray(report, "observations")} primaryKey="display" secondaryKey="value" suffixKey="unit" />
+    </section>
+  );
+}
+
+function FinancialSection({ title, items, total, currency }: { title: string; items: ListItem[]; total: unknown; currency: unknown }) {
+  return (
+    <section className="document-field-section">
+      <h4>{title}</h4>
+      <div className="medical-table finance-table">
+        <div className="medical-table-head"><span>รายการ</span><span>จำนวน</span><span>ยอด</span></div>
+        {items.map((item, index) => (
+          <div className="medical-table-row" key={`${getText(item, "code") ?? getText(item, "description") ?? index}`}>
+            <strong>{getText(item, "description") ?? "-"}</strong>
+            <span>{getText(item, "quantity") ?? "-"}</span>
+            <span>{formatMoney(getText(item, "amount"), getText(item, "currency") ?? currency)}</span>
+          </div>
+        ))}
+      </div>
+      <div className="finance-total"><span>ยอดรวม</span><strong>{formatMoney(total, currency)}</strong></div>
+    </section>
+  );
+}
+
+function ManifestSection({ manifest }: { manifest?: Record<string, unknown> }) {
+  const files = getArray(manifest, "files");
+  return (
+    <section className="document-field-section manifest-preview">
+      <div className="document-field-grid compact">
+        <InfoField label="SHL ID" value={getText(manifest, "shlId")} />
+        <InfoField label="วัตถุประสงค์" value={getText(manifest, "purpose")} />
+        <InfoField label="Manifest hash" value={getText(manifest, "manifestHash")} />
+        <InfoField label="หมดอายุ" value={formatDateTime(getText(manifest, "expiresAt"))} />
+      </div>
+      <h4>ไฟล์ใน Manifest</h4>
+      <div className="manifest-file-list">
+        {files.map((file, index) => (
+          <div key={`${getText(file, "fileId") ?? index}`}>
+            <Link2 size={18} />
+            <span><strong>{getText(file, "fileId")}</strong><small>{getText(file, "contentType")} · {formatValue(getNested(file, ["documentTypes"]))}</small></span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AppointmentSection({ appointment }: { appointment?: Record<string, unknown> }) {
+  return (
+    <section className="document-field-section appointment-ticket">
+      <div>
+        <Calendar size={22} />
+        <span>
+          <strong>{getText(appointment, "serviceType") ?? "นัดหมาย"}</strong>
+          <small>{formatDateTime(getText(appointment, "start"))} - {formatDateTime(getText(appointment, "end"))}</small>
+        </span>
+      </div>
+      <p>{getText(appointment, "location")}</p>
+      <p className="document-note">{getText(appointment, "checkinInstruction")}</p>
+    </section>
+  );
+}
+
+function InfoField({ label, value }: Field) {
+  if (!hasValue(value)) return null;
+  return (
+    <div className="document-field">
+      <span>{label}</span>
+      <strong>{formatValue(value)}</strong>
+    </div>
+  );
+}
+
+function InfoList({ title, items, primaryKey, secondaryKey, suffixKey }: { title: string; items: ListItem[]; primaryKey: string; secondaryKey?: string; suffixKey?: string }) {
+  if (!items.length) return null;
+  return (
+    <div className="document-list-panel">
+      <h4>{title}</h4>
+      {items.slice(0, 6).map((item, index) => (
+        <div key={`${getText(item, primaryKey) ?? index}`}>
+          <span><strong>{getText(item, primaryKey) ?? "-"}</strong><small>{[getText(item, secondaryKey), getText(item, suffixKey)].filter(Boolean).join(" ")}</small></span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function fieldsForDocument(card: WalletCard, subject: Record<string, unknown>, patient: Record<string, unknown>): Field[] {
+  const fields: Record<string, Field[]> = {
+    patient_identity: [
+      { label: "HN", value: getText(patient, "hn") },
+      { label: "CarePass ID", value: getText(patient, "carepassId") },
+      { label: "วันเกิด", value: formatDate(getText(patient, "birthDate")) },
+      { label: "สัญชาติ", value: getText(patient, "nationality") }
+    ],
+    staff_identity: [
+      { label: "รหัสเจ้าหน้าที่", value: getNested(subject, ["staff", "employeeId"]) ?? getText(patient, "carepassId") },
+      { label: "ตำแหน่ง", value: getNested(subject, ["staff", "role"]) },
+      { label: "หน่วยงาน", value: getNested(subject, ["staff", "department"]) },
+      { label: "อีเมล", value: getText(patient, "email") }
+    ],
+    insurance_eligibility: [
+      { label: "ผู้รับประกัน", value: getNested(subject, ["coverage", "payer", "nameEn"]) ?? getNested(subject, ["payer", "name"]) },
+      { label: "สถานะสิทธิ", value: getNested(subject, ["coverage", "status"]) ?? getNested(subject, ["payer", "status"]) },
+      { label: "เครือข่าย", value: getNested(subject, ["coverage", "network"]) },
+      { label: "ตรวจสอบล่าสุด", value: formatDateTime(getNested(subject, ["coverage", "lastCheckedAt"])) }
+    ],
+    medical_certificate: [
+      { label: "เลขที่ใบรับรอง", value: getNested(subject, ["certificate", "certificateNo"]) },
+      { label: "ประเภท", value: getNested(subject, ["certificate", "type"]) },
+      { label: "วันที่ตรวจ", value: formatDate(getNested(subject, ["certificate", "examinationDate"])) },
+      { label: "ใช้ได้ถึง", value: formatDate(getNested(subject, ["certificate", "validUntil"])) },
+      { label: "ผลการตรวจ", value: getNested(subject, ["certificate", "result"]) ?? (getNested(subject, ["certificate", "fitForWork"]) === true ? "สามารถทำงานหรือเข้ารับบริการได้ตามแพทย์เห็นสมควร" : undefined) },
+      { label: "ข้อจำกัด", value: getNested(subject, ["certificate", "restrictions"]) }
+    ],
+    referral_vc: [
+      { label: "เลขที่ส่งต่อ", value: getNested(subject, ["referral", "referralNo"]) },
+      { label: "จาก", value: getNested(subject, ["referral", "fromHospital"]) ?? getNested(subject, ["referral", "from"]) },
+      { label: "ถึง", value: getNested(subject, ["referral", "toHospital"]) ?? getNested(subject, ["referral", "to"]) },
+      { label: "บริการที่ขอ", value: getNested(subject, ["referral", "requestedService"]) },
+      { label: "เหตุผล", value: getNested(subject, ["referral", "reason"]) }
+    ],
+    discharge_summary: [
+      { label: "เลขที่ Admit", value: getNested(subject, ["dischargeSummary", "admissionNo"]) },
+      { label: "วันที่ Admit", value: formatDate(getNested(subject, ["dischargeSummary", "admissionDate"])) },
+      { label: "วันที่จำหน่าย", value: formatDate(getNested(subject, ["dischargeSummary", "dischargeDate"])) },
+      { label: "วินิจฉัยหลัก", value: getNested(subject, ["dischargeSummary", "principalDiagnosis", "display"]) },
+      { label: "แผนติดตาม", value: getNested(subject, ["dischargeSummary", "followUp"]) }
+    ],
+    consent_receipt: [
+      { label: "สถานะ", value: getNested(subject, ["consent", "status"]) },
+      { label: "วัตถุประสงค์", value: getNested(subject, ["consent", "purpose"]) },
+      { label: "ผู้รับข้อมูล", value: getNested(subject, ["consent", "recipient"]) },
+      { label: "หมดอายุ", value: formatDateTime(getNested(subject, ["consent", "expiresAt"])) }
+    ],
+    mpi_link_certificate: [
+      { label: "Golden Record", value: getNested(subject, ["mpi", "goldenRecordId"]) },
+      { label: "ความเชื่อมั่น", value: getNested(subject, ["mpi", "confidence"]) },
+      { label: "นโยบายจับคู่", value: getNested(subject, ["mpi", "matchingPolicy"]) },
+      { label: "ตรวจทานโดย", value: getNested(subject, ["mpi", "reviewedBy"]) }
+    ],
+    travel_document_verification: [
+      { label: "Passport", value: getNested(subject, ["travelDocument", "passportNoMasked"]) ?? getNested(subject, ["travel", "passport"]) },
+      { label: "ประเทศออกเอกสาร", value: getNested(subject, ["travelDocument", "issuingCountry"]) },
+      { label: "ยืนยันจาก", value: getNested(subject, ["travelDocument", "verifiedAgainst"]) },
+      { label: "ช่วงเดินทาง", value: getNested(subject, ["travelDocument", "travelWindow"]) },
+      { label: "สัญชาติ", value: getNested(subject, ["travel", "nationality"]) }
+    ],
+    visa_support_letter: [
+      { label: "เลขที่จดหมาย", value: getNested(subject, ["visaSupportLetter", "letterNo"]) },
+      { label: "วัตถุประสงค์", value: getNested(subject, ["visaSupportLetter", "purpose"]) },
+      { label: "แผนกที่รับ", value: getNested(subject, ["visaSupportLetter", "receivingDepartment"]) },
+      { label: "ช่วงเข้ารับบริการ", value: getNested(subject, ["visaSupportLetter", "proposedVisitPeriod"]) }
+    ],
+    guarantee_letter: [
+      { label: "เลขที่ Guarantee", value: getNested(subject, ["guaranteeLetter", "guaranteeNo"]) },
+      { label: "Payer", value: getNested(subject, ["guaranteeLetter", "payer"]) },
+      { label: "Pre-auth", value: getNested(subject, ["guaranteeLetter", "preAuthNo"]) },
+      { label: "วงเงิน", value: getNested(subject, ["guaranteeLetter", "guaranteeLimit"]) }
+    ],
+    sync_receipt: [
+      { label: "Sync ID", value: getNested(subject, ["syncReceipt", "syncId"]) },
+      { label: "ต้นทาง", value: getNested(subject, ["syncReceipt", "sourceSystem"]) },
+      { label: "ปลายทาง", value: getNested(subject, ["syncReceipt", "targetSystem"]) },
+      { label: "สถานะ", value: getNested(subject, ["syncReceipt", "status"]) }
+    ]
+  };
+
+  return fields[card.cardType] ?? [
+    { label: "ประเภท", value: card.displayName },
+    { label: "หมวดหมู่", value: card.documentCategory },
+    { label: "ออกเมื่อ", value: formatDate(card.issuedAt) },
+    { label: "หมดอายุ", value: formatDate(card.expiresAt) }
+  ];
+}
+
+function iconForDocument(cardType: string): ReactElement {
+  const map: Record<string, ReactElement> = {
+    patient_identity: <IdCard size={20} />,
+    staff_identity: <BadgeCheck size={20} />,
+    consent_receipt: <ShieldCheck size={20} />,
+    mpi_link_certificate: <Link2 size={20} />,
+    patient_summary: <HeartPulse size={20} />,
+    allergy_alert: <AlertTriangle size={20} />,
+    immunization: <Syringe size={20} />,
+    medical_certificate: <Stethoscope size={20} />,
+    medication_summary: <Pill size={20} />,
+    prescription: <Pill size={20} />,
+    pharmacy_dispense: <Pill size={20} />,
+    lab_result: <FlaskConical size={20} />,
+    diagnostic_report: <ClipboardList size={20} />,
+    referral_vc: <FileCheck2 size={20} />,
+    discharge_summary: <FileText size={20} />,
+    insurance_eligibility: <CreditCard size={20} />,
+    claim_package: <ReceiptText size={20} />,
+    claim_receipt: <ReceiptText size={20} />,
+    travel_document_verification: <Plane size={20} />,
+    visa_support_letter: <Plane size={20} />,
+    quotation: <ReceiptText size={20} />,
+    guarantee_letter: <ShieldCheck size={20} />,
+    shl_manifest: <Link2 size={20} />,
+    sync_receipt: <Link2 size={20} />,
+    appointment: <Calendar size={20} />
+  };
+  return map[cardType] ?? <FileText size={20} />;
+}
+
+function documentVariant(cardType: string): string {
+  if (cardType.includes("identity")) return "identity";
+  if (["lab_result", "diagnostic_report"].includes(cardType)) return "diagnostic";
+  if (["prescription", "medication_summary", "pharmacy_dispense"].includes(cardType)) return "medication";
+  if (["claim_package", "claim_receipt", "quotation", "guarantee_letter", "insurance_eligibility"].includes(cardType)) return "finance";
+  if (cardType === "allergy_alert") return "alert";
+  if (cardType === "shl_manifest") return "manifest";
+  return "clinical";
+}
+
+function documentAccent(cardType: string): string {
+  const map: Record<string, string> = {
+    allergy_alert: "#b91c1c",
+    lab_result: "#365dd8",
+    diagnostic_report: "#365dd8",
+    prescription: "#1f7a5a",
+    medication_summary: "#1f7a5a",
+    pharmacy_dispense: "#1f7a5a",
+    insurance_eligibility: "#9a6a0a",
+    claim_package: "#9a4b0a",
+    claim_receipt: "#9a4b0a",
+    quotation: "#9a4b0a",
+    guarantee_letter: "#0f766e",
+    shl_manifest: "#52525b",
+    appointment: "#4f46e5"
+  };
+  return map[cardType] ?? "#405a9b";
+}
+
+function logoText(value: string): string {
+  const upper = value.toUpperCase();
+  if (upper.includes("RAMKHAMHAENG")) return "RU";
+  if (upper.includes("HEALTHPASS")) return "HP";
+  return "TC";
+}
+
+function getObject(source: unknown, key: string): Record<string, unknown> | undefined {
+  if (!source || typeof source !== "object" || Array.isArray(source)) return undefined;
+  const value = (source as Record<string, unknown>)[key];
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function getText(source: unknown, key?: string): string | undefined {
+  const value = key ? getNested(source, [key]) : source;
+  if (value == null) return undefined;
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return undefined;
+}
+
+function getArray(source: unknown, key: string): ListItem[] {
+  const value = getNested(source, [key]);
+  return Array.isArray(value) ? value.filter(item => item && typeof item === "object").map(item => item as ListItem) : [];
+}
+
+function getNested(source: unknown, path: string[]): unknown {
+  return path.reduce<unknown>((current, key) => {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return undefined;
+    return (current as Record<string, unknown>)[key];
+  }, source);
+}
+
+function hasValue(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== "";
+}
+
+function formatDate(value: unknown): string {
+  if (!hasValue(value)) return "-";
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString("th-TH");
+}
+
+function formatDateTime(value: unknown): string {
+  if (!hasValue(value)) return "-";
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("th-TH");
+}
+
+function formatMoney(amount: unknown, currency: unknown): string {
+  const numeric = Number(amount);
+  if (Number.isFinite(numeric)) return `${numeric.toLocaleString("th-TH")} ${String(currency ?? "THB")}`;
+  return formatValue(amount);
+}
+
+function formatValue(value: unknown): string {
+  if (!hasValue(value)) return "-";
+  if (Array.isArray(value)) return value.map(item => formatValue(item)).join(", ");
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => hasValue(entry))
+      .map(([key, entry]) => `${key}: ${formatValue(entry)}`)
+      .join(" · ");
+  }
+  return String(value);
 }

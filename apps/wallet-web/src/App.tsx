@@ -26,6 +26,7 @@ import {
   KeyRound,
   Languages,
   Layers3,
+  Link2,
   ListChecks,
   LockKeyhole,
   LogOut,
@@ -51,7 +52,11 @@ import { useLanguage } from "@trustcare/i18n/src/provider.web";
 import { Badge, Button, Surface, WalletCardView } from "@trustcare/ui-web";
 import {
   buildPortalInteroperabilityFixtures,
+  buildServiceBundleEnvelope,
   countCardsByCategory,
+  assessLocalReadiness,
+  createDemoCheckinQr,
+  credentialTypeForDocument,
   exportWalletObject,
   exportWalletObjects,
   flattenCardsByCategory,
@@ -72,6 +77,8 @@ import {
   type ServiceBundleEnvelope,
   type ServicePacketResponse,
   type ShlPackage,
+  type ShlPackageDetail,
+  type ShlManifestDocument,
   type WalletCard,
   type WalletCardsByCategory,
   type WalletDocumentRequest,
@@ -91,6 +98,7 @@ import { QrScannerDialog } from "./components/QrScannerDialog";
 import { SelectiveDisclosureDialog } from "./components/SelectiveDisclosureDialog";
 
 type View = "home" | "documents" | "receive" | "share" | "prepare" | "store" | "history" | "settings";
+type DocumentsTab = "cards" | "receive" | "store" | "history";
 type StoreFilter = "all" | "vc" | "vp" | "shl" | "oid" | "service";
 
 type ScanOutcome = {
@@ -136,10 +144,21 @@ const criticalCardTypes = new Set([
   "appointment"
 ]);
 
+const readinessPurposeTh: Record<ReadinessContext, string> = {
+  opd_visit: "เตรียมเอกสารขั้นต่ำสำหรับลงทะเบียนและเริ่มรับบริการตรวจรักษา",
+  emergency: "เตรียมข้อมูลตัวตน แพ้ยา รายการยา และโรคสำคัญให้เข้าถึงได้รวดเร็ว",
+  referral: "รวบรวมใบส่งต่อและสรุปข้อมูลทางคลินิกให้โรงพยาบาลปลายทางตรวจรับ",
+  cross_border: "เตรียมเอกสารที่ตรวจสอบได้สำหรับการรักษาข้ามเครือข่ายหรือข้ามแดน",
+  medical_tourist: "เตรียมตัวตน เอกสารเดินทาง การเงิน และข้อมูลคลินิกสำหรับ pre-review",
+  insurance_claim: "เตรียมสิทธิ์รักษา ข้อมูลคลินิก และเอกสารประกอบการเคลม",
+  pharmacy_dispense: "เตรียมใบสั่งยา รายการยา การแพ้ยา และตัวตนสำหรับรับยาหรือต่อยา"
+};
+
 export default function App() {
   const { lang, setLang, t } = useLanguage();
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [view, setView] = useState<View>("home");
+  const [documentsTab, setDocumentsTab] = useState<DocumentsTab>("cards");
   const [developerMode, setDeveloperMode] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>(() => {
     if (typeof window === "undefined") return defaultLoginUserId;
@@ -234,6 +253,19 @@ export default function App() {
     const online = flattenCardsByCategory(grouped);
     return online.length ? online : offlineWallet.offlineCards.filter(card => card.ownerUserId === selectedUserId);
   }, [grouped, offlineWallet.offlineCards, selectedUserId]);
+
+  useEffect(() => {
+    if (!allCards.length) return;
+    const nextReadiness = assessLocalReadiness(allCards, readinessContext);
+    setReadiness((previous: any) => previous
+      ? { ...previous, readiness: nextReadiness }
+      : { patientId: activeUser.patientId, readiness: nextReadiness, requests: [], previousChecks: [] }
+    );
+    setPrepareWorkbench((previous: any) => previous
+      ? { ...previous, patient: { ...previous.patient, readiness: nextReadiness } }
+      : previous
+    );
+  }, [activeUser.patientId, allCards, readinessContext]);
 
   const counts = useMemo(() => countCardsByCategory(grouped), [grouped]);
   const serviceObjects = useMemo(() => {
@@ -376,55 +408,126 @@ export default function App() {
   }, [addScanHistory, apiOptions, importPayload, readinessContext, selectedUserId, view]);
 
   const buildBundle = useCallback(async () => {
-    const result = await walletApi.buildServiceBundle(apiOptions, {
+    const result = buildServiceBundleEnvelope({
       context: readinessContext,
-      patientId: activeUser.patientId,
+      cards: allCards,
       audience: "patient",
+      patientId: activeUser.patientId,
       receiver: "โรงพยาบาลที่รองรับ TrustCare"
     });
     setServiceBundle(result);
     const bundlePayload = createScannableWebUrl(compactBundlePayload(result));
     setBundleQrDataUrl(await QRCode.toDataURL(bundlePayload, { margin: 1, width: 220 }));
     setLastImportMessage(`สร้าง Service Bundle ${result.bundleId} และเก็บเข้าคลังแล้ว`);
-  }, [activeUser.patientId, apiOptions, readinessContext]);
+  }, [activeUser.patientId, allCards, readinessContext]);
 
   const buildPacket = useCallback(async () => {
-    const result = await walletApi.buildServicePacket(apiOptions, {
-      context: readinessContext,
+    const localReadiness = assessLocalReadiness(allCards, readinessContext);
+    const presentationId = `vp_service_${readinessContext}_${Date.now().toString(36)}`;
+    const result: ServicePacketResponse = {
+      checkId: `check_${Date.now().toString(36)}`,
       patientId: activeUser.patientId,
-      consentAttested: true,
-      receiverName: "โรงพยาบาลที่รองรับ TrustCare",
-      selectedCardIds: readiness?.readiness?.selectedCardIds,
-      validMinutes: 1440
-    });
+      readiness: localReadiness,
+      presentationId,
+      expiresAt: new Date(Date.now() + 1440 * 60_000).toISOString(),
+      credentialCount: localReadiness.selectedCardIds.length,
+      qrData: `${baseApiOptions.demoOrigin}/verifier?vp=${presentationId}`
+    };
     const scannableQr = createScannableWebUrl(result.qrData);
     setServicePacket({ ...result, qrData: scannableQr });
     setServicePacketQrDataUrl(await QRCode.toDataURL(scannableQr, { margin: 1, width: 220 }));
     setLastImportMessage(`สร้าง Service VP ${result.presentationId} แล้ว`);
-  }, [activeUser.patientId, apiOptions, readiness, readinessContext]);
+  }, [activeUser.patientId, allCards, readinessContext]);
 
   const buildCheckinQr = useCallback(async () => {
-    const result = await walletApi.generateCheckinQR(apiOptions, {
-      context: readinessContext,
-      patientId: activeUser.patientId,
-      consentAttested: true,
-      selectedCardIds: readiness?.readiness?.selectedCardIds
-    });
+    const localReadiness = assessLocalReadiness(allCards, readinessContext);
+    const result = createDemoCheckinQr(readinessContext, localReadiness.selectedCardIds.length);
     const scannableQr = createScannableWebUrl(result.qrPayload);
     setCheckinQr({ ...result, qrPayload: scannableQr, shlUrl: scannableQr });
     setCheckinQrDataUrl(await QRCode.toDataURL(scannableQr, { margin: 1, width: 220 }));
     setLastImportMessage(`สร้าง Check-in SHL ${result.shlId} แล้ว`);
-  }, [activeUser.patientId, apiOptions, readiness, readinessContext]);
+  }, [allCards, readinessContext]);
+
+  const prepareAllServiceArtifacts = useCallback(async () => {
+    await buildBundle();
+    await buildPacket();
+    await buildCheckinQr();
+    setLastImportMessage("เตรียมชุดเอกสารเข้ารับบริการครบแล้ว สามารถส่ง QR ให้โรงพยาบาลได้");
+  }, [buildBundle, buildCheckinQr, buildPacket]);
 
   const importMissing = useCallback(async () => {
     const missing = readiness?.readiness?.missing?.[0];
+    if (!missing) {
+      setLastImportMessage("เอกสารจำเป็นครบแล้ว ยังไม่ต้องนำเข้าเพิ่ม");
+      return;
+    }
+    const documentType = missing.cardTypes?.[0] ?? missing.key ?? "patient_summary";
+    const documentCategory = missing.category ?? "clinical_summary";
     const result = await walletApi.importForService(apiOptions, {
       context: readinessContext,
       patientId: activeUser.patientId,
-      documentType: missing?.key ?? "patient_summary",
+      documentType,
       sourceType: "patient_upload"
     });
     setImportJob(result);
+    const now = new Date();
+    const importedCard: WalletCard = {
+      id: now.getTime(),
+      cardType: documentType,
+      displayName: missing.label ?? documentType,
+      displayNameEn: missing.labelEn ?? documentType,
+      documentCategory,
+      credentialId: `imported:${selectedUserId}:${result.importId}`,
+      credentialStatus: "active",
+      credentialType: credentialTypeForDocument(documentType),
+      issuerHospitalName: activeUser.hospitalName,
+      issuerDid: activeUser.issuerDid,
+      holderDid: activeUser.holderDid,
+      patientAvatarUrl: activeUser.avatarUrl,
+      ownerUserId: activeUser.id,
+      patientId: activeUser.patientId,
+      sourceSystem: "partner_wallet",
+      scopeLabel: "นำเข้าใน TrustCare Wallet",
+      createdAt: now.toISOString(),
+      issuedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 365 * 24 * 60 * 60_000).toISOString(),
+      credentialData: {
+        "@context": ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/service-readiness/v1"],
+        type: ["VerifiableCredential", credentialTypeForDocument(documentType)],
+        id: `urn:uuid:${selectedUserId}:${result.importId}`,
+        issuer: activeUser.issuerDid,
+        validFrom: now.toISOString(),
+        credentialSubject: {
+          id: activeUser.holderDid,
+          patientId: activeUser.patientId,
+          documentType,
+          serviceContext: readinessContext,
+          importedFor: readinessContextLabels[readinessContext].th,
+          evidence: result.documentReference
+        },
+        evidence: [
+          {
+            type: "DocumentReference",
+            source: result.sourceType,
+            resource: result.documentReference
+          }
+        ],
+        proof: {
+          type: "DataIntegrityProof",
+          cryptosuite: "eddsa-rdfc-2022",
+          proofPurpose: "assertionMethod",
+          verificationMethod: activeUser.issuerDid,
+          created: now.toISOString()
+        }
+      }
+    };
+    setGrouped(previous => ({
+      ...previous,
+      [documentCategory]: [
+        ...(previous[documentCategory] ?? []).filter(card => card.cardType !== documentType),
+        importedCard
+      ]
+    }));
     addStoredObject({
       id: `import_job:${result.importId}`,
       type: "document_reference",
@@ -436,16 +539,34 @@ export default function App() {
       payload: result
     });
     setLastImportMessage(`สร้างงานนำเข้า ${result.importId} แล้ว`);
-  }, [activeUser.patientId, addStoredObject, apiOptions, readiness, readinessContext]);
+  }, [activeUser, addStoredObject, apiOptions, readiness, readinessContext, selectedUserId]);
 
   const requestMissing = useCallback(async () => {
     const missing = readiness?.readiness?.missing?.[0];
+    if (!missing) {
+      setLastImportMessage("เอกสารจำเป็นครบแล้ว ไม่มีรายการที่ต้องขอเพิ่ม");
+      return;
+    }
     const result = await walletApi.requestDocument(apiOptions, {
       context: readinessContext,
-      documentType: missing?.key ?? "patient_summary",
+      documentType: missing.cardTypes?.[0] ?? missing.key ?? "patient_summary",
       sourceType: "hospital",
       patientId: activeUser.patientId
     });
+    const requestId = (result as any).requestId ?? `wdr_demo_${Date.now()}`;
+    setDocumentRequests(prev => [
+      {
+        ...(result as WalletDocumentRequest),
+        id: (result as any).id ?? requestId,
+        requestId,
+        context: readinessContext,
+        documentType: missing.cardTypes?.[0] ?? missing.key ?? "patient_summary",
+        sourceType: "hospital",
+        status: (result as any).status ?? "requested",
+        createdAt: new Date().toISOString()
+      } as WalletDocumentRequest,
+      ...prev
+    ]);
     setLastImportMessage(`สร้างคำขอเอกสาร ${(result as any).requestId ?? (result as any).id} แล้ว`);
   }, [activeUser.patientId, apiOptions, readiness, readinessContext]);
 
@@ -515,6 +636,10 @@ export default function App() {
     }
   };
   const title = pageCopy[view].title;
+  const openDocumentsHub = (tab: DocumentsTab = "cards") => {
+    setView("documents");
+    setDocumentsTab(tab);
+  };
 
   if (!isAuthenticated) {
     return (
@@ -530,6 +655,27 @@ export default function App() {
 
   return (
     <main className="app-shell">
+      <header className="app-top-shell">
+        <div className="brand-block">
+          <div className="brand-mark">TC</div>
+          <div className="brand-copy">
+            <strong>TrustCare Wallet</strong>
+            <small>เอกสารสุขภาพส่วนตัวที่ตรวจสอบได้</small>
+          </div>
+        </div>
+        <nav className="primary-tabs" aria-label="TrustCare Wallet">
+          <NavButton active={view === "home"} icon={<Home />} label="หน้าแรก" onClick={() => setView("home")} />
+          <NavButton
+            active={view === "documents" || view === "receive" || view === "store" || view === "history"}
+            icon={<FileText />}
+            label="เอกสาร"
+            onClick={() => openDocumentsHub("cards")}
+          />
+          <NavButton active={view === "share"} icon={<Share2 />} label="แชร์" onClick={() => setView("share")} />
+          <NavButton active={view === "prepare"} icon={<Activity />} label="เตรียมบริการ" onClick={() => setView("prepare")} />
+          <NavButton active={view === "settings"} icon={<Settings />} label="ตั้งค่า" onClick={() => setView("settings")} />
+        </nav>
+      </header>
       <aside className="side-nav">
         <div className="brand-block">
           <div className="brand-mark">TC</div>
@@ -566,6 +712,20 @@ export default function App() {
             <p>{pageCopy[view].subtitle}</p>
           </div>
           <div className="topbar-actions">
+            <label className="top-user-switcher">
+              <span>ผู้ใช้ทดสอบ</span>
+              <select
+                value={activeUser.id}
+                onChange={event => {
+                  window.localStorage.setItem(walletSessionKey, event.target.value);
+                  setSelectedUserId(event.target.value);
+                }}
+              >
+                {walletDemoUsers.map(user => (
+                  <option key={user.id} value={user.id}>{user.nameTh ?? user.nameEn}</option>
+                ))}
+              </select>
+            </label>
             <button className="round-action" aria-label="notification"><Bell size={22} /></button>
             <button className="round-action avatar user-photo" aria-label="profile">
               <img src={resolveAvatarUrl(activeUser.avatarUrl)} alt={activeUser.nameEn} />
@@ -580,7 +740,7 @@ export default function App() {
           <div><Fingerprint size={18} /> <strong>{shortDid(activeUser.holderDid)}</strong></div>
           <div className={offlineWallet.isOnline ? "online" : "offline"}>{offlineWallet.isOnline ? t("wallet.online") : t("wallet.offline")}</div>
           {developerMode && <div className="developer-chip"><KeyRound size={16} /> โหมดนักพัฒนา</div>}
-          <button type="button" onClick={() => setView("receive")}><Camera size={18} /> {t("wallet.scanQr")}</button>
+          <button type="button" onClick={() => openDocumentsHub("receive")}><Camera size={18} /> {t("wallet.scanQr")}</button>
           <button type="button" onClick={() => exportResult(exportWalletObjects(storedObjects))}><Download size={18} /> ส่งออกทั้งหมด</button>
           <button type="button" onClick={() => setTheme(theme === "light" ? "dark" : "light")}>{theme === "light" ? <Moon size={18} /> : <Sun size={18} />} ธีม</button>
           <button type="button" onClick={() => setLang(lang === "th" ? "en" : "th")}><Languages size={18} /> {lang.toUpperCase()}</button>
@@ -605,16 +765,36 @@ export default function App() {
           />
         )}
         {view === "documents" && (
-          <DocumentsView
+          <DocumentsHubView
+            tab={documentsTab}
+            onTab={setDocumentsTab}
             cards={allCards}
             counts={counts}
             user={activeUser}
+            fixtures={interopFixtures}
+            developerMode={developerMode}
+            objects={filteredObjects}
+            allObjects={storedObjects}
+            filter={storeFilter}
+            scanHistory={scanHistory}
+            history={history}
             onOpenCard={card => {
               setSelectedCard(card);
               setQrDataUrl("");
               setPresentation(null);
               setDetailOpen(true);
             }}
+            onOpenScanner={() => setScannerOpen(true)}
+            onImportPayload={value => {
+              importPayload(value);
+              setDocumentsTab("store");
+            }}
+            onCopyFixture={(label, value) => {
+              void copyText(value);
+              setLastImportMessage(`คัดลอก ${label} สำหรับ ${activeUser.nameTh ?? activeUser.nameEn} แล้ว`);
+            }}
+            onFilter={setStoreFilter}
+            onExport={exportResult}
           />
         )}
         {view === "receive" && (
@@ -662,6 +842,7 @@ export default function App() {
             servicePacketQrDataUrl={servicePacketQrDataUrl}
             checkinQrDataUrl={checkinQrDataUrl}
             onContext={setReadinessContext}
+            onPrepareAll={() => void prepareAllServiceArtifacts()}
             onBuildBundle={() => void buildBundle()}
             onBuildPacket={() => void buildPacket()}
             onCheckinQr={() => void buildCheckinQr()}
@@ -694,12 +875,11 @@ export default function App() {
 
       <nav className="bottom-nav">
         <NavButton active={view === "home"} icon={<Home />} label="หน้าแรก" onClick={() => setView("home")} />
-        <NavButton active={view === "documents"} icon={<FileText />} label="เอกสาร" onClick={() => setView("documents")} />
-        <NavButton active={view === "receive"} icon={<Inbox />} label="รับ" onClick={() => setView("receive")} />
+        <NavButton active={view === "documents" || view === "receive" || view === "store" || view === "history"} icon={<FileText />} label="เอกสาร" onClick={() => {
+          openDocumentsHub("cards");
+        }} />
         <NavButton active={view === "share"} icon={<Share2 />} label="แชร์" onClick={() => setView("share")} />
         <NavButton active={view === "prepare"} icon={<Activity />} label="เตรียม" onClick={() => setView("prepare")} />
-        <NavButton active={view === "store"} icon={<Database />} label="คลัง" onClick={() => setView("store")} />
-        <NavButton active={view === "history"} icon={<History />} label="ประวัติ" onClick={() => setView("history")} />
         <NavButton active={view === "settings"} icon={<Settings />} label="ตั้งค่า" onClick={() => setView("settings")} />
       </nav>
 
@@ -936,6 +1116,86 @@ function HomeView({ cards, user, readiness, history, offlineOnline, onOpenCard, 
           )}
         </Surface>
       </div>
+    </div>
+  );
+}
+
+function DocumentsHubView({
+  tab,
+  onTab,
+  cards,
+  counts,
+  user,
+  fixtures,
+  developerMode,
+  objects,
+  allObjects,
+  filter,
+  scanHistory,
+  history,
+  onOpenCard,
+  onOpenScanner,
+  onImportPayload,
+  onCopyFixture,
+  onFilter,
+  onExport
+}: {
+  tab: DocumentsTab;
+  onTab: (tab: DocumentsTab) => void;
+  cards: WalletCard[];
+  counts: Record<string, number>;
+  user: WalletDemoUser;
+  fixtures: ReturnType<typeof buildPortalInteroperabilityFixtures>;
+  developerMode: boolean;
+  objects: WalletStoredObject[];
+  allObjects: WalletStoredObject[];
+  filter: StoreFilter;
+  scanHistory: ScanOutcome[];
+  history: PresentationHistoryItem[];
+  onOpenCard: (card: WalletCard) => void;
+  onOpenScanner: () => void;
+  onImportPayload: (value: string) => void;
+  onCopyFixture: (label: string, value: string) => void;
+  onFilter: (filter: StoreFilter) => void;
+  onExport: (result: WalletExportResult) => void;
+}) {
+  return (
+    <div className="view-stack documents-hub">
+      <Surface className="document-hub-tabs">
+        <div>
+          <span className="eyebrow">ศูนย์เอกสารใน Wallet</span>
+          <h2>เอกสาร รับเข้า คลัง และประวัติ</h2>
+          <p>รวมงานที่เกี่ยวกับเอกสารไว้ในหน้าเดียว ลดเมนูซ้ำบนมือถือ และยังแยก scope ตามผู้ใช้ที่ login อยู่</p>
+        </div>
+        <div className="segmented document-tabs">
+          <button type="button" className={tab === "cards" ? "active" : ""} onClick={() => onTab("cards")}><FileText size={16} /> เอกสาร</button>
+          <button type="button" className={tab === "receive" ? "active" : ""} onClick={() => onTab("receive")}><Inbox size={16} /> รับ</button>
+          <button type="button" className={tab === "store" ? "active" : ""} onClick={() => onTab("store")}><Database size={16} /> คลัง</button>
+          <button type="button" className={tab === "history" ? "active" : ""} onClick={() => onTab("history")}><History size={16} /> ประวัติ</button>
+        </div>
+      </Surface>
+      {tab === "cards" && <DocumentsView cards={cards} counts={counts} user={user} onOpenCard={onOpenCard} />}
+      {tab === "receive" && (
+        <ReceiveView
+          user={user}
+          fixtures={fixtures}
+          developerMode={developerMode}
+          onOpenScanner={onOpenScanner}
+          onImportPayload={onImportPayload}
+          onCopyFixture={onCopyFixture}
+        />
+      )}
+      {tab === "store" && (
+        <StoreView
+          objects={objects}
+          allObjects={allObjects}
+          filter={filter}
+          onFilter={onFilter}
+          onImport={onImportPayload}
+          onExport={onExport}
+        />
+      )}
+      {tab === "history" && <HistoryView history={history} scanHistory={scanHistory} />}
     </div>
   );
 }
@@ -1556,6 +1816,7 @@ function PrepareView({
   servicePacketQrDataUrl,
   checkinQrDataUrl,
   onContext,
+  onPrepareAll,
   onBuildBundle,
   onBuildPacket,
   onCheckinQr,
@@ -1575,6 +1836,7 @@ function PrepareView({
   servicePacketQrDataUrl: string;
   checkinQrDataUrl: string;
   onContext: (context: ReadinessContext) => void;
+  onPrepareAll: () => void;
   onBuildBundle: () => void;
   onBuildPacket: () => void;
   onCheckinQr: () => void;
@@ -1582,122 +1844,213 @@ function PrepareView({
   onImportMissing: () => void;
 }) {
   const activeContract = contractHub?.contracts.find(item => item.context === context);
-  const missing = readiness?.readiness?.missing ?? [];
-  const ready = readiness?.readiness?.ready ?? [];
+  const readinessResult = readiness?.readiness ?? {};
+  const missing = readinessResult.missing ?? [];
+  const ready = readinessResult.ready ?? [];
   const missingRequired = missing.filter((item: any) => item.required);
   const canCreateFullPacket = missingRequired.length === 0;
   const packetContents = ready.flatMap((item: any) => item.matchedCards ?? []);
+  const generatedCount = [serviceBundle, servicePacket, checkinQr].filter(Boolean).length;
+  const isPrepared = generatedCount === 3;
+  const serviceBundleScanPayload = serviceBundle ? createScannableWebUrl(compactBundlePayload(serviceBundle)) : "";
+  const servicePacketScanPayload = servicePacket?.qrData ?? "";
+  const checkinScanPayload = checkinQr?.qrPayload ?? checkinQr?.shlUrl ?? "";
+  const primaryActionText = !canCreateFullPacket
+    ? "ขอเอกสารที่ขาด"
+    : isPrepared
+      ? "คัดลอก QR สำหรับเข้าโรงพยาบาล"
+      : "สร้างชุดพร้อมเข้ารับบริการ";
+  const primaryAction = () => {
+    if (!canCreateFullPacket) {
+      onRequestMissing();
+      return;
+    }
+    if (!isPrepared) {
+      onPrepareAll();
+      return;
+    }
+    const payload = checkinQr ? getPreparedArtifactScanPayload(checkinQr) : "";
+    if (payload) void copyText(payload);
+  };
+  const prepSteps = [
+    {
+      title: "เลือกประเภทบริการ",
+      description: readinessContextLabels[context].th,
+      status: "เสร็จแล้ว",
+      complete: true
+    },
+    {
+      title: "ตรวจเอกสารที่ต้องใช้",
+      description: canCreateFullPacket
+        ? `พร้อม ${readinessResult.requiredReady ?? 0}/${readinessResult.requiredTotal ?? 0} รายการจำเป็น`
+        : `ยังขาด ${missingRequired.length} รายการจำเป็น`,
+      status: canCreateFullPacket ? "พร้อม" : "ต้องแก้ไข",
+      complete: canCreateFullPacket
+    },
+    {
+      title: "สร้างชุดส่งให้โรงพยาบาล",
+      description: isPrepared ? "สร้าง Service Bundle, VP และ SHL แล้ว" : `สร้างแล้ว ${generatedCount}/3 รายการ`,
+      status: isPrepared ? "พร้อมส่ง" : "ยังไม่ครบ",
+      complete: isPrepared
+    },
+    {
+      title: "ส่งหรือสแกนที่จุดบริการ",
+      description: isPrepared ? "ใช้ QR ด้านล่างเพื่อส่งให้โรงพยาบาลตรวจ" : "สร้างชุดเอกสารก่อนใช้งาน",
+      status: isPrepared ? "ใช้งานได้" : "รอสร้าง",
+      complete: isPrepared
+    }
+  ];
   return (
     <div className="view-stack">
-      <Surface>
+      <Surface className="service-prep-hero">
+        <div className="service-prep-copy">
+          <span className="eyebrow">เตรียมบริการ</span>
+          <h2>เตรียมเอกสารก่อนเข้ารับบริการ</h2>
+          <p>ตรวจว่ามีเอกสารจำเป็นครบหรือไม่ แล้วสร้าง QR/VP ที่โรงพยาบาลใช้ตรวจรับบริการได้ทันที</p>
+          <div className="prep-hero-actions">
+            <Button className={isPrepared ? "green" : "purple"} onClick={primaryAction}>
+              {isPrepared ? <QrCode size={18} /> : canCreateFullPacket ? <Layers3 size={18} /> : <FilePlus2 size={18} />}
+              {primaryActionText}
+            </Button>
+            {!canCreateFullPacket && <Button className="secondary" onClick={onImportMissing}><Upload size={18} /> นำเข้าเอกสาร</Button>}
+          </div>
+        </div>
+        <div className="prep-score-card">
+          <div className={canCreateFullPacket ? "prep-score-ring ready" : "prep-score-ring warning"}>{readinessResult.score ?? 0}%</div>
+          <div>
+            <strong>{canCreateFullPacket ? "พร้อมเข้ารับบริการ" : "ยังขาดเอกสาร"}</strong>
+            <span>จำเป็น {readinessResult.requiredReady ?? 0}/{readinessResult.requiredTotal ?? 0} · แนะนำ {readinessResult.recommendedReady ?? 0}/{readinessResult.recommendedTotal ?? 0}</span>
+          </div>
+        </div>
+      </Surface>
+
+      <Surface className="service-context-panel">
         <div className="section-title-row">
           <div>
-            <h2>สัญญาความพร้อมก่อนรับบริการ</h2>
-            <p>{activeContract?.patientLabel ?? readinessContextLabels[context].th}</p>
+            <h2>1. เลือกบริการที่จะไป</h2>
+            <p>{activeContract?.patientLabel ?? readinessPurposeTh[context]}</p>
           </div>
           <Badge tone="blue">Contract Hub {contractHub?.version ?? "demo"}</Badge>
         </div>
-        <div className="segmented">
+        <div className="service-context-grid">
           {(Object.keys(readinessContextLabels) as ReadinessContext[]).map(key => (
-            <button key={key} className={context === key ? "active" : ""} onClick={() => onContext(key)}>
-              {readinessContextLabels[key].th}
+            <button key={key} className={context === key ? "service-context-card active" : "service-context-card"} onClick={() => onContext(key)}>
+              <span>{readinessContextLabels[key].th}</span>
+              <small>{readinessPurposeTh[key]}</small>
             </button>
           ))}
         </div>
       </Surface>
 
-      <Surface className="bundle-dashboard">
+      <section className="prep-main-grid">
+        <Surface className="prep-checklist">
+          <div className="section-title-row">
+            <div>
+              <h2>2. ตรวจความพร้อม</h2>
+              <p>ขั้นตอนทั้งหมดที่ผู้ป่วยต้องทำก่อนส่งข้อมูลให้โรงพยาบาล</p>
+            </div>
+            <Badge tone={isPrepared ? "green" : canCreateFullPacket ? "blue" : "yellow"}>{isPrepared ? "พร้อมใช้" : canCreateFullPacket ? "พร้อมสร้าง" : "ต้องแก้ไข"}</Badge>
+          </div>
+          <div className="prep-task-list">
+            {prepSteps.map((step, index) => <PrepTaskRow key={step.title} index={index + 1} {...step} />)}
+          </div>
+        </Surface>
+
+        <Surface className="prep-documents-panel">
+          <div className="section-title-row">
+            <div>
+              <h2>เอกสารที่ใช้ในบริการนี้</h2>
+              <p>{activeContract?.patientDirection ?? "patient_outbound"}</p>
+            </div>
+            <Badge tone={canCreateFullPacket ? "green" : "yellow"}>{packetContents.length} รายการตรงเงื่อนไข</Badge>
+          </div>
+          {!canCreateFullPacket && (
+            <div className="prep-warning-inline">
+              <AlertTriangle size={18} />
+              <span>ยังขาดเอกสารจำเป็น {missingRequired.length} รายการ ควรขอจากโรงพยาบาลหรือนำเข้าเอกสารก่อนสร้างชุดพร้อมรับบริการ</span>
+            </div>
+          )}
+          <div className="readiness-doc-list">
+            {ready.map((item: any) => (
+              <div key={item.key} className="readiness-doc-row ready">
+                <CheckCircle2 size={18} />
+                <span><strong>{item.label}</strong><small>{item.required ? "จำเป็น" : "แนะนำ"}</small></span>
+                <Badge tone="green">พร้อม</Badge>
+              </div>
+            ))}
+            {missing.map((item: any) => (
+              <div key={item.key} className="readiness-doc-row missing">
+                <AlertTriangle size={18} />
+                <span><strong>{item.label}</strong><small>{item.required ? "จำเป็น" : "แนะนำ"}</small></span>
+                <Badge tone={item.required ? "red" : "yellow"}>ยังขาด</Badge>
+              </div>
+            ))}
+          </div>
+          <div className="prep-doc-actions">
+            <Button onClick={onRequestMissing} disabled={!missing.length}><FilePlus2 size={18} /> ขอเอกสารที่ขาด</Button>
+            <Button className="secondary" onClick={onImportMissing} disabled={!missing.length}><Upload size={18} /> นำเข้าเอกสาร</Button>
+          </div>
+        </Surface>
+      </section>
+
+      <Surface className="bundle-dashboard service-output-panel">
         <div className="section-title-row">
           <div>
-            <span className="eyebrow">Document Bundles</span>
-            <h2>ชุดเอกสารบริการ</h2>
-            <p>สร้าง Bundle, Service VP และ Check-in SHL จาก context ที่เลือก แล้วใช้ QR เพื่อสแกนจากเครื่องอื่นผ่านเว็บได้ทันที</p>
+            <span className="eyebrow">ชุดเอกสารบริการ</span>
+            <h2>3. สร้างชุดส่งให้โรงพยาบาล</h2>
+            <p>ระบบจะสร้างซองข้อมูล, VP และ Check-in QR ให้ครบในครั้งเดียว ผู้ใช้ยังสร้างแยกรายการได้ในกรณีทดสอบ integration</p>
           </div>
-          <Badge tone={serviceBundle || servicePacket || checkinQr ? "green" : "yellow"}>
-            {serviceBundle || servicePacket || checkinQr ? "มี bundle พร้อมทดสอบ" : "ยังไม่ได้สร้าง"}
+          <Badge tone={isPrepared ? "green" : generatedCount ? "blue" : "yellow"}>
+            {isPrepared ? "สร้างครบแล้ว" : generatedCount ? `สร้างแล้ว ${generatedCount}/3` : "ยังไม่ได้สร้าง"}
           </Badge>
+        </div>
+        <div className="prep-primary-row">
+          <Button className={canCreateFullPacket ? "purple" : "secondary"} onClick={onPrepareAll} disabled={!canCreateFullPacket}>
+            <Layers3 size={18} /> สร้างชุดพร้อมเข้ารับบริการ
+          </Button>
+          {!canCreateFullPacket && <span>สร้างชุดสมบูรณ์ได้หลังเอกสารจำเป็นครบ</span>}
         </div>
         <div className="bundle-card-grid">
           <BundleCard
             title="Service Bundle"
-            subtitle="ซองรวม contract, readiness และรายการเอกสาร"
+            subtitle="ซองข้อมูลสำหรับ Contract Hub และระบบหลังบ้าน"
             status={serviceBundle ? "สร้างแล้ว" : "ยังไม่ได้สร้าง"}
             qrDataUrl={bundleQrDataUrl}
             onCreate={onBuildBundle}
             data={serviceBundle}
+            copyPayload={serviceBundleScanPayload}
+            detailsTargetId="service-bundle-details"
           />
           <BundleCard
             title="Service VP Packet"
-            subtitle="VP สำหรับส่งให้หน่วยบริการตรวจความพร้อม"
+            subtitle="เอกสารแสดงสิทธิ์ที่ส่งให้หน่วยบริการตรวจ"
             status={servicePacket ? "สร้างแล้ว" : "ยังไม่ได้สร้าง"}
             qrDataUrl={servicePacketQrDataUrl}
             onCreate={onBuildPacket}
             data={servicePacket}
+            copyPayload={servicePacketScanPayload}
+            detailsTargetId="service-vp-details"
           />
           <BundleCard
             title="Check-in SHL"
-            subtitle="QR สำหรับ check-in หรือส่งต่อแบบ SHL"
+            subtitle="QR สำหรับเช็กอินหรือส่งต่อที่จุดบริการ"
             status={checkinQr ? "สร้างแล้ว" : "ยังไม่ได้สร้าง"}
             qrDataUrl={checkinQrDataUrl}
             onCreate={onCheckinQr}
             data={checkinQr}
+            copyPayload={checkinScanPayload}
+            detailsTargetId="checkin-shl-details"
           />
         </div>
       </Surface>
 
-      <Surface className="readiness-card">
-        <div className="readiness-score">{readiness?.readiness?.score ?? 0}%</div>
-        <div>
-          <h3>{readiness?.readiness?.criticalReady ? "พร้อมสร้าง Service VP Packet" : "ยังขาดเอกสารสำคัญ"}</h3>
-          <p>เอกสารจำเป็น {readiness?.readiness?.requiredReady ?? 0}/{readiness?.readiness?.requiredTotal ?? 0} / เอกสารแนะนำ {readiness?.readiness?.recommendedReady ?? 0}/{readiness?.readiness?.recommendedTotal ?? 0}</p>
-          <p>{activeContract?.patientDirection}</p>
-        </div>
-        <Button onClick={onRequestMissing}><FilePlus2 size={18} /> ขอเอกสารที่ขาด</Button>
-        <Button className="secondary" onClick={onImportMissing}><Upload size={18} /> นำเข้าเอกสาร</Button>
-      </Surface>
-
-      {!canCreateFullPacket && (
-        <Surface className="partial-warning">
-          <AlertTriangle size={22} />
-          <div>
-            <h3>คำเตือน: ชุดเอกสารยังไม่ครบ</h3>
-            <p>ยังขาดเอกสารจำเป็น {missingRequired.length} รายการ ควรขอหรือ import เอกสารก่อนสร้าง Service VP แบบสมบูรณ์ ส่วน partial VP ใช้เพื่อทดสอบแบบมีขอบเขตเท่านั้น</p>
-          </div>
-        </Surface>
-      )}
-
-      <div className="prepare-grid">
-        <Surface>
-          <h3>VC ที่พร้อมใช้</h3>
-          <div className="pill-list">
-            {ready.map((item: any) => <Badge key={item.key} tone="green">{item.label}</Badge>)}
-            {!ready.length && <span className="muted">ยังไม่มีเอกสารที่ตรง contract</span>}
-          </div>
-        </Surface>
-        <Surface>
-          <h3>เอกสารที่ขาด / คำขอ</h3>
-          <div className="pill-list">
-            {missing.map((item: any) => <Badge key={item.key} tone={item.required ? "red" : "yellow"}>{item.label}</Badge>)}
-            {!missing.length && <Badge tone="green">ครบถ้วน</Badge>}
-          </div>
-        </Surface>
-        <Surface>
-          <h3>การดำเนินการ</h3>
-          <div className="action-stack">
-            <Button onClick={onBuildBundle}><Layers3 size={18} /> สร้าง Service Bundle</Button>
-            <Button className="purple" onClick={onBuildPacket}><Send size={18} /> {canCreateFullPacket ? "สร้าง Service VP" : "สร้าง partial VP"}</Button>
-            <Button className="green" onClick={onCheckinQr}><QrCode size={18} /> สร้าง Check-in SHL QR</Button>
-          </div>
-        </Surface>
-      </div>
-
       <Surface className="packet-content-preview">
         <div className="section-title-row">
           <div>
-            <h3>ตัวอย่างเอกสารใน packet</h3>
-            <p>เอกสารด้านล่างตรงกับกติกา Contract Hub ที่เลือก ก่อนนำไปสร้าง VP/SHL</p>
+            <h3>4. ตรวจรายการก่อนส่ง</h3>
+            <p>รายการด้านล่างคือเอกสารที่จะถูกใช้ในชุด VP/SHL ของบริการนี้</p>
           </div>
-          <Badge tone={canCreateFullPacket ? "green" : "yellow"}>ตรงเงื่อนไข {packetContents.length} รายการ</Badge>
+          <Badge tone={canCreateFullPacket ? "green" : "yellow"}>{canCreateFullPacket ? "ครบถ้วน" : "ยังไม่ครบ"}</Badge>
         </div>
         <div className="compact-list">
           {packetContents.map((card: WalletCard) => (
@@ -1713,26 +2066,71 @@ function PrepareView({
 
       {(serviceBundle || servicePacket || checkinQr) && (
         <div className="prepare-grid wide">
-          {serviceBundle && <PacketPreview title="รายละเอียด Service Bundle" data={serviceBundle} qrDataUrl={bundleQrDataUrl} />}
-          {servicePacket && <PacketPreview title="รายละเอียด Service VP Packet" data={servicePacket} qrDataUrl={servicePacketQrDataUrl} />}
-          {checkinQr && <PacketPreview title="รายละเอียด Check-in SHL" data={checkinQr} qrDataUrl={checkinQrDataUrl} />}
+          {serviceBundle && <PacketPreview id="service-bundle-details" title="รายละเอียด Service Bundle" data={serviceBundle} qrDataUrl={bundleQrDataUrl} />}
+          {servicePacket && <PacketPreview id="service-vp-details" title="รายละเอียด Service VP Packet" data={servicePacket} qrDataUrl={servicePacketQrDataUrl} />}
+          {checkinQr && <PacketPreview id="checkin-shl-details" title="รายละเอียด Check-in SHL" data={checkinQr} qrDataUrl={checkinQrDataUrl} />}
         </div>
       )}
 
-      <div className="prepare-grid">
+      <div className="prepare-support-grid">
         <Surface>
-          <h3>Document Requests</h3>
-          <p>{requests.length ? `มี request ที่ยังเปิดอยู่ ${requests.length} รายการ` : "ไม่มี request ค้างอยู่"}</p>
+          <h3>คำขอเอกสาร</h3>
+          {requests.length ? (
+            <div className="request-list">
+              {requests.map((request: any) => (
+                <div key={request.requestId ?? request.id} className="request-row">
+                  <FilePlus2 size={18} />
+                  <span>
+                    <strong>{request.documentType ?? "เอกสารที่ขาด"}</strong>
+                    <small>{statusLabel(request.status)} · {request.sourceType ?? "hospital"}</small>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : <p>ยังไม่มีคำขอค้างอยู่</p>}
         </Surface>
         <Surface>
-          <h3>Import Job</h3>
-          <p className="mono">{importJob ? `${importJob.importId} / ${importJob.status}` : "ยังไม่มี import job"}</p>
+          <h3>งานนำเข้าเอกสาร</h3>
+          {importJob ? (
+            <div className="request-row">
+              <Upload size={18} />
+              <span>
+                <strong>{importJob.documentType ?? importJob.sourceType}</strong>
+                <small>{importJob.importId} · {statusLabel(importJob.status)}</small>
+              </span>
+            </div>
+          ) : <p>ยังไม่มีงานนำเข้า</p>}
         </Surface>
         <Surface>
-          <h3>Workbench</h3>
-          <p>{workbench?.tasks?.length ?? workbench?.actions?.length ?? 0} task(s) from Contract Hub</p>
+          <h3>สถานะ Contract Hub</h3>
+          <p>{workbench?.tasks?.length ?? workbench?.actions?.length ?? 0} งานจาก Contract Hub พร้อมตรวจสอบ</p>
         </Surface>
       </div>
+    </div>
+  );
+}
+
+function PrepTaskRow({
+  index,
+  title,
+  description,
+  status,
+  complete
+}: {
+  index: number;
+  title: string;
+  description: string;
+  status: string;
+  complete: boolean;
+}) {
+  return (
+    <div className={complete ? "prep-task-row complete" : "prep-task-row"}>
+      <div className="prep-task-index">{complete ? <CheckCircle2 size={18} /> : index}</div>
+      <span>
+        <strong>{title}</strong>
+        <small>{description}</small>
+      </span>
+      <Badge tone={complete ? "green" : "yellow"}>{status}</Badge>
     </div>
   );
 }
@@ -1782,6 +2180,7 @@ function StoreView({ objects, allObjects, filter, onFilter, onImport, onExport }
             <div className="store-object-header">
               <Badge tone={toneForObject(object)}>{object.type}</Badge>
               {object.protocol && <Badge tone="blue">{object.protocol}</Badge>}
+              {object.type === "shl" && <Badge tone={getShlTrustProfile(object.payload as ShlPackageDetail).tone}>{getShlTrustProfile(object.payload as ShlPackageDetail).label}</Badge>}
             </div>
             <h3>{object.title}</h3>
             <p>{object.subtitle ?? object.source ?? object.id}</p>
@@ -1813,8 +2212,17 @@ function StoredObjectDialog({
   onExport: (result: WalletExportResult) => void;
 }) {
   const [qrDataUrl, setQrDataUrl] = useState("");
+  const [selectedManifestDocId, setSelectedManifestDocId] = useState("");
   const payloadText = useMemo(() => JSON.stringify(object?.payload ?? {}, null, 2), [object]);
   const scanPayload = useMemo(() => object ? getObjectScanPayload(object) : "", [object]);
+  const shlDetail = object?.type === "shl" ? object.payload as ShlPackageDetail : null;
+  const manifestDocuments = shlDetail?.documentBundle?.documents ?? [];
+  const selectedManifestDoc = manifestDocuments.find(document => document.id === selectedManifestDocId) ?? manifestDocuments[0] ?? null;
+  const hasManifestExtension = Boolean(shlDetail && hasTrustCareShlManifestExtension(shlDetail));
+  const manifestScanPayload = shlDetail && hasManifestExtension
+    ? createScannableWebUrl(buildShlManifestVerificationPayload(shlDetail))
+    : "";
+  const rawShlPayload = shlDetail?.qrPayload ?? shlDetail?.shlUrl ?? "";
 
   useEffect(() => {
     let cancelled = false;
@@ -1828,6 +2236,10 @@ function StoredObjectDialog({
     };
   }, [object, scanPayload]);
 
+  useEffect(() => {
+    setSelectedManifestDocId("");
+  }, [object?.id]);
+
   if (!object) return null;
 
   return (
@@ -1838,6 +2250,7 @@ function StoredObjectDialog({
             <p className="eyebrow">{object.protocol ?? "trustcare"} / {object.type}</p>
             <h2>{object.title}</h2>
             <Badge tone={toneForObject(object)}>{statusLabel(object.status)}</Badge>
+            {shlDetail && <Badge tone={getShlTrustProfile(shlDetail).tone}>{getShlTrustProfile(shlDetail).label}</Badge>}
           </div>
           <button className="icon-button" type="button" aria-label="ปิดรายละเอียด" onClick={onClose}>×</button>
         </header>
@@ -1855,24 +2268,137 @@ function StoredObjectDialog({
               <div><dt>ID</dt><dd className="mono">{object.id}</dd></div>
             </dl>
           </section>
+          {shlDetail && (
+            <ShlManifestViewer
+              shl={shlDetail}
+              documents={manifestDocuments}
+              selectedDocument={selectedManifestDoc}
+              onSelectDocument={setSelectedManifestDocId}
+            />
+          )}
           <div className="credential-action-grid">
-            <Button className="secondary" onClick={() => void copyText(scanPayload)}><QrCode size={18} /> คัดลอก QR URL</Button>
+            <Button className="secondary" onClick={() => void copyText(scanPayload)}><QrCode size={18} /> {shlDetail ? "คัดลอก Web Scan URL" : "คัดลอก QR URL"}</Button>
+            {shlDetail && rawShlPayload && <Button className="secondary" onClick={() => void copyText(rawShlPayload)}><Link2 size={18} /> คัดลอก SHL ดิบ</Button>}
+            {hasManifestExtension && <Button className="secondary" onClick={() => void copyText(manifestScanPayload)}><ShieldCheck size={18} /> คัดลอก Manifest VP QR</Button>}
             <Button className="secondary" onClick={() => void copyText(payloadText)}><Copy size={18} /> คัดลอก Payload</Button>
             <Button onClick={() => onExport(exportWalletObject(object))}><Download size={18} /> ส่งออก</Button>
           </div>
-          <pre className="payload">{payloadText}</pre>
+          <details className="developer-payload">
+            <summary>ดู Payload สำหรับนักพัฒนา</summary>
+            <pre className="payload">{payloadText}</pre>
+          </details>
         </div>
       </div>
     </div>
   );
 }
 
-function PacketPreview({ title, data, qrDataUrl }: { title: string; data: unknown; qrDataUrl?: string }) {
+function ShlManifestViewer({
+  shl,
+  documents,
+  selectedDocument,
+  onSelectDocument
+}: {
+  shl: ShlPackageDetail;
+  documents: ShlManifestDocument[];
+  selectedDocument: ShlManifestDocument | null;
+  onSelectDocument: (id: string) => void;
+}) {
+  const trustProfile = getShlTrustProfile(shl);
+  const hasManifestExtension = trustProfile.kind === "trustcare-certified";
+  if (!hasManifestExtension) {
+    return (
+      <section className="shl-manifest-viewer standard-shl-viewer">
+        <div className="section-title-row">
+          <div>
+            <span className="eyebrow">{trustProfile.label}</span>
+            <h3>{trustProfile.kind === "trustcare-pending" ? "รอการยืนยัน Maker/Checker" : "SHL มาตรฐานที่ไม่มี Manifest VP/VC"}</h3>
+            <p>{trustProfile.description}</p>
+          </div>
+          <Badge tone={trustProfile.tone}>{trustProfile.label}</Badge>
+        </div>
+        <div className="manifest-trust-grid">
+          <div><span>SHL URL</span><strong className="mono">{shl.shlUrl ?? shl.qrPayload ?? "-"}</strong></div>
+          <div><span>Viewer URL</span><strong className="mono">{shl.viewerUrl ?? "-"}</strong></div>
+          <div><span>Access policy</span><strong>{shl.passcodeRequired ? "ต้องใช้ passcode" : "ไม่ต้องใช้ passcode"} · {shl.currentAccessCount ?? 0}/{shl.maxAccessCount ?? "-"}</strong></div>
+          <div><span>Maker/Checker</span><strong>{shl.trustcareCertification?.status ?? "ไม่เกี่ยวข้องกับ TrustCare"}</strong></div>
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <Surface className="packet-preview">
+    <section className="shl-manifest-viewer">
+      <div className="section-title-row">
+        <div>
+          <span className="eyebrow">SMART Health Link Manifest</span>
+          <h3>เอกสารใน Manifest และหลักฐาน VP</h3>
+          <p>SHL เป็น transport ส่วนความน่าเชื่อถือมาจาก Manifest VC, Holder VP และ FHIR DocumentReference ของแต่ละเอกสาร</p>
+        </div>
+        <Badge tone="green">TrustCare Verified SHL</Badge>
+      </div>
+      <div className="manifest-trust-grid">
+        <div><span>Manifest VC</span><strong className="mono">{shl.manifestCredentialId ?? "-"}</strong></div>
+        <div><span>Holder VP</span><strong className="mono">{shl.presentationId ?? "-"}</strong></div>
+        <div><span>Maker/Checker</span><strong>{shl.trustcareCertification?.makerName ?? "-"} → {shl.trustcareCertification?.checkerName ?? "-"}</strong></div>
+        <div><span>Access policy</span><strong>{shl.passcodeRequired ? "ต้องใช้ passcode" : "ไม่ต้องใช้ passcode"} · {shl.currentAccessCount ?? 0}/{shl.maxAccessCount ?? "-"}</strong></div>
+        <div><span>มาตรฐาน</span><strong>{shl.documentBundle?.standards?.join(" · ") ?? "SHL · VC/VP · FHIR"}</strong></div>
+      </div>
+      <div className="manifest-layout">
+        <div className="manifest-doc-list" aria-label="Manifest documents">
+          {documents.map(document => (
+            <button
+              key={document.id}
+              type="button"
+              className={selectedDocument?.id === document.id ? "active" : ""}
+              onClick={() => onSelectDocument(document.id)}
+            >
+              <span className="manifest-sequence">{document.sequence}</span>
+              <span>
+                <strong>{document.title}</strong>
+                <small>{document.fhirResource} · {document.contentType}</small>
+              </span>
+              <Badge tone={document.status === "available_in_manifest" ? "green" : "yellow"}>{document.status === "available_in_manifest" ? "พร้อมใน Manifest" : document.status}</Badge>
+            </button>
+          ))}
+          {!documents.length && <p className="muted">Manifest นี้ยังไม่มีรายการเอกสารที่อ่านได้ใน seed</p>}
+        </div>
+        {selectedDocument && (
+          <div className="manifest-doc-detail">
+            <span className="eyebrow">DocumentReference</span>
+            <h4>{selectedDocument.title}</h4>
+            <dl className="details-grid compact">
+              <div><dt>ประเภท</dt><dd>{selectedDocument.documentType}</dd></div>
+              <div><dt>หมวดหมู่</dt><dd>{categoryLabel(selectedDocument.category)}</dd></div>
+              <div><dt>FHIR resource</dt><dd>{selectedDocument.fhirResource}</dd></div>
+              <div><dt>Manifest file</dt><dd className="mono">{selectedDocument.manifestFileId ?? "-"}</dd></div>
+              <div><dt>Content hash</dt><dd className="mono">{selectedDocument.hash?.contentHash ?? "-"}</dd></div>
+              <div><dt>Source bundle</dt><dd className="mono">{selectedDocument.hash?.sourceBundleHash ?? "-"}</dd></div>
+            </dl>
+            <div className="manifest-link-list">
+              {Object.entries(selectedDocument.objectLinks ?? {}).map(([key, value]) => (
+                <button key={key} type="button" onClick={() => void copyText(String(value))}>
+                  <Link2 size={15} />
+                  <span><strong>{key}</strong><small>{String(value)}</small></span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PacketPreview({ id, title, data, qrDataUrl }: { id?: string; title: string; data: unknown; qrDataUrl?: string }) {
+  return (
+    <Surface id={id} className="packet-preview">
       <h3>{title}</h3>
       {qrDataUrl && <div className="qr-inline"><img src={qrDataUrl} alt={`${title} QR`} /></div>}
-      <pre className="payload">{data ? JSON.stringify(data, null, 2) : "ยังไม่ได้สร้าง"}</pre>
+      <details>
+        <summary>ดู Payload สำหรับนักพัฒนา</summary>
+        <pre className="payload">{data ? JSON.stringify(data, null, 2) : "ยังไม่ได้สร้าง"}</pre>
+      </details>
     </Surface>
   );
 }
@@ -1883,6 +2409,8 @@ function BundleCard({
   status,
   qrDataUrl,
   data,
+  copyPayload,
+  detailsTargetId,
   onCreate
 }: {
   title: string;
@@ -1890,11 +2418,17 @@ function BundleCard({
   status: string;
   qrDataUrl: string;
   data: unknown;
+  copyPayload?: string;
+  detailsTargetId?: string;
   onCreate: () => void;
 }) {
-  const scanPayload = useMemo(() => data ? getPreparedArtifactScanPayload(data) : "", [data]);
+  const scanPayload = copyPayload ?? (data ? getPreparedArtifactScanPayload(data) : "");
+  const viewDetails = () => {
+    if (!detailsTargetId) return;
+    document.getElementById(detailsTargetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   return (
-    <div className="bundle-card">
+    <div className={data ? "bundle-card generated" : "bundle-card"}>
       <div>
         <Badge tone={data ? "green" : "yellow"}>{status}</Badge>
         <h3>{title}</h3>
@@ -1904,7 +2438,10 @@ function BundleCard({
         {qrDataUrl ? <img src={qrDataUrl} alt={`${title} QR`} /> : <QrCode size={42} />}
       </div>
       <div className="bundle-actions">
-        <Button onClick={onCreate}><Layers3 size={16} /> {data ? "สร้างใหม่" : "สร้าง"}</Button>
+        <Button className={data ? "secondary" : ""} onClick={onCreate}><Layers3 size={16} /> {data ? "สร้างใหม่" : "สร้างเฉพาะรายการ"}</Button>
+        <Button className="secondary" disabled={!data || !detailsTargetId} onClick={viewDetails}>
+          <Eye size={16} /> ดูรายละเอียด
+        </Button>
         <Button
           className="secondary"
           disabled={!data}
@@ -1919,6 +2456,10 @@ function BundleCard({
 
 function ScanOutcomePanel({ outcome }: { outcome: ScanOutcome }) {
   const matched = outcome.verifier.matchedCredentialIds ?? outcome.importResult.matchedCredentialIds ?? [];
+  const checklist = Array.isArray(outcome.verifier.verificationChecklist)
+    ? outcome.verifier.verificationChecklist
+        .filter((item): item is { key?: string; label?: string; ok?: boolean; detail?: string } => Boolean(item) && typeof item === "object")
+    : [];
   return (
     <Surface className="scan-result-card">
       <div className="scan-result-main">
@@ -1937,6 +2478,25 @@ function ScanOutcomePanel({ outcome }: { outcome: ScanOutcome }) {
         <div><small>Issuer / Verifier</small><strong>{outcome.verifier.issuer ?? "-"}</strong></div>
         <div><small>ตรงกับเอกสาร</small><strong>{matched.length ? `${matched.length} รายการ` : "-"}</strong></div>
       </div>
+      {!!checklist.length && (
+        <div className="scan-checklist" aria-label="หลักฐานที่ตรวจสอบจากการสแกน">
+          <div className="scan-checklist-heading">
+            <ListChecks size={18} />
+            <span>หลักฐานที่ตรวจสอบ</span>
+          </div>
+          <div className="scan-checklist-grid">
+            {checklist.map((item, index) => (
+              <div className={item.ok ? "scan-check-item ok" : "scan-check-item warn"} key={item.key ?? `${item.label}-${index}`}>
+                {item.ok ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
+                <span>
+                  <strong>{item.label ?? "หลักฐาน"}</strong>
+                  {item.detail && <small>{item.detail}</small>}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {!!matched.length && <p className="mono scan-matched">{matched.join(", ")}</p>}
       {!!outcome.verifier.errors?.length && <p className="error-text">{outcome.verifier.errors.join(", ")}</p>}
       {!!outcome.verifier.warnings?.length && <p className="warning-text">{outcome.verifier.warnings.join(", ")}</p>}
@@ -2066,6 +2626,14 @@ function createScannableWebUrl(payload: string): string {
 
 function getObjectScanPayload(object: WalletStoredObject): string {
   const payload = object.payload as any;
+  if (object.type === "shl" && payload) {
+    const directShlPayload =
+      typeof payload?.qrPayload === "string" ? payload.qrPayload :
+      typeof payload?.shlUrl === "string" ? payload.shlUrl :
+      typeof payload?.viewerUrl === "string" ? payload.viewerUrl :
+      "";
+    if (directShlPayload) return createScannableWebUrl(directShlPayload);
+  }
   if (payload?.bundleId && payload?.contractId) {
     return createScannableWebUrl(compactBundlePayload(payload as ServiceBundleEnvelope));
   }
@@ -2098,6 +2666,94 @@ function getPreparedArtifactScanPayload(data: unknown): string {
     "";
   if (directPayload) return createScannableWebUrl(directPayload);
   return createScannableWebUrl(JSON.stringify(payload));
+}
+
+function getShlTrustProfile(shl: ShlPackageDetail | null | undefined): {
+  kind: "trustcare-certified" | "trustcare-pending" | "standard-shl";
+  label: string;
+  tone: "green" | "yellow" | "blue" | "neutral";
+  description: string;
+} {
+  const hasManifestBinding = Boolean(shl?.manifestCredentialId && shl?.presentationId && shl?.documentBundle?.documents?.length);
+  const certification = shl?.trustcareCertification;
+  const makerCheckerApproved = Boolean(
+    certification?.status === "maker_checker_approved" &&
+    certification.ownerConfirmed &&
+    certification.makerApprovedAt &&
+    certification.checkerApprovedAt
+  );
+  if (hasManifestBinding && makerCheckerApproved) {
+    return {
+      kind: "trustcare-certified",
+      label: "TrustCare Verified SHL",
+      tone: "green",
+      description: "ผ่านการยืนยันเจ้าของข้อมูลและ Maker/Checker ของโรงพยาบาลในเครือข่าย TrustCare แล้ว"
+    };
+  }
+  if (hasManifestBinding) {
+    return {
+      kind: "trustcare-pending",
+      label: "รอ Maker/Checker",
+      tone: "yellow",
+      description: "พบ Manifest VP/VC แต่ยังไม่ผ่านขั้นตอน Maker/Checker จึงใช้เป็น SHL มาตรฐานเท่านั้น"
+    };
+  }
+  return {
+    kind: "standard-shl",
+    label: "Standard SHL",
+    tone: "blue",
+    description: "SHL มาตรฐานจากภายนอก อ่านและแชร์ต่อได้โดยไม่ต้องมี Manifest VP/VC"
+  };
+}
+
+function hasTrustCareShlManifestExtension(shl: ShlPackageDetail): boolean {
+  return getShlTrustProfile(shl).kind === "trustcare-certified";
+}
+
+function buildShlManifestVerificationPayload(shl: ShlPackageDetail): string {
+  const trustProfile = getShlTrustProfile(shl);
+  const documents = shl.documentBundle?.documents ?? [];
+  return JSON.stringify({
+    type: "TrustCareShlManifestVP",
+    trustProfile: trustProfile.kind,
+    trustProfileLabel: trustProfile.label,
+    protocol: "shl",
+    id: `shl-manifest-vp:${shl.id}`,
+    shlId: shl.id,
+    label: shl.label,
+    purpose: shl.purpose,
+    context: shl.context,
+    status: shl.status,
+    shlUrl: shl.shlUrl,
+    qrPayload: shl.qrPayload,
+    viewerUrl: shl.viewerUrl,
+    manifestCredentialId: shl.manifestCredentialId,
+    holderPresentationId: shl.presentationId,
+    expiresAt: shl.expiresAt,
+    passcodeRequired: shl.passcodeRequired,
+    trustcareCertification: shl.trustcareCertification,
+    access: {
+      current: shl.currentAccessCount ?? 0,
+      max: shl.maxAccessCount ?? null
+    },
+    source: shl.documentBundle?.source,
+    bindingModel: shl.documentBundle?.bindingModel,
+    standards: shl.documentBundle?.standards ?? ["SMART Health Links", "W3C VC/VP", "HL7 FHIR R4 DocumentReference"],
+    documents: documents.map(document => ({
+      id: document.id,
+      sequence: document.sequence,
+      title: document.title,
+      documentType: document.documentType,
+      category: document.category,
+      status: document.status,
+      fhirResource: document.fhirResource,
+      contentType: document.contentType,
+      manifestFileId: document.manifestFileId,
+      hash: document.hash,
+      manifestCredentialId: document.vcBinding?.manifestCredentialId,
+      presentationId: document.vcBinding?.presentationId
+    }))
+  });
 }
 
 function compactBundlePayload(bundle: ServiceBundleEnvelope): string {
@@ -2186,7 +2842,24 @@ function downloadExport(result: WalletExportResult) {
 }
 
 async function copyText(value: string) {
-  await navigator.clipboard?.writeText(value);
+  if (!value) return;
+  try {
+    await navigator.clipboard?.writeText(value);
+    return;
+  } catch {
+    // Fall through to the legacy selection path for browser contexts without clipboard permission.
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
 }
 
 function resolveAvatarUrl(url: string): string {

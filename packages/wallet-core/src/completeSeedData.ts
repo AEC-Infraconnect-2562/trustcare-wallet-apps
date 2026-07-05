@@ -1005,6 +1005,19 @@ export const completeWalletShlPackages: ShlPackageDetail[] = [
     qrPayload: "shlink:/eyJ1cmwiOiJodHRwczovL3RydXN0Y2FyZS5leGFtcGxlLnRlc3QvbWFuaWZlc3RzL2RlbW8iLCJrIjoiZGVtby1zaGwtMzItYnl0ZS1rZXktYmFzZTY0dXJsIiwiZmxhZ3MiOiJMUCIifQ",
     manifestCredentialId: "urn:uuid:TCW-COMPLETE-0023-shl_manifest",
     presentationId: "vp_shl_complete_opd_20260701_001",
+    trustcareCertification: {
+      status: "maker_checker_approved",
+      ownerConfirmed: true,
+      makerId: "maker-tcc-001",
+      makerName: "TrustCare Central Hospital Maker",
+      makerApprovedAt: "2026-07-01T04:44:00.000Z",
+      checkerId: "checker-tcc-001",
+      checkerName: "TrustCare Central Hospital Checker",
+      checkerApprovedAt: "2026-07-01T04:48:00.000Z",
+      networkHospitalDid: "did:web:trustcare.network:hospital:tcc",
+      consentReceiptId: "urn:uuid:TCW-COMPLETE-0003-consent_receipt",
+      policyVersion: "trustcare-shl-governance-2026.07"
+    },
     passcodeRequired: true,
     currentAccessCount: 1,
     maxAccessCount: 5,
@@ -1175,6 +1188,8 @@ function buildCredentialData(input: {
   holderDid?: string;
 }): Record<string, unknown> {
   const holderDid = input.holderDid ?? completePatient.holderDid;
+  const documentReference = buildDocumentReference(input.def, input.credentialId, input.issuer, input.expiresAt);
+  const humanDocument = buildHumanDocument(input.def, input.subject, input.issuer, input.expiresAt);
   return {
     "@context": ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/wallet-medical-document/v1"],
     id: input.credentialId,
@@ -1188,7 +1203,9 @@ function buildCredentialData(input: {
     validUntil: input.expiresAt,
     credentialSubject: {
       id: holderDid,
-      ...input.subject
+      ...input.subject,
+      documentReference,
+      humanDocument
     },
     credentialStatus: {
       id: `${input.credentialId}#status`,
@@ -1202,12 +1219,8 @@ function buildCredentialData(input: {
         sourceSystem: input.def.sourceSystem,
         fhirResources: input.def.fhirResources,
         documentReferenceId: `DocumentReference/${input.def.cardType}-complete-001`,
-        attachment: {
-          contentType: preferredMimeType(input.def.cardType),
-          title: `${input.def.displayNameEn} - ${input.def.cardType}`,
-          hash: `sha256:demo-${input.def.cardType}-content-hash`,
-          url: `/demo-documents/${input.def.cardType}-complete-001.pdf`
-        }
+        resource: documentReference,
+        attachment: documentReference.content[0]?.attachment
       }
     ],
     trustcare: {
@@ -1224,10 +1237,109 @@ function buildCredentialData(input: {
       selectiveDisclosureRecommendedFields: selectiveFieldsFor(input.def.cardType),
       display: {
         cardAccent: accentForCategory(input.def.documentCategory),
+        documentLayout: layoutForDocument(input.def.cardType),
         watermark: "DEMO ONLY",
         patientFacingTitleTh: input.def.displayName,
         patientFacingTitleEn: input.def.displayNameEn
       }
+    }
+  };
+}
+
+function buildDocumentReference(
+  def: CompleteSeedDocumentDefinition,
+  credentialId: string,
+  issuer: typeof hospital | typeof partnerHospital,
+  expiresAt: string
+) {
+  return {
+    resourceType: "DocumentReference",
+    id: `${def.cardType}-complete-001`,
+    status: "current",
+    docStatus: "final",
+    type: {
+      coding: [
+        {
+          system: "https://trustcare.network/fhir/CodeSystem/document-type",
+          code: def.cardType,
+          display: def.displayNameEn
+        }
+      ],
+      text: def.displayName
+    },
+    category: [
+      {
+        coding: [
+          {
+            system: "https://trustcare.network/fhir/CodeSystem/document-category",
+            code: def.documentCategory,
+            display: def.documentCategory
+          }
+        ]
+      }
+    ],
+    subject: def.cardType === "staff_identity"
+      ? { reference: `Practitioner/${completeStaff.staffId}`, display: completeStaff.fullNameEn }
+      : { reference: `Patient/${completePatient.patientId}`, display: completePatient.fullNameEn },
+    date: issuedAt,
+    author: [{ reference: `Organization/${issuer.code}`, display: issuer.nameEn }],
+    authenticator: { reference: `Organization/${issuer.code}`, display: issuer.nameEn },
+    custodian: { reference: `Organization/${issuer.code}`, display: issuer.nameEn },
+    content: [
+      {
+        attachment: {
+          contentType: preferredMimeType(def.cardType),
+          language: "th-TH",
+          title: `${def.displayNameEn} - ${def.cardType}`,
+          creation: issuedAt,
+          hash: `sha256:demo-${def.cardType}-content-hash`,
+          url: `/demo-documents/${def.cardType}-complete-001.${preferredFileExtension(def.cardType)}`
+        },
+        format: {
+          system: "https://trustcare.network/fhir/CodeSystem/document-format",
+          code: layoutForDocument(def.cardType),
+          display: "TrustCare patient-facing rendered document"
+        }
+      }
+    ],
+    context: {
+      encounter: [{ reference: clinicalBaseline.encounterId }],
+      period: { start: issuedAt, end: expiresAt },
+      related: [{ reference: `Credential/${credentialId}` }]
+    }
+  };
+}
+
+function buildHumanDocument(
+  def: CompleteSeedDocumentDefinition,
+  subject: Record<string, unknown>,
+  issuer: typeof hospital | typeof partnerHospital,
+  expiresAt: string
+) {
+  return {
+    rendererVersion: "trustcare-wallet-document-renderer-2026.07",
+    layout: layoutForDocument(def.cardType),
+    audience: "patient_and_partner_verifier",
+    titleTh: def.displayName,
+    titleEn: def.displayNameEn,
+    issuer: {
+      code: issuer.code,
+      nameTh: issuer.nameTh,
+      nameEn: issuer.nameEn,
+      did: issuer.issuerDid
+    },
+    patient: subject.patient ?? patientProfile(),
+    issuedAt,
+    expiresAt,
+    sections: documentSectionsFor(def.cardType),
+    sourceSystem: def.sourceSystem,
+    fhirResources: def.fhirResources,
+    noPortrait: !["patient_identity", "staff_identity", "travel_document_verification"].includes(def.cardType),
+    visualHints: {
+      accent: accentForCategory(def.documentCategory),
+      priority: def.sensitivity,
+      tableDocument: ["lab_result", "prescription", "medication_summary", "pharmacy_dispense", "claim_package", "claim_receipt", "quotation"].includes(def.cardType),
+      warningDocument: def.cardType === "allergy_alert"
     }
   };
 }
@@ -1271,6 +1383,74 @@ function preferredMimeType(cardType: CompleteSeedDocumentType): string {
   if (cardType === "sync_receipt") return "application/json";
   if (cardType === "diagnostic_report") return "application/dicom+json";
   return "application/pdf";
+}
+
+function preferredFileExtension(cardType: CompleteSeedDocumentType): string {
+  if (cardType === "shl_manifest" || cardType === "sync_receipt") return "json";
+  if (cardType === "diagnostic_report") return "dicom.json";
+  return "pdf";
+}
+
+function layoutForDocument(cardType: CompleteSeedDocumentType): string {
+  const map: Partial<Record<CompleteSeedDocumentType, string>> = {
+    patient_identity: "photo_identity_card",
+    staff_identity: "staff_badge",
+    consent_receipt: "consent_receipt",
+    mpi_link_certificate: "identity_link_certificate",
+    patient_summary: "clinical_summary_report",
+    allergy_alert: "critical_alert_sheet",
+    immunization: "immunization_record",
+    medical_certificate: "signed_medical_certificate",
+    medication_summary: "medication_reconciliation_table",
+    prescription: "prescription_order",
+    pharmacy_dispense: "pharmacy_dispense_record",
+    lab_result: "laboratory_report",
+    diagnostic_report: "diagnostic_report",
+    referral_vc: "referral_letter",
+    discharge_summary: "discharge_summary",
+    insurance_eligibility: "coverage_eligibility_response",
+    claim_package: "claim_submission_package",
+    claim_receipt: "billing_receipt",
+    travel_document_verification: "travel_document_verification",
+    visa_support_letter: "visa_support_letter",
+    quotation: "treatment_quotation",
+    guarantee_letter: "letter_of_guarantee",
+    shl_manifest: "shl_manifest",
+    sync_receipt: "wallet_sync_receipt",
+    appointment: "appointment_ticket"
+  };
+  return map[cardType] ?? "clinical_document";
+}
+
+function documentSectionsFor(cardType: CompleteSeedDocumentType): string[] {
+  const map: Partial<Record<CompleteSeedDocumentType, string[]>> = {
+    patient_identity: ["demographics", "identifiers", "emergency_contact", "registration"],
+    staff_identity: ["staff_profile", "license", "department", "privileges"],
+    consent_receipt: ["purpose", "scope", "recipient", "expiry", "revocation"],
+    mpi_link_certificate: ["golden_record", "linked_identifiers", "matching_policy", "review"],
+    patient_summary: ["problems", "allergies", "medications", "vital_signs", "care_plan"],
+    allergy_alert: ["allergen", "reaction", "severity", "emergency_instruction"],
+    immunization: ["vaccine", "occurrence_date", "lot", "performer"],
+    medical_certificate: ["diagnosis", "examination", "result", "restrictions", "certifying_practitioner"],
+    medication_summary: ["active_medications", "reconciliation", "indication"],
+    prescription: ["prescription_items", "prescriber", "quantity", "refill"],
+    pharmacy_dispense: ["dispensed_items", "dispenser", "lot", "counseling"],
+    lab_result: ["specimen", "observations", "reference_range", "interpretation"],
+    diagnostic_report: ["modality", "findings", "conclusion", "reporting_practitioner"],
+    referral_vc: ["from", "to", "reason", "attachments", "requested_service"],
+    discharge_summary: ["admission", "diagnoses", "hospital_course", "procedures", "follow_up"],
+    insurance_eligibility: ["payer", "policy", "benefits", "remaining_limit", "last_checked"],
+    claim_package: ["claim", "diagnosis_codes", "service_lines", "attachments", "total"],
+    claim_receipt: ["receipt", "invoice", "items", "payment", "payer_responsibility"],
+    travel_document_verification: ["passport", "nationality", "verified_against", "travel_window"],
+    visa_support_letter: ["purpose", "visit_period", "receiving_department", "responsible_physician"],
+    quotation: ["package", "line_items", "estimated_total", "exclusions"],
+    guarantee_letter: ["payer", "pre_auth", "covered_services", "limit", "conditions"],
+    shl_manifest: ["manifest", "files", "manifest_vc", "holder_vp", "access_policy"],
+    sync_receipt: ["source", "target", "counts", "checksum", "adapter"],
+    appointment: ["service", "time", "location", "practitioner", "required_documents"]
+  };
+  return map[cardType] ?? ["summary", "issuer", "status"];
 }
 
 function accentForCategory(category: CompleteSeedDocumentCategory): string {

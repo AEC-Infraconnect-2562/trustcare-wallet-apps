@@ -1,6 +1,6 @@
 # Test Users and Seed Data
 
-The standalone wallet ships with scoped test users so TrustCare Portal and external partner wallet flows can be tested without mixing data between people. The active user is selected from the wallet sidebar. Cards, VP history, SHL packages, stored imports, OID4VCI offers, OID4VP requests, and service-readiness fixtures are generated only for that selected user.
+The standalone wallet ships with scoped test users so TrustCare Portal and external partner wallet flows can be tested without mixing data between people. The active user is selected from the test-login control in the top app bar. Cards, VP history, SHL packages, stored imports, OID4VCI offers, OID4VP requests, and service-readiness fixtures are generated only for that selected user.
 
 ## TrustCare Portal Users
 

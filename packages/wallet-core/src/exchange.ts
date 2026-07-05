@@ -21,6 +21,18 @@ export function importWalletExchange(raw: string, walletCards: WalletCard[] = []
 
   const shl = parseShlLink(value);
   if (shl) {
+    const shlPackage: ShlPackage = {
+      id: stableNumericId(value),
+      label: shl.label ?? "Imported SMART Health Link",
+      purpose: "standard_shl",
+      context: "portable_health_link",
+      status: "pending",
+      viewerUrl: shl.url,
+      shlUrl: shl.raw,
+      qrPayload: shl.raw,
+      passcodeRequired: shl.passcodeRequired,
+      currentAccessCount: 0
+    };
     return {
       ok: true,
       format: "shl-link",
@@ -28,13 +40,13 @@ export function importWalletExchange(raw: string, walletCards: WalletCard[] = []
       object: {
         id: `shl-import:${stableId(value)}`,
         type: "shl",
-        title: shl.label ?? "Imported SMART Health Link",
+        title: shlPackage.label ?? "Imported SMART Health Link",
         subtitle: shl.url ?? "SHL QR payload",
         status: "pending",
         protocol: "shl",
         createdAt: new Date().toISOString(),
         source: shl.url,
-        payload: shl
+        payload: shlPackage
       },
       warnings: shl.url ? [] : ["SHL payload could not be decoded locally; keep the original QR payload for backend validation."],
       errors: []
@@ -166,6 +178,17 @@ function importJsonObject(raw: string, json: Record<string, unknown>): WalletImp
   if (json.type === "SMARTHealthLink" || "shlUrl" in json || "qrPayload" in json) {
     const qrPayload = typeof json.qrPayload === "string" ? json.qrPayload : typeof json.shlUrl === "string" ? json.shlUrl : raw;
     const parsed = parseShlLink(qrPayload);
+    const shlPayload: ShlPackage = {
+      ...(json as Record<string, unknown>),
+      id: typeof json.id === "number" ? json.id : stableNumericId(raw),
+      label: typeof json.label === "string" ? json.label : "Imported SMART Health Link",
+      status: typeof json.status === "string" ? json.status : "pending",
+      viewerUrl: typeof json.viewerUrl === "string" ? json.viewerUrl : parsed?.url,
+      shlUrl: typeof json.shlUrl === "string" ? json.shlUrl : parsed?.raw,
+      qrPayload,
+      passcodeRequired: typeof json.passcodeRequired === "boolean" ? json.passcodeRequired : parsed?.passcodeRequired,
+      currentAccessCount: typeof json.currentAccessCount === "number" ? json.currentAccessCount : 0
+    } as ShlPackage;
     return {
       ok: true,
       format: "shl-json",
@@ -173,14 +196,14 @@ function importJsonObject(raw: string, json: Record<string, unknown>): WalletImp
       object: {
         id: `shl-json:${String(json.id ?? stableId(raw))}`,
         type: "shl",
-        title: typeof json.label === "string" ? json.label : "Imported SMART Health Link",
+        title: shlPayload.label ?? "Imported SMART Health Link",
         subtitle: typeof json.purpose === "string" ? json.purpose : parsed?.url,
-        status: typeof json.status === "string" ? json.status : "pending",
+        status: shlPayload.status,
         protocol: "shl",
         createdAt: new Date().toISOString(),
         expiresAt: typeof json.expiresAt === "string" ? json.expiresAt : undefined,
         source: parsed?.url,
-        payload: { ...json, parsed }
+        payload: { ...shlPayload, parsed }
       },
       warnings: parsed ? [] : ["SHL JSON imported, but embedded QR payload was not decodable locally."],
       errors: []
@@ -320,6 +343,14 @@ function stableId(value: string): string {
     hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
   }
   return hash.toString(36);
+}
+
+function stableNumericId(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash || 1;
 }
 
 function safeFilePart(value: string): string {

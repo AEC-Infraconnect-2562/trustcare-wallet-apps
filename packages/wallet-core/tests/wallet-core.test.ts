@@ -105,6 +105,19 @@ describe("wallet-core", () => {
     expect(walletExport.data).toContain("TrustCareWalletExport");
   });
 
+  it("imports standard SHL without requiring TrustCare Manifest VP/VC", () => {
+    const standardShl = "shlink:/eyJ1cmwiOiJodHRwczovL2V4YW1wbGUub3JnL3NobCIsImsiOiJzaGwtZXhhbXBsZS1rZXkiLCJmbGFncyI6IkxQIn0";
+    const parsed = parseShlLink(standardShl);
+    const imported = importWalletExchange(standardShl, demoWalletCards);
+
+    expect(parsed?.url).toBe("https://example.org/shl");
+    expect(imported.ok).toBe(true);
+    expect(imported.object?.type).toBe("shl");
+    expect((imported.object?.payload as any).manifestCredentialId).toBeUndefined();
+    expect((imported.object?.payload as any).presentationId).toBeUndefined();
+    expect((imported.object?.payload as any).qrPayload).toBe(standardShl);
+  });
+
   it("builds Contract Hub catalog for all prepare service contexts", () => {
     const hub = buildContractHubCatalog();
     expect(hub.contracts).toHaveLength(7);

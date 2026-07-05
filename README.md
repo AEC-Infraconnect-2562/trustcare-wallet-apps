@@ -43,6 +43,7 @@ The current TrustCare backend routes verified from `AEC-Infraconnect-2562/trustc
 
 See `docs/BACKEND_INTEGRATION_GAPS.md` for production gaps that remain outside this standalone wallet repo.
 See `docs/TEST_USERS.md` for the active mock/seed users, per-login wallet scope, photo-source policy, and TrustCare Portal interoperability fixtures.
+See `docs/CONTRACT_HUB_FEATURE_UPDATES.md` for the Thai implementation notes that TrustCare Portal and Contract Hub should support later, including Standard SHL, TrustCare Verified SHL, Maker/Checker certification, optional Manifest VP/VC, and document bundle metadata.
 
 The Contract Hub reference was checked against `AEC-Infraconnect-2562/trustcare-hospital-network` `main` at `153e99bc6788490241c385260f4b3d048a059cdc`.
 

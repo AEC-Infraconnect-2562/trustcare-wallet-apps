@@ -375,6 +375,7 @@ export function getDemoShlPackages(userId?: string | number): ShlPackageDetail[]
   if (user.id === "demo-patient-complete-001") return completeWalletShlPackages;
   if (user.id === "demo-staff-complete-001") return [];
   if (user.role !== "patient") return [];
+  const trustcareCertified = user.source === "trustcare_portal";
   return [
     {
       id: user.cardBase + 701,
@@ -385,8 +386,25 @@ export function getDemoShlPackages(userId?: string | number): ShlPackageDetail[]
       viewerUrl: "https://trustcare.example.com/shl-viewer/demo",
       shlUrl: `shlink:/demo-${user.id}`,
       qrPayload: `shlink:/demo-${user.id}`,
-      manifestCredentialId: `urn:trustcare:vc:shl:${user.id}`,
-      presentationId: `vp_shl_${user.id}`,
+      manifestCredentialId: trustcareCertified ? `urn:trustcare:vc:shl:${user.id}` : undefined,
+      presentationId: trustcareCertified ? `vp_shl_${user.id}` : undefined,
+      trustcareCertification: trustcareCertified ? {
+        status: "maker_checker_approved",
+        ownerConfirmed: true,
+        makerId: `maker-${user.id}`,
+        makerName: `${user.hospitalName} Maker`,
+        makerApprovedAt: isoOffset(-2),
+        checkerId: `checker-${user.id}`,
+        checkerName: `${user.hospitalName} Checker`,
+        checkerApprovedAt: isoOffset(-1),
+        networkHospitalDid: user.issuerDid,
+        consentReceiptId: `consent-${user.id}`,
+        policyVersion: "trustcare-shl-governance-2026.07"
+      } : {
+        status: "not_applicable",
+        ownerConfirmed: false,
+        policyVersion: "standard-shl-transport"
+      },
       passcodeRequired: true,
       currentAccessCount: user.source === "trustcare_portal" ? 1 : 0,
       maxAccessCount: 5,
@@ -394,7 +412,7 @@ export function getDemoShlPackages(userId?: string | number): ShlPackageDetail[]
       files: [{ id: `${user.id}:file:summary`, contentType: "application/fhir+json", hash: `sha256-${user.id}` }],
       versions: [{ version: 1, status: "active" }],
       accessLogs: [{ recipient: user.source === "trustcare_portal" ? "HealthPass Partner Verifier" : "TrustCare Portal Verifier", at: isoOffset(-1) }],
-      documentBundle: {
+      documentBundle: trustcareCertified ? {
         bundleId: `bundle_${user.id}`,
         manifestVersion: 1,
         source: "derived_from_shl_manifest_and_fhir_bundle",
@@ -427,7 +445,7 @@ export function getDemoShlPackages(userId?: string | number): ShlPackageDetail[]
             }
           }
         ]
-      }
+      } : undefined
     }
   ];
 }
@@ -718,13 +736,16 @@ function baseCard(user: WalletDemoUser, input: {
   subject: Record<string, unknown>;
 }): WalletCard {
   const cardId = user.cardBase + input.offset;
+  const credentialId = `${user.source === "trustcare_portal" ? "TC" : "PX"}-${user.id}-${input.offset}`;
+  const issuedAtValue = "2026-07-01T09:00:00.000Z";
+  const documentReference = buildDemoDocumentReference(user, input, credentialId, issuedAtValue);
   return {
     id: cardId,
     cardType: input.cardType,
     displayName: input.displayName,
     displayNameEn: input.displayNameEn,
     documentCategory: input.documentCategory,
-    credentialId: `${user.source === "trustcare_portal" ? "TC" : "PX"}-${user.id}-${input.offset}`,
+    credentialId,
     credentialStatus: "active",
     credentialType: input.credentialType,
     issuerHospitalName: user.hospitalName,
@@ -732,16 +753,27 @@ function baseCard(user: WalletDemoUser, input: {
     holderDid: user.holderDid,
     patientAvatarUrl: user.avatarUrl,
     createdAt: isoOffset(-40 + input.offset),
-    issuedAt: "2026-07-01T09:00:00.000Z",
+    issuedAt: issuedAtValue,
     expiresAt: input.expiresAt,
     ownerUserId: user.id,
     patientId: user.patientId,
     sourceSystem: user.source,
     scopeLabel: user.sourceLabel,
     credentialData: {
+      "@context": ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/wallet-medical-document/v1"],
+      id: credentialId,
+      type: ["VerifiableCredential", input.credentialType],
+      issuer: {
+        id: user.issuerDid,
+        name: user.hospitalName,
+        nameTh: user.hospitalNameTh
+      },
+      validFrom: issuedAtValue,
+      validUntil: input.expiresAt,
       credentialSubject: {
         id: user.holderDid,
         ...input.subject,
+        documentReference,
         source: {
           system: user.source,
           label: user.sourceLabel,
@@ -750,6 +782,11 @@ function baseCard(user: WalletDemoUser, input: {
           patientId: user.patientId
         },
         humanDocument: {
+          rendererVersion: "trustcare-wallet-document-renderer-2026.07",
+          layout: demoLayoutForDocument(input.cardType),
+          sourceSystem: user.sourceLabel,
+          fhirResources: demoFhirResourcesForDocument(input.cardType),
+          noPortrait: !["patient_identity", "staff_identity", "travel_document_verification"].includes(input.cardType),
           renderData: {
             hospital: {
               code: user.hospitalCode,
@@ -772,9 +809,112 @@ function baseCard(user: WalletDemoUser, input: {
             issuer: { did: user.issuerDid }
           }
         }
-      }
+      },
+      credentialStatus: {
+        id: `${credentialId}#status`,
+        type: "TrustCareDemoStatus",
+        status: "active"
+      },
+      evidence: [
+        {
+          type: "FHIRR4DocumentReferenceEvidence",
+          sourceSystem: user.sourceLabel,
+          fhirResources: demoFhirResourcesForDocument(input.cardType),
+          documentReferenceId: `DocumentReference/${credentialId}`,
+          resource: documentReference,
+          attachment: documentReference.content[0]?.attachment
+        }
+      ]
     }
   } as WalletCard;
+}
+
+function buildDemoDocumentReference(
+  user: WalletDemoUser,
+  input: {
+    cardType: string;
+    displayName: string;
+    displayNameEn: string;
+    documentCategory: string;
+    expiresAt: string;
+  },
+  credentialId: string,
+  issuedAtValue: string
+) {
+  return {
+    resourceType: "DocumentReference",
+    id: credentialId,
+    status: "current",
+    docStatus: "final",
+    type: {
+      coding: [{ system: "https://trustcare.network/fhir/CodeSystem/document-type", code: input.cardType, display: input.displayNameEn }],
+      text: input.displayName
+    },
+    category: [
+      {
+        coding: [{ system: "https://trustcare.network/fhir/CodeSystem/document-category", code: input.documentCategory, display: input.documentCategory }]
+      }
+    ],
+    subject: user.role === "staff"
+      ? { reference: `Practitioner/${user.carepassId}`, display: user.nameEn }
+      : { reference: `Patient/${user.patientId}`, display: user.nameEn },
+    date: issuedAtValue,
+    author: [{ reference: `Organization/${user.hospitalCode}`, display: user.hospitalName }],
+    custodian: { reference: `Organization/${user.hospitalCode}`, display: user.hospitalName },
+    content: [
+      {
+        attachment: {
+          contentType: input.cardType === "lab_result" ? "application/fhir+json" : "application/pdf",
+          language: "th-TH",
+          title: `${input.displayNameEn} - ${credentialId}`,
+          creation: issuedAtValue,
+          hash: `sha256:demo-${credentialId}`,
+          url: `/demo-documents/${credentialId}.pdf`
+        },
+        format: {
+          system: "https://trustcare.network/fhir/CodeSystem/document-format",
+          code: demoLayoutForDocument(input.cardType),
+          display: "TrustCare demo rendered document"
+        }
+      }
+    ],
+    context: {
+      period: { start: issuedAtValue, end: input.expiresAt },
+      related: [{ reference: `Credential/${credentialId}` }]
+    }
+  };
+}
+
+function demoLayoutForDocument(cardType: string): string {
+  const map: Record<string, string> = {
+    patient_identity: "photo_identity_card",
+    staff_identity: "staff_badge",
+    patient_summary: "clinical_summary_report",
+    allergy_alert: "critical_alert_sheet",
+    prescription: "prescription_order",
+    lab_result: "laboratory_report",
+    medical_certificate: "signed_medical_certificate",
+    referral_vc: "referral_letter",
+    insurance_eligibility: "coverage_eligibility_response",
+    travel_document_verification: "travel_document_verification"
+  };
+  return map[cardType] ?? "clinical_document";
+}
+
+function demoFhirResourcesForDocument(cardType: string): string[] {
+  const map: Record<string, string[]> = {
+    patient_identity: ["Patient", "Organization"],
+    staff_identity: ["Practitioner", "PractitionerRole", "Organization"],
+    patient_summary: ["Composition", "Condition", "MedicationStatement", "AllergyIntolerance"],
+    allergy_alert: ["AllergyIntolerance"],
+    prescription: ["MedicationRequest", "Practitioner"],
+    lab_result: ["DiagnosticReport", "Observation"],
+    medical_certificate: ["Composition", "Practitioner"],
+    referral_vc: ["ServiceRequest", "DocumentReference"],
+    insurance_eligibility: ["CoverageEligibilityResponse", "Coverage"],
+    travel_document_verification: ["Patient", "DocumentReference"]
+  };
+  return map[cardType] ?? ["DocumentReference"];
 }
 
 function patientSubject(user: WalletDemoUser) {

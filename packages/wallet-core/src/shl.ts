@@ -7,6 +7,7 @@ export type ParsedShlLink = {
   key?: string;
   label?: string;
   flag?: string;
+  flags?: string;
   passcodeRequired?: boolean;
 };
 
@@ -37,10 +38,18 @@ export function parseShlLink(raw: string): ParsedShlLink | null {
       kind: "shl",
       raw: value,
       url: typeof payload.url === "string" ? payload.url : undefined,
-      key: typeof payload.key === "string" ? payload.key : undefined,
+      key: typeof payload.key === "string" ? payload.key : typeof payload.k === "string" ? payload.k : undefined,
       label: typeof payload.label === "string" ? payload.label : undefined,
       flag: typeof payload.flag === "string" ? payload.flag : undefined,
-      passcodeRequired: typeof payload.passcode === "boolean" ? payload.passcode : undefined
+      flags: typeof payload.flags === "string" ? payload.flags : undefined,
+      passcodeRequired:
+        typeof payload.passcode === "boolean"
+          ? payload.passcode
+          : typeof payload.passcodeRequired === "boolean"
+            ? payload.passcodeRequired
+            : typeof payload.flags === "string"
+              ? payload.flags.includes("P")
+              : undefined
     };
   } catch {
     return { kind: "shl", raw: value };

@@ -3,7 +3,7 @@ export type ThemeMode = "light" | "dark" | "system";
 
 export type CredentialStatus = "active" | "revoked" | "expired" | "superseded" | "suspended" | string;
 
-export type TrustLevel = "green" | "yellow" | "red" | "verified" | "warning" | "unknown";
+export type TrustLevel = "green" | "yellow" | "red" | "blue" | "verified" | "warning" | "unknown";
 
 export type WalletCard = {
   id: number;
@@ -127,6 +127,19 @@ export type ShlPackage = {
   currentAccessCount?: number;
   maxAccessCount?: number | null;
   expiresAt?: string | null;
+  trustcareCertification?: {
+    status: "maker_checker_approved" | "pending_maker_checker" | "rejected" | "not_applicable" | string;
+    ownerConfirmed?: boolean;
+    makerId?: string;
+    makerName?: string;
+    makerApprovedAt?: string;
+    checkerId?: string;
+    checkerName?: string;
+    checkerApprovedAt?: string;
+    networkHospitalDid?: string;
+    consentReceiptId?: string;
+    policyVersion?: string;
+  };
 };
 
 export type ShlPackageDetail = ShlPackage & {
