@@ -46,7 +46,7 @@
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 22px;
+  padding: clamp(18px, 3vw, 32px);
   background:
     radial-gradient(circle at 20% 10%, rgba(66, 103, 214, 0.14), transparent 30%),
     radial-gradient(circle at 80% 20%, rgba(42, 141, 114, 0.14), transparent 32%),
@@ -54,31 +54,31 @@
 }
 
 .login-card {
-  width: min(1080px, 100%);
+  width: min(980px, 100%);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 18px;
   background: color-mix(in srgb, var(--card) 92%, transparent);
   box-shadow: var(--shadow-md);
-  padding: 24px;
+  padding: clamp(18px, 2.5vw, 24px);
   display: grid;
-  gap: 18px;
+  gap: 16px;
 }
 
 .login-copy h1 {
-  margin: 6px 0 8px;
-  font-size: clamp(28px, 4vw, 42px);
-  line-height: 1.05;
+  margin: 4px 0 6px;
+  font-size: clamp(24px, 2.4vw, 32px);
+  line-height: 1.12;
 }
 
 .login-copy p {
-  max-width: 760px;
+  max-width: 680px;
   color: var(--muted-foreground);
-  line-height: 1.65;
+  line-height: 1.55;
 }
 
 .login-user-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 12px;
 }
 
@@ -1823,7 +1823,7 @@ button:disabled {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: 120;
   display: grid;
   place-items: center;
   padding: 20px;
@@ -3207,6 +3207,13 @@ body {
 .modal-backdrop {
   background: rgba(15, 23, 42, 0.52);
   backdrop-filter: blur(10px);
+}
+
+.credential-modal-backdrop {
+  z-index: 140;
+  align-items: center;
+  justify-items: center;
+  padding: clamp(12px, 2.2vw, 24px);
 }
 
 .credential-dialog {

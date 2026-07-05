@@ -37,6 +37,25 @@ export function CredentialDetailDialog({
     setQrPopupOpen(false);
   }, [card?.id]);
 
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, open]);
+
   if (!open || !card) return null;
 
   const detailCard = card;
@@ -96,8 +115,8 @@ export function CredentialDetailDialog({
   }
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="credential-dialog">
+    <div className="modal-backdrop credential-modal-backdrop" role="dialog" aria-modal="true">
+      <div className="credential-dialog" onClick={event => event.stopPropagation()}>
         <header className="credential-dialog-header">
           <div className="dialog-title-block">
             <div className="dialog-breadcrumb-row">
