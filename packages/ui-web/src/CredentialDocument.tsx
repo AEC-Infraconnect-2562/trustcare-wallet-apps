@@ -48,6 +48,63 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
   const photoUrl = photoDocumentTypes.has(card.cardType) ? photoCandidatesForCard(card)[0]?.url : undefined;
   const accent = documentAccent(card.cardType);
   const documentFields = fieldsForDocument(card, subject, patient);
+  const isIdentityDocument = photoDocumentTypes.has(card.cardType);
+  const narrative = documentNarrative(card, subject, patient);
+
+  if (!isIdentityDocument) {
+    return (
+      <article className={`${compact ? "credential-doc credential-doc-compact" : "credential-doc"} hospital-document document-${documentVariant(card.cardType)}`} style={{ "--doc-accent": accent } as CSSProperties}>
+        <div className="hospital-document-header">
+          <div className="hospital-document-brand">
+            <div className="credential-logo">{logoText(issuerNameEn)}</div>
+            <span>
+              <p>{issuerNameEn}</p>
+              <h3>{issuerNameTh}</h3>
+            </span>
+          </div>
+          <div className="hospital-document-title">
+            <small>{documentKindLabel(card.cardType)}</small>
+            <strong>{card.displayName}</strong>
+            <span>{card.displayNameEn ?? card.cardType}</span>
+          </div>
+          <Badge tone={card.credentialStatus === "active" ? "green" : "red"}>{card.credentialStatus === "active" ? "ใช้งานได้" : card.credentialStatus}</Badge>
+        </div>
+
+        <div className="hospital-document-meta">
+          <div className="hospital-patient-strip">
+            <span>ผู้ป่วย</span>
+            <strong>{displayNameTh}</strong>
+            <small>{displayNameEn}</small>
+          </div>
+          <InfoField label="เลขผู้ป่วย / เอกสาร" value={patientId} />
+          <InfoField label="วันที่ออก" value={formatDate(card.issuedAt)} />
+          <InfoField label="หมดอายุ" value={formatDate(card.expiresAt)} />
+        </div>
+
+        <DocumentNarrativePanel narrative={narrative} />
+
+        {renderDocumentBody(card, subject, documentFields)}
+
+        <DocumentSignoff card={card} subject={subject} />
+
+        <div className="hospital-document-evidence">
+          <div>
+            <span>Credential ID</span>
+            <strong className="mono">{String(card.credentialId)}</strong>
+          </div>
+          <div>
+            <span>FHIR Evidence</span>
+            <strong>DocumentReference</strong>
+          </div>
+          <div className="credential-qr">
+            {qrDataUrl ? <img src={qrDataUrl} alt="VP QR" /> : <QrCode size={48} />}
+          </div>
+        </div>
+        <div className="hospital-watermark">DEMO ONLY</div>
+        <footer>VC: {String(card.credentialId)}</footer>
+      </article>
+    );
+  }
 
   return (
     <article className={`${compact ? "credential-doc credential-doc-compact" : "credential-doc"} medical-document document-${documentVariant(card.cardType)}`} style={{ "--doc-accent": accent } as CSSProperties}>
@@ -131,16 +188,36 @@ function renderDocumentBody(card: WalletCard, subject: Record<string, unknown>, 
       return <MedicationSection title="รายการจ่ายยา" items={getArray(getObject(subject, "medicationDispense"), "items")} />;
     case "allergy_alert":
       return <AllergySection items={getArray(subject, "allergyIntolerances").length ? getArray(subject, "allergyIntolerances") : getArray(subject, "allergies")} instruction={getText(subject, "emergencyInstruction")} />;
+    case "immunization":
+      return <ImmunizationSection items={getArray(subject, "immunizations")} registryStatus={getText(subject, "registryStatus")} />;
+    case "medical_certificate":
+      return <MedicalCertificateSection certificate={getObject(subject, "certificate")} />;
     case "patient_summary":
       return <ClinicalSummarySection summary={getObject(subject, "summary") ?? getObject(subject, "clinical")} />;
+    case "consent_receipt":
+      return <ConsentReceiptSection consent={getObject(subject, "consent")} />;
+    case "mpi_link_certificate":
+      return <MpiLinkSection mpi={getObject(subject, "mpi")} />;
+    case "referral_vc":
+      return <ReferralSection referral={getObject(subject, "referral")} />;
+    case "discharge_summary":
+      return <DischargeSummarySection summary={getObject(subject, "dischargeSummary")} />;
+    case "insurance_eligibility":
+      return <CoverageEligibilitySection coverage={getObject(subject, "coverage") ?? getObject(subject, "payer")} />;
     case "claim_package":
       return <FinancialSection title="รายการค่าใช้จ่ายสำหรับเคลม" items={getArray(getObject(subject, "claimPackage"), "serviceLines")} total={getNested(subject, ["claimPackage", "totalAmount"])} currency={getNested(subject, ["claimPackage", "currency"])} />;
     case "claim_receipt":
       return <FinancialSection title="ใบเสร็จรับเงิน" items={getArray(getObject(subject, "receipt"), "items")} total={getNested(subject, ["receipt", "netAmount"])} currency="THB" />;
     case "quotation":
       return <FinancialSection title="ใบเสนอราคา" items={getArray(getObject(subject, "quotation"), "lineItems")} total={getNested(subject, ["quotation", "estimatedTotal"])} currency={getNested(subject, ["quotation", "currency"])} />;
+    case "visa_support_letter":
+      return <VisaSupportLetterSection letter={getObject(subject, "visaSupportLetter")} />;
+    case "guarantee_letter":
+      return <GuaranteeLetterSection letter={getObject(subject, "guaranteeLetter")} />;
     case "shl_manifest":
       return <ManifestSection manifest={getObject(subject, "shlManifest")} />;
+    case "sync_receipt":
+      return <SyncReceiptSection receipt={getObject(subject, "syncReceipt")} />;
     case "appointment":
       return <AppointmentSection appointment={getObject(subject, "appointment")} />;
     default:
@@ -156,6 +233,134 @@ function FieldGridSection({ fields }: { fields: Field[] }) {
           <div key={field.label} className={field.tone === "critical" ? "document-field critical" : "document-field"}>
             <span>{field.label}</span>
             <strong>{formatValue(field.value)}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DocumentNarrativePanel({ narrative }: { narrative: { title: string; body: string; sections: string[]; sourceSystem?: string } }) {
+  return (
+    <section className="document-narrative">
+      <div>
+        <span>Readable context</span>
+        <h4>{narrative.title}</h4>
+        <p>{narrative.body}</p>
+      </div>
+      {narrative.sections.length > 0 && (
+        <div className="document-section-map" aria-label="Document sections">
+          {narrative.sections.slice(0, 7).map(section => <span key={section}>{humanizeKey(section)}</span>)}
+        </div>
+      )}
+      {narrative.sourceSystem && <small>Source system: {narrative.sourceSystem}</small>}
+    </section>
+  );
+}
+
+function DocumentSignoff({ card, subject }: { card: WalletCard; subject: Record<string, unknown> }) {
+  const humanDocument = getObject(subject, "humanDocument");
+  const issuer = getObject(humanDocument, "issuer");
+  const practitioner =
+    getObject(getObject(subject, "certificate"), "certifyingPractitioner") ??
+    getObject(getObject(subject, "diagnosticReport"), "reportingPractitioner") ??
+    getObject(getObject(subject, "referral"), "requestedBy") ??
+    getObject(getObject(subject, "appointment"), "practitioner");
+
+  return (
+    <section className="document-signoff">
+      <div>
+        <span>ผู้ออกเอกสาร</span>
+        <strong>{getText(issuer, "nameTh") ?? card.issuerHospitalName ?? "TrustCare Network"}</strong>
+        <small>{getText(issuer, "did") ?? card.issuerDid ?? "-"}</small>
+      </div>
+      <div>
+        <span>ผู้รับรอง/หน่วยงาน</span>
+        <strong>{getText(practitioner, "nameTh") ?? getText(practitioner, "name") ?? "เจ้าหน้าที่ผู้มีสิทธิออกเอกสาร"}</strong>
+        <small>{getText(practitioner, "licenseNo") ?? getText(practitioner, "role") ?? "ลงนามดิจิทัลโดย issuer DID"}</small>
+      </div>
+      <div>
+        <span>สถานะเอกสาร</span>
+        <strong>{card.credentialStatus === "active" ? "ใช้งานได้" : card.credentialStatus}</strong>
+        <small>ตรวจสอบได้ด้วย VC/VP และ DocumentReference evidence</small>
+      </div>
+    </section>
+  );
+}
+
+function ImmunizationSection({ items, registryStatus }: { items: ListItem[]; registryStatus?: string }) {
+  return (
+    <section className="document-field-section">
+      <div className="document-table-header">
+        <h4>ประวัติวัคซีน</h4>
+        {registryStatus && <Badge tone="green">{registryStatus}</Badge>}
+      </div>
+      <div className="medical-table immunization-table">
+        <div className="medical-table-head"><span>วัคซีน</span><span>วันที่ได้รับ</span><span>Lot / ผู้ให้บริการ</span></div>
+        {items.map((item, index) => (
+          <div className="medical-table-row" key={`${getText(item, "vaccineCode") ?? index}`}>
+            <strong>{getText(item, "display") ?? getText(item, "vaccineCode") ?? "-"}</strong>
+            <span>{formatDate(getText(item, "occurrenceDate"))}</span>
+            <span>{[getText(item, "lotNumber"), getText(item, "performer")].filter(Boolean).join(" / ") || "-"}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MedicalCertificateSection({ certificate }: { certificate?: Record<string, unknown> }) {
+  return (
+    <section className="document-field-section certificate-layout">
+      <div className="certificate-statement">
+        <h4>ใบรับรองแพทย์</h4>
+        <p>{getText(certificate, "result") ?? "แพทย์ผู้ตรวจรับรองผลตามข้อมูลการตรวจในระบบโรงพยาบาล"}</p>
+      </div>
+      <div className="document-field-grid compact">
+        <InfoField label="เลขที่ใบรับรอง" value={getText(certificate, "certificateNo")} />
+        <InfoField label="ประเภท" value={getText(certificate, "type")} />
+        <InfoField label="วันที่ตรวจ" value={formatDate(getText(certificate, "examinationDate"))} />
+        <InfoField label="ใช้ได้ถึง" value={formatDate(getText(certificate, "validUntil"))} />
+        <InfoField label="การวินิจฉัย/เหตุผล" value={getText(certificate, "diagnosis")} />
+        <InfoField label="ข้อจำกัด/คำแนะนำ" value={getText(certificate, "restrictions")} />
+      </div>
+      <p className="document-note">เอกสารนี้เหมาะสำหรับแสดงต่อหน่วยบริการ นายจ้าง หรือหน่วยงานที่ต้องการยืนยันผลตรวจ โดยตรวจสอบแหล่งที่มาได้จาก Credential ID และ DocumentReference evidence</p>
+    </section>
+  );
+}
+
+function ConsentReceiptSection({ consent }: { consent?: Record<string, unknown> }) {
+  return (
+    <section className="document-field-section">
+      <div className="document-field-grid compact">
+        <InfoField label="Consent ID" value={getText(consent, "consentId")} />
+        <InfoField label="สถานะ" value={getText(consent, "status")} />
+        <InfoField label="วัตถุประสงค์" value={getText(consent, "purpose")} />
+        <InfoField label="หมดอายุ" value={formatDateTime(getText(consent, "expiresAt"))} />
+        <InfoField label="ขอบเขตข้อมูล" value={getNested(consent, ["scope"])} />
+        <InfoField label="ผู้รับข้อมูล" value={getNested(consent, ["grantedTo"])} />
+      </div>
+      <InfoList title="เงื่อนไข PDPA / purpose bound" items={arrayToItems(getNested(consent, ["pdpaControls"]))} primaryKey="label" />
+    </section>
+  );
+}
+
+function MpiLinkSection({ mpi }: { mpi?: Record<string, unknown> }) {
+  return (
+    <section className="document-field-section">
+      <div className="document-field-grid compact">
+        <InfoField label="Golden Record" value={getText(mpi, "goldenRecordId")} />
+        <InfoField label="ความเชื่อมั่น" value={getText(mpi, "confidence")} />
+        <InfoField label="นโยบายจับคู่" value={getText(mpi, "matchingPolicy")} />
+        <InfoField label="ตรวจทานโดย" value={getText(mpi, "reviewedBy")} />
+      </div>
+      <div className="medical-table">
+        <div className="medical-table-head"><span>องค์กร</span><span>HN</span><span>สถานะการเชื่อมโยง</span></div>
+        {getArray(mpi, "linkedIdentifiers").map((item, index) => (
+          <div className="medical-table-row" key={`${getText(item, "organization") ?? index}`}>
+            <strong>{getText(item, "organization") ?? "-"}</strong>
+            <span>{getText(item, "hn") ?? "-"}</span>
+            <span>{getText(item, "linkStatus") ?? "-"}</span>
           </div>
         ))}
       </div>
@@ -253,6 +458,76 @@ function DiagnosticReportSection({ report }: { report?: Record<string, unknown> 
   );
 }
 
+function ReferralSection({ referral }: { referral?: Record<string, unknown> }) {
+  return (
+    <section className="document-field-section referral-letter">
+      <div className="letter-block">
+        <p><strong>เรียนหน่วยบริการปลายทาง</strong></p>
+        <p>{getText(referral, "clinicalNotes") ?? getText(referral, "reason") ?? "กรุณาพิจารณารับผู้ป่วยตามข้อมูลการส่งต่อและเอกสารประกอบในรายการแนบ"}</p>
+      </div>
+      <div className="document-field-grid compact">
+        <InfoField label="เลขที่ส่งต่อ" value={getText(referral, "referralNo")} />
+        <InfoField label="ลำดับความสำคัญ" value={getText(referral, "priority")} />
+        <InfoField label="จาก" value={getText(referral, "fromHospital") ?? getText(referral, "from")} />
+        <InfoField label="ถึง" value={getText(referral, "toHospital") ?? getText(referral, "to")} />
+        <InfoField label="บริการที่ขอ" value={getText(referral, "requestedService")} />
+        <InfoField label="เหตุผลส่งต่อ" value={getText(referral, "reason")} />
+        <InfoField label="เอกสารแนบ" value={getNested(referral, ["attachments"])} />
+        <InfoField label="วันที่ออก" value={formatDateTime(getText(referral, "authoredOn"))} />
+      </div>
+    </section>
+  );
+}
+
+function DischargeSummarySection({ summary }: { summary?: Record<string, unknown> }) {
+  return (
+    <section className="document-field-section discharge-summary">
+      <div className="document-field-grid compact">
+        <InfoField label="เลขที่ Admit" value={getText(summary, "admissionNo")} />
+        <InfoField label="วันที่รับไว้" value={formatDate(getText(summary, "admissionDate"))} />
+        <InfoField label="วันที่จำหน่าย" value={formatDate(getText(summary, "dischargeDate"))} />
+        <InfoField label="Disposition" value={getText(summary, "dischargeDisposition")} />
+        <InfoField label="วินิจฉัยหลัก" value={getText(getObject(summary, "principalDiagnosis"), "display")} />
+        <InfoField label="ติดตามรักษา" value={getText(summary, "followUp")} />
+      </div>
+      <p className="document-note"><strong>Hospital course:</strong> {getText(summary, "hospitalCourse") ?? "-"}</p>
+      <InfoList title="วินิจฉัยร่วม" items={getArray(summary, "secondaryDiagnoses")} primaryKey="display" secondaryKey="code" />
+      <InfoList title="หัตถการ" items={getArray(summary, "procedures")} primaryKey="display" secondaryKey="code" />
+      <MedicationSection title="ยากลับบ้าน" items={getArray(summary, "dischargeMedications")} />
+    </section>
+  );
+}
+
+function CoverageEligibilitySection({ coverage }: { coverage?: Record<string, unknown> }) {
+  const payer = getObject(coverage, "payer");
+  return (
+    <section className="document-field-section">
+      <div className="coverage-banner">
+        <ShieldCheck size={22} />
+        <span><strong>{getText(coverage, "status") ?? "eligibility unknown"}</strong><small>Coverage eligibility response</small></span>
+      </div>
+      <div className="document-field-grid compact">
+        <InfoField label="ผู้รับประกัน/ผู้จ่าย" value={getText(payer, "nameEn") ?? getText(payer, "name") ?? getText(coverage, "payer")} />
+        <InfoField label="เลขกรมธรรม์" value={getText(payer, "policyNo") ?? getText(coverage, "policyNo")} />
+        <InfoField label="เครือข่าย" value={getText(coverage, "network")} />
+        <InfoField label="ตรวจสอบล่าสุด" value={formatDateTime(getText(coverage, "lastCheckedAt"))} />
+        <InfoField label="คุ้มครองตั้งแต่" value={formatDate(getNested(coverage, ["coveragePeriod", "start"]))} />
+        <InfoField label="คุ้มครองถึง" value={formatDate(getNested(coverage, ["coveragePeriod", "end"]))} />
+      </div>
+      <div className="medical-table">
+        <div className="medical-table-head"><span>สิทธิประโยชน์</span><span>วงเงิน</span><span>คงเหลือ</span></div>
+        {getArray(coverage, "benefitSummary").map((item, index) => (
+          <div className="medical-table-row" key={`${getText(item, "benefit") ?? index}`}>
+            <strong>{getText(item, "benefit") ?? "-"}</strong>
+            <span>{getText(item, "limit") ?? "-"}</span>
+            <span>{getText(item, "remaining") ?? "-"}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function FinancialSection({ title, items, total, currency }: { title: string; items: ListItem[]; total: unknown; currency: unknown }) {
   return (
     <section className="document-field-section">
@@ -268,6 +543,74 @@ function FinancialSection({ title, items, total, currency }: { title: string; it
         ))}
       </div>
       <div className="finance-total"><span>ยอดรวม</span><strong>{formatMoney(total, currency)}</strong></div>
+    </section>
+  );
+}
+
+function VisaSupportLetterSection({ letter }: { letter?: Record<string, unknown> }) {
+  const physician = getObject(letter, "responsiblePhysician");
+  return (
+    <section className="document-field-section letter-document">
+      <div className="letter-block">
+        <p><strong>To whom it may concern,</strong></p>
+        <p>This document supports the patient's planned medical visit. It is a hospital-issued support letter and not a government visa approval.</p>
+      </div>
+      <div className="document-field-grid compact">
+        <InfoField label="เลขที่จดหมาย" value={getText(letter, "letterNo")} />
+        <InfoField label="องค์กรผู้ออก" value={getText(letter, "issuingOrganization")} />
+        <InfoField label="วัตถุประสงค์" value={getText(letter, "purpose")} />
+        <InfoField label="แผนกที่รับ" value={getText(letter, "receivingDepartment")} />
+        <InfoField label="ช่วงเข้ารับบริการ" value={formatPeriod(getObject(letter, "proposedVisitPeriod"))} />
+        <InfoField label="แพทย์ผู้รับผิดชอบ" value={getText(physician, "nameTh") ?? getText(physician, "name")} />
+      </div>
+      {getText(letter, "note") && <p className="document-note">{getText(letter, "note")}</p>}
+    </section>
+  );
+}
+
+function GuaranteeLetterSection({ letter }: { letter?: Record<string, unknown> }) {
+  return (
+    <section className="document-field-section">
+      <div className="coverage-banner">
+        <ShieldCheck size={22} />
+        <span><strong>Letter of Guarantee</strong><small>Pre-authorization and covered services</small></span>
+      </div>
+      <div className="document-field-grid compact">
+        <InfoField label="เลขที่ Guarantee" value={getText(letter, "guaranteeNo")} />
+        <InfoField label="Payer" value={getText(letter, "payer")} />
+        <InfoField label="Policy No." value={getText(letter, "policyNo")} />
+        <InfoField label="Pre-auth No." value={getText(letter, "preAuthNo")} />
+        <InfoField label="Provider ที่คุ้มครอง" value={getText(letter, "coveredProvider")} />
+        <InfoField label="วงเงิน" value={formatMoney(getNested(letter, ["guaranteeLimit", "amount"]), getNested(letter, ["guaranteeLimit", "currency"]))} />
+        <InfoField label="ใช้ได้ตั้งแต่" value={formatDate(getText(letter, "validFrom"))} />
+        <InfoField label="ใช้ได้ถึง" value={formatDate(getText(letter, "validUntil"))} />
+      </div>
+      <InfoList title="บริการที่คุ้มครอง" items={arrayToItems(getNested(letter, ["coveredServices"]))} primaryKey="label" />
+      <InfoList title="เงื่อนไข" items={arrayToItems(getNested(letter, ["conditions"]))} primaryKey="label" />
+    </section>
+  );
+}
+
+function SyncReceiptSection({ receipt }: { receipt?: Record<string, unknown> }) {
+  const counts = getObject(receipt, "objectCounts") ?? {};
+  return (
+    <section className="document-field-section sync-receipt">
+      <div className="document-field-grid compact">
+        <InfoField label="Sync ID" value={getText(receipt, "syncId")} />
+        <InfoField label="ต้นทาง" value={getText(receipt, "sourceSystem")} />
+        <InfoField label="ปลายทาง" value={getText(receipt, "targetSystem")} />
+        <InfoField label="ทิศทาง" value={getText(receipt, "syncDirection")} />
+        <InfoField label="เริ่ม" value={formatDateTime(getText(receipt, "startedAt"))} />
+        <InfoField label="เสร็จสิ้น" value={formatDateTime(getText(receipt, "completedAt"))} />
+        <InfoField label="สถานะ" value={getText(receipt, "status")} />
+        <InfoField label="Checksum" value={getText(receipt, "checksum")} />
+      </div>
+      <div className="sync-count-grid">
+        {Object.entries(counts).map(([key, value]) => (
+          <div key={key}><span>{humanizeKey(key)}</span><strong>{formatValue(value)}</strong></div>
+        ))}
+      </div>
+      <p className="document-note">ใบรับนี้ใช้ยืนยันว่าข้อมูลถูกนำเข้า wallet ตาม adapter version ที่ระบุ และใช้ตรวจสอบย้อนหลังร่วมกับ Activity/History ได้</p>
     </section>
   );
 }
@@ -424,6 +767,120 @@ function fieldsForDocument(card: WalletCard, subject: Record<string, unknown>, p
   ];
 }
 
+function documentNarrative(card: WalletCard, subject: Record<string, unknown>, patient: Record<string, unknown>): { title: string; body: string; sections: string[]; sourceSystem?: string } {
+  const humanDocument = getObject(subject, "humanDocument");
+  const patientName = getText(patient, "fullNameTh") ?? getText(patient, "nameTh") ?? getText(patient, "name") ?? "ผู้ถือเอกสาร";
+  const sourceSystem = getText(humanDocument, "sourceSystem") ?? getText(getObject(card.credentialData, "trustcare"), "sourceSystem");
+  const sections = getStringArray(humanDocument, "sections");
+  const map: Record<string, { title: string; body: string }> = {
+    patient_identity: {
+      title: "บัตรยืนยันตัวตนผู้ป่วย",
+      body: `ใช้ยืนยันตัวตนและเลขประจำตัวผู้ป่วยของ ${patientName} ก่อนรับบริการหรือเชื่อมโยงข้อมูลข้ามหน่วยบริการ`
+    },
+    staff_identity: {
+      title: "บัตรยืนยันสิทธิ์เจ้าหน้าที่",
+      body: "ใช้ยืนยันบทบาท หน่วยงาน และสิทธิ์การปฏิบัติงานของเจ้าหน้าที่ที่เกี่ยวข้องกับการตรวจสอบหรือออกเอกสาร"
+    },
+    consent_receipt: {
+      title: "หลักฐานความยินยอม",
+      body: "แสดงวัตถุประสงค์ ขอบเขตข้อมูล ผู้รับข้อมูล และเวลาหมดอายุของการยินยอม เพื่อให้การเปิดเผยข้อมูลมีขอบเขตชัดเจน"
+    },
+    mpi_link_certificate: {
+      title: "หนังสือรับรองการเชื่อมโยงตัวตน MPI",
+      body: "ใช้แสดงความสัมพันธ์ของหมายเลขผู้ป่วยในหลายหน่วยบริการ พร้อมระดับความเชื่อมั่นและผู้ตรวจทาน"
+    },
+    patient_summary: {
+      title: "สรุปข้อมูลสุขภาพสำหรับการดูแลต่อเนื่อง",
+      body: "รวมปัญหาสุขภาพสำคัญ ยาประจำ ประวัติแพ้ยา สัญญาณชีพ และแผนดูแล เพื่อช่วยให้หน่วยบริการใหม่ประเมินผู้ป่วยได้เร็วขึ้น"
+    },
+    allergy_alert: {
+      title: "เอกสารเตือนความปลอดภัย",
+      body: "เน้นสารก่อแพ้ ความรุนแรง ปฏิกิริยา และคำแนะนำฉุกเฉิน เพื่อช่วยลดความเสี่ยงก่อนสั่งยา ตรวจ หรือทำหัตถการ"
+    },
+    immunization: {
+      title: "ประวัติการได้รับวัคซีน",
+      body: "แสดงรายการวัคซีน วันที่ได้รับ หมายเลข lot และผู้ให้บริการ ใช้ประกอบการคัดกรองหรือวางแผนการดูแล"
+    },
+    medical_certificate: {
+      title: "ใบรับรองแพทย์แบบพิมพ์ได้",
+      body: "แสดงผลการตรวจ เหตุผลรับรอง ข้อจำกัด และผู้รับรอง เหมาะสำหรับใช้กับนายจ้าง หน่วยบริการ หรือหน่วยงานที่ต้องตรวจแหล่งที่มา"
+    },
+    medication_summary: {
+      title: "สรุปรายการยาปัจจุบัน",
+      body: "ช่วยทำ medication reconciliation โดยแสดงชื่อยา ขนาด วิธีใช้ ข้อบ่งใช้ และสถานะล่าสุดก่อนเข้ารับบริการ"
+    },
+    prescription: {
+      title: "ใบสั่งยา",
+      body: "แสดงรายการยาที่แพทย์สั่ง ปริมาณ วิธีใช้ การ refill และหมายเหตุสำหรับห้องยา"
+    },
+    pharmacy_dispense: {
+      title: "ใบจ่ายยา",
+      body: "แสดงรายการยาที่จ่ายจริง จำนวน lot และคำแนะนำจากเภสัชกร ใช้ตรวจสอบความต่อเนื่องของการใช้ยา"
+    },
+    lab_result: {
+      title: "รายงานผลตรวจทางห้องปฏิบัติการ",
+      body: "แสดง specimen เวลารายงาน ผลตรวจ ค่าอ้างอิง และ flag ผิดปกติ เพื่อให้แพทย์อ่านผลได้ทันที"
+    },
+    diagnostic_report: {
+      title: "รายงานการตรวจวินิจฉัย",
+      body: "แสดงวิธีตรวจ ผลสรุป ค่าที่รายงาน และผู้รายงาน เหมาะสำหรับส่งต่อหรือประกอบการดูแลต่อเนื่อง"
+    },
+    referral_vc: {
+      title: "หนังสือส่งต่อการรักษา",
+      body: "บอกหน่วยบริการต้นทาง ปลายทาง เหตุผลส่งต่อ บริการที่ขอ และรายการเอกสารแนบในชุดส่งต่อ"
+    },
+    discharge_summary: {
+      title: "สรุปการจำหน่าย",
+      body: "รวมวันรับไว้ วันจำหน่าย วินิจฉัยหลัก course ในโรงพยาบาล ยากลับบ้าน และแผนติดตามหลังจำหน่าย"
+    },
+    insurance_eligibility: {
+      title: "ผลตรวจสอบสิทธิประกัน",
+      body: "แสดง payer สถานะสิทธิ ช่วงคุ้มครอง วงเงิน และยอดคงเหลือ เพื่อใช้ก่อนรับบริการหรือส่งเคลม"
+    },
+    claim_package: {
+      title: "ชุดเอกสารเคลม",
+      body: "รวม diagnosis, service lines, เอกสารแนบ และยอดรวมสำหรับส่งต่อ payer หรือระบบ claim"
+    },
+    claim_receipt: {
+      title: "ใบเสร็จรับเงิน",
+      body: "แสดง invoice, รายการค่าบริการ วิธีชำระเงิน ยอดสุทธิ และส่วนรับผิดชอบของ payer/patient"
+    },
+    travel_document_verification: {
+      title: "เอกสารยืนยันข้อมูลเดินทาง",
+      body: "ใช้ตรวจข้อมูล passport และช่วงเดินทางสำหรับผู้ป่วยต่างชาติหรือ medical tourism"
+    },
+    visa_support_letter: {
+      title: "จดหมายสนับสนุนการขอวีซ่า",
+      body: "อธิบายเหตุผลทางการแพทย์ ช่วงเข้ารับบริการ แผนกที่รับ และแพทย์ผู้รับผิดชอบ โดยไม่ใช่การอนุมัติวีซ่า"
+    },
+    quotation: {
+      title: "ใบเสนอราคาการรักษา",
+      body: "แสดง package รายการค่าใช้จ่าย ยอดประมาณการ และข้อยกเว้น เพื่อใช้วางแผนก่อนรับบริการ"
+    },
+    guarantee_letter: {
+      title: "หนังสือรับรองการชำระ/ค้ำประกัน",
+      body: "แสดง payer, pre-authorization, บริการที่คุ้มครอง วงเงิน และเงื่อนไขก่อนให้บริการ"
+    },
+    shl_manifest: {
+      title: "SMART Health Link Manifest",
+      body: "แสดงไฟล์ใน SHL, hash, access policy และ binding กับ Manifest VC/Holder VP เฉพาะกรณีที่ TrustCare ตรวจรับรองแล้ว"
+    },
+    sync_receipt: {
+      title: "ใบรับการนำเข้า/ซิงก์ข้อมูล",
+      body: "ยืนยันต้นทาง ปลายทาง จำนวนวัตถุที่ซิงก์ checksum และ adapter version เพื่อ audit การเคลื่อนย้ายข้อมูล"
+    },
+    appointment: {
+      title: "ใบนัดหมายและคำแนะนำ check-in",
+      body: "แสดงเวลานัด สถานที่ แพทย์/แผนก และเอกสารที่ต้องเตรียมก่อนเข้ารับบริการ"
+    }
+  };
+  const fallback = map[card.cardType] ?? {
+    title: card.displayName,
+    body: "เอกสารนี้ถูกจัดเก็บเป็น Verifiable Credential พร้อม DocumentReference evidence เพื่อให้ตรวจสอบแหล่งที่มาและใช้แลกเปลี่ยนแบบมีขอบเขตได้"
+  };
+  return { ...fallback, sections, sourceSystem };
+}
+
 function iconForDocument(cardType: string): ReactElement {
   const map: Record<string, ReactElement> = {
     patient_identity: <IdCard size={20} />,
@@ -484,6 +941,32 @@ function documentAccent(cardType: string): string {
   return map[cardType] ?? "#405a9b";
 }
 
+function documentKindLabel(cardType: string): string {
+  const map: Record<string, string> = {
+    patient_summary: "Clinical summary",
+    allergy_alert: "Safety alert",
+    immunization: "Immunization record",
+    medical_certificate: "Medical certificate",
+    medication_summary: "Medication profile",
+    prescription: "Prescription order",
+    pharmacy_dispense: "Pharmacy dispense",
+    lab_result: "Laboratory report",
+    diagnostic_report: "Diagnostic report",
+    referral_vc: "Referral letter",
+    discharge_summary: "Discharge summary",
+    insurance_eligibility: "Coverage eligibility",
+    claim_package: "Claim package",
+    claim_receipt: "Payment receipt",
+    visa_support_letter: "Visa support letter",
+    quotation: "Treatment quotation",
+    guarantee_letter: "Guarantee letter",
+    shl_manifest: "SHL manifest",
+    sync_receipt: "Sync receipt",
+    appointment: "Appointment slip"
+  };
+  return map[cardType] ?? "Clinical document";
+}
+
 function logoText(value: string): string {
   const upper = value.toUpperCase();
   if (upper.includes("RAMKHAMHAENG")) return "RU";
@@ -508,6 +991,15 @@ function getText(source: unknown, key?: string): string | undefined {
 function getArray(source: unknown, key: string): ListItem[] {
   const value = getNested(source, [key]);
   return Array.isArray(value) ? value.filter(item => item && typeof item === "object").map(item => item as ListItem) : [];
+}
+
+function getStringArray(source: unknown, key: string): string[] {
+  const value = getNested(source, [key]);
+  return Array.isArray(value) ? value.filter(item => typeof item === "string").map(String) : [];
+}
+
+function arrayToItems(value: unknown): ListItem[] {
+  return Array.isArray(value) ? value.map(item => ({ label: formatValue(item) })) : [];
 }
 
 function getNested(source: unknown, path: string[]): unknown {
@@ -537,6 +1029,19 @@ function formatMoney(amount: unknown, currency: unknown): string {
   const numeric = Number(amount);
   if (Number.isFinite(numeric)) return `${numeric.toLocaleString("th-TH")} ${String(currency ?? "THB")}`;
   return formatValue(amount);
+}
+
+function formatPeriod(period?: Record<string, unknown>): string {
+  if (!period) return "-";
+  const start = formatDate(getText(period, "start"));
+  const end = formatDate(getText(period, "end"));
+  return [start, end].filter(value => value !== "-").join(" - ") || "-";
+}
+
+function humanizeKey(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, character => character.toUpperCase());
 }
 
 function formatValue(value: unknown): string {

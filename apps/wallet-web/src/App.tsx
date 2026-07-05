@@ -829,6 +829,7 @@ export default function App() {
         )}
         {view === "prepare" && (
           <PrepareView
+            user={activeUser}
             context={readinessContext}
             readiness={readiness}
             contractHub={contractHub}
@@ -852,6 +853,7 @@ export default function App() {
         )}
         {view === "store" && (
           <StoreView
+            user={activeUser}
             objects={filteredObjects}
             allObjects={storedObjects}
             filter={storeFilter}
@@ -1187,6 +1189,7 @@ function DocumentsHubView({
       )}
       {tab === "store" && (
         <StoreView
+          user={user}
           objects={objects}
           allObjects={allObjects}
           filter={filter}
@@ -1642,7 +1645,8 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
           <div className="share-step">
             <span className="step-number">3</span>
             <strong>ข้อมูลที่จะเปิดเผย</strong>
-            <div className="field-chip-grid">
+            <p className="share-step-hint">เลือกเฉพาะชุดข้อมูลที่จำเป็นต่อวัตถุประสงค์นี้ รายการที่เลือกจะถูกใส่ใน VP QR เท่านั้น</p>
+            <div className="field-chip-grid disclosure-field-grid" role="group" aria-label="ข้อมูลที่จะเปิดเผย">
               {[
                 ["identity", "ตัวตน"],
                 ["clinical_summary", "สรุปสุขภาพ"],
@@ -1803,6 +1807,7 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
 }
 
 function PrepareView({
+  user,
   context,
   readiness,
   contractHub,
@@ -1823,6 +1828,7 @@ function PrepareView({
   onRequestMissing,
   onImportMissing
 }: {
+  user: WalletDemoUser;
   context: ReadinessContext;
   readiness: any;
   contractHub: ContractHubCatalog | null;
@@ -2012,6 +2018,8 @@ function PrepareView({
         </div>
         <div className="bundle-card-grid">
           <BundleCard
+            user={user}
+            passType="bundle"
             title="Service Bundle"
             subtitle="ซองข้อมูลสำหรับ Contract Hub และระบบหลังบ้าน"
             status={serviceBundle ? "สร้างแล้ว" : "ยังไม่ได้สร้าง"}
@@ -2022,6 +2030,8 @@ function PrepareView({
             detailsTargetId="service-bundle-details"
           />
           <BundleCard
+            user={user}
+            passType="vp"
             title="Service VP Packet"
             subtitle="เอกสารแสดงสิทธิ์ที่ส่งให้หน่วยบริการตรวจ"
             status={servicePacket ? "สร้างแล้ว" : "ยังไม่ได้สร้าง"}
@@ -2032,6 +2042,8 @@ function PrepareView({
             detailsTargetId="service-vp-details"
           />
           <BundleCard
+            user={user}
+            passType="shl"
             title="Check-in SHL"
             subtitle="QR สำหรับเช็กอินหรือส่งต่อที่จุดบริการ"
             status={checkinQr ? "สร้างแล้ว" : "ยังไม่ได้สร้าง"}
@@ -2135,7 +2147,8 @@ function PrepTaskRow({
   );
 }
 
-function StoreView({ objects, allObjects, filter, onFilter, onImport, onExport }: {
+function StoreView({ user, objects, allObjects, filter, onFilter, onImport, onExport }: {
+  user: WalletDemoUser;
   objects: WalletStoredObject[];
   allObjects: WalletStoredObject[];
   filter: StoreFilter;
@@ -2194,6 +2207,7 @@ function StoreView({ objects, allObjects, filter, onFilter, onImport, onExport }
         ))}
       </div>
       <StoredObjectDialog
+        user={user}
         object={selectedObject}
         onClose={() => setSelectedObject(null)}
         onExport={onExport}
@@ -2203,10 +2217,12 @@ function StoreView({ objects, allObjects, filter, onFilter, onImport, onExport }
 }
 
 function StoredObjectDialog({
+  user,
   object,
   onClose,
   onExport
 }: {
+  user: WalletDemoUser;
   object: WalletStoredObject | null;
   onClose: () => void;
   onExport: (result: WalletExportResult) => void;
@@ -2223,6 +2239,10 @@ function StoredObjectDialog({
     ? createScannableWebUrl(buildShlManifestVerificationPayload(shlDetail))
     : "";
   const rawShlPayload = shlDetail?.qrPayload ?? shlDetail?.shlUrl ?? "";
+  const storedPass = useMemo(
+    () => object ? describeStoredObjectPass(object, user) : null,
+    [object, user]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -2256,9 +2276,22 @@ function StoredObjectDialog({
         </header>
         <div className="stored-object-body">
           <section className="stored-object-summary">
-            <div className="qr-inline large">
-              {qrDataUrl ? <img src={qrDataUrl} alt={`${object.title} QR`} /> : <QrCode size={58} />}
-            </div>
+            {storedPass && (
+              <BrandedSharePass
+                kind={storedPass.kind}
+                title={object.title}
+                subtitle={storedPass.subtitle}
+                ownerLabel={storedPass.ownerLabel}
+                sourceLabel={storedPass.sourceLabel}
+                issuerLabel={storedPass.issuerLabel}
+                protocolLabel={storedPass.protocolLabel}
+                accessLabel={storedPass.accessLabel}
+                status={statusLabel(object.status)}
+                qrDataUrl={qrDataUrl}
+                isReady={Boolean(scanPayload)}
+                items={storedPass.items}
+              />
+            )}
             <dl className="details-grid compact">
               <div><dt>ประเภท</dt><dd>{object.type}</dd></div>
               <div><dt>Protocol</dt><dd>{object.protocol ?? "-"}</dd></div>
@@ -2403,7 +2436,11 @@ function PacketPreview({ id, title, data, qrDataUrl }: { id?: string; title: str
   );
 }
 
+type BrandedPassKind = "bundle" | "vp" | "shl" | "store";
+
 function BundleCard({
+  user,
+  passType,
   title,
   subtitle,
   status,
@@ -2413,6 +2450,8 @@ function BundleCard({
   detailsTargetId,
   onCreate
 }: {
+  user: WalletDemoUser;
+  passType: BrandedPassKind;
   title: string;
   subtitle: string;
   status: string;
@@ -2423,20 +2462,32 @@ function BundleCard({
   onCreate: () => void;
 }) {
   const scanPayload = copyPayload ?? (data ? getPreparedArtifactScanPayload(data) : "");
+  const pass = describePreparedPass(data, passType, user, title, subtitle);
   const viewDetails = () => {
     if (!detailsTargetId) return;
     document.getElementById(detailsTargetId)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
   return (
     <div className={data ? "bundle-card generated" : "bundle-card"}>
-      <div>
+      <div className="bundle-card-copy">
         <Badge tone={data ? "green" : "yellow"}>{status}</Badge>
         <h3>{title}</h3>
         <p>{subtitle}</p>
       </div>
-      <div className="bundle-qr-box">
-        {qrDataUrl ? <img src={qrDataUrl} alt={`${title} QR`} /> : <QrCode size={42} />}
-      </div>
+      <BrandedSharePass
+        kind={passType}
+        title={title}
+        subtitle={pass.subtitle}
+        ownerLabel={pass.ownerLabel}
+        sourceLabel={pass.sourceLabel}
+        issuerLabel={pass.issuerLabel}
+        protocolLabel={pass.protocolLabel}
+        accessLabel={pass.accessLabel}
+        status={data ? status : "ยังไม่ได้สร้าง"}
+        qrDataUrl={qrDataUrl}
+        isReady={Boolean(data)}
+        items={pass.items}
+      />
       <div className="bundle-actions">
         <Button className={data ? "secondary" : ""} onClick={onCreate}><Layers3 size={16} /> {data ? "สร้างใหม่" : "สร้างเฉพาะรายการ"}</Button>
         <Button className="secondary" disabled={!data || !detailsTargetId} onClick={viewDetails}>
@@ -2451,6 +2502,72 @@ function BundleCard({
         </Button>
       </div>
     </div>
+  );
+}
+
+function BrandedSharePass({
+  kind,
+  title,
+  subtitle,
+  ownerLabel,
+  sourceLabel,
+  issuerLabel,
+  protocolLabel,
+  accessLabel,
+  status,
+  qrDataUrl,
+  isReady,
+  items
+}: {
+  kind: BrandedPassKind;
+  title: string;
+  subtitle: string;
+  ownerLabel: string;
+  sourceLabel: string;
+  issuerLabel: string;
+  protocolLabel: string;
+  accessLabel: string;
+  status: string;
+  qrDataUrl: string;
+  isReady: boolean;
+  items: string[];
+}) {
+  const sourceInitials = initials(sourceLabel);
+  const ownerInitials = initials(ownerLabel);
+  return (
+    <section className={`branded-share-pass ${kind} ${isReady ? "ready" : "empty"}`} aria-label={`${title} branded QR pass`}>
+      <div className="branded-pass-main">
+        <div className="branded-pass-logos" aria-hidden="true">
+          <span className="pass-logo owner">{ownerInitials}</span>
+          <span className="pass-from">from</span>
+          <span className="pass-logo source">{sourceInitials}</span>
+        </div>
+        <div className="branded-pass-copy">
+          <span className="eyebrow">{protocolLabel}</span>
+          <h4>{ownerLabel}</h4>
+          <p>{subtitle}</p>
+          <dl>
+            <div><dt>เจ้าของข้อมูล</dt><dd>{ownerLabel}</dd></div>
+            <div><dt>แหล่งที่มา</dt><dd>{sourceLabel}</dd></div>
+            <div><dt>ผู้ออก/โฮสต์</dt><dd>{issuerLabel}</dd></div>
+            <div><dt>การเข้าถึง</dt><dd>{accessLabel}</dd></div>
+          </dl>
+        </div>
+      </div>
+      <div className="branded-pass-qr">
+        {qrDataUrl ? <img src={qrDataUrl} alt={`${title} QR`} /> : <QrCode size={46} />}
+        <small>{isReady ? "สแกนเพื่อเปิด Web view หรือส่งต่อให้ระบบที่รองรับ" : "สร้างก่อนจึงจะแสดง QR จริง"}</small>
+      </div>
+      <div className="branded-pass-items">
+        <strong>{title}</strong>
+        <ul>
+          {items.slice(0, 5).map(item => <li key={item}>{item}</li>)}
+          {items.length > 5 && <li>+{items.length - 5} รายการเพิ่มเติม</li>}
+          {!items.length && <li>รอสร้าง payload</li>}
+        </ul>
+        <Badge tone={isReady ? "green" : "yellow"}>{status}</Badge>
+      </div>
+    </section>
   );
 }
 
@@ -2666,6 +2783,148 @@ function getPreparedArtifactScanPayload(data: unknown): string {
     "";
   if (directPayload) return createScannableWebUrl(directPayload);
   return createScannableWebUrl(JSON.stringify(payload));
+}
+
+function describePreparedPass(
+  data: unknown,
+  kind: BrandedPassKind,
+  user: WalletDemoUser,
+  title: string,
+  fallbackSubtitle: string
+): {
+  ownerLabel: string;
+  sourceLabel: string;
+  issuerLabel: string;
+  protocolLabel: string;
+  accessLabel: string;
+  subtitle: string;
+  items: string[];
+} {
+  const payload = (data ?? {}) as any;
+  const ownerLabel = user.nameEn || user.nameTh || "Wallet owner";
+  const sourceLabel = user.hospitalName || user.sourceLabel || "TrustCare Wallet";
+  const issuerLabel =
+    payload.receiver ||
+    payload.verifier ||
+    payload.viewerUrl ||
+    payload.source ||
+    user.hospitalName ||
+    "TrustCare Network";
+  const items = extractPassItems(payload, kind);
+  const expiresAt = typeof payload.expiresAt === "string" ? new Date(payload.expiresAt).toLocaleString("th-TH") : "";
+  const credentialCount =
+    typeof payload.credentialCount === "number" ? payload.credentialCount :
+    Array.isArray(payload.items) ? payload.items.length :
+    items.length;
+  const kindLabels: Record<BrandedPassKind, string> = {
+    bundle: "Service Bundle",
+    vp: "Verifiable Presentation",
+    shl: "SMART Health Link",
+    store: "Wallet Object"
+  };
+  const accessLabel = [
+    payload.passcodeRequired ? "ต้องใช้ passcode" : kind === "shl" ? "SHL มาตรฐาน" : "Purpose-bound",
+    expiresAt ? `หมดอายุ ${expiresAt}` : "",
+    credentialCount ? `${credentialCount} เอกสาร` : ""
+  ].filter(Boolean).join(" · ");
+  const subtitle = data
+    ? `${kindLabels[kind]} สำหรับ ${readinessPurposeTh[payload.context as ReadinessContext] ?? payload.context ?? title}`
+    : fallbackSubtitle;
+  return {
+    ownerLabel,
+    sourceLabel,
+    issuerLabel: String(issuerLabel),
+    protocolLabel: kindLabels[kind],
+    accessLabel,
+    subtitle,
+    items
+  };
+}
+
+function describeStoredObjectPass(object: WalletStoredObject, user: WalletDemoUser) {
+  const payload = (object.payload ?? {}) as any;
+  const kind: BrandedPassKind =
+    object.type === "shl" ? "shl" :
+    object.type === "vp" || object.type === "oid4vp_request" ? "vp" :
+    object.type === "service_packet" ? "bundle" :
+    "store";
+  const ownerLabel = user.nameEn || user.nameTh || "Wallet owner";
+  const sourceLabel =
+    object.source ||
+    payload.issuerHospitalName ||
+    payload.source ||
+    payload.viewerUrl ||
+    user.hospitalName ||
+    "TrustCare Wallet";
+  const issuerLabel =
+    payload.issuerHospitalName ||
+    payload.issuer ||
+    payload.verifier ||
+    payload.receiver ||
+    object.subtitle ||
+    sourceLabel;
+  const protocolLabel =
+    object.type === "shl" ? getShlTrustProfile(payload as ShlPackageDetail).label :
+    object.protocol === "oid4vci" ? "OID4VCI Offer" :
+    object.protocol === "oid4vp" ? "OID4VP Request" :
+    object.type === "vp" ? "Verifiable Presentation" :
+    object.type === "vc" ? "Verifiable Credential" :
+    "Wallet Object";
+  const expiresAt = object.expiresAt ? new Date(object.expiresAt).toLocaleString("th-TH") : "";
+  const accessLabel = [
+    object.type === "shl" && payload.passcodeRequired ? "ต้องใช้ passcode" : "เปิดผ่าน Web view",
+    expiresAt ? `หมดอายุ ${expiresAt}` : "",
+    object.protocol ?? ""
+  ].filter(Boolean).join(" · ");
+  return {
+    kind,
+    ownerLabel,
+    sourceLabel: String(sourceLabel),
+    issuerLabel: String(issuerLabel),
+    protocolLabel,
+    accessLabel,
+    subtitle: object.subtitle || object.title,
+    items: extractPassItems(payload, kind)
+  };
+}
+
+function extractPassItems(payload: any, kind: BrandedPassKind): string[] {
+  if (!payload) return [];
+  if (Array.isArray(payload.items)) {
+    return payload.items
+      .map((item: any) => item?.label || item?.labelEn || item?.documentType || item?.key)
+      .filter(Boolean)
+      .map(String);
+  }
+  if (Array.isArray(payload.readiness?.ready)) {
+    return payload.readiness.ready
+      .map((item: any) => item?.label || item?.documentType || item?.key)
+      .filter(Boolean)
+      .map(String);
+  }
+  if (Array.isArray(payload.documents)) {
+    return payload.documents
+      .map((item: any) => item?.title || item?.documentType || item?.id)
+      .filter(Boolean)
+      .map(String);
+  }
+  if (Array.isArray(payload.documentBundle?.documents)) {
+    return payload.documentBundle.documents
+      .map((item: any) => item?.title || item?.documentType || item?.id)
+      .filter(Boolean)
+      .map(String);
+  }
+  if (kind === "shl") return ["FHIR manifest", "Web viewer", "Access policy"];
+  if (kind === "vp") return ["VP proof", "Selected credentials", "Verifier request"];
+  return ["Contract context", "Document references", "Trust layer"];
+}
+
+function initials(value: string): string {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "TC";
+  const ascii = words.map(word => word.replace(/[^A-Za-z0-9]/g, "")).filter(Boolean);
+  if (ascii.length) return ascii.slice(0, 2).map(word => word[0]).join("").toUpperCase();
+  return value.trim().slice(0, 2).toUpperCase();
 }
 
 function getShlTrustProfile(shl: ShlPackageDetail | null | undefined): {
