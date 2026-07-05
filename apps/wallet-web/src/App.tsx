@@ -56,9 +56,7 @@ import {
   buildServiceBundleEnvelope,
   countCardsByCategory,
   assessLocalReadiness,
-  createDemoCheckinQr,
-  createDemoShlKey,
-  createShlLinkPayload,
+  createTrustCareShlGatewayPublication,
   createShlViewerUrl,
   credentialTypeForDocument,
   exportWalletObject,
@@ -172,7 +170,9 @@ type ScanPayloadDescriptor = {
 const baseApiOptions = {
   url: env.apiUrl,
   demoMode: env.demoMode,
-  demoOrigin: typeof window !== "undefined" ? window.location.origin : "https://trustcare.example.com"
+  demoOrigin: typeof window !== "undefined" ? window.location.origin : "https://trustcare.example.com",
+  shlGatewayUrl: env.shlGatewayUrl,
+  shlViewerUrl: env.shlViewerUrl
 };
 
 const walletSessionKey = "trustcare-wallet-active-user";
@@ -786,7 +786,13 @@ export default function App() {
 
   const buildCheckinQr = useCallback(async () => {
     const localReadiness = assessLocalReadiness(allCards, readinessContext);
-    const result = createDemoCheckinQr(readinessContext, localReadiness.selectedCardIds.length, {
+    const result = await walletApi.generateCheckinQR(apiOptions, {
+      context: readinessContext,
+      patientId: activeUser.patientId,
+      selectedCardIds: localReadiness.selectedCardIds,
+      serviceName: readinessContextLabels[readinessContext].th,
+      consentAttested: true,
+      protocol: prepareProtocol === "hybrid" ? "hybrid" : "shl",
       expiresAt: shlPolicyExpiry(prepareShlPolicy),
       maxAccessCount: prepareShlPolicy.maxAccessCount,
       passcodeRequired: prepareShlPolicy.passcodeRequired,
@@ -797,7 +803,7 @@ export default function App() {
     setCheckinQr({ ...result, qrPayload: scannableQr });
     setCheckinQrDataUrl(await QRCode.toDataURL(scannableQr, { margin: 1, width: 220 }));
     setLastImportMessage(`สร้าง Check-in SHL ${result.shlId} แล้ว`);
-  }, [allCards, prepareShlPolicy, readinessContext]);
+  }, [activeUser.patientId, allCards, apiOptions, prepareProtocol, prepareShlPolicy, readinessContext]);
 
   const prepareAllServiceArtifacts = useCallback(async () => {
     await buildBundle();
@@ -2019,20 +2025,30 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
     const expiresAt = protocolRequiresShl(packageProtocol)
       ? shlPolicyExpiry(shlPolicy)
       : new Date(Date.now() + expiryMinutes * 60_000).toISOString();
-    const shlId = `share_${purpose}_${Date.now().toString(36)}`;
-    const shareManifestUrl = `${baseApiOptions.demoOrigin.replace(/\/$/, "")}/shl-manifest/${shlId}`;
-    const shareShlUrl = protocolRequiresShl(packageProtocol)
-      ? createShlLinkPayload({
-        url: shareManifestUrl,
-        key: createDemoShlKey(shlId),
-        label: `${user.nameEn || user.nameTh} ${readinessContextLabels[purpose].en}`,
-        flag: "L",
-        passcodeRequired: shlPolicy.passcodeRequired,
-        expiresAt,
-        version: 1
+    const shlPublication = protocolRequiresShl(packageProtocol)
+      ? createTrustCareShlGatewayPublication({
+        context: purpose,
+        ownerUserId: user.id,
+        patientId: user.patientId,
+        selectedCardIds: selectedCards.map(card => card.id),
+        cards: selectedCards,
+        receiver: recipient,
+        purpose: readinessContextLabels[purpose].th,
+        origin: currentAppBaseUrl(),
+        gatewayBaseUrl: baseApiOptions.shlGatewayUrl,
+        viewerBaseUrl: baseApiOptions.shlViewerUrl ?? currentAppBaseUrl(),
+        includeTrustCareManifestVp: packageProtocol === "hybrid",
+        policy: {
+          expiresAt,
+          maxAccessCount: shlPolicy.maxAccessCount,
+          passcodeRequired: shlPolicy.passcodeRequired,
+          passcodeHint: shlPolicy.passcodeRequired ? maskShlPasscode(shlPolicy.passcode) : null,
+          accessCodeDelivery: shlPolicy.passcodeRequired ? "separate_channel" : "not_required"
+        }
       })
-      : "";
-    const shareWebViewerUrl = shareShlUrl ? createShlViewerUrl(currentAppBaseUrl(), shareShlUrl) : "";
+      : null;
+    const shareShlUrl = shlPublication?.canonicalShlUrl ?? "";
+    const shareWebViewerUrl = shlPublication?.webViewerUrl ?? "";
     const payload = {
       type: packageProtocol === "vp"
         ? "TrustCarePurposeBoundPresentation"
@@ -2061,7 +2077,7 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
         canonicalShlUrl: shareShlUrl,
         webViewerUrl: shareWebViewerUrl,
         viewerUrl: shareWebViewerUrl,
-        manifestUrl: shareManifestUrl,
+        manifestUrl: shlPublication?.manifestUrl,
         qrPayload: shareWebViewerUrl,
         passcodeRequired: shlPolicy.passcodeRequired,
         passcodeHint: shlPolicy.passcodeRequired ? maskShlPasscode(shlPolicy.passcode) : null,
@@ -2069,7 +2085,13 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
         maxAccessCount: shlPolicy.maxAccessCount,
         expiresAt,
         standardCompatible: true,
-        trustcareManifestVp: packageProtocol === "hybrid" ? `vp_manifest_${shlId}` : null
+        trustcareManifestVp: packageProtocol === "hybrid" ? shlPublication?.manifest?.trustcare?.holderPresentationId : null,
+        gatewayMode: shlPublication?.gatewayMode,
+        gatewayPublicationId: shlPublication?.gatewayPublicationId,
+        trustLayerStatus: shlPublication?.trustLayerStatus,
+        manifest: shlPublication?.manifest,
+        portalRequest: shlPublication?.portalRequest,
+        warnings: shlPublication?.warnings
       } : null,
       timeline: buildTimelineItems(selectedCards, createdAt, timeAnchor),
       externalLinks: {

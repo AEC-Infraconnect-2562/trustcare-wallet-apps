@@ -2,8 +2,8 @@ import {
   buildContractHubCatalog,
   buildPrepareWorkbench,
   buildServiceBundleEnvelope,
-  createDemoCheckinQr,
   createDemoPresentation,
+  createTrustCareShlGatewayPublication,
   getDemoCardsByCategory,
   getDemoHistory,
   getDemoUser,
@@ -29,6 +29,8 @@ import { callTrpcProcedure } from "./trpc";
 export type WalletApiOptions = TrustCareClientOptions & {
   demoMode?: boolean;
   demoOrigin?: string;
+  shlGatewayUrl?: string;
+  shlViewerUrl?: string;
   userId?: string | number;
 };
 
@@ -229,8 +231,38 @@ export async function generateCheckinQR(options: WalletApiOptions, input: {
   uploadedDocumentIds?: number[];
   serviceName?: string;
   consentAttested: boolean;
+  expiresAt?: string;
+  maxAccessCount?: number;
+  passcodeRequired?: boolean;
+  passcodeHint?: string | null;
+  accessCodeDelivery?: "separate_channel" | "not_required" | "sms" | "in_person" | "secure_message";
+  protocol?: "shl" | "hybrid";
 }): Promise<CheckinQrResponse> {
-  if (options.demoMode ?? true) return createDemoCheckinQr(input.context, input.selectedCardIds?.length ?? 1);
+  if (options.demoMode ?? true) {
+    const user = getDemoUser(options.userId ?? input.patientId);
+    const cards = getDemoWalletCards(user.id);
+    const selected = input.selectedCardIds?.length ? cards.filter(card => input.selectedCardIds?.includes(card.id)) : cards;
+    return createTrustCareShlGatewayPublication({
+      context: input.context,
+      ownerUserId: user.id,
+      patientId: input.patientId ?? user.patientId,
+      selectedCardIds: input.selectedCardIds,
+      cards: selected,
+      receiver: input.serviceName ?? "TrustCare service intake",
+      purpose: buildContractHubCatalog().contracts.find(item => item.context === input.context)?.patientLabel,
+      gatewayBaseUrl: options.shlGatewayUrl,
+      viewerBaseUrl: options.shlViewerUrl ?? options.demoOrigin,
+      origin: options.demoOrigin,
+      includeTrustCareManifestVp: input.protocol === "hybrid",
+      policy: {
+        expiresAt: input.expiresAt,
+        maxAccessCount: input.maxAccessCount,
+        passcodeRequired: input.passcodeRequired,
+        passcodeHint: input.passcodeHint,
+        accessCodeDelivery: input.accessCodeDelivery
+      }
+    });
+  }
   return callTrpcProcedure<CheckinQrResponse>(options, "wallet.generateCheckinQR", input);
 }
 

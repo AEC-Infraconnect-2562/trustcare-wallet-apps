@@ -6,6 +6,7 @@ export * from "./selectiveDisclosure";
 export * from "./qr";
 export * from "./photoSources";
 export * from "./shl";
+export * from "./shlGateway";
 export * from "./readiness";
 export * from "./prepareService";
 export * from "./oid4vc";

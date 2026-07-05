@@ -7,6 +7,7 @@ import {
   createDemoShlKey,
   createShlLinkPayload,
   createShlViewerUrl,
+  createTrustCareShlGatewayPublication,
   completeWalletSeedCards,
   demoShlPackages,
   demoWalletCards,
@@ -221,6 +222,40 @@ describe("wallet-core", () => {
     expect(checkin.qrPayload).toContain("#shlink:/");
     expect(parsedQr.kind).toBe("shlink");
     expect(parsedQr.token).toBe(checkin.shlUrl);
+  });
+
+  it("publishes production-shaped SHL gateway metadata without embedding passcodes in QR", () => {
+    const cards = getDemoWalletCards("demo-patient-complete-001").slice(0, 3);
+    const publication = createTrustCareShlGatewayPublication({
+      context: "cross_border",
+      ownerUserId: "demo-patient-complete-001",
+      patientId: 6501001001,
+      cards,
+      selectedCardIds: cards.map(card => card.id),
+      origin: "https://wallet.example",
+      gatewayBaseUrl: "https://portal.example/api/shl",
+      includeTrustCareManifestVp: true,
+      policy: {
+        expiresAt: "2026-07-10T00:00:00.000Z",
+        maxAccessCount: 3,
+        passcodeRequired: true,
+        passcodeHint: "****",
+        accessCodeDelivery: "separate_channel"
+      }
+    });
+    const decodedPayload = JSON.parse(Buffer.from(publication.canonicalShlUrl!.slice("shlink:/".length), "base64url").toString("utf8"));
+
+    expect(publication.gatewayMode).toBe("portal_backend");
+    expect(publication.storageProvider).toBe("s3");
+    expect(publication.manifestUrl).toContain("https://portal.example/api/shl/manifests/");
+    expect(publication.qrPayload).toContain("#shlink:/");
+    expect(decodedPayload.flag).toContain("P");
+    expect(JSON.stringify(decodedPayload)).not.toContain("****");
+    expect(publication.manifest.documentBundle.bindingModel).toBe("standard_shl_plus_trustcare_manifest_vp");
+    expect(publication.manifest.documentBundle.documents).toHaveLength(cards.length);
+    expect(publication.manifest.documentBundle.documents.every(document => document.fhirResource)).toBe(true);
+    expect(publication.portalRequest.endpoint).toBe("POST /api/wallet/shl-packages");
+    expect(JSON.stringify(publication.portalRequest)).toContain("s3://trustcare-shl");
   });
 
   it("builds Contract Hub catalog for all prepare service contexts", () => {
