@@ -137,6 +137,10 @@
   align-items: stretch;
 }
 
+.home-hero-grid {
+  align-items: start;
+}
+
 .health-passport-card,
 .home-readiness-panel,
 .documents-command,
@@ -156,9 +160,9 @@
   position: relative;
   overflow: hidden;
   display: grid;
-  align-content: center;
+  align-content: start;
   gap: 14px;
-  min-height: 218px;
+  min-height: 0;
   padding: 24px;
 }
 
@@ -197,6 +201,39 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.passport-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.passport-summary-grid div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--muted) 36%, var(--card));
+  padding: 10px 12px;
+}
+
+.passport-summary-grid span,
+.passport-summary-grid strong {
+  display: block;
+}
+
+.passport-summary-grid span {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.passport-summary-grid strong {
+  margin-top: 3px;
+  color: var(--foreground);
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 760;
 }
 
 .home-readiness-panel {
@@ -1007,7 +1044,7 @@
 }
 
 .credential-tab-panel {
-  padding-bottom: 82px;
+  padding-bottom: 12px;
 }
 
 .credential-sticky-actions {
@@ -6158,6 +6195,8 @@ body {
 /* Premium compact VP/document typography */
 .credential-dialog {
   width: min(1040px, calc(100vw - 48px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   font-size: 13px;
 }
 
@@ -6177,6 +6216,9 @@ body {
 }
 
 .credential-dialog-body {
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
   padding: 14px 18px 18px;
 }
 
@@ -6273,6 +6315,22 @@ body {
 .credential-action-grid {
   max-width: 800px;
   margin-top: 10px;
+}
+
+.credential-action-grid.credential-sticky-actions {
+  position: static;
+  bottom: auto;
+  z-index: auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 96%, transparent);
+  backdrop-filter: blur(12px);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .credential-action-grid .tc-button,
@@ -6445,7 +6503,7 @@ body {
   }
 
   .credential-dialog-body {
-    padding: 10px 10px 86px;
+    padding: 10px;
   }
 
   .credential-doc {
@@ -6489,6 +6547,11 @@ body {
 
   .credential-action-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .credential-action-grid.credential-sticky-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px;
   }
 }
 

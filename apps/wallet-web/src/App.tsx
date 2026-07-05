@@ -22,7 +22,6 @@ import {
   Globe2,
   History,
   Home,
-  Image,
   Inbox,
   KeyRound,
   Languages,
@@ -1453,6 +1452,20 @@ function HomeView({
             <Badge tone="neutral">{user.hospitalCode}</Badge>
             <Badge tone={offlineOnline ? "green" : "yellow"}>{offlineOnline ? "แคชพร้อมใช้งาน" : "โหมดใช้งานออฟไลน์"}</Badge>
           </div>
+          <div className="passport-summary-grid" aria-label="ภาพรวม Health Passport">
+            <div>
+              <span>เอกสารพร้อมใช้</span>
+              <strong>{activeCards.length}</strong>
+            </div>
+            <div>
+              <span>เอกสารสำคัญ</span>
+              <strong>{criticalCards.length}</strong>
+            </div>
+            <div>
+              <span>นัดหมายถัดไป</span>
+              <strong>{nextAppointment ? "มีนัด" : "ไม่มี"}</strong>
+            </div>
+          </div>
           <div className="home-action-row">
             <Button onClick={() => onView("documents")}><FileText size={18} /> เอกสาร</Button>
             <Button className="secondary" onClick={() => onView("receive")}><Inbox size={18} /> รับเอกสาร</Button>
@@ -2418,7 +2431,6 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
               <option value="PatientSummaryCredential">Patient Summary</option>
               <option value="PatientIdentityCredential">Patient Identity</option>
               <option value="PrescriptionCredential">Prescription</option>
-              <option value="OpenBadgeCredential">Open Badge</option>
             </select>
             <Button className="purple" onClick={() => void createRequest()}><QrCode size={18} /> สร้าง QR Request</Button>
             {requestQrDataUrl && (
@@ -2430,20 +2442,6 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
           </div>
         </Surface>
       </div>
-
-      <Surface className="portal-section">
-        <div className="portal-card-header">
-          <div className="portal-card-title">
-            <Image size={22} />
-            <span>ตรวจสอบจาก Baked Badge Image</span>
-          </div>
-          <Badge tone="neutral">Open Badge</Badge>
-        </div>
-        <button type="button" className="upload-zone" onClick={onOpenScanner}>
-          <Upload size={34} />
-          <span>อัปโหลดภาพ badge หรือสแกน QR เพื่อ import เข้า Store</span>
-        </button>
-      </Surface>
 
       {verifierResult && (
         <Surface className="verification-result">

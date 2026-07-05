@@ -231,18 +231,18 @@ export function CredentialDetailDialog({
             )}
           </section>
 
-          <div className="credential-action-grid credential-sticky-actions">
-            <Button onClick={() => void handleGenerateQr()}><QrCode size={18} /> QR Code</Button>
-            <Button type="button" className="purple" onClick={handleSelectiveDisclosure}><Eye size={18} /> SD / ZKP</Button>
-            <Button
-              className="secondary"
-              onClick={() => void navigator.clipboard?.writeText(String(card.credentialId))}
-            >
-              <Clipboard size={18} /> คัดลอก ID
-            </Button>
-            <Button className="green" onClick={openPrintView}><Download size={18} /> PDF</Button>
-          </div>
         </div>
+        <footer className="credential-action-grid credential-sticky-actions">
+          <Button onClick={() => void handleGenerateQr()}><QrCode size={18} /> QR Code</Button>
+          <Button type="button" className="purple" onClick={handleSelectiveDisclosure}><Eye size={18} /> SD / ZKP</Button>
+          <Button
+            className="secondary"
+            onClick={() => void navigator.clipboard?.writeText(String(card.credentialId))}
+          >
+            <Clipboard size={18} /> คัดลอก ID
+          </Button>
+          <Button className="green" onClick={openPrintView}><Download size={18} /> PDF</Button>
+        </footer>
       </div>
       {qrPopupOpen && (
         <div className="qr-popup-backdrop" role="dialog" aria-modal="true" aria-label="VP QR Code" onClick={() => setQrPopupOpen(false)}>
