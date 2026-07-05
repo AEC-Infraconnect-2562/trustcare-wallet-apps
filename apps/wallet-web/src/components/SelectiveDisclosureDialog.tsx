@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Shield, X } from "lucide-react";
+import { ArrowLeft, Shield, X } from "lucide-react";
 import { Button, IconButton } from "@trustcare/ui-web";
 import { extractSelectableFields, requireAtLeastOneField, type WalletCard } from "@trustcare/wallet-core";
 
@@ -25,9 +25,17 @@ export function SelectiveDisclosureDialog({
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <div className="compact-dialog">
         <header className="modal-header">
-          <div>
-            <Shield size={22} />
-            <strong>Selective Disclosure</strong>
+          <div className="dialog-title-block">
+            <div className="dialog-breadcrumb-row">
+              <button type="button" className="dialog-back-button" onClick={onClose}>
+                <ArrowLeft size={15} /> กลับ
+              </button>
+              <span className="dialog-crumbs">เอกสาร / เลือกข้อมูลเปิดเผย</span>
+            </div>
+            <div className="dialog-heading-row">
+              <Shield size={22} />
+              <strong>Selective Disclosure</strong>
+            </div>
           </div>
           <IconButton aria-label="Close selective disclosure" onClick={onClose}><X size={20} /></IconButton>
         </header>
@@ -65,4 +73,3 @@ export function SelectiveDisclosureDialog({
     </div>
   );
 }
-

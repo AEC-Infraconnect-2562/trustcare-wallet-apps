@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, ClipboardPaste, X } from "lucide-react";
+import { ArrowLeft, Camera, ClipboardPaste, X } from "lucide-react";
 import { Button, IconButton } from "@trustcare/ui-web";
 
 export function QrScannerDialog({
@@ -66,9 +66,17 @@ export function QrScannerDialog({
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <div className="scanner-dialog">
         <header className="modal-header">
-          <div>
-            <Camera size={22} />
-            <strong>สแกน QR Code</strong>
+          <div className="dialog-title-block">
+            <div className="dialog-breadcrumb-row">
+              <button type="button" className="dialog-back-button" onClick={onClose}>
+                <ArrowLeft size={15} /> กลับ
+              </button>
+              <span className="dialog-crumbs">รับเอกสาร / สแกน QR</span>
+            </div>
+            <div className="dialog-heading-row">
+              <Camera size={22} />
+              <strong>สแกน QR Code</strong>
+            </div>
           </div>
           <IconButton aria-label="Close scanner" onClick={onClose}><X size={20} /></IconButton>
         </header>

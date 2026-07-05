@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Clipboard, Download, Eye, FileJson, History, QrCode, ShieldCheck, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Clipboard, Download, Eye, FileJson, History, QrCode, ShieldCheck, X } from "lucide-react";
 import { Badge, Button, CredentialDocument, IconButton } from "@trustcare/ui-web";
 import type { PresentationHistoryItem, WalletCard, WalletPresentationResponse } from "@trustcare/wallet-core";
 
@@ -21,10 +21,12 @@ export function CredentialDetailDialog({
   presentation: WalletPresentationResponse | null;
   history: PresentationHistoryItem[];
   onClose: () => void;
-  onGenerateQr: () => void;
+  onGenerateQr: () => void | Promise<void>;
   onSelectiveDisclosure: () => void;
 }) {
   const [tab, setTab] = useState<DetailTab>("preview");
+  const [qrPopupOpen, setQrPopupOpen] = useState(false);
+  const printSourceRef = useRef<HTMLDivElement | null>(null);
   const payloadText = useMemo(() => JSON.stringify(card?.credentialData ?? {}, null, 2), [card]);
   const credential = card?.credentialData as any;
   const evidence = Array.isArray(credential?.evidence) ? credential.evidence : credential?.evidence ? [credential.evidence] : [];
@@ -32,20 +34,83 @@ export function CredentialDetailDialog({
 
   useEffect(() => {
     setTab("preview");
+    setQrPopupOpen(false);
   }, [card?.id]);
 
   if (!open || !card) return null;
 
+  const detailCard = card;
   const checklist = presentation?.verificationChecklist as any[] | undefined;
+  const qrPayload = presentation?.qrData ?? "";
+
+  async function handleGenerateQr() {
+    await onGenerateQr();
+    setQrPopupOpen(true);
+  }
+
+  function openPrintView() {
+    const sourceHtml = printSourceRef.current?.innerHTML;
+    if (!sourceHtml) return;
+
+    const styles = Array.from(document.querySelectorAll<HTMLLinkElement | HTMLStyleElement>('link[rel="stylesheet"], style'))
+      .map(node => node.outerHTML)
+      .join("\n");
+    const printWindow = window.open("", "_blank", "width=920,height=1120");
+    if (!printWindow) return;
+
+    printWindow.document.open();
+    printWindow.document.write(`<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(detailCard.displayName)} - TrustCare Wallet</title>
+  ${styles}
+  <style>
+    body { margin: 0; background: #fff; color: #111827; padding: 24px; }
+    .print-shell { max-width: 920px; margin: 0 auto; }
+    .print-toolbar { display: flex; justify-content: flex-end; gap: 10px; margin: 0 0 16px; }
+    .print-toolbar button { border: 1px solid #d8dee9; border-radius: 9px; background: #fff; padding: 9px 14px; font: 600 13px system-ui, sans-serif; cursor: pointer; }
+    .print-toolbar button.primary { background: #4f61d9; color: #fff; border-color: #4f61d9; }
+    .print-shell .credential-doc { max-width: 100%; box-shadow: none; }
+    @media print {
+      body { padding: 0; }
+      .print-toolbar { display: none !important; }
+      .print-shell { max-width: none; }
+      .credential-doc { border-radius: 0 !important; box-shadow: none !important; page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <main class="print-shell">
+    <div class="print-toolbar">
+      <button type="button" onclick="window.close()">ปิด</button>
+      <button type="button" class="primary" onclick="window.print()">พิมพ์ / Save as PDF</button>
+    </div>
+    ${sourceHtml}
+  </main>
+</body>
+</html>`);
+    printWindow.document.close();
+    printWindow.focus();
+  }
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <div className="credential-dialog">
         <header className="credential-dialog-header">
-          <div>
-            <p className="eyebrow">{card.issuerHospitalName ?? "TrustCare Issuer"}</p>
-            <h2>{card.displayName}</h2>
-            <Badge tone={card.credentialStatus === "active" ? "green" : "red"}>{statusLabel(card.credentialStatus)}</Badge>
+          <div className="dialog-title-block">
+            <div className="dialog-breadcrumb-row">
+              <button type="button" className="dialog-back-button" onClick={onClose}>
+                <ArrowLeft size={15} /> กลับ
+              </button>
+              <span className="dialog-crumbs">เอกสาร / {card.displayName}</span>
+            </div>
+            <div className="dialog-heading-row">
+              <p className="eyebrow">{card.issuerHospitalName ?? "TrustCare Issuer"}</p>
+              <h2>{card.displayName}</h2>
+              <Badge tone={card.credentialStatus === "active" ? "green" : "red"}>{statusLabel(card.credentialStatus)}</Badge>
+            </div>
           </div>
           <IconButton aria-label="ปิดรายละเอียดเอกสาร" onClick={onClose}><X size={20} /></IconButton>
         </header>
@@ -62,7 +127,9 @@ export function CredentialDetailDialog({
           <section className="tab-panel credential-tab-panel">
             {tab === "preview" && (
               <>
-                <CredentialDocument card={card} qrDataUrl={qrDataUrl} />
+                <div ref={printSourceRef} className="credential-print-source">
+                  <CredentialDocument card={card} qrDataUrl={qrDataUrl} />
+                </div>
                 {presentation && (
                   <section className="vp-summary">
                     <div className="vp-qr-box">
@@ -142,7 +209,7 @@ export function CredentialDetailDialog({
           </section>
 
           <div className="credential-action-grid credential-sticky-actions">
-            <Button onClick={onGenerateQr}><QrCode size={18} /> QR Code</Button>
+            <Button onClick={() => void handleGenerateQr()}><QrCode size={18} /> QR Code</Button>
             <Button className="purple" onClick={onSelectiveDisclosure}><Eye size={18} /> SD / ZKP</Button>
             <Button
               className="secondary"
@@ -150,10 +217,48 @@ export function CredentialDetailDialog({
             >
               <Clipboard size={18} /> คัดลอก ID
             </Button>
-            <Button className="green" onClick={() => window.print()}><Download size={18} /> PDF</Button>
+            <Button className="green" onClick={openPrintView}><Download size={18} /> PDF</Button>
           </div>
         </div>
       </div>
+      {qrPopupOpen && (
+        <div className="qr-popup-backdrop" role="dialog" aria-modal="true" aria-label="VP QR Code" onClick={() => setQrPopupOpen(false)}>
+          <section className="qr-popup" onClick={event => event.stopPropagation()}>
+            <header className="qr-popup-header">
+              <div>
+                <p className="eyebrow">VERIFIABLE PRESENTATION</p>
+                <h3>QR Code สำหรับแสดงเอกสาร</h3>
+                <span>{card.displayName}</span>
+              </div>
+              <IconButton aria-label="ปิด QR Code" onClick={() => setQrPopupOpen(false)}><X size={20} /></IconButton>
+            </header>
+            <div className="qr-popup-frame">
+              {qrDataUrl ? <img src={qrDataUrl} alt="VP QR Code" /> : <QrCode size={120} />}
+            </div>
+            <p className="qr-popup-help">
+              {qrDataUrl
+                ? "ให้ผู้ตรวจสอบสแกน QR นี้เพื่อรับ VP ตามเอกสารและขอบเขตข้อมูลที่เลือก"
+                : "กำลังสร้าง QR Code สำหรับ VP..."}
+            </p>
+            {presentation && (
+              <dl className="qr-popup-meta">
+                <div><dt>VP ID</dt><dd className="mono">{presentation.presentationId}</dd></div>
+                <div><dt>หมดอายุ</dt><dd>{new Date(presentation.expiresAt).toLocaleString("th-TH")}</dd></div>
+              </dl>
+            )}
+            <div className="qr-popup-actions">
+              <Button
+                className="secondary"
+                disabled={!qrPayload}
+                onClick={() => void navigator.clipboard?.writeText(qrPayload)}
+              >
+                <Clipboard size={18} /> คัดลอก QR URL
+              </Button>
+              <Button onClick={() => setQrPopupOpen(false)}>เสร็จสิ้น</Button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -170,4 +275,17 @@ function statusLabel(status?: string | null): string {
     recorded: "บันทึกแล้ว"
   };
   return labels[String(status ?? "")] ?? String(status ?? "-");
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, char => {
+    const replacements: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "\"": "&quot;",
+      "'": "&#39;"
+    };
+    return replacements[char] ?? char;
+  });
 }
