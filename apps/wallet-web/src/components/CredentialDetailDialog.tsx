@@ -67,6 +67,10 @@ export function CredentialDetailDialog({
     setQrPopupOpen(true);
   }
 
+  function handleSelectiveDisclosure() {
+    onSelectiveDisclosure();
+  }
+
   function openPrintView() {
     const sourceHtml = printSourceRef.current?.innerHTML;
     if (!sourceHtml) return;
@@ -126,7 +130,7 @@ export function CredentialDetailDialog({
               <span className="dialog-crumbs">เอกสาร / {card.displayName}</span>
             </div>
             <div className="dialog-heading-row">
-              <p className="eyebrow">{card.issuerHospitalName ?? "TrustCare Issuer"}</p>
+              <p className="eyebrow">{issuerNameTh(card)}</p>
               <h2>{card.displayName}</h2>
               <Badge tone={card.credentialStatus === "active" ? "green" : "red"}>{statusLabel(card.credentialStatus)}</Badge>
             </div>
@@ -229,7 +233,7 @@ export function CredentialDetailDialog({
 
           <div className="credential-action-grid credential-sticky-actions">
             <Button onClick={() => void handleGenerateQr()}><QrCode size={18} /> QR Code</Button>
-            <Button className="purple" onClick={onSelectiveDisclosure}><Eye size={18} /> SD / ZKP</Button>
+            <Button type="button" className="purple" onClick={handleSelectiveDisclosure}><Eye size={18} /> SD / ZKP</Button>
             <Button
               className="secondary"
               onClick={() => void navigator.clipboard?.writeText(String(card.credentialId))}
@@ -294,6 +298,18 @@ function statusLabel(status?: string | null): string {
     recorded: "บันทึกแล้ว"
   };
   return labels[String(status ?? "")] ?? String(status ?? "-");
+}
+
+function issuerNameTh(card: WalletCard): string {
+  const credential = card.credentialData ?? {};
+  const issuer = credential && typeof credential === "object" && !Array.isArray(credential)
+    ? (credential as Record<string, unknown>).issuer
+    : undefined;
+  if (issuer && typeof issuer === "object" && !Array.isArray(issuer)) {
+    const value = (issuer as Record<string, unknown>).nameTh;
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return card.issuerHospitalName ?? "TrustCare Issuer";
 }
 
 function escapeHtml(value: string): string {

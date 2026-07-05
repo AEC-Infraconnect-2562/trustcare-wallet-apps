@@ -118,9 +118,12 @@ export type ShlPackage = {
   purpose?: string | null;
   context?: string | null;
   status: string;
+  manifestUrl?: string | null;
   viewerUrl?: string | null;
   shlUrl?: string | null;
   qrPayload?: string | null;
+  canonicalShlUrl?: string | null;
+  webViewerUrl?: string | null;
   manifestCredentialId?: string | null;
   presentationId?: string | null;
   passcodeRequired?: boolean;
@@ -295,10 +298,15 @@ export type CheckinQrResponse = {
   shlId: number | string;
   shlUrl: string;
   qrPayload: string;
+  manifestUrl?: string;
   viewerUrl?: string;
+  canonicalShlUrl?: string;
+  webViewerUrl?: string;
   expiresAt: string;
   maxAccessCount?: number;
   passcodeRequired: boolean;
+  passcodeHint?: string | null;
+  accessCodeDelivery?: "separate_channel" | "not_required" | string;
   readinessScore: number;
   credentialCount: number;
   status: "ready" | "pending_review" | string;

@@ -8,7 +8,19 @@ export type ParsedShlLink = {
   label?: string;
   flag?: string;
   flags?: string;
+  expiresAt?: string;
+  version?: number;
   passcodeRequired?: boolean;
+};
+
+export type ShlManifestFetchResult = {
+  ok: boolean;
+  shl: ParsedShlLink;
+  manifest?: Record<string, unknown>;
+  fileCount: number;
+  requestMethod?: "POST" | "GET";
+  warnings: string[];
+  errors: string[];
 };
 
 export function shlAccessSummary(shl: Pick<ShlPackage, "passcodeRequired" | "expiresAt" | "currentAccessCount" | "maxAccessCount" | "status">): string[] {
@@ -28,7 +40,7 @@ export function isShlActive(shl: Pick<ShlPackage, "status" | "expiresAt">, now =
 }
 
 export function parseShlLink(raw: string): ParsedShlLink | null {
-  const value = raw.trim();
+  const value = extractShlUri(raw.trim());
   if (!value.startsWith("shlink:/")) return null;
   const encoded = value.slice("shlink:/".length);
   if (!encoded) return { kind: "shl", raw: value };
@@ -42,13 +54,15 @@ export function parseShlLink(raw: string): ParsedShlLink | null {
       label: typeof payload.label === "string" ? payload.label : undefined,
       flag: typeof payload.flag === "string" ? payload.flag : undefined,
       flags: typeof payload.flags === "string" ? payload.flags : undefined,
+      expiresAt: typeof payload.exp === "number" ? new Date(payload.exp * 1000).toISOString() : undefined,
+      version: typeof payload.v === "number" ? payload.v : undefined,
       passcodeRequired:
-        typeof payload.passcode === "boolean"
-          ? payload.passcode
-          : typeof payload.passcodeRequired === "boolean"
-            ? payload.passcodeRequired
-            : typeof payload.flags === "string"
-              ? payload.flags.includes("P")
+        typeof payload.flag === "string" || typeof payload.flags === "string"
+          ? `${typeof payload.flag === "string" ? payload.flag : ""}${typeof payload.flags === "string" ? payload.flags : ""}`.includes("P")
+          : typeof payload.passcode === "boolean"
+            ? payload.passcode
+            : typeof payload.passcodeRequired === "boolean"
+              ? payload.passcodeRequired
               : undefined
     };
   } catch {
@@ -56,15 +70,145 @@ export function parseShlLink(raw: string): ParsedShlLink | null {
   }
 }
 
-export function createShlLinkPayload(input: { url: string; key?: string; label?: string; flag?: string; passcodeRequired?: boolean }): string {
+export function createShlLinkPayload(input: { url: string; key?: string; label?: string; flag?: string; passcodeRequired?: boolean; expiresAt?: string | Date | null; version?: number }): string {
+  const flag = normalizeShlFlags(input.flag, input.passcodeRequired);
+  const expiresAt = input.expiresAt ? new Date(input.expiresAt) : undefined;
   const payload = {
     url: input.url,
     key: input.key,
+    exp: expiresAt && Number.isFinite(expiresAt.getTime()) ? Math.floor(expiresAt.getTime() / 1000) : undefined,
     label: input.label,
-    flag: input.flag,
-    passcode: input.passcodeRequired
+    flag,
+    v: input.version
   };
   return `shlink:/${base64UrlEncode(JSON.stringify(removeUndefined(payload)))}`;
+}
+
+export function createShlViewerUrl(viewerBaseUrl: string, shlUrl: string): string {
+  const base = viewerBaseUrl.replace(/#.*$/, "");
+  return `${base}#${shlUrl}`;
+}
+
+export function createDemoShlKey(seed: string): string {
+  const source = `${seed}-trustcare-demo-shl-content-key-000000000000000000`;
+  const bytes = new TextEncoder().encode(source.slice(0, 32).padEnd(32, "0"));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+export function extractShlUri(value: string): string {
+  if (value.startsWith("shlink:/")) return value;
+  try {
+    const url = new URL(value);
+    const hash = decodeURIComponent(url.hash.replace(/^#/, ""));
+    if (hash.startsWith("shlink:/")) return hash;
+  } catch {
+    // Not a URL; keep the raw value.
+  }
+  return value;
+}
+
+export async function fetchShlManifest(
+  raw: string,
+  options: {
+    fetcher?: typeof fetch;
+    passcode?: string;
+    recipient?: string;
+    signal?: AbortSignal;
+  } = {}
+): Promise<ShlManifestFetchResult> {
+  const shl = parseShlLink(raw);
+  if (!shl) {
+    return {
+      ok: false,
+      shl: { kind: "shl", raw },
+      fileCount: 0,
+      warnings: [],
+      errors: ["ข้อมูลที่สแกนไม่ใช่ SMART Health Link payload."]
+    };
+  }
+  if (!shl.url) {
+    return {
+      ok: false,
+      shl,
+      fileCount: 0,
+      warnings: ["เก็บ SHL payload เดิมไว้แล้ว แต่ payload นี้ไม่มี manifest URL สำหรับอ่านรายการไฟล์."],
+      errors: []
+    };
+  }
+  if (shl.passcodeRequired && !options.passcode) {
+    return {
+      ok: false,
+      shl,
+      fileCount: 0,
+      warnings: [],
+      errors: ["SHL นี้ต้องใช้ passcode โดย passcode ไม่ได้ฝังอยู่ใน QR และต้องส่งให้ผู้รับผ่านช่องทางแยก."]
+    };
+  }
+
+  const fetcher = options.fetcher ?? fetch;
+  const body = removeUndefined({
+    recipient: options.recipient ?? "TrustCare Wallet",
+    passcode: shl.passcodeRequired ? options.passcode : undefined
+  });
+  const warnings: string[] = [];
+  try {
+    const postResponse = await fetcher(shl.url, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(body),
+      signal: options.signal
+    });
+    if (postResponse.ok) {
+      const manifest = await postResponse.json() as Record<string, unknown>;
+      return { ok: true, shl, manifest, fileCount: countManifestFiles(manifest), requestMethod: "POST", warnings, errors: [] };
+    }
+    warnings.push(`Manifest endpoint ตอบกลับ HTTP ${postResponse.status} จากคำขอ POST.`);
+    if (shl.passcodeRequired) {
+      return { ok: false, shl, fileCount: 0, requestMethod: "POST", warnings, errors: ["Manifest endpoint ไม่รับคำขอที่ต้องใช้ passcode."] };
+    }
+  } catch (error) {
+    warnings.push(error instanceof Error ? `Manifest POST ไม่สำเร็จ: ${error.message}` : "Manifest POST ไม่สำเร็จ.");
+    if (shl.passcodeRequired) {
+      return { ok: false, shl, fileCount: 0, requestMethod: "POST", warnings, errors: ["ไม่สามารถเชื่อมต่อ manifest endpoint ด้วยคำขอ passcode ที่จำเป็นได้."] };
+    }
+  }
+
+  try {
+    const getResponse = await fetcher(shl.url, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal: options.signal
+    });
+    if (getResponse.ok) {
+      const manifest = await getResponse.json() as Record<string, unknown>;
+      return { ok: true, shl, manifest, fileCount: countManifestFiles(manifest), requestMethod: "GET", warnings, errors: [] };
+    }
+    warnings.push(`Manifest endpoint ตอบกลับ HTTP ${getResponse.status} จากคำขอ GET.`);
+    return { ok: false, shl, fileCount: 0, requestMethod: "GET", warnings, errors: ["Manifest endpoint ไม่ได้ส่ง JSON manifest ที่อ่านได้กลับมา."] };
+  } catch (error) {
+    warnings.push(error instanceof Error ? `Manifest GET ไม่สำเร็จ: ${error.message}` : "Manifest GET ไม่สำเร็จ.");
+    return { ok: false, shl, fileCount: 0, requestMethod: "GET", warnings, errors: ["Browser นี้ยังเชื่อมต่อ manifest endpoint ไม่สำเร็จ."] };
+  }
+}
+
+function normalizeShlFlags(flag: string | undefined, passcodeRequired: boolean | undefined): string | undefined {
+  const flags = new Set((flag ?? "").split("").filter(Boolean));
+  if (passcodeRequired) {
+    flags.add("P");
+    flags.delete("U");
+  }
+  if (!flags.size) return undefined;
+  return ["L", "P", "U", ...[...flags].filter(item => !["L", "P", "U"].includes(item))].filter(item => flags.has(item)).join("");
+}
+
+function countManifestFiles(manifest: Record<string, unknown>): number {
+  const files = manifest.files;
+  if (Array.isArray(files)) return files.length;
+  const embedded = manifest.embedded;
+  if (Array.isArray(embedded)) return embedded.length;
+  return 0;
 }
 
 export function exportShlPackage(shl: ShlPackage): WalletExportResult {

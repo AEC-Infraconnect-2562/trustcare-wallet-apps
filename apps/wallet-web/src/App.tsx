@@ -57,12 +57,17 @@ import {
   countCardsByCategory,
   assessLocalReadiness,
   createDemoCheckinQr,
+  createDemoShlKey,
+  createShlLinkPayload,
+  createShlViewerUrl,
   credentialTypeForDocument,
   exportWalletObject,
   exportWalletObjects,
   flattenCardsByCategory,
   getDemoUser,
   importWalletExchange,
+  parseShlLink,
+  fetchShlManifest,
   mergeWalletObjects,
   readinessContextLabels,
   readinessContextValues,
@@ -82,6 +87,7 @@ import {
   type ShlPackage,
   type ShlPackageDetail,
   type ShlManifestDocument,
+  type ShlManifestFetchResult,
   type WalletCard,
   type WalletCardsByCategory,
   type WalletDocumentRequest,
@@ -110,6 +116,7 @@ type DisclosureMode = "full" | "sd" | "zkp";
 
 type ShlAccessPolicyState = {
   passcodeRequired: boolean;
+  passcode: string;
   expiryHours: number;
   maxAccessCount: number;
   longTermAccess: boolean;
@@ -143,9 +150,23 @@ type ScanOutcome = {
   context: View | ReadinessContext | "qr_scan";
   raw: string;
   payload: string;
+  descriptor?: ScanPayloadDescriptor;
+  manifestFetch?: ShlManifestFetchResult;
   verifier: VerifierResult;
   importResult: WalletImportResult;
   scannedAt: string;
+};
+
+type ScanPayloadDescriptor = {
+  transport: "standard_shl" | "shl_web_viewer" | "wallet_scan_url" | "raw_payload";
+  payloadKind: "shl" | "vp" | "json" | "oid4vci" | "oid4vp" | "unknown";
+  canonicalPayload: string;
+  webViewerUrl?: string;
+  manifestUrl?: string;
+  label?: string;
+  passcodeRequired?: boolean;
+  expiresAt?: string;
+  trustcareBinding?: "pending_manifest_vp" | "certified_manifest_vp" | "standard_only";
 };
 
 const baseApiOptions = {
@@ -319,6 +340,7 @@ const protocolProfiles: Record<PackageProtocol, { label: string; description: st
 
 const defaultShlPolicy: ShlAccessPolicyState = {
   passcodeRequired: true,
+  passcode: "246810",
   expiryHours: 24,
   maxAccessCount: 5,
   longTermAccess: false
@@ -340,12 +362,25 @@ function protocolForTransport(transport: ShareTransport): PackageProtocol {
 }
 
 function defaultShlPolicyForContext(context: ReadinessContext): ShlAccessPolicyState {
-  if (context === "emergency") return { passcodeRequired: false, expiryHours: 1, maxAccessCount: 8, longTermAccess: false };
-  if (context === "pharmacy_dispense") return { passcodeRequired: true, expiryHours: 2, maxAccessCount: 3, longTermAccess: false };
+  if (context === "emergency") return { passcodeRequired: false, passcode: "", expiryHours: 1, maxAccessCount: 8, longTermAccess: false };
+  if (context === "pharmacy_dispense") return { passcodeRequired: true, passcode: "8642", expiryHours: 2, maxAccessCount: 3, longTermAccess: false };
   if (context === "medical_tourist" || context === "cross_border") {
-    return { passcodeRequired: true, expiryHours: 72, maxAccessCount: 8, longTermAccess: false };
+    return { passcodeRequired: true, passcode: "1973", expiryHours: 72, maxAccessCount: 8, longTermAccess: false };
   }
   return defaultShlPolicy;
+}
+
+function normalizeShlPasscode(value: string): string {
+  return value.replace(/\D/g, "").slice(0, 8);
+}
+
+function shlPasscodeReady(policy: ShlAccessPolicyState): boolean {
+  return !policy.passcodeRequired || normalizeShlPasscode(policy.passcode).length >= 4;
+}
+
+function maskShlPasscode(value: string): string {
+  const normalized = normalizeShlPasscode(value);
+  return normalized ? `${"*".repeat(Math.max(normalized.length - 2, 2))}${normalized.slice(-2)}` : "";
 }
 
 function shlPolicyExpiry(policy: ShlAccessPolicyState): string {
@@ -410,6 +445,7 @@ export default function App() {
   const [presentation, setPresentation] = useState<WalletPresentationResponse | null>(null);
   const [verifierResult, setVerifierResult] = useState<VerifierResult | null>(null);
   const [scanOutcome, setScanOutcome] = useState<ScanOutcome | null>(null);
+  const [scanResponseOpen, setScanResponseOpen] = useState(false);
   const [scanHistoryByUser, setScanHistoryByUser] = useState<Record<string, ScanOutcome[]>>(() => readScanHistory());
   const [pendingScanPayload, setPendingScanPayload] = useState(() => readScanPayloadFromLocation());
   const [readinessContext, setReadinessContext] = useState<ReadinessContext>("opd_visit");
@@ -456,6 +492,20 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncPendingScanFromUrl = () => {
+      const nextPayload = readScanPayloadFromLocation();
+      if (nextPayload) setPendingScanPayload(nextPayload);
+    };
+    window.addEventListener("hashchange", syncPendingScanFromUrl);
+    window.addEventListener("popstate", syncPendingScanFromUrl);
+    return () => {
+      window.removeEventListener("hashchange", syncPendingScanFromUrl);
+      window.removeEventListener("popstate", syncPendingScanFromUrl);
+    };
+  }, []);
+
+  useEffect(() => {
     void Promise.all([
       walletApi.cardsByCategory(apiOptions),
       walletApi.history(apiOptions),
@@ -477,6 +527,7 @@ export default function App() {
     setPresentation(null);
     setVerifierResult(null);
     setScanOutcome(null);
+    setScanResponseOpen(false);
     setServiceBundle(null);
     setServicePacket(null);
     setCheckinQr(null);
@@ -650,26 +701,54 @@ export default function App() {
   }, [addStoredObject, allCards]);
 
   const verifyScan = useCallback(async (value: string, contextOverride?: ScanOutcome["context"]) => {
-    const payload = extractScannablePayload(value);
+    const descriptor = describeScannablePayload(value);
+    const payload = descriptor.canonicalPayload;
     const imported = importPayload(payload);
+    let manifestFetch: ShlManifestFetchResult | undefined;
+    if (descriptor.payloadKind === "shl") {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 4500);
+      try {
+        manifestFetch = await fetchShlManifest(payload, {
+          recipient: activeUser.holderDid ?? activeUser.id,
+          signal: controller.signal
+        });
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    }
     const result = await verifierApi.verifyQr(apiOptions, payload);
-    const mergedResult = { ...result, matchedCredentialIds: imported.matchedCredentialIds ?? result.matchedCredentialIds };
+    const mergedResult = {
+      ...result,
+      matchedCredentialIds: imported.matchedCredentialIds ?? result.matchedCredentialIds,
+      warnings: [
+        ...(result.warnings ?? []),
+        ...(manifestFetch?.warnings ?? [])
+      ],
+      errors: [
+        ...(result.errors ?? []),
+        ...(manifestFetch?.errors ?? [])
+      ]
+    };
     const outcome = {
       id: `scan_${selectedUserId}_${Date.now().toString(36)}`,
       userId: selectedUserId,
       context: contextOverride ?? (view === "prepare" ? readinessContext : view),
       raw: value,
       payload,
+      descriptor,
+      manifestFetch,
       verifier: mergedResult,
       importResult: imported,
       scannedAt: new Date().toISOString()
     } satisfies ScanOutcome;
     setVerifierResult(mergedResult);
     setScanOutcome(outcome);
+    setScanResponseOpen(true);
     addScanHistory(outcome);
     setLastImportMessage(mergedResult.verified ? "สแกน QR และตรวจสอบผ่านแล้ว" : "สแกน QR แล้ว แต่ต้องตรวจสอบรายละเอียดเพิ่มเติม");
     navigateTo("share");
-  }, [addScanHistory, apiOptions, importPayload, navigateTo, readinessContext, selectedUserId, view]);
+  }, [activeUser.holderDid, activeUser.id, addScanHistory, apiOptions, importPayload, navigateTo, readinessContext, selectedUserId, view]);
 
   const buildBundle = useCallback(async () => {
     const result = buildServiceBundleEnvelope({
@@ -710,10 +789,12 @@ export default function App() {
     const result = createDemoCheckinQr(readinessContext, localReadiness.selectedCardIds.length, {
       expiresAt: shlPolicyExpiry(prepareShlPolicy),
       maxAccessCount: prepareShlPolicy.maxAccessCount,
-      passcodeRequired: prepareShlPolicy.passcodeRequired
+      passcodeRequired: prepareShlPolicy.passcodeRequired,
+      passcodeHint: prepareShlPolicy.passcodeRequired ? maskShlPasscode(prepareShlPolicy.passcode) : null,
+      accessCodeDelivery: prepareShlPolicy.passcodeRequired ? "separate_channel" : "not_required"
     });
-    const scannableQr = createScannableWebUrl(result.qrPayload);
-    setCheckinQr({ ...result, qrPayload: scannableQr, shlUrl: scannableQr });
+    const scannableQr = result.webViewerUrl ?? result.qrPayload;
+    setCheckinQr({ ...result, qrPayload: scannableQr });
     setCheckinQrDataUrl(await QRCode.toDataURL(scannableQr, { margin: 1, width: 220 }));
     setLastImportMessage(`สร้าง Check-in SHL ${result.shlId} แล้ว`);
   }, [allCards, prepareShlPolicy, readinessContext]);
@@ -767,7 +848,7 @@ export default function App() {
       credentialId: `imported:${selectedUserId}:${result.importId}`,
       credentialStatus: "active",
       credentialType: credentialTypeForDocument(documentType),
-      issuerHospitalName: activeUser.hospitalName,
+      issuerHospitalName: activeUser.hospitalNameTh,
       issuerDid: activeUser.issuerDid,
       holderDid: activeUser.holderDid,
       patientAvatarUrl: activeUser.avatarUrl,
@@ -888,6 +969,7 @@ export default function App() {
     setDetailOpen(false);
     setVerifierResult(null);
     setScanOutcome(null);
+    setScanResponseOpen(false);
   }, []);
 
   const pageCopy: Record<View, { title: string; subtitle: string }> = {
@@ -1127,6 +1209,7 @@ export default function App() {
         {view === "prepare" && (
           <PrepareView
             user={activeUser}
+            cards={allCards}
             context={readinessContext}
             readiness={readiness}
             contractHub={contractHub}
@@ -1209,6 +1292,12 @@ export default function App() {
         onConfirm={fields => void generateQr(fields)}
       />
       <QrScannerDialog open={scannerOpen} onClose={() => setScannerOpen(false)} onScan={value => void verifyScan(value)} />
+      <ScanResponseDialog
+        open={scanResponseOpen}
+        outcome={scanOutcome}
+        onClose={() => setScanResponseOpen(false)}
+        onCopy={copyText}
+      />
     </main>
   );
 }
@@ -1931,6 +2020,19 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
       ? shlPolicyExpiry(shlPolicy)
       : new Date(Date.now() + expiryMinutes * 60_000).toISOString();
     const shlId = `share_${purpose}_${Date.now().toString(36)}`;
+    const shareManifestUrl = `${baseApiOptions.demoOrigin.replace(/\/$/, "")}/shl-manifest/${shlId}`;
+    const shareShlUrl = protocolRequiresShl(packageProtocol)
+      ? createShlLinkPayload({
+        url: shareManifestUrl,
+        key: createDemoShlKey(shlId),
+        label: `${user.nameEn || user.nameTh} ${readinessContextLabels[purpose].en}`,
+        flag: "L",
+        passcodeRequired: shlPolicy.passcodeRequired,
+        expiresAt,
+        version: 1
+      })
+      : "";
+    const shareWebViewerUrl = shareShlUrl ? createShlViewerUrl(currentAppBaseUrl(), shareShlUrl) : "";
     const payload = {
       type: packageProtocol === "vp"
         ? "TrustCarePurposeBoundPresentation"
@@ -1955,9 +2057,15 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
         sourceSystem: card.sourceSystem ?? "wallet"
       })),
       shl: protocolRequiresShl(packageProtocol) ? {
-        shlUrl: `shlink:/trustcare-${shlId}`,
-        qrPayload: createScannableWebUrl(`shlink:/trustcare-${shlId}`),
+        shlUrl: shareShlUrl,
+        canonicalShlUrl: shareShlUrl,
+        webViewerUrl: shareWebViewerUrl,
+        viewerUrl: shareWebViewerUrl,
+        manifestUrl: shareManifestUrl,
+        qrPayload: shareWebViewerUrl,
         passcodeRequired: shlPolicy.passcodeRequired,
+        passcodeHint: shlPolicy.passcodeRequired ? maskShlPasscode(shlPolicy.passcode) : null,
+        accessCodeDelivery: shlPolicy.passcodeRequired ? "separate_channel" : "not_required",
         maxAccessCount: shlPolicy.maxAccessCount,
         expiresAt,
         standardCompatible: true,
@@ -1988,7 +2096,9 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
       }
     };
     const encoded = JSON.stringify(payload);
-    const scannablePayload = createScannableWebUrl(encoded);
+    const scannablePayload = protocolRequiresShl(packageProtocol) && shareWebViewerUrl
+      ? shareWebViewerUrl
+      : createScannableWebUrl(encoded);
     setSharePayload(scannablePayload);
     setShareQrDataUrl(await QRCode.toDataURL(scannablePayload, { margin: 1, width: 240 }));
   }, [biometricEnabled, expiryMinutes, onConfirmBiometric, packageProtocol, purpose, purposeReadiness, recipient, selectedCards, selectedFields, shareProfile, shlPolicy, timeAnchor, user]);
@@ -2139,7 +2249,20 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
             )}
             {protocolRequiresShl(packageProtocol) && (
               <div className="shl-policy-inline">
-                <label><input type="checkbox" checked={shlPolicy.passcodeRequired} onChange={event => setShlPolicy({ ...shlPolicy, passcodeRequired: event.target.checked })} /> ใช้ PIN/Passcode</label>
+                <label><input type="checkbox" checked={shlPolicy.passcodeRequired} onChange={event => setShlPolicy({ ...shlPolicy, passcodeRequired: event.target.checked, passcode: event.target.checked ? shlPolicy.passcode || defaultShlPolicyForContext(purpose).passcode : "" })} /> ใช้ PIN/Passcode</label>
+                {shlPolicy.passcodeRequired && (
+                  <label className="pin-code-field">PIN ที่ส่งแยกจาก QR
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={shlPolicy.passcode}
+                      placeholder="ตั้ง PIN 4-8 หลัก"
+                      onChange={event => setShlPolicy({ ...shlPolicy, passcode: normalizeShlPasscode(event.target.value) })}
+                    />
+                    <small>{shlPasscodeReady(shlPolicy) ? `ตั้งค่าแล้ว ${maskShlPasscode(shlPolicy.passcode)} · ส่ง PIN แยกจาก QR` : "กรุณาตั้ง PIN อย่างน้อย 4 หลัก"}</small>
+                  </label>
+                )}
                 <label>หมดอายุ
                   <select value={shlPolicy.expiryHours} onChange={event => setShlPolicy({ ...shlPolicy, expiryHours: Number(event.target.value) })}>
                     <option value={1}>1 ชม.</option>
@@ -2170,7 +2293,7 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
                 ? "วัตถุประสงค์นี้ต้องยืนยัน Biometric ก่อนสร้าง VP"
                 : biometricEnabled ? "จะยืนยัน Biometric ก่อนแสดง QR" : "สามารถเปิด Biometric เพื่อเพิ่มความปลอดภัย"}
             </div>
-            <Button onClick={() => void createSharePacket()} disabled={!selectedCards.length}><UserCheck size={18} /> ยืนยันและสร้าง QR</Button>
+            <Button onClick={() => void createSharePacket()} disabled={!selectedCards.length || (protocolRequiresShl(packageProtocol) && !shlPasscodeReady(shlPolicy))}><UserCheck size={18} /> ยืนยันและสร้าง QR</Button>
             </div>
           </div>
 
@@ -2339,6 +2462,7 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
 
 function PrepareView({
   user,
+  cards,
   context,
   readiness,
   contractHub,
@@ -2370,6 +2494,7 @@ function PrepareView({
   onImportMissing
 }: {
   user: WalletDemoUser;
+  cards: WalletCard[];
   context: ReadinessContext;
   readiness: any;
   contractHub: ContractHubCatalog | null;
@@ -2401,11 +2526,14 @@ function PrepareView({
   onImportMissing: () => void;
 }) {
   const activeContract = contractHub?.contracts.find(item => item.context === context);
-  const readinessResult = readiness?.readiness ?? {};
+  const localReadiness = useMemo(() => assessLocalReadiness(cards, context), [cards, context]);
+  const responseReadiness = readiness?.readiness?.context === context ? readiness.readiness : null;
+  const readinessResult = cards.length ? localReadiness : responseReadiness ?? localReadiness;
   const missing = readinessResult.missing ?? [];
   const ready = readinessResult.ready ?? [];
   const missingRequired = missing.filter((item: any) => item.required);
   const canCreateFullPacket = missingRequired.length === 0;
+  const shlAccessReady = !protocolRequiresShl(protocol) || shlPasscodeReady(shlPolicy);
   const packetContents = ready.flatMap((item: any) => item.matchedCards ?? []);
   const artifactStates = [
     { key: "bundle", ready: Boolean(serviceBundle) },
@@ -2424,6 +2552,11 @@ function PrepareView({
   const timelineItems = buildTimelineItems(packetContents, serviceBundle?.createdAt ?? new Date().toISOString(), timeAnchor);
   const selectedFieldSet = new Set(selectedFields);
   const serviceDocumentSummary = [...ready, ...missing].slice(0, 6);
+  const selectedServiceLabel = readinessContextLabels[context].th;
+  const serviceDocumentCaption = `เอกสารที่ใช้ในบริการนี้ - ${selectedServiceLabel}`;
+  const serviceDocumentDescription = activeContract
+    ? `${activeContract.patientLabel} · ${protocolProfiles[protocol].label} · ${activeContract.bundleTypes.patient}`
+    : readinessPurposeTh[context];
   const toggleSelectedField = (field: string) => {
     const next = selectedFieldSet.has(field)
       ? selectedFields.filter(item => item !== field)
@@ -2432,6 +2565,8 @@ function PrepareView({
   };
   const primaryActionText = !canCreateFullPacket
     ? "ขอเอกสารที่ขาด"
+    : !shlAccessReady
+      ? "ตั้ง PIN ก่อนสร้าง SHL"
     : isPrepared
       ? "คัดลอก QR สำหรับเข้าโรงพยาบาล"
       : "สร้างชุดพร้อมเข้ารับบริการ";
@@ -2440,6 +2575,7 @@ function PrepareView({
       onRequestMissing();
       return;
     }
+    if (!shlAccessReady) return;
     if (!isPrepared) {
       onPrepareAll();
       return;
@@ -2483,7 +2619,7 @@ function PrepareView({
           <h2>เตรียมเอกสารก่อนเข้ารับบริการ</h2>
           <p>ตรวจว่ามีเอกสารจำเป็นครบหรือไม่ แล้วสร้าง QR/VP ที่โรงพยาบาลใช้ตรวจรับบริการได้ทันที</p>
           <div className="prep-hero-actions">
-            <Button className={isPrepared ? "green" : "purple"} onClick={primaryAction}>
+            <Button className={isPrepared ? "green" : "purple"} onClick={primaryAction} disabled={!isPrepared && canCreateFullPacket && !shlAccessReady}>
               {isPrepared ? <QrCode size={18} /> : canCreateFullPacket ? <Layers3 size={18} /> : <FilePlus2 size={18} />}
               {primaryActionText}
             </Button>
@@ -2571,10 +2707,27 @@ function PrepareView({
                   <input
                     type="checkbox"
                     checked={shlPolicy.passcodeRequired}
-                    onChange={event => onShlPolicy({ ...shlPolicy, passcodeRequired: event.target.checked })}
+                    onChange={event => onShlPolicy({
+                      ...shlPolicy,
+                      passcodeRequired: event.target.checked,
+                      passcode: event.target.checked ? shlPolicy.passcode || defaultShlPolicyForContext(context).passcode : ""
+                    })}
                   />
                   <span>ตั้งค่า PIN / Passcode</span>
                 </label>
+                {shlPolicy.passcodeRequired && (
+                  <label className="pin-code-field">PIN สำหรับเปิด SHL
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={shlPolicy.passcode}
+                      placeholder="ตั้ง PIN 4-8 หลัก"
+                      onChange={event => onShlPolicy({ ...shlPolicy, passcode: normalizeShlPasscode(event.target.value) })}
+                    />
+                    <small>{shlPasscodeReady(shlPolicy) ? `ตั้งค่าแล้ว ${maskShlPasscode(shlPolicy.passcode)} · ส่ง PIN แยกจาก QR` : "กรุณาตั้ง PIN อย่างน้อย 4 หลักก่อนสร้าง SHL"}</small>
+                  </label>
+                )}
                 <label>หมดอายุ
                   <select value={shlPolicy.expiryHours} onChange={event => onShlPolicy({ ...shlPolicy, expiryHours: Number(event.target.value) })}>
                     <option value={1}>1 ชั่วโมง</option>
@@ -2634,8 +2787,8 @@ function PrepareView({
         <Surface className="prep-documents-panel">
           <div className="section-title-row">
             <div>
-              <h2>เอกสารที่ใช้ในบริการนี้</h2>
-              <p>{activeContract?.patientDirection ?? "patient_outbound"}</p>
+              <h2>{serviceDocumentCaption}</h2>
+              <p>{serviceDocumentDescription}</p>
             </div>
             <Badge tone={canCreateFullPacket ? "green" : "yellow"}>{packetContents.length} รายการตรงเงื่อนไข</Badge>
           </div>
@@ -2680,10 +2833,11 @@ function PrepareView({
           </Badge>
         </div>
         <div className="prep-primary-row">
-          <Button className={canCreateFullPacket ? "purple" : "secondary"} onClick={onPrepareAll} disabled={!canCreateFullPacket}>
+          <Button className={canCreateFullPacket && shlAccessReady ? "purple" : "secondary"} onClick={onPrepareAll} disabled={!canCreateFullPacket || !shlAccessReady}>
             <Layers3 size={18} /> สร้างชุดพร้อมเข้ารับบริการ
           </Button>
           {!canCreateFullPacket && <span>สร้างชุดสมบูรณ์ได้หลังเอกสารจำเป็นครบ</span>}
+          {canCreateFullPacket && !shlAccessReady && <span>กรุณาตั้ง PIN 4-8 หลักก่อนสร้าง SHL</span>}
         </div>
         <div className="bundle-card-grid">
           <BundleCard
@@ -3344,6 +3498,80 @@ function ScanOutcomePanel({ outcome }: { outcome: ScanOutcome }) {
   );
 }
 
+function ScanResponseDialog({ open, outcome, onClose, onCopy }: {
+  open: boolean;
+  outcome: ScanOutcome | null;
+  onClose: () => void;
+  onCopy: (value: string) => void | Promise<void>;
+}) {
+  if (!open || !outcome) return null;
+  const descriptor = outcome.descriptor;
+  const manifest = outcome.manifestFetch;
+  const importedTitle = outcome.importResult.object?.title ?? outcome.importResult.format;
+  const shlNeedsPasscode = descriptor?.payloadKind === "shl" && descriptor.passcodeRequired;
+  const manifestStatus = manifest
+    ? manifest.ok
+      ? `อ่าน manifest สำเร็จ (${manifest.fileCount} ไฟล์, ${manifest.requestMethod})`
+      : manifest.errors[0] ?? manifest.warnings[0] ?? "ยังอ่าน manifest ไม่สำเร็จ"
+    : descriptor?.payloadKind === "shl"
+      ? "ยังไม่ได้ resolve manifest"
+      : "ไม่ใช่ SHL manifest";
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <section className="scan-response-dialog">
+        <header className="modal-header">
+          <div>
+            <ShieldCheck size={22} />
+            <span>
+              <strong>ผลการสแกน QR</strong>
+              <small>บันทึกประวัติใน Wallet และแยก scope ตามผู้ใช้ที่ login</small>
+            </span>
+          </div>
+          <button className="icon-button" aria-label="Close scan response" onClick={onClose}>×</button>
+        </header>
+        <div className="scan-response-body">
+          <ScanOutcomePanel outcome={outcome} />
+          <section className="scan-standard-card">
+            <div>
+              <span className="eyebrow">ผลลัพธ์หลังสแกน</span>
+              <h3>{descriptor?.payloadKind === "shl" ? "SMART Health Link ถูกนำเข้าแล้ว" : "นำเข้า payload แล้ว"}</h3>
+              <p>
+                {descriptor?.payloadKind === "shl"
+                  ? "Wallet เก็บ canonical SHL เดิมไว้เพื่อ compatibility และสร้าง TrustCare Manifest VP binding เป็นสถานะรอ Maker/Checker ก่อนใช้เป็นหลักฐาน TrustCare."
+                  : "Payload ถูกบันทึกตาม protocol ที่ตรวจพบ และต้องตรวจสอบความน่าเชื่อถือก่อนนำไปใช้ต่อ."}
+              </p>
+            </div>
+            <Badge tone={outcome.importResult.ok ? "green" : "yellow"}>{outcome.importResult.ok ? "นำเข้าแล้ว" : "ตรวจเพิ่ม"}</Badge>
+          </section>
+          <div className="scan-response-meta">
+            <div><small>เอกสาร/วัตถุที่นำเข้า</small><strong>{importedTitle}</strong></div>
+            <div><small>Transport</small><strong>{scanTransportLabel(descriptor?.transport)}</strong></div>
+            <div><small>Manifest endpoint</small><strong className="mono">{descriptor?.manifestUrl ?? "-"}</strong></div>
+            <div><small>ผลการอ่าน manifest</small><strong>{manifestStatus}</strong></div>
+            <div><small>PIN / Passcode</small><strong>{shlNeedsPasscode ? "ต้องส่งแยกจาก QR" : "ไม่ต้องใช้ หรือไม่พบเงื่อนไข PIN"}</strong></div>
+            <div><small>TrustCare binding</small><strong>{trustcareBindingLabel(descriptor?.trustcareBinding)}</strong></div>
+          </div>
+          {shlNeedsPasscode && (
+            <div className="scan-spec-note">
+              <LockKeyhole size={18} />
+              <span>ตาม SHL spec QR จะไม่ฝัง PIN/passcode ไว้ใน payload ผู้รับต้องได้รับรหัสจากช่องทางอื่นก่อนเรียก manifest endpoint.</span>
+            </div>
+          )}
+          <div className="scan-payload-preview">
+            <span>Canonical SHL payload</span>
+            <code>{shortPayload(outcome.payload)}</code>
+          </div>
+          <div className="dialog-actions">
+            <Button className="secondary" onClick={() => void onCopy(outcome.payload)}><Copy size={17} /> คัดลอก payload</Button>
+            {descriptor?.webViewerUrl && <Button className="secondary" onClick={() => void onCopy(descriptor.webViewerUrl ?? "")}><Link2 size={17} /> คัดลอก Web URL</Button>}
+            <Button onClick={onClose}><CheckCircle2 size={17} /> เข้าใจแล้ว</Button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function HistoryView({ history, scanHistory }: { history: PresentationHistoryItem[]; scanHistory: ScanOutcome[] }) {
   return (
     <div className="history-list large">
@@ -3509,9 +3737,83 @@ function statusLabel(status?: string | null): string {
   return labels[String(status ?? "")] ?? String(status ?? "-");
 }
 
+function scanTransportLabel(transport?: ScanPayloadDescriptor["transport"]): string {
+  const labels: Record<ScanPayloadDescriptor["transport"], string> = {
+    standard_shl: "Canonical shlink",
+    shl_web_viewer: "SHL Web Viewer",
+    wallet_scan_url: "Wallet scan URL",
+    raw_payload: "Raw payload"
+  };
+  return transport ? labels[transport] : "-";
+}
+
+function trustcareBindingLabel(binding?: ScanPayloadDescriptor["trustcareBinding"]): string {
+  const labels: Record<NonNullable<ScanPayloadDescriptor["trustcareBinding"]>, string> = {
+    pending_manifest_vp: "รอ Maker/Checker",
+    certified_manifest_vp: "TrustCare Manifest VP",
+    standard_only: "SHL มาตรฐาน"
+  };
+  return binding ? labels[binding] : "-";
+}
+
+function shortPayload(value: string, maxLength = 520): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+}
+
+function describeScannablePayload(value: string): ScanPayloadDescriptor {
+  const raw = value.trim();
+  const canonicalPayload = extractScannablePayload(raw);
+  const shl = parseShlLink(canonicalPayload);
+  if (shl) {
+    const webViewerUrl = /^https?:\/\//.test(raw) && raw.includes("#") ? raw : undefined;
+    return {
+      transport: webViewerUrl ? "shl_web_viewer" : "standard_shl",
+      payloadKind: "shl",
+      canonicalPayload: shl.raw,
+      webViewerUrl,
+      manifestUrl: shl.url,
+      label: shl.label,
+      passcodeRequired: shl.passcodeRequired,
+      expiresAt: shl.expiresAt,
+      trustcareBinding: "pending_manifest_vp"
+    };
+  }
+  let transport: ScanPayloadDescriptor["transport"] = "raw_payload";
+  try {
+    const url = new URL(raw);
+    if (url.searchParams.has("scan")) transport = "wallet_scan_url";
+  } catch {
+    // Raw payload.
+  }
+  const payloadKind: ScanPayloadDescriptor["payloadKind"] =
+    canonicalPayload.startsWith("openid4vp://") ? "oid4vp" :
+    canonicalPayload.startsWith("openid-credential-offer://") ? "oid4vci" :
+    canonicalPayload.startsWith("{") ? detectJsonPayloadKind(canonicalPayload) :
+    canonicalPayload.startsWith("eyJ") ? "vp" :
+    "unknown";
+  return { transport, payloadKind, canonicalPayload };
+}
+
+function detectJsonPayloadKind(payload: string): ScanPayloadDescriptor["payloadKind"] {
+  try {
+    const parsed = JSON.parse(payload) as Record<string, unknown>;
+    const type = String(parsed.type ?? "");
+    if (type.includes("Presentation") || type.includes("VP")) return "vp";
+    if (type.includes("SHL") || type.includes("SmartHealthLink")) return "shl";
+    return "json";
+  } catch {
+    return "unknown";
+  }
+}
+
 function createScannableWebUrl(payload: string): string {
   const raw = payload.trim();
   if (!raw) return raw;
+  const shl = parseShlLink(raw);
+  if (shl) {
+    if (/^https?:\/\//.test(raw)) return raw;
+    return createShlViewerUrl(currentAppBaseUrl(), shl.raw);
+  }
   try {
     const url = new URL(raw);
     if (url.searchParams.has("scan")) return raw;
@@ -3519,8 +3821,7 @@ function createScannableWebUrl(payload: string): string {
     // Raw VC/VP/SHL payloads are wrapped below so another device can open this web app.
   }
   const encoded = encodeURIComponent(payload);
-  const base = typeof window === "undefined" ? baseApiOptions.demoOrigin : `${window.location.origin}${window.location.pathname}`;
-  return `${base.replace(/\/$/, "")}?scan=${encoded}`;
+  return `${currentAppBaseUrl()}?scan=${encoded}`;
 }
 
 function getObjectScanPayload(object: WalletStoredObject): string {
@@ -3827,10 +4128,15 @@ function compactBundlePayload(bundle: ServiceBundleEnvelope): string {
 function extractScannablePayload(value: string): string {
   const raw = value.trim();
   if (!raw) return raw;
+  const directShl = parseShlLink(raw);
+  if (directShl) return directShl.raw;
   try {
     const url = new URL(raw);
+    const hashPayload = decodeURIComponent(url.hash.replace(/^#/, ""));
+    const hashShl = parseShlLink(hashPayload);
+    if (hashShl) return hashShl.raw;
     const scanPayload = url.searchParams.get("scan");
-    if (scanPayload) return scanPayload;
+    if (scanPayload) return extractScannablePayload(scanPayload);
   } catch {
     // Not a URL; keep the raw payload.
   }
@@ -3839,15 +4145,26 @@ function extractScannablePayload(value: string): string {
 
 function readScanPayloadFromLocation(): string {
   if (typeof window === "undefined") return "";
-  const payload = new URLSearchParams(window.location.search).get("scan");
-  return payload ?? "";
+  const url = new URL(window.location.href);
+  const hashPayload = decodeURIComponent(url.hash.replace(/^#/, ""));
+  const hashShl = parseShlLink(hashPayload);
+  if (hashShl) return hashShl.raw;
+  const payload = url.searchParams.get("scan");
+  return payload ? extractScannablePayload(payload) : "";
 }
 
 function clearScanPayloadFromLocation() {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
   url.searchParams.delete("scan");
+  const hashPayload = decodeURIComponent(url.hash.replace(/^#/, ""));
+  if (parseShlLink(hashPayload)) url.hash = "";
   window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+function currentAppBaseUrl(): string {
+  if (typeof window === "undefined") return baseApiOptions.demoOrigin.replace(/\/$/, "");
+  return `${window.location.origin}${window.location.pathname.replace(/\/?$/, "/")}`.replace(/\/$/, "");
 }
 
 function readScanHistory(): Record<string, ScanOutcome[]> {

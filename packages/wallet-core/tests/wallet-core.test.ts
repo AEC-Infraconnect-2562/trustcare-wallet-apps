@@ -3,6 +3,11 @@ import {
   assessLocalReadiness,
   buildContractHubCatalog,
   buildPortalInteroperabilityFixtures,
+  createDemoCheckinQr,
+  createDemoShlKey,
+  createShlLinkPayload,
+  createShlViewerUrl,
+  completeWalletSeedCards,
   demoShlPackages,
   demoWalletCards,
   exportShlPackage,
@@ -46,6 +51,68 @@ describe("wallet-core", () => {
     });
     expect(fields.map(field => field.path)).toContain("credentialSubject.patient.name");
     expect(fields.some(field => field.path.includes("proof"))).toBe(false);
+  });
+
+  it("uses credential allowlists for selective disclosure without exposing renderer metadata", () => {
+    const fields = extractSelectableFields({
+      issuer: { name: "TrustCare" },
+      validUntil: "2027-01-01T00:00:00.000Z",
+      credentialSubject: {
+        patient: { fullNameTh: "นายทดสอบ", phone: "081-000-0000" },
+        appointment: { start: "2026-08-12T02:00:00.000Z", status: "booked" },
+        display: { watermark: "DEMO ONLY" },
+        audit: { sourceSystem: "EHR" }
+      },
+      trustcare: {
+        selectiveDisclosureRecommendedFields: [
+          "credentialSubject.patient.fullNameTh",
+          "credentialSubject.appointment.start",
+          "issuer",
+          "validUntil",
+          "credentialSubject.display.watermark",
+          "credentialSubject.audit.sourceSystem"
+        ]
+      }
+    });
+
+    expect(fields.map(field => field.path)).toEqual([
+      "credentialSubject.patient.fullNameTh",
+      "credentialSubject.appointment.start"
+    ]);
+  });
+
+  it("limits selective disclosure to holder claims and excludes technical VC properties", () => {
+    const cards = [...demoWalletCards, ...completeWalletSeedCards];
+    const forbiddenFragments = [
+      "@context",
+      "issuer",
+      "proof",
+      "evidence",
+      "credentialStatus",
+      "documentReference",
+      "humanDocument",
+      "watermark",
+      "trustcare",
+      "display",
+      "source",
+      "metadata",
+      "provenance",
+      "jwt",
+      "base64",
+      "photo"
+    ];
+
+    for (const card of cards) {
+      const fields = extractSelectableFields(card.credentialData);
+      expect(fields.length, String(card.id)).toBeGreaterThan(0);
+      expect(fields.every(field => field.path.startsWith("credentialSubject.")), String(card.id)).toBe(true);
+      for (const fragment of forbiddenFragments) {
+        expect(
+          fields.some(field => field.path.toLowerCase().includes(fragment.toLowerCase())),
+          `${card.id}:${fragment}`
+        ).toBe(false);
+      }
+    }
   });
 
   it("assesses service readiness for the active Portal patient seed", () => {
@@ -113,9 +180,47 @@ describe("wallet-core", () => {
     expect(parsed?.url).toBe("https://example.org/shl");
     expect(imported.ok).toBe(true);
     expect(imported.object?.type).toBe("shl");
-    expect((imported.object?.payload as any).manifestCredentialId).toBeUndefined();
-    expect((imported.object?.payload as any).presentationId).toBeUndefined();
+    expect((imported.object?.payload as any).canonicalShlUrl).toBe(standardShl);
+    expect((imported.object?.payload as any).manifestUrl).toBe("https://example.org/shl");
+    expect((imported.object?.payload as any).manifestCredentialId).toContain("pending:trustcare:vc:shl-manifest");
+    expect((imported.object?.payload as any).presentationId).toContain("pending:trustcare:vp:shl-manifest");
+    expect((imported.object?.payload as any).trustcareCertification.status).toBe("pending_maker_checker");
+    expect((imported.object?.payload as any).documentBundle.bindingModel).toContain("Standard SHL");
     expect((imported.object?.payload as any).qrPayload).toBe(standardShl);
+  });
+
+  it("keeps SHL passcodes out of QR payloads and parses web viewer fragments", () => {
+    const expiresAt = "2026-07-07T08:00:00.000Z";
+    const shl = createShlLinkPayload({
+      url: "https://example.org/manifest",
+      key: createDemoShlKey("unit-test"),
+      label: "Unit test SHL",
+      flag: "L",
+      passcodeRequired: true,
+      expiresAt,
+      version: 1
+    });
+    const viewer = createShlViewerUrl("https://wallet.example/viewer", shl);
+    const parsed = parseShlLink(viewer);
+    const decodedPayload = JSON.parse(Buffer.from(shl.slice("shlink:/".length), "base64url").toString("utf8"));
+
+    expect(parsed?.raw).toBe(shl);
+    expect(parsed?.passcodeRequired).toBe(true);
+    expect(parsed?.flag).toContain("P");
+    expect(decodedPayload.passcode).toBeUndefined();
+    expect(decodedPayload.passcodeRequired).toBeUndefined();
+    expect(decodedPayload.flag).toContain("P");
+  });
+
+  it("creates check-in SHL QR as a web viewer URL while retaining canonical shlink", () => {
+    const checkin = createDemoCheckinQr("opd_visit", 3, { passcodeRequired: true });
+    const parsedQr = parseTrustCareQr(checkin.qrPayload);
+
+    expect(checkin.shlUrl.startsWith("shlink:/")).toBe(true);
+    expect(checkin.canonicalShlUrl).toBe(checkin.shlUrl);
+    expect(checkin.qrPayload).toContain("#shlink:/");
+    expect(parsedQr.kind).toBe("shlink");
+    expect(parsedQr.token).toBe(checkin.shlUrl);
   });
 
   it("builds Contract Hub catalog for all prepare service contexts", () => {
@@ -136,6 +241,20 @@ describe("wallet-core", () => {
     expect(somchaiCards.every(card => card.ownerUserId === somchai.id)).toBe(true);
     expect(maleeCards.every(card => card.ownerUserId === malee.id)).toBe(true);
     expect(new Set([...somchaiCards, ...maleeCards].map(card => card.holderDid)).size).toBe(2);
+  });
+
+  it("keeps Thai issuer names as the primary credential display label", () => {
+    for (const user of walletDemoUsers) {
+      for (const card of getDemoWalletCards(user.id)) {
+        const issuer = card.credentialData?.issuer as Record<string, unknown> | undefined;
+        const message = String(card.id);
+        expect(card.issuerHospitalName, message).toMatch(/[ก-๙]/);
+        expect(card.issuerHospitalName, message).toBe(issuer?.nameTh);
+        if (typeof issuer?.name === "string" && issuer.name !== issuer.nameTh) {
+          expect(card.issuerHospitalName, message).not.toBe(issuer.name);
+        }
+      }
+    }
   });
 
   it("keeps TrustCare Portal photos separate from wallet-native generated photos", () => {

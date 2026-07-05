@@ -17,6 +17,10 @@ export function parseTrustCareQr(raw: string): {
   if (/^https?:\/\//.test(value)) {
     try {
       const url = new URL(value);
+      const hashPayload = decodeURIComponent(url.hash.replace(/^#/, ""));
+      if (hashPayload.startsWith("shlink:/")) return { raw: value, kind: "shlink", token: hashPayload };
+      const scanPayload = url.searchParams.get("scan");
+      if (scanPayload?.startsWith("shlink:/")) return { raw: value, kind: "shlink", token: scanPayload };
       const presentationId = url.searchParams.get("vp") ?? url.searchParams.get("presentationId") ?? undefined;
       const token = url.searchParams.get("token") ?? url.searchParams.get("vc") ?? undefined;
       return { raw: value, kind: presentationId ? "vp-url" : "unknown", presentationId, token };
@@ -33,4 +37,3 @@ export function parseTrustCareQr(raw: string): {
 export function demoPresentationUrl(origin: string, presentationId: string): string {
   return `${origin.replace(/\/$/, "")}/verifier?vp=${encodeURIComponent(presentationId)}`;
 }
-

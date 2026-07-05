@@ -41,7 +41,7 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
   const patient = getObject(subject, "patient") ?? getObject(subject, "student") ?? getObject(subject, "staff") ?? {};
   const issuer = getObject(credential, "issuer");
   const issuerNameTh = getText(issuer, "nameTh") ?? card.issuerHospitalName ?? "TrustCare Network";
-  const issuerNameEn = getText(issuer, "name") ?? card.issuerHospitalName ?? "TRUSTCARE NETWORK";
+  const issuerNameEn = getText(issuer, "nameEn") ?? getText(issuer, "name") ?? "TRUSTCARE NETWORK";
   const displayNameTh = getText(patient, "fullNameTh") ?? getText(patient, "nameTh") ?? getText(patient, "name") ?? "ผู้ใช้ TrustCare";
   const displayNameEn = getText(patient, "fullNameEn") ?? getText(patient, "nameEn") ?? getText(patient, "name") ?? displayNameTh;
   const patientId = getText(patient, "carepassId") ?? getText(patient, "hn") ?? getText(patient, "id") ?? String(card.credentialId);
@@ -58,8 +58,8 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
           <div className="hospital-document-brand">
             <div className="credential-logo">{logoText(issuerNameEn)}</div>
             <span>
-              <p>{issuerNameEn}</p>
               <h3>{issuerNameTh}</h3>
+              <p>{issuerNameEn}</p>
             </span>
           </div>
           <div className="hospital-document-title">
@@ -111,8 +111,8 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
       <div className="credential-header document-header">
         <div className="credential-logo">{logoText(issuerNameEn)}</div>
         <div className="document-header-copy">
-          <p>{issuerNameEn}</p>
           <h3>{issuerNameTh}</h3>
+          <p>{issuerNameEn}</p>
           <strong>{card.displayName} / {card.displayNameEn ?? card.cardType}</strong>
         </div>
         <Badge tone={card.credentialStatus === "active" ? "green" : "red"}>{card.credentialStatus === "active" ? "ใช้งานได้" : card.credentialStatus}</Badge>
@@ -244,7 +244,7 @@ function DocumentNarrativePanel({ narrative }: { narrative: { title: string; bod
   return (
     <section className="document-narrative">
       <div>
-        <span>Readable context</span>
+        <span>บริบทเอกสาร</span>
         <h4>{narrative.title}</h4>
         <p>{narrative.body}</p>
       </div>

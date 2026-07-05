@@ -82,7 +82,7 @@ export async function verifyQr(options: VerifierApiOptions, qrData: string): Pro
       protocol: parsed.kind === "shlink" ? "shl" : parsed.kind === "jwt" ? "jwt" : parsed.kind === "json" ? "json" : parsed.kind === "unknown" ? "unknown" : "trustcare-vp",
       issuer: parsed.kind === "shlink" ? "SMART Health Link transport" : "TrustCare Verifier",
       holderDid: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
-      requestSummary: parsed.presentationId ? `Presentation ID ${parsed.presentationId}` : isStandardShl ? "Standard SMART Health Link transport" : parsed.kind,
+      requestSummary: parsed.presentationId ? `Presentation ID ${parsed.presentationId}` : isStandardShl ? "อ่าน Standard SMART Health Link" : parsed.kind,
       warnings: parsed.kind === "shlink" ? ["อ่าน Standard SHL สำเร็จ โดย Manifest VP/VC เป็นส่วนขยายของ TrustCare และจะเชื่อถือได้หลังเจ้าของข้อมูลกับ Maker/Checker ยืนยันครบเท่านั้น"] : [],
       errors: parsed.kind === "unknown" ? ["QR code นี้ไม่ใช่รูปแบบ TrustCare VP ที่ระบบรู้จัก"] : []
     };

@@ -14,6 +14,7 @@ import type {
   WalletCard,
   WalletImportJob
 } from "./models";
+import { createDemoShlKey, createShlLinkPayload, createShlViewerUrl } from "./shl";
 
 const version = "2026.07.prepare-service.v1";
 
@@ -299,18 +300,35 @@ export function simulateImportForService(context: ReadinessContext, documentType
 export function createDemoCheckinQr(
   context: ReadinessContext,
   credentialCount: number,
-  policy: Partial<Pick<CheckinQrResponse, "expiresAt" | "maxAccessCount" | "passcodeRequired" | "viewerUrl">> = {}
+  policy: Partial<Pick<CheckinQrResponse, "expiresAt" | "maxAccessCount" | "passcodeRequired" | "manifestUrl" | "viewerUrl" | "passcodeHint" | "accessCodeDelivery">> = {}
 ): CheckinQrResponse {
   const shlId = `shl_${context}_${Date.now().toString(36)}`;
+  const manifestUrl = policy.manifestUrl ?? `https://trustcare.example.com/shl-manifest/${shlId}`;
+  const expiresAt = policy.expiresAt ?? new Date(Date.now() + 4 * 60 * 60_000).toISOString();
+  const shlUrl = createShlLinkPayload({
+    url: manifestUrl,
+    key: createDemoShlKey(shlId),
+    expiresAt,
+    label: `TrustCare ${context} check-in`,
+    flag: "L",
+    passcodeRequired: policy.passcodeRequired ?? false,
+    version: 1
+  });
+  const webViewerUrl = createShlViewerUrl(policy.viewerUrl ?? "https://trustcare.example.com/shl-viewer", shlUrl);
   return {
     checkId: `chk_${Date.now().toString(36)}`,
     shlId,
-    shlUrl: `shlink:/demo-${shlId}`,
-    qrPayload: `shlink:/demo-${shlId}`,
-    viewerUrl: policy.viewerUrl ?? `https://trustcare.example.com/shl-viewer/${shlId}`,
-    expiresAt: policy.expiresAt ?? new Date(Date.now() + 4 * 60 * 60_000).toISOString(),
+    shlUrl,
+    qrPayload: webViewerUrl,
+    manifestUrl,
+    viewerUrl: webViewerUrl,
+    canonicalShlUrl: shlUrl,
+    webViewerUrl,
+    expiresAt,
     maxAccessCount: policy.maxAccessCount ?? 3,
     passcodeRequired: policy.passcodeRequired ?? false,
+    passcodeHint: policy.passcodeHint ?? null,
+    accessCodeDelivery: policy.accessCodeDelivery ?? ((policy.passcodeRequired ?? false) ? "separate_channel" : "not_required"),
     readinessScore: 100,
     credentialCount,
     status: "ready"

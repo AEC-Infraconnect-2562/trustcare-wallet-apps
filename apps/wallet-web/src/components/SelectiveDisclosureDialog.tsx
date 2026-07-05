@@ -22,7 +22,7 @@ export function SelectiveDisclosureDialog({
   const currentSelected = fields.filter(field => selected[field.path] ?? field.recommended).map(field => field.path);
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
+    <div className="modal-backdrop selective-modal-backdrop" role="dialog" aria-modal="true">
       <div className="compact-dialog">
         <header className="modal-header">
           <div className="dialog-title-block">

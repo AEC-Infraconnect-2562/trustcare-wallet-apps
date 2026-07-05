@@ -748,7 +748,7 @@ function baseCard(user: WalletDemoUser, input: {
     credentialId,
     credentialStatus: "active",
     credentialType: input.credentialType,
-    issuerHospitalName: user.hospitalName,
+    issuerHospitalName: user.hospitalNameTh,
     issuerDid: user.issuerDid,
     holderDid: user.holderDid,
     patientAvatarUrl: user.avatarUrl,
