@@ -13,22 +13,23 @@ import {
   walletObjectsFromShl,
   type WalletStoredObject
 } from "@trustcare/wallet-core";
+import { useActiveWalletUser } from "../hooks/useActiveWalletUser";
 import { cacheStoredObject, cacheStoredObjects, loadStoredObjects } from "../storage/offlineWallet";
 
 type Filter = "all" | "vc" | "vp" | "shl" | "oid";
-const userId = "demo-patient-complete-001";
 
 export function StoreScreen() {
+  const { user } = useActiveWalletUser();
   const [cached, setCached] = useState<WalletStoredObject[]>([]);
   const [payload, setPayload] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [message, setMessage] = useState("");
-  const cards = useMemo(() => flattenCardsByCategory(getDemoCardsByCategory(userId)), []);
+  const cards = useMemo(() => flattenCardsByCategory(getDemoCardsByCategory(user.id)), [user.id]);
   const baseObjects = useMemo(() => mergeWalletObjects(
     walletObjectsFromCards(cards),
-    walletObjectsFromHistory(getDemoHistory(userId)),
-    walletObjectsFromShl(getDemoShlPackages(userId))
-  ), [cards]);
+    walletObjectsFromHistory(getDemoHistory(user.id)),
+    walletObjectsFromShl(getDemoShlPackages(user.id))
+  ), [cards, user.id]);
   const objects = useMemo(() => mergeWalletObjects(baseObjects, cached), [baseObjects, cached]);
   const filtered = useMemo(() => {
     if (filter === "all") return objects;
@@ -37,15 +38,15 @@ export function StoreScreen() {
   }, [filter, objects]);
 
   useEffect(() => {
-    void cacheStoredObjects(baseObjects);
-    void loadStoredObjects().then(setCached).catch(() => undefined);
-  }, [baseObjects]);
+    void cacheStoredObjects(baseObjects, user.id);
+    void loadStoredObjects(user.id).then(setCached).catch(() => undefined);
+  }, [baseObjects, user.id]);
 
   const importPayload = async () => {
     const result = importWalletExchange(payload, cards);
     if (result.object) {
-      await cacheStoredObject(result.object);
-      setCached(await loadStoredObjects());
+      await cacheStoredObject(result.object, user.id);
+      setCached(await loadStoredObjects(user.id));
     }
     setMessage(result.ok ? `นำเข้า ${result.format} แล้ว` : result.errors.join(", "));
     setPayload("");
@@ -120,30 +121,30 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#f4f6fa" },
   content: { padding: 22, paddingBottom: 120, gap: 14 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingTop: 24 },
-  eyebrow: { color: "#4f67f2", fontSize: 12, fontWeight: "900", letterSpacing: 1 },
-  title: { color: "#111827", fontSize: 30, fontWeight: "900" },
+  eyebrow: { color: "#4f67f2", fontSize: 11.5, fontWeight: "700", letterSpacing: 0.8 },
+  title: { color: "#111827", fontSize: 26, fontWeight: "700" },
   subtitle: { color: "#647084", marginTop: 4 },
   iconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#eef3ff", alignItems: "center", justifyContent: "center" },
   importPanel: { borderRadius: 14, backgroundColor: "#fff", borderWidth: 1, borderColor: "#d8dfe4", padding: 16, gap: 12 },
-  panelTitle: { color: "#111827", fontSize: 18, fontWeight: "900" },
+  panelTitle: { color: "#111827", fontSize: 16, fontWeight: "700" },
   input: { minHeight: 104, borderRadius: 10, borderWidth: 1, borderColor: "#d8dfe4", backgroundColor: "#f8fafc", color: "#111827", padding: 12, textAlignVertical: "top" },
   importButton: { minHeight: 52, borderRadius: 10, backgroundColor: "#4f67f2", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 },
   disabled: { opacity: 0.5 },
-  importText: { color: "#fff", fontWeight: "900" },
-  message: { color: "#4f67f2", fontWeight: "800" },
+  importText: { color: "#fff", fontWeight: "700" },
+  message: { color: "#4f67f2", fontWeight: "700" },
   filterRow: { gap: 10 },
   filterChip: { minHeight: 40, borderRadius: 20, backgroundColor: "#fff", borderWidth: 1, borderColor: "#d8dfe4", paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
   filterChipActive: { backgroundColor: "#4f67f2", borderColor: "#4f67f2" },
-  filterText: { color: "#374151", fontWeight: "900" },
+  filterText: { color: "#374151", fontWeight: "700" },
   filterTextActive: { color: "#fff" },
   objectCard: { borderRadius: 14, backgroundColor: "#fff", borderWidth: 1, borderColor: "#d8dfe4", padding: 16, gap: 10 },
   objectTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   badgeRow: { flexDirection: "row", gap: 8 },
-  badge: { color: "#065f46", backgroundColor: "#d1fae5", overflow: "hidden", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, fontWeight: "900" },
-  protocol: { color: "#3730a3", backgroundColor: "#eef2ff", overflow: "hidden", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, fontWeight: "900" },
-  objectTitle: { color: "#111827", fontSize: 18, fontWeight: "900" },
+  badge: { color: "#065f46", backgroundColor: "#d1fae5", overflow: "hidden", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, fontWeight: "700" },
+  protocol: { color: "#3730a3", backgroundColor: "#eef2ff", overflow: "hidden", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, fontWeight: "700" },
+  objectTitle: { color: "#111827", fontSize: 16, fontWeight: "700" },
   objectSub: { color: "#647084" },
   objectActions: { flexDirection: "row", gap: 10 },
   action: { flex: 1, minHeight: 46, borderRadius: 10, backgroundColor: "#f4f6fa", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  actionText: { color: "#4f67f2", fontWeight: "900" }
+  actionText: { color: "#4f67f2", fontWeight: "700" }
 });

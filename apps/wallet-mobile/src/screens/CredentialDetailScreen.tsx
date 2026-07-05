@@ -4,22 +4,23 @@ import { useLocalSearchParams, router } from "expo-router";
 import { Download, Eye, QrCode, Shield, ArrowLeft } from "lucide-react-native";
 import * as ScreenCapture from "expo-screen-capture";
 import { walletApi } from "@trustcare/api-client";
-import { demoCardsByCategory, flattenCardsByCategory, type WalletPresentationResponse } from "@trustcare/wallet-core";
+import { flattenCardsByCategory, getDemoCardsByCategory, type WalletPresentationResponse } from "@trustcare/wallet-core";
 import { CredentialDocumentNative } from "../components/CredentialDocumentNative";
+import { useActiveWalletUser } from "../hooks/useActiveWalletUser";
 import { useBiometricGate } from "../hooks/useBiometricGate";
 import { cacheQr } from "../storage/offlineWallet";
 import { env } from "../env";
 
 type Tab = "details" | "trust" | "payload";
 
-const apiOptions = { url: env.apiUrl, demoMode: env.demoMode, demoOrigin: "https://trustcare.example.com" };
-
 export function CredentialDetailScreen() {
+  const { user } = useActiveWalletUser();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [presentation, setPresentation] = useState<WalletPresentationResponse | null>(null);
   const [tab, setTab] = useState<Tab>("details");
   const biometric = useBiometricGate();
-  const card = useMemo(() => flattenCardsByCategory(demoCardsByCategory).find(item => String(item.id) === String(id)), [id]);
+  const apiOptions = useMemo(() => ({ url: env.apiUrl, demoMode: env.demoMode, demoOrigin: "https://trustcare.example.com", userId: user.id }), [user.id]);
+  const card = useMemo(() => flattenCardsByCategory(getDemoCardsByCategory(user.id)).find(item => String(item.id) === String(id)), [id, user.id]);
 
   useEffect(() => {
     if (!env.screenCaptureProtection) return undefined;
@@ -30,7 +31,7 @@ export function CredentialDetailScreen() {
   }, []);
 
   if (!card) {
-    return <Text>Credential not found</Text>;
+    return <View style={styles.notFound}><Text style={styles.notFoundTitle}>ไม่พบเอกสารใน Wallet นี้</Text><Text style={styles.muted}>เอกสารนี้ไม่ได้อยู่ใน scope ของ {user.nameTh}</Text></View>;
   }
 
   const activeCard = card;
@@ -39,7 +40,7 @@ export function CredentialDetailScreen() {
     if (!(await biometric.authenticate())) return;
     const result = await walletApi.present(apiOptions, { cardId: activeCard.id, selectedFields, validMinutes: 10 });
     setPresentation(result);
-    await cacheQr(activeCard.id, result.qrData, result.presentationId, result.expiresAt);
+    await cacheQr(activeCard.id, result.qrData, result.presentationId, result.expiresAt, user.id);
   }
 
   return (
@@ -101,26 +102,28 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#f4f6fa" },
   content: { padding: 20, paddingBottom: 120 },
   back: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 18 },
-  backText: { color: "#4f67f2", fontSize: 20, fontWeight: "800" },
+  backText: { color: "#4f67f2", fontSize: 16, fontWeight: "700" },
   actions: { flexDirection: "row", gap: 12, marginBottom: 18 },
   actionPrimary: { flex: 1, minHeight: 66, borderRadius: 8, backgroundColor: "#4f67f2", alignItems: "center", justifyContent: "center", gap: 6 },
-  actionPrimaryText: { color: "#fff", fontWeight: "900" },
+  actionPrimaryText: { color: "#fff", fontWeight: "700" },
   actionPurple: { flex: 1, minHeight: 66, borderRadius: 8, backgroundColor: "#eee5ff", alignItems: "center", justifyContent: "center", gap: 6 },
-  actionPurpleText: { color: "#7c3aed", fontWeight: "900" },
+  actionPurpleText: { color: "#7c3aed", fontWeight: "700" },
   actionGreen: { flex: 1, minHeight: 66, borderRadius: 8, backgroundColor: "#dcf8e8", alignItems: "center", justifyContent: "center", gap: 6 },
-  actionGreenText: { color: "#167347", fontWeight: "900" },
+  actionGreenText: { color: "#167347", fontWeight: "700" },
   presentation: { borderRadius: 8, backgroundColor: "#fff", padding: 16, flexDirection: "row", gap: 12, alignItems: "center", marginBottom: 16 },
-  presentationTitle: { fontSize: 18, fontWeight: "900" },
+  presentationTitle: { fontSize: 16, fontWeight: "700" },
   muted: { color: "#62718a" },
   tabs: { flexDirection: "row", backgroundColor: "#fff", borderRadius: 8, overflow: "hidden", marginBottom: 12 },
   tab: { flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center" },
   activeTab: { backgroundColor: "#e8eefc" },
-  tabText: { color: "#62718a", fontWeight: "800" },
+  tabText: { color: "#62718a", fontWeight: "700" },
   activeTabText: { color: "#4f67f2" },
   detailBox: { borderRadius: 8, backgroundColor: "#fff", padding: 18, gap: 14 },
   row: { flexDirection: "row", justifyContent: "space-between", gap: 16 },
-  label: { color: "#62718a", fontSize: 16 },
-  value: { flex: 1, textAlign: "right", color: "#111827", fontSize: 16, fontWeight: "800" },
+  label: { color: "#62718a", fontSize: 13.5 },
+  value: { flex: 1, textAlign: "right", color: "#111827", fontSize: 13.5, fontWeight: "700" },
   mono: { fontFamily: "Courier", fontSize: 13 },
-  trustRow: { flexDirection: "row", gap: 12, alignItems: "center" }
+  trustRow: { flexDirection: "row", gap: 12, alignItems: "center" },
+  notFound: { flex: 1, backgroundColor: "#f4f6fa", alignItems: "center", justifyContent: "center", padding: 24, gap: 8 },
+  notFoundTitle: { color: "#111827", fontSize: 18, fontWeight: "700", textAlign: "center" }
 });

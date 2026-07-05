@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import {
   Activity,
   AlertTriangle,
+  ArrowLeft,
   BadgeCheck,
   Bell,
   Camera,
@@ -101,6 +102,21 @@ type View = "home" | "documents" | "receive" | "share" | "prepare" | "store" | "
 type DocumentsTab = "cards" | "receive" | "store" | "history";
 type StoreFilter = "all" | "vc" | "vp" | "shl" | "oid" | "service";
 
+type ServiceReadinessSummary = {
+  context: ReadinessContext;
+  label: string;
+  purpose: string;
+  score: number;
+  criticalReady: boolean;
+  requiredReady: number;
+  requiredTotal: number;
+  recommendedReady: number;
+  recommendedTotal: number;
+  missingRequired: number;
+  readyLabels: string[];
+  missingLabels: string[];
+};
+
 type ScanOutcome = {
   id: string;
   userId: string;
@@ -154,10 +170,31 @@ const readinessPurposeTh: Record<ReadinessContext, string> = {
   pharmacy_dispense: "เตรียมใบสั่งยา รายการยา การแพ้ยา และตัวตนสำหรับรับยาหรือต่อยา"
 };
 
+const readinessContexts = Object.keys(readinessContextLabels) as ReadinessContext[];
+
+const viewBreadcrumbLabels: Record<View, string> = {
+  home: "หน้าแรก",
+  documents: "เอกสาร",
+  receive: "รับเอกสาร",
+  share: "แชร์",
+  prepare: "เตรียมบริการ",
+  store: "คลังข้อมูล",
+  history: "ประวัติ",
+  settings: "ตั้งค่า"
+};
+
+const documentTabBreadcrumbLabels: Record<DocumentsTab, string> = {
+  cards: "รายการเอกสาร",
+  receive: "รับเอกสาร",
+  store: "คลังข้อมูล",
+  history: "ประวัติ"
+};
+
 export default function App() {
   const { lang, setLang, t } = useLanguage();
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [view, setView] = useState<View>("home");
+  const [viewHistory, setViewHistory] = useState<View[]>([]);
   const [documentsTab, setDocumentsTab] = useState<DocumentsTab>("cards");
   const [developerMode, setDeveloperMode] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>(() => {
@@ -203,6 +240,27 @@ export default function App() {
   const interopFixtures = useMemo(() => buildPortalInteroperabilityFixtures(selectedUserId, baseApiOptions.demoOrigin), [selectedUserId]);
   const storedExtras = storedExtrasByUser[selectedUserId] ?? [];
   const scanHistory = scanHistoryByUser[selectedUserId] ?? [];
+  const navigateTo = useCallback((nextView: View, options?: { replace?: boolean }) => {
+    if (nextView === view) return;
+    if (!options?.replace) {
+      setViewHistory(previous => [...previous.slice(-7), view]);
+    }
+    setView(nextView);
+  }, [view]);
+  const goBack = useCallback(() => {
+    setViewHistory(previous => {
+      const next = [...previous];
+      const previousView = next.pop();
+      setView(previousView ?? "home");
+      return next;
+    });
+  }, []);
+  const switchUser = useCallback((userId: string) => {
+    window.localStorage.setItem(walletSessionKey, userId);
+    setSelectedUserId(userId);
+    setViewHistory([]);
+    setView("home");
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -268,6 +326,23 @@ export default function App() {
   }, [activeUser.patientId, allCards, readinessContext]);
 
   const counts = useMemo(() => countCardsByCategory(grouped), [grouped]);
+  const serviceReadinessSummaries = useMemo<ServiceReadinessSummary[]>(() => readinessContexts.map(context => {
+    const result = assessLocalReadiness(allCards, context);
+    return {
+      context,
+      label: readinessContextLabels[context].th,
+      purpose: readinessPurposeTh[context],
+      score: result.score ?? 0,
+      criticalReady: Boolean(result.criticalReady),
+      requiredReady: result.requiredReady ?? 0,
+      requiredTotal: result.requiredTotal ?? 0,
+      recommendedReady: result.recommendedReady ?? 0,
+      recommendedTotal: result.recommendedTotal ?? 0,
+      missingRequired: (result.missing ?? []).filter(item => item.required).length,
+      readyLabels: (result.ready ?? []).map(item => item.label).slice(0, 4),
+      missingLabels: (result.missing ?? []).map(item => item.label).slice(0, 4)
+    };
+  }), [allCards]);
   const serviceObjects = useMemo(() => {
     const objects: WalletStoredObject[] = [];
     if (servicePacket) objects.push(walletObjectFromServicePacket(servicePacket));
@@ -404,8 +479,8 @@ export default function App() {
     setScanOutcome(outcome);
     addScanHistory(outcome);
     setLastImportMessage(mergedResult.verified ? "สแกน QR และตรวจสอบผ่านแล้ว" : "สแกน QR แล้ว แต่ต้องตรวจสอบรายละเอียดเพิ่มเติม");
-    setView("share");
-  }, [addScanHistory, apiOptions, importPayload, readinessContext, selectedUserId, view]);
+    navigateTo("share");
+  }, [addScanHistory, apiOptions, importPayload, navigateTo, readinessContext, selectedUserId, view]);
 
   const buildBundle = useCallback(async () => {
     const result = buildServiceBundleEnvelope({
@@ -588,12 +663,14 @@ export default function App() {
     window.localStorage.setItem(walletSessionKey, userId);
     setSelectedUserId(userId);
     setIsAuthenticated(true);
+    setViewHistory([]);
     setView(pendingScanPayload ? "share" : "home");
   }, [pendingScanPayload]);
 
   const logout = useCallback(() => {
     window.localStorage.removeItem(walletSessionKey);
     setIsAuthenticated(false);
+    setViewHistory([]);
     setView("home");
     setSelectedCard(null);
     setDetailOpen(false);
@@ -636,8 +713,13 @@ export default function App() {
     }
   };
   const title = pageCopy[view].title;
+  const breadcrumbs = [
+    "TrustCare Wallet",
+    viewBreadcrumbLabels[view],
+    ...(view === "documents" ? [documentTabBreadcrumbLabels[documentsTab]] : [])
+  ];
   const openDocumentsHub = (tab: DocumentsTab = "cards") => {
-    setView("documents");
+    navigateTo("documents");
     setDocumentsTab(tab);
   };
 
@@ -664,16 +746,16 @@ export default function App() {
           </div>
         </div>
         <nav className="primary-tabs" aria-label="TrustCare Wallet">
-          <NavButton active={view === "home"} icon={<Home />} label="หน้าแรก" onClick={() => setView("home")} />
+          <NavButton active={view === "home"} icon={<Home />} label="หน้าแรก" onClick={() => navigateTo("home")} />
           <NavButton
             active={view === "documents" || view === "receive" || view === "store" || view === "history"}
             icon={<FileText />}
             label="เอกสาร"
             onClick={() => openDocumentsHub("cards")}
           />
-          <NavButton active={view === "share"} icon={<Share2 />} label="แชร์" onClick={() => setView("share")} />
-          <NavButton active={view === "prepare"} icon={<Activity />} label="เตรียมบริการ" onClick={() => setView("prepare")} />
-          <NavButton active={view === "settings"} icon={<Settings />} label="ตั้งค่า" onClick={() => setView("settings")} />
+          <NavButton active={view === "share"} icon={<Share2 />} label="แชร์" onClick={() => navigateTo("share")} />
+          <NavButton active={view === "prepare"} icon={<Activity />} label="เตรียมบริการ" onClick={() => navigateTo("prepare")} />
+          <NavButton active={view === "settings"} icon={<Settings />} label="ตั้งค่า" onClick={() => navigateTo("settings")} />
         </nav>
       </header>
       <aside className="side-nav">
@@ -685,29 +767,38 @@ export default function App() {
           </div>
         </div>
         <nav>
-          <NavButton active={view === "home"} icon={<Home />} label="หน้าแรก" onClick={() => setView("home")} />
-          <NavButton active={view === "documents"} icon={<FileText />} label="เอกสาร" onClick={() => setView("documents")} />
-          <NavButton active={view === "receive"} icon={<Inbox />} label="รับเอกสาร" onClick={() => setView("receive")} />
-          <NavButton active={view === "share"} icon={<Share2 />} label="แชร์" onClick={() => setView("share")} />
-          <NavButton active={view === "prepare"} icon={<Activity />} label="เตรียมบริการ" onClick={() => setView("prepare")} />
-          <NavButton active={view === "store"} icon={<Database />} label="คลังข้อมูล" onClick={() => setView("store")} />
-          <NavButton active={view === "history"} icon={<History />} label="ประวัติ" onClick={() => setView("history")} />
-          <NavButton active={view === "settings"} icon={<Settings />} label="ตั้งค่า" onClick={() => setView("settings")} />
+          <NavButton active={view === "home"} icon={<Home />} label="หน้าแรก" onClick={() => navigateTo("home")} />
+          <NavButton active={view === "documents"} icon={<FileText />} label="เอกสาร" onClick={() => navigateTo("documents")} />
+          <NavButton active={view === "receive"} icon={<Inbox />} label="รับเอกสาร" onClick={() => navigateTo("receive")} />
+          <NavButton active={view === "share"} icon={<Share2 />} label="แชร์" onClick={() => navigateTo("share")} />
+          <NavButton active={view === "prepare"} icon={<Activity />} label="เตรียมบริการ" onClick={() => navigateTo("prepare")} />
+          <NavButton active={view === "store"} icon={<Database />} label="คลังข้อมูล" onClick={() => navigateTo("store")} />
+          <NavButton active={view === "history"} icon={<History />} label="ประวัติ" onClick={() => navigateTo("history")} />
+          <NavButton active={view === "settings"} icon={<Settings />} label="ตั้งค่า" onClick={() => navigateTo("settings")} />
         </nav>
         <UserScopePanel
           activeUser={activeUser}
           users={walletDemoUsers}
-          onChange={userId => {
-            window.localStorage.setItem(walletSessionKey, userId);
-            setSelectedUserId(userId);
-          }}
+          onChange={switchUser}
           onLogout={logout}
         />
       </aside>
 
       <section className="main-pane">
         <header className="topbar">
-          <div>
+          <div className="topbar-title-block">
+            <div className="breadcrumb-row">
+              <button type="button" className="back-button" onClick={goBack} disabled={view === "home" && viewHistory.length === 0}>
+                <ArrowLeft size={15} /> กลับ
+              </button>
+              <nav className="breadcrumbs" aria-label="Breadcrumb">
+                {breadcrumbs.map((item, index) => (
+                  <span key={`${item}-${index}`} className={index === breadcrumbs.length - 1 ? "current" : ""}>
+                    {item}
+                  </span>
+                ))}
+              </nav>
+            </div>
             <h1>{title}</h1>
             <p>{pageCopy[view].subtitle}</p>
           </div>
@@ -716,10 +807,7 @@ export default function App() {
               <span>ผู้ใช้ทดสอบ</span>
               <select
                 value={activeUser.id}
-                onChange={event => {
-                  window.localStorage.setItem(walletSessionKey, event.target.value);
-                  setSelectedUserId(event.target.value);
-                }}
+                onChange={event => switchUser(event.target.value)}
               >
                 {walletDemoUsers.map(user => (
                   <option key={user.id} value={user.id}>{user.nameTh ?? user.nameEn}</option>
@@ -761,7 +849,13 @@ export default function App() {
               setPresentation(null);
               setDetailOpen(true);
             }}
-            onView={setView}
+            onView={navigateTo}
+            serviceReadiness={serviceReadinessSummaries}
+            activeReadinessContext={readinessContext}
+            onPrepareContext={context => {
+              setReadinessContext(context);
+              navigateTo("prepare");
+            }}
           />
         )}
         {view === "documents" && (
@@ -805,7 +899,7 @@ export default function App() {
             onOpenScanner={() => setScannerOpen(true)}
             onImportPayload={value => {
               importPayload(value);
-              setView("store");
+              navigateTo("store");
             }}
             onCopyFixture={(label, value) => {
               void copyText(value);
@@ -876,13 +970,13 @@ export default function App() {
       </section>
 
       <nav className="bottom-nav">
-        <NavButton active={view === "home"} icon={<Home />} label="หน้าแรก" onClick={() => setView("home")} />
+        <NavButton active={view === "home"} icon={<Home />} label="หน้าแรก" onClick={() => navigateTo("home")} />
         <NavButton active={view === "documents" || view === "receive" || view === "store" || view === "history"} icon={<FileText />} label="เอกสาร" onClick={() => {
           openDocumentsHub("cards");
         }} />
-        <NavButton active={view === "share"} icon={<Share2 />} label="แชร์" onClick={() => setView("share")} />
-        <NavButton active={view === "prepare"} icon={<Activity />} label="เตรียม" onClick={() => setView("prepare")} />
-        <NavButton active={view === "settings"} icon={<Settings />} label="ตั้งค่า" onClick={() => setView("settings")} />
+        <NavButton active={view === "share"} icon={<Share2 />} label="แชร์" onClick={() => navigateTo("share")} />
+        <NavButton active={view === "prepare"} icon={<Activity />} label="เตรียม" onClick={() => navigateTo("prepare")} />
+        <NavButton active={view === "settings"} icon={<Settings />} label="ตั้งค่า" onClick={() => navigateTo("settings")} />
       </nav>
 
       <CredentialDetailDialog
@@ -1017,7 +1111,18 @@ function UserScopePanel({
   );
 }
 
-function HomeView({ cards, user, readiness, history, offlineOnline, onOpenCard, onView }: {
+function HomeView({
+  cards,
+  user,
+  readiness,
+  history,
+  offlineOnline,
+  onOpenCard,
+  onView,
+  serviceReadiness,
+  activeReadinessContext,
+  onPrepareContext
+}: {
   cards: WalletCard[];
   user: WalletDemoUser;
   readiness: any;
@@ -1025,13 +1130,22 @@ function HomeView({ cards, user, readiness, history, offlineOnline, onOpenCard, 
   offlineOnline: boolean;
   onOpenCard: (card: WalletCard) => void;
   onView: (view: View) => void;
+  serviceReadiness: ServiceReadinessSummary[];
+  activeReadinessContext: ReadinessContext;
+  onPrepareContext: (context: ReadinessContext) => void;
 }) {
+  const [readinessExpanded, setReadinessExpanded] = useState(false);
   const activeCards = cards.filter(card => card.credentialStatus === "active");
   const criticalCards = activeCards.filter(card => card.pinned || criticalCardTypes.has(card.cardType)).slice(0, 5);
   const recentCards = [...activeCards].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 4);
   const nextAppointment = activeCards.find(card => card.cardType === "appointment");
   const readinessScore = readiness?.readiness?.score ?? 0;
   const readyForService = Boolean(readiness?.readiness?.criticalReady);
+  const sortedReadiness = [...serviceReadiness].sort((a, b) => {
+    if (Number(b.criticalReady) !== Number(a.criticalReady)) return Number(b.criticalReady) - Number(a.criticalReady);
+    return b.score - a.score;
+  });
+  const visibleReadiness = readinessExpanded ? sortedReadiness : sortedReadiness.slice(0, 3);
 
   return (
     <div className="view-stack">
@@ -1053,10 +1167,42 @@ function HomeView({ cards, user, readiness, history, offlineOnline, onOpenCard, 
         </Surface>
         <Surface className="home-readiness-panel">
           <div className="readiness-ring">{readinessScore}%</div>
-          <div>
+          <div className="home-readiness-copy">
             <h3>{readyForService ? "พร้อมเข้ารับบริการ" : "ยังขาดเอกสาร"}</h3>
             <p>{readyForService ? "เอกสารจำเป็นสำหรับบริบทบริการนี้พร้อมแล้ว" : "ตรวจเอกสารที่ขาดก่อนสร้างชุดเอกสารบริการ"}</p>
-            <Button className={readyForService ? "green" : "purple"} onClick={() => onView("prepare")}><ListChecks size={18} /> เตรียมบริการ</Button>
+            <div className="service-readiness-list" aria-label="ความพร้อมแยกตามเรื่องบริการ">
+              {visibleReadiness.map(item => (
+                <button
+                  key={item.context}
+                  type="button"
+                  className={`service-readiness-row ${item.context === activeReadinessContext ? "active" : ""}`}
+                  onClick={() => onPrepareContext(item.context)}
+                >
+                  <span>
+                    <strong>{item.label}</strong>
+                    <small>{item.purpose}</small>
+                  </span>
+                  <span className="service-readiness-meta">
+                    <Badge tone={item.criticalReady ? "green" : "yellow"}>
+                      {item.criticalReady ? "พร้อม" : `ขาด ${item.missingRequired}`}
+                    </Badge>
+                    <small>{item.requiredReady}/{item.requiredTotal} จำเป็น</small>
+                  </span>
+                  <i className="service-readiness-meter" aria-hidden="true"><b style={{ width: `${item.score}%` }} /></i>
+                  {readinessExpanded && (
+                    <em>
+                      พร้อม: {item.readyLabels.join(", ") || "ยังไม่มี"} · ขาด: {item.missingLabels.join(", ") || "ไม่มี"}
+                    </em>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="readiness-action-row">
+              <button type="button" className="link-button" onClick={() => setReadinessExpanded(value => !value)}>
+                {readinessExpanded ? "ย่อรายละเอียด" : `ดูรายละเอียดทั้งหมด ${serviceReadiness.length} เรื่อง`}
+              </button>
+              <Button className={readyForService ? "green" : "purple"} onClick={() => onView("prepare")}><ListChecks size={18} /> เตรียมบริการ</Button>
+            </div>
           </div>
         </Surface>
       </section>
