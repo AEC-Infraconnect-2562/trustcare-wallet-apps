@@ -76,6 +76,7 @@ import {
   type ContractHubCatalog,
   type PresentationHistoryItem,
   type ReadinessContext,
+  type ReadinessRequirement,
   type ServiceBundleEnvelope,
   type ServicePacketResponse,
   type ShlPackage,
@@ -102,6 +103,17 @@ import { SelectiveDisclosureDialog } from "./components/SelectiveDisclosureDialo
 type View = "home" | "documents" | "receive" | "share" | "prepare" | "store" | "history" | "settings";
 type DocumentsTab = "cards" | "receive" | "store" | "history";
 type StoreFilter = "all" | "vc" | "vp" | "shl" | "oid" | "service";
+type ShareTransport = "vp_qr" | "shl_recommended" | "shl_manifest";
+type PackageProtocol = "vp" | "shl" | "hybrid";
+type TimeAnchor = "record" | "package";
+type DisclosureMode = "full" | "sd" | "zkp";
+
+type ShlAccessPolicyState = {
+  passcodeRequired: boolean;
+  expiryHours: number;
+  maxAccessCount: number;
+  longTermAccess: boolean;
+};
 
 type ServiceReadinessSummary = {
   context: ReadinessContext;
@@ -116,6 +128,13 @@ type ServiceReadinessSummary = {
   missingRequired: number;
   readyLabels: string[];
   missingLabels: string[];
+};
+
+type ShareDocumentRow = {
+  key: string;
+  requirement: ReadinessRequirement;
+  card: WalletCard | null;
+  missing: boolean;
 };
 
 type ScanOutcome = {
@@ -175,7 +194,7 @@ const sharePurposeProfiles: Record<ReadinessContext, {
   recipient: string;
   expiryMinutes: number;
   help: string;
-  transport: "vp_qr" | "shl_recommended" | "shl_manifest";
+  transport: ShareTransport;
   biometricRequired: boolean;
   fields: Array<{ key: string; label: string }>;
 }> = {
@@ -280,6 +299,68 @@ const sharePurposeProfiles: Record<ReadinessContext, {
   }
 };
 
+const protocolProfiles: Record<PackageProtocol, { label: string; description: string; badge: string }> = {
+  vp: {
+    label: "VC/VP",
+    description: "ชุดเล็ก ตรวจสิทธิ์หรือเอกสารสำคัญแบบ purpose-bound และรองรับ selective disclosure",
+    badge: "VP QR"
+  },
+  shl: {
+    label: "SHL",
+    description: "ชุดข้อมูลขนาดใหญ่หรือใช้ต่อเนื่อง เช่น ผลตรวจหลายรายการ วัคซีน หรือประวัติการรักษา",
+    badge: "SHL"
+  },
+  hybrid: {
+    label: "SHL + Manifest VP",
+    description: "ใช้ SHL เป็น transport และใช้ VC/VP เป็นชั้นความน่าเชื่อถือสำหรับ TrustCare verifier",
+    badge: "Hybrid"
+  }
+};
+
+const defaultShlPolicy: ShlAccessPolicyState = {
+  passcodeRequired: true,
+  expiryHours: 24,
+  maxAccessCount: 5,
+  longTermAccess: false
+};
+
+const vpDisclosureFields = [
+  { key: "identity", label: "ตัวตน" },
+  { key: "clinical_summary", label: "สรุปสุขภาพ" },
+  { key: "medication", label: "ยา" },
+  { key: "diagnostics", label: "ผลตรวจ" },
+  { key: "coverage", label: "สิทธิ์/ประกัน" },
+  { key: "consent", label: "ความยินยอม" }
+];
+
+function protocolForTransport(transport: ShareTransport): PackageProtocol {
+  if (transport === "shl_manifest") return "hybrid";
+  if (transport === "shl_recommended") return "shl";
+  return "vp";
+}
+
+function defaultShlPolicyForContext(context: ReadinessContext): ShlAccessPolicyState {
+  if (context === "emergency") return { passcodeRequired: false, expiryHours: 1, maxAccessCount: 8, longTermAccess: false };
+  if (context === "pharmacy_dispense") return { passcodeRequired: true, expiryHours: 2, maxAccessCount: 3, longTermAccess: false };
+  if (context === "medical_tourist" || context === "cross_border") {
+    return { passcodeRequired: true, expiryHours: 72, maxAccessCount: 8, longTermAccess: false };
+  }
+  return defaultShlPolicy;
+}
+
+function shlPolicyExpiry(policy: ShlAccessPolicyState): string {
+  const hours = policy.longTermAccess ? Math.max(policy.expiryHours, 24 * 30) : policy.expiryHours;
+  return new Date(Date.now() + hours * 60 * 60_000).toISOString();
+}
+
+function protocolRequiresVp(protocol: PackageProtocol): boolean {
+  return protocol === "vp" || protocol === "hybrid";
+}
+
+function protocolRequiresShl(protocol: PackageProtocol): boolean {
+  return protocol === "shl" || protocol === "hybrid";
+}
+
 const readinessContexts = Object.keys(readinessContextLabels) as ReadinessContext[];
 
 const viewBreadcrumbLabels: Record<View, string> = {
@@ -339,6 +420,11 @@ export default function App() {
   const [serviceBundle, setServiceBundle] = useState<ServiceBundleEnvelope | null>(null);
   const [servicePacket, setServicePacket] = useState<ServicePacketResponse | null>(null);
   const [checkinQr, setCheckinQr] = useState<CheckinQrResponse | null>(null);
+  const [prepareProtocol, setPrepareProtocol] = useState<PackageProtocol>("vp");
+  const [prepareDisclosureMode, setPrepareDisclosureMode] = useState<DisclosureMode>("sd");
+  const [prepareSelectedFields, setPrepareSelectedFields] = useState<string[]>(sharePurposeProfiles.opd_visit.fields.map(field => field.key));
+  const [prepareTimeAnchor, setPrepareTimeAnchor] = useState<TimeAnchor>("record");
+  const [prepareShlPolicy, setPrepareShlPolicy] = useState<ShlAccessPolicyState>(defaultShlPolicyForContext("opd_visit"));
   const [importJob, setImportJob] = useState<WalletImportJob | null>(null);
   const [storedExtrasByUser, setStoredExtrasByUser] = useState<Record<string, WalletStoredObject[]>>({});
   const [lastImportMessage, setLastImportMessage] = useState("");
@@ -609,29 +695,35 @@ export default function App() {
       presentationId,
       expiresAt: new Date(Date.now() + 1440 * 60_000).toISOString(),
       credentialCount: localReadiness.selectedCardIds.length,
-      qrData: `${baseApiOptions.demoOrigin}/verifier?vp=${presentationId}`
+      qrData: `${baseApiOptions.demoOrigin}/verifier?vp=${presentationId}`,
+      selectedFields: prepareDisclosureMode === "full" ? ["full_vc"] : prepareSelectedFields,
+      mode: prepareDisclosureMode
     };
     const scannableQr = createScannableWebUrl(result.qrData);
     setServicePacket({ ...result, qrData: scannableQr });
     setServicePacketQrDataUrl(await QRCode.toDataURL(scannableQr, { margin: 1, width: 220 }));
     setLastImportMessage(`สร้าง Service VP ${result.presentationId} แล้ว`);
-  }, [activeUser.patientId, allCards, readinessContext]);
+  }, [activeUser.patientId, allCards, prepareDisclosureMode, prepareSelectedFields, readinessContext]);
 
   const buildCheckinQr = useCallback(async () => {
     const localReadiness = assessLocalReadiness(allCards, readinessContext);
-    const result = createDemoCheckinQr(readinessContext, localReadiness.selectedCardIds.length);
+    const result = createDemoCheckinQr(readinessContext, localReadiness.selectedCardIds.length, {
+      expiresAt: shlPolicyExpiry(prepareShlPolicy),
+      maxAccessCount: prepareShlPolicy.maxAccessCount,
+      passcodeRequired: prepareShlPolicy.passcodeRequired
+    });
     const scannableQr = createScannableWebUrl(result.qrPayload);
     setCheckinQr({ ...result, qrPayload: scannableQr, shlUrl: scannableQr });
     setCheckinQrDataUrl(await QRCode.toDataURL(scannableQr, { margin: 1, width: 220 }));
     setLastImportMessage(`สร้าง Check-in SHL ${result.shlId} แล้ว`);
-  }, [allCards, readinessContext]);
+  }, [allCards, prepareShlPolicy, readinessContext]);
 
   const prepareAllServiceArtifacts = useCallback(async () => {
     await buildBundle();
-    await buildPacket();
-    await buildCheckinQr();
+    if (protocolRequiresVp(prepareProtocol)) await buildPacket();
+    if (protocolRequiresShl(prepareProtocol)) await buildCheckinQr();
     setLastImportMessage("เตรียมชุดเอกสารเข้ารับบริการครบแล้ว สามารถส่ง QR ให้โรงพยาบาลได้");
-  }, [buildBundle, buildCheckinQr, buildPacket]);
+  }, [buildBundle, buildCheckinQr, buildPacket, prepareProtocol]);
 
   const changeReadinessContext = useCallback((context: ReadinessContext) => {
     setReadinessContext(context);
@@ -643,6 +735,11 @@ export default function App() {
     setCheckinQrDataUrl("");
     setImportJob(null);
     setLastImportMessage("");
+    setPrepareProtocol(protocolForTransport(sharePurposeProfiles[context].transport));
+    setPrepareDisclosureMode("sd");
+    setPrepareSelectedFields(sharePurposeProfiles[context].fields.map(field => field.key));
+    setPrepareTimeAnchor("record");
+    setPrepareShlPolicy(defaultShlPolicyForContext(context));
   }, []);
 
   const importMissing = useCallback(async () => {
@@ -1039,10 +1136,20 @@ export default function App() {
             servicePacket={servicePacket}
             checkinQr={checkinQr}
             importJob={importJob}
+            protocol={prepareProtocol}
+            disclosureMode={prepareDisclosureMode}
+            selectedFields={prepareSelectedFields}
+            timeAnchor={prepareTimeAnchor}
+            shlPolicy={prepareShlPolicy}
             bundleQrDataUrl={bundleQrDataUrl}
             servicePacketQrDataUrl={servicePacketQrDataUrl}
             checkinQrDataUrl={checkinQrDataUrl}
             onContext={changeReadinessContext}
+            onProtocol={setPrepareProtocol}
+            onDisclosureMode={setPrepareDisclosureMode}
+            onSelectedFields={setPrepareSelectedFields}
+            onTimeAnchor={setPrepareTimeAnchor}
+            onShlPolicy={setPrepareShlPolicy}
             onPrepareAll={() => void prepareAllServiceArtifacts()}
             onBuildBundle={() => void buildBundle()}
             onBuildPacket={() => void buildPacket()}
@@ -1744,17 +1851,39 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
   const [recipient, setRecipient] = useState(sharePurposeProfiles.opd_visit.recipient);
   const [expiryMinutes, setExpiryMinutes] = useState(sharePurposeProfiles.opd_visit.expiryMinutes);
   const [selectedFields, setSelectedFields] = useState(sharePurposeProfiles.opd_visit.fields.map(field => field.key));
+  const [packageProtocol, setPackageProtocol] = useState<PackageProtocol>(protocolForTransport(sharePurposeProfiles.opd_visit.transport));
+  const [shlPolicy, setShlPolicy] = useState<ShlAccessPolicyState>(defaultShlPolicyForContext("opd_visit"));
+  const [timeAnchor, setTimeAnchor] = useState<TimeAnchor>("record");
   const [shareQrDataUrl, setShareQrDataUrl] = useState("");
   const [sharePayload, setSharePayload] = useState("");
   const shareProfile = sharePurposeProfiles[purpose];
   const purposeReadiness = useMemo(() => assessLocalReadiness(shareableCards, purpose), [purpose, shareableCards]);
   const purposeRequirements = useMemo(() => [...purposeReadiness.ready, ...purposeReadiness.missing], [purposeReadiness]);
-  const purposeCardIds = useMemo(() => new Set(purposeReadiness.selectedCardIds), [purposeReadiness.selectedCardIds]);
-  const purposeCards = useMemo(
-    () => shareableCards.filter(card => purposeCardIds.has(card.id)),
-    [purposeCardIds, shareableCards]
-  );
-  const visibleShareCards = purposeCards.length ? purposeCards : shareableCards.slice(0, 8);
+  const purposeSelectedKey = purposeReadiness.selectedCardIds.join("|");
+  const shareDocumentRows = useMemo<ShareDocumentRow[]>(() => {
+    const rows: ShareDocumentRow[] = [];
+    for (const requirement of purposeRequirements) {
+      const matchedCards = "matchedCards" in requirement ? requirement.matchedCards : [];
+      if (matchedCards.length) {
+        matchedCards.forEach(card => {
+          rows.push({
+            key: `${requirement.key}:${card.id}`,
+            requirement,
+            card,
+            missing: false
+          });
+        });
+        continue;
+      }
+      rows.push({
+        key: `${requirement.key}:missing`,
+        requirement,
+        card: null,
+        missing: true
+      });
+    }
+    return rows;
+  }, [purposeRequirements]);
 
   useEffect(() => {
     const recommendedIds = purposeReadiness.selectedCardIds.length
@@ -1764,14 +1893,26 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
     setSelectedFields(shareProfile.fields.map(field => field.key));
     setRecipient(shareProfile.recipient);
     setExpiryMinutes(shareProfile.expiryMinutes);
+    setPackageProtocol(protocolForTransport(shareProfile.transport));
+    setShlPolicy(defaultShlPolicyForContext(purpose));
+    setTimeAnchor("record");
     setSharePayload("");
     setShareQrDataUrl("");
-  }, [purpose, purposeReadiness.selectedCardIds, shareProfile, shareableCards]);
+  }, [purpose, purposeSelectedKey, shareProfile, shareableCards]);
 
   const selectedCards = useMemo(
     () => shareableCards.filter(card => selectedCardIds.includes(card.id)),
     [selectedCardIds, shareableCards]
   );
+  const selectedTimeline = useMemo(
+    () => buildTimelineItems(selectedCards, new Date().toISOString(), timeAnchor),
+    [selectedCards, timeAnchor]
+  );
+  const shareCopyLabel = packageProtocol === "vp"
+    ? "คัดลอก VP"
+    : packageProtocol === "shl"
+      ? "คัดลอก SHL"
+      : "คัดลอก Hybrid";
 
   const toggleSelectedCard = (cardId: number) => {
     setSelectedCardIds(previous => previous.includes(cardId) ? previous.filter(id => id !== cardId) : [...previous, cardId]);
@@ -1785,27 +1926,55 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
     if (!selectedCards.length) return;
     const ok = await onConfirmBiometric();
     if (!ok) return;
+    const createdAt = new Date().toISOString();
+    const expiresAt = protocolRequiresShl(packageProtocol)
+      ? shlPolicyExpiry(shlPolicy)
+      : new Date(Date.now() + expiryMinutes * 60_000).toISOString();
+    const shlId = `share_${purpose}_${Date.now().toString(36)}`;
     const payload = {
-      type: "TrustCarePurposeBoundPresentation",
+      type: packageProtocol === "vp"
+        ? "TrustCarePurposeBoundPresentation"
+        : packageProtocol === "shl"
+          ? "TrustCareSmartHealthLinkPackage"
+          : "TrustCareHybridShlManifestPresentation",
       holder: user.holderDid,
       recipient,
       purpose,
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + expiryMinutes * 60_000).toISOString(),
-      selectedFields,
+      createdAt,
+      expiresAt,
+      protocol: packageProtocol,
+      selectedFields: protocolRequiresVp(packageProtocol) ? selectedFields : [],
       credentials: selectedCards.map(card => ({
         id: card.credentialId,
         cardType: card.cardType,
         credentialType: card.credentialType,
         issuer: card.issuerDid,
-        documentCategory: card.documentCategory
+        documentCategory: card.documentCategory,
+        recordTimestamp: getCardRecordTimestamp(card),
+        packageTimestamp: createdAt,
+        sourceSystem: card.sourceSystem ?? "wallet"
       })),
+      shl: protocolRequiresShl(packageProtocol) ? {
+        shlUrl: `shlink:/trustcare-${shlId}`,
+        qrPayload: createScannableWebUrl(`shlink:/trustcare-${shlId}`),
+        passcodeRequired: shlPolicy.passcodeRequired,
+        maxAccessCount: shlPolicy.maxAccessCount,
+        expiresAt,
+        standardCompatible: true,
+        trustcareManifestVp: packageProtocol === "hybrid" ? `vp_manifest_${shlId}` : null
+      } : null,
+      timeline: buildTimelineItems(selectedCards, createdAt, timeAnchor),
+      externalLinks: {
+        trustcarePortal: `${baseApiOptions.demoOrigin}/portal/external-wallet/${user.id}`,
+        walletExchange: `${baseApiOptions.demoOrigin}/wallet/exchange/${user.id}`,
+        fhirDocumentReferenceBridge: `${baseApiOptions.demoOrigin}/fhir/DocumentReference?holder=${encodeURIComponent(user.holderDid)}`
+      },
       trustcare: {
         sourceUser: user.id,
         biometricConfirmed: biometricEnabled,
         biometricRequired: shareProfile.biometricRequired,
         consent: "explicit_demo_consent",
-        transport: selectedCards.length > 4 ? "shl_recommended" : shareProfile.transport,
+        transport: packageProtocol,
         readiness: {
           context: purpose,
           label: purposeReadiness.label,
@@ -1822,7 +1991,7 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
     const scannablePayload = createScannableWebUrl(encoded);
     setSharePayload(scannablePayload);
     setShareQrDataUrl(await QRCode.toDataURL(scannablePayload, { margin: 1, width: 240 }));
-  }, [biometricEnabled, expiryMinutes, onConfirmBiometric, purpose, purposeReadiness, recipient, selectedCards, selectedFields, shareProfile, user]);
+  }, [biometricEnabled, expiryMinutes, onConfirmBiometric, packageProtocol, purpose, purposeReadiness, recipient, selectedCards, selectedFields, shareProfile, shlPolicy, timeAnchor, user]);
 
   const createRequest = useCallback(async () => {
     const payload = JSON.stringify({
@@ -1865,8 +2034,9 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
           </div>
           <Badge tone={biometricEnabled ? "green" : "yellow"}>{biometricEnabled ? "ป้องกันด้วย Biometric" : "ยังไม่บังคับ Biometric"}</Badge>
         </div>
-        <div className="share-flow-grid">
-          <div className="share-step">
+        <div className="share-workspace">
+          <div className="share-form-column">
+            <div className="share-step">
             <span className="step-number">1</span>
             <label>ผู้รับ
               <input value={recipient} onChange={event => setRecipient(event.target.value)} />
@@ -1891,16 +2061,41 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
               </Badge>
               <span>{shareProfile.help}</span>
             </div>
+            <div className="protocol-mini-grid">
+              {(Object.keys(protocolProfiles) as PackageProtocol[]).map(item => (
+                <button
+                  key={item}
+                  type="button"
+                  className={packageProtocol === item ? "active" : ""}
+                  onClick={() => setPackageProtocol(item)}
+                >
+                  <strong>{protocolProfiles[item].label}</strong>
+                  <small>{protocolProfiles[item].badge}</small>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="share-step">
             <span className="step-number">2</span>
             <strong>เอกสารที่เลือกสำหรับ {readinessContextLabels[purpose].th}</strong>
-            <div className="share-select-list">
-              {visibleShareCards.map(card => {
-                const requirement = requirementForCard(purposeRequirements, card);
+            <div className="share-select-list purpose-doc-list">
+              {shareDocumentRows.map(row => {
+                const requirement = row.requirement;
+                const card = row.card;
+                if (!card) {
+                  return (
+                    <div key={row.key} className="share-missing-doc-row">
+                      <AlertTriangle size={18} />
+                      <span>
+                        <b>{requirement.labelEn}</b>
+                        <small>{requirement.label} · {requirement.required ? "จำเป็น" : "แนะนำ"} · ยังไม่มีใน Wallet</small>
+                      </span>
+                    </div>
+                  );
+                }
                 return (
-                <label key={card.id}>
+                <label key={row.key}>
                   <input type="checkbox" checked={selectedCardIds.includes(card.id)} onChange={() => toggleSelectedCard(card.id)} />
                   <span>
                     <b>{card.displayNameEn ?? card.displayName}</b>
@@ -1923,13 +2118,51 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
           <div className="share-step">
             <span className="step-number">3</span>
             <strong>ข้อมูลที่จะเปิดเผย</strong>
-            <p className="share-step-hint">{shareProfile.help} รายการที่เลือกจะถูกใส่ใน VP QR เท่านั้น</p>
-            <div className="field-chip-grid disclosure-field-grid" role="group" aria-label="ข้อมูลที่จะเปิดเผย">
-              {shareProfile.fields.map(field => (
-                <button key={field.key} type="button" className={selectedFields.includes(field.key) ? "active" : ""} onClick={() => toggleField(field.key)}>
-                  {field.label}
-                </button>
-              ))}
+            <p className="share-step-hint">{shareProfile.help} เงื่อนไขด้านล่างจะเปลี่ยนตามชนิดชุดเอกสารที่เลือก</p>
+            {protocolRequiresVp(packageProtocol) && (
+              <>
+                <div className="segmented compact">
+                  {(["full", "sd", "zkp"] as DisclosureMode[]).map(item => (
+                    <button key={item} type="button" className={mode === item ? "active" : ""} onClick={() => setMode(item)}>
+                      {item === "full" ? "Full VC" : item === "sd" ? "SD" : "ZKP"}
+                    </button>
+                  ))}
+                </div>
+                <div className="field-chip-grid disclosure-field-grid" role="group" aria-label="ข้อมูลที่จะเปิดเผย">
+                  {shareProfile.fields.map(field => (
+                    <button key={field.key} type="button" className={selectedFields.includes(field.key) ? "active" : ""} onClick={() => toggleField(field.key)}>
+                      {field.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {protocolRequiresShl(packageProtocol) && (
+              <div className="shl-policy-inline">
+                <label><input type="checkbox" checked={shlPolicy.passcodeRequired} onChange={event => setShlPolicy({ ...shlPolicy, passcodeRequired: event.target.checked })} /> ใช้ PIN/Passcode</label>
+                <label>หมดอายุ
+                  <select value={shlPolicy.expiryHours} onChange={event => setShlPolicy({ ...shlPolicy, expiryHours: Number(event.target.value) })}>
+                    <option value={1}>1 ชม.</option>
+                    <option value={4}>4 ชม.</option>
+                    <option value={24}>24 ชม.</option>
+                    <option value={72}>72 ชม.</option>
+                    <option value={720}>30 วัน</option>
+                  </select>
+                </label>
+                <label>เปิดได้
+                  <select value={shlPolicy.maxAccessCount} onChange={event => setShlPolicy({ ...shlPolicy, maxAccessCount: Number(event.target.value) })}>
+                    <option value={1}>1 ครั้ง</option>
+                    <option value={3}>3 ครั้ง</option>
+                    <option value={5}>5 ครั้ง</option>
+                    <option value={8}>8 ครั้ง</option>
+                    <option value={20}>20 ครั้ง</option>
+                  </select>
+                </label>
+              </div>
+            )}
+            <div className="segmented compact">
+              <button type="button" className={timeAnchor === "record" ? "active" : ""} onClick={() => setTimeAnchor("record")}>Record time</button>
+              <button type="button" className={timeAnchor === "package" ? "active" : ""} onClick={() => setTimeAnchor("package")}>Package time</button>
             </div>
             <div className="biometric-note">
               <Fingerprint size={18} />
@@ -1937,28 +2170,47 @@ function ShareView({ cards, user, shlPackages, verifierResult, scanOutcome, biom
                 ? "วัตถุประสงค์นี้ต้องยืนยัน Biometric ก่อนสร้าง VP"
                 : biometricEnabled ? "จะยืนยัน Biometric ก่อนแสดง QR" : "สามารถเปิด Biometric เพื่อเพิ่มความปลอดภัย"}
             </div>
-            <Button onClick={() => void createSharePacket()} disabled={!selectedCards.length}><UserCheck size={18} /> ยืนยันและสร้าง VP QR</Button>
+            <Button onClick={() => void createSharePacket()} disabled={!selectedCards.length}><UserCheck size={18} /> ยืนยันและสร้าง QR</Button>
+            </div>
           </div>
 
+          <aside className="share-live-panel">
           <div className="share-step output">
             <span className="step-number">4</span>
-            <strong>ผลลัพธ์ VP</strong>
+            <strong>ผลลัพธ์ {protocolProfiles[packageProtocol].label}</strong>
             <p className="share-step-hint">
-              รูปแบบแนะนำ: {selectedCards.length > 4 ? "SHL/Bundle" : transportLabel(shareProfile.transport)}
+              รูปแบบแนะนำ: {protocolProfiles[packageProtocol].description}
             </p>
             {shareQrDataUrl ? <img src={shareQrDataUrl} alt="Share VP QR" /> : <div className="qr-placeholder"><QrCode size={54} /></div>}
             <div className="button-row">
-              <Button className="secondary" disabled={!sharePayload} onClick={() => void copyText(sharePayload)}><Copy size={18} /> คัดลอก VP</Button>
+              <Button className="secondary" disabled={!sharePayload} onClick={() => void copyText(sharePayload)}><Copy size={18} /> {shareCopyLabel}</Button>
               <Button className="secondary" disabled={!sharePayload} onClick={() => onExport({
                 ok: true,
-                format: "trustcare-vp-json",
-                fileName: `trustcare-share-${Date.now()}.json`,
-                mimeType: "application/vp+json",
+                format: packageProtocol === "vp" ? "trustcare-vp-json" : packageProtocol === "shl" ? "shl-json" : "trustcare-hybrid-vp-shl-json",
+                fileName: `trustcare-${packageProtocol}-share-${Date.now()}.json`,
+                mimeType: packageProtocol === "shl" ? "application/shl+json" : "application/vp+json",
                 data: sharePayload,
                 warnings: []
               })}><Download size={18} /> ส่งออก</Button>
             </div>
           </div>
+        <div className="timeline-panel share-timeline-panel">
+          <div>
+            <span className="eyebrow">Timeline ที่จะส่ง</span>
+            <strong>{timeAnchor === "record" ? "ยึดเวลาของ record" : "ยึดเวลาที่จัด package"}</strong>
+          </div>
+          <div className="timeline-list">
+            {selectedTimeline.map(item => (
+              <div key={`${item.id}-${item.recordTimestamp}`} className="timeline-row">
+                <span>{item.displayDate}</span>
+                <strong>{item.title}</strong>
+                <small>{item.source} · record {item.recordDate} · package {item.packageDate}</small>
+              </div>
+            ))}
+            {!selectedTimeline.length && <p className="muted">เลือกเอกสารเพื่อดู timeline ก่อนแชร์</p>}
+          </div>
+        </div>
+          </aside>
         </div>
       </Surface>
 
@@ -2096,10 +2348,20 @@ function PrepareView({
   servicePacket,
   checkinQr,
   importJob,
+  protocol,
+  disclosureMode,
+  selectedFields,
+  timeAnchor,
+  shlPolicy,
   bundleQrDataUrl,
   servicePacketQrDataUrl,
   checkinQrDataUrl,
   onContext,
+  onProtocol,
+  onDisclosureMode,
+  onSelectedFields,
+  onTimeAnchor,
+  onShlPolicy,
   onPrepareAll,
   onBuildBundle,
   onBuildPacket,
@@ -2117,10 +2379,20 @@ function PrepareView({
   servicePacket: ServicePacketResponse | null;
   checkinQr: CheckinQrResponse | null;
   importJob: WalletImportJob | null;
+  protocol: PackageProtocol;
+  disclosureMode: DisclosureMode;
+  selectedFields: string[];
+  timeAnchor: TimeAnchor;
+  shlPolicy: ShlAccessPolicyState;
   bundleQrDataUrl: string;
   servicePacketQrDataUrl: string;
   checkinQrDataUrl: string;
   onContext: (context: ReadinessContext) => void;
+  onProtocol: (protocol: PackageProtocol) => void;
+  onDisclosureMode: (mode: DisclosureMode) => void;
+  onSelectedFields: (fields: string[]) => void;
+  onTimeAnchor: (anchor: TimeAnchor) => void;
+  onShlPolicy: (policy: ShlAccessPolicyState) => void;
   onPrepareAll: () => void;
   onBuildBundle: () => void;
   onBuildPacket: () => void;
@@ -2135,13 +2407,29 @@ function PrepareView({
   const missingRequired = missing.filter((item: any) => item.required);
   const canCreateFullPacket = missingRequired.length === 0;
   const packetContents = ready.flatMap((item: any) => item.matchedCards ?? []);
-  const generatedCount = [serviceBundle, servicePacket, checkinQr].filter(Boolean).length;
-  const isPrepared = generatedCount === 3;
+  const artifactStates = [
+    { key: "bundle", ready: Boolean(serviceBundle) },
+    { key: "vp", ready: Boolean(servicePacket), enabled: protocolRequiresVp(protocol) },
+    { key: "shl", ready: Boolean(checkinQr), enabled: protocolRequiresShl(protocol) }
+  ];
+  const requiredArtifactStates = artifactStates.filter(item => item.enabled ?? true);
+  const generatedCount = requiredArtifactStates.filter(item => item.ready).length;
+  const requiredArtifactTotal = requiredArtifactStates.length;
+  const isPrepared = generatedCount === requiredArtifactTotal;
   const contextRequests = requests.filter((request: any) => !request.context || request.context === context);
   const contextImportJob = importJob && ((importJob as any).context ? (importJob as any).context === context : true) ? importJob : null;
   const serviceBundleScanPayload = serviceBundle ? createScannableWebUrl(compactBundlePayload(serviceBundle)) : "";
   const servicePacketScanPayload = servicePacket?.qrData ?? "";
   const checkinScanPayload = checkinQr?.qrPayload ?? checkinQr?.shlUrl ?? "";
+  const timelineItems = buildTimelineItems(packetContents, serviceBundle?.createdAt ?? new Date().toISOString(), timeAnchor);
+  const selectedFieldSet = new Set(selectedFields);
+  const serviceDocumentSummary = [...ready, ...missing].slice(0, 6);
+  const toggleSelectedField = (field: string) => {
+    const next = selectedFieldSet.has(field)
+      ? selectedFields.filter(item => item !== field)
+      : [...selectedFields, field];
+    onSelectedFields(next);
+  };
   const primaryActionText = !canCreateFullPacket
     ? "ขอเอกสารที่ขาด"
     : isPrepared
@@ -2176,7 +2464,7 @@ function PrepareView({
     },
     {
       title: "สร้างชุดส่งให้โรงพยาบาล",
-      description: isPrepared ? "สร้าง Service Bundle, VP และ SHL แล้ว" : `สร้างแล้ว ${generatedCount}/3 รายการ`,
+      description: isPrepared ? `สร้างชุด ${protocolProfiles[protocol].label} แล้ว` : `สร้างแล้ว ${generatedCount}/${requiredArtifactTotal} รายการ`,
       status: isPrepared ? "พร้อมส่ง" : "ยังไม่ครบ",
       complete: isPrepared
     },
@@ -2211,29 +2499,129 @@ function PrepareView({
         </div>
       </Surface>
 
-      <Surface className="service-context-panel">
-        <div className="section-title-row">
-          <div>
-            <h2>1. เลือกบริการที่จะไป</h2>
-            <p>{activeContract?.patientLabel ?? readinessPurposeTh[context]}</p>
+      <section className="prepare-decision-grid">
+        <Surface className="service-context-panel">
+          <div className="section-title-row">
+            <div>
+              <h2>1. เลือกบริการที่จะไป</h2>
+              <p>{activeContract?.patientLabel ?? readinessPurposeTh[context]}</p>
+            </div>
+            <Badge tone="blue">Contract Hub {contractHub?.version ?? "demo"}</Badge>
           </div>
-          <Badge tone="blue">Contract Hub {contractHub?.version ?? "demo"}</Badge>
-        </div>
-        <div className="service-context-grid">
-          {(Object.keys(readinessContextLabels) as ReadinessContext[]).map(key => (
-            <button key={key} className={context === key ? "service-context-card active" : "service-context-card"} onClick={() => onContext(key)}>
-              <span>{readinessContextLabels[key].th}</span>
-              <small>{readinessPurposeTh[key]}</small>
-            </button>
-          ))}
-        </div>
-      </Surface>
+          <div className="service-context-grid">
+            {(Object.keys(readinessContextLabels) as ReadinessContext[]).map(key => (
+              <button key={key} className={context === key ? "service-context-card active" : "service-context-card"} onClick={() => onContext(key)}>
+                <span>{readinessContextLabels[key].th}</span>
+                <small>{readinessPurposeTh[key]}</small>
+              </button>
+            ))}
+          </div>
+        </Surface>
+
+        <Surface className="package-policy-panel">
+          <div className="section-title-row">
+            <div>
+              <h2>2. เลือกชนิดชุดเอกสารและเงื่อนไข</h2>
+              <p>เลือกว่าจะสร้าง VP, SHL หรือ Hybrid ตามลักษณะข้อมูลและปลายทางที่รับข้อมูล</p>
+            </div>
+            <Badge tone="blue">{protocolProfiles[protocol].badge}</Badge>
+          </div>
+          <div className="protocol-choice-grid">
+            {(Object.keys(protocolProfiles) as PackageProtocol[]).map(item => (
+              <button
+                type="button"
+                key={item}
+                className={protocol === item ? "protocol-choice active" : "protocol-choice"}
+                onClick={() => onProtocol(item)}
+              >
+                <strong>{protocolProfiles[item].label}</strong>
+                <span>{protocolProfiles[item].description}</span>
+              </button>
+            ))}
+          </div>
+          <div className="policy-grid">
+            {protocolRequiresVp(protocol) && (
+              <div className="policy-box">
+                <span className="eyebrow">VC/VP policy</span>
+                <div className="segmented compact">
+                  {(["full", "sd", "zkp"] as DisclosureMode[]).map(item => (
+                    <button key={item} type="button" className={disclosureMode === item ? "active" : ""} onClick={() => onDisclosureMode(item)}>
+                      {item === "full" ? "Full VC" : item === "sd" ? "Selective Disclosure" : "ZKP"}
+                    </button>
+                  ))}
+                </div>
+                <div className="field-chip-grid disclosure-field-grid compact">
+                  {vpDisclosureFields.map(field => (
+                    <button
+                      key={field.key}
+                      type="button"
+                      className={selectedFieldSet.has(field.key) ? "active" : ""}
+                      onClick={() => toggleSelectedField(field.key)}
+                    >
+                      {field.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {protocolRequiresShl(protocol) && (
+              <div className="policy-box">
+                <span className="eyebrow">SHL access policy</span>
+                <label className="policy-toggle">
+                  <input
+                    type="checkbox"
+                    checked={shlPolicy.passcodeRequired}
+                    onChange={event => onShlPolicy({ ...shlPolicy, passcodeRequired: event.target.checked })}
+                  />
+                  <span>ตั้งค่า PIN / Passcode</span>
+                </label>
+                <label>หมดอายุ
+                  <select value={shlPolicy.expiryHours} onChange={event => onShlPolicy({ ...shlPolicy, expiryHours: Number(event.target.value) })}>
+                    <option value={1}>1 ชั่วโมง</option>
+                    <option value={4}>4 ชั่วโมง</option>
+                    <option value={24}>24 ชั่วโมง</option>
+                    <option value={72}>72 ชั่วโมง</option>
+                    <option value={720}>30 วัน</option>
+                  </select>
+                </label>
+                <label>จำนวนครั้งที่เปิดได้
+                  <select value={shlPolicy.maxAccessCount} onChange={event => onShlPolicy({ ...shlPolicy, maxAccessCount: Number(event.target.value) })}>
+                    <option value={1}>1 ครั้ง</option>
+                    <option value={3}>3 ครั้ง</option>
+                    <option value={5}>5 ครั้ง</option>
+                    <option value={8}>8 ครั้ง</option>
+                    <option value={20}>20 ครั้ง</option>
+                  </select>
+                </label>
+              </div>
+            )}
+            <div className="policy-box">
+              <span className="eyebrow">Timeline anchor</span>
+              <p>การเรียงลำดับใช้เวลาของ record เป็นหลัก ถ้าต้องตรวจชุดที่สร้างล่าสุดให้เลือก package time</p>
+              <div className="segmented compact">
+                <button type="button" className={timeAnchor === "record" ? "active" : ""} onClick={() => onTimeAnchor("record")}>Record time</button>
+                <button type="button" className={timeAnchor === "package" ? "active" : ""} onClick={() => onTimeAnchor("package")}>Package time</button>
+              </div>
+            </div>
+          </div>
+          <div className="interop-bridge-strip document-summary-strip">
+            <span className="summary-heading"><FileText size={16} /> เอกสารในบริการนี้</span>
+            {serviceDocumentSummary.map((item: any) => (
+              <span key={item.key} className={item.matchedCards?.length ? "ready" : item.required ? "missing required" : "missing"}>
+                {item.matchedCards?.length ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                {item.label}
+              </span>
+            ))}
+            {serviceDocumentSummary.length === 0 && <span>ยังไม่มีเงื่อนไขเอกสาร</span>}
+          </div>
+        </Surface>
+      </section>
 
       <section className="prep-main-grid">
         <Surface className="prep-checklist">
           <div className="section-title-row">
             <div>
-              <h2>2. ตรวจความพร้อม</h2>
+              <h2>3. ตรวจความพร้อม</h2>
               <p>ขั้นตอนทั้งหมดที่ผู้ป่วยต้องทำก่อนส่งข้อมูลให้โรงพยาบาล</p>
             </div>
             <Badge tone={isPrepared ? "green" : canCreateFullPacket ? "blue" : "yellow"}>{isPrepared ? "พร้อมใช้" : canCreateFullPacket ? "พร้อมสร้าง" : "ต้องแก้ไข"}</Badge>
@@ -2284,11 +2672,11 @@ function PrepareView({
         <div className="section-title-row">
           <div>
             <span className="eyebrow">ชุดเอกสารบริการ</span>
-            <h2>3. สร้างชุดส่งให้โรงพยาบาล</h2>
-            <p>ระบบจะสร้างซองข้อมูล, VP และ Check-in QR ให้ครบในครั้งเดียว ผู้ใช้ยังสร้างแยกรายการได้ในกรณีทดสอบ integration</p>
+            <h2>4. สร้างชุดส่งให้โรงพยาบาล</h2>
+            <p>ระบบจะสร้าง artifact ตามชนิดชุดเอกสารที่เลือก ผู้ใช้ยังสร้างแยกรายการได้ในกรณีทดสอบ integration</p>
           </div>
           <Badge tone={isPrepared ? "green" : generatedCount ? "blue" : "yellow"}>
-            {isPrepared ? "สร้างครบแล้ว" : generatedCount ? `สร้างแล้ว ${generatedCount}/3` : "ยังไม่ได้สร้าง"}
+            {isPrepared ? "สร้างครบแล้ว" : generatedCount ? `สร้างแล้ว ${generatedCount}/${requiredArtifactTotal}` : "ยังไม่ได้สร้าง"}
           </Badge>
         </div>
         <div className="prep-primary-row">
@@ -2310,37 +2698,41 @@ function PrepareView({
             copyPayload={serviceBundleScanPayload}
             detailsTargetId="service-bundle-details"
           />
-          <BundleCard
-            user={user}
-            passType="vp"
-            title="Service VP Packet"
-            subtitle="เอกสารแสดงสิทธิ์ที่ส่งให้หน่วยบริการตรวจ"
-            status={servicePacket ? "สร้างแล้ว" : "ยังไม่ได้สร้าง"}
-            qrDataUrl={servicePacketQrDataUrl}
-            onCreate={onBuildPacket}
-            data={servicePacket}
-            copyPayload={servicePacketScanPayload}
-            detailsTargetId="service-vp-details"
-          />
-          <BundleCard
-            user={user}
-            passType="shl"
-            title="Check-in SHL"
-            subtitle="QR สำหรับเช็กอินหรือส่งต่อที่จุดบริการ"
-            status={checkinQr ? "สร้างแล้ว" : "ยังไม่ได้สร้าง"}
-            qrDataUrl={checkinQrDataUrl}
-            onCreate={onCheckinQr}
-            data={checkinQr}
-            copyPayload={checkinScanPayload}
-            detailsTargetId="checkin-shl-details"
-          />
+          {protocolRequiresVp(protocol) && (
+            <BundleCard
+              user={user}
+              passType="vp"
+              title="Service VP Packet"
+              subtitle={`${disclosureMode === "full" ? "Full VC" : disclosureMode === "sd" ? "Selective Disclosure" : "ZKP"} สำหรับส่งให้หน่วยบริการตรวจ`}
+              status={servicePacket ? "สร้างแล้ว" : "ยังไม่ได้สร้าง"}
+              qrDataUrl={servicePacketQrDataUrl}
+              onCreate={onBuildPacket}
+              data={servicePacket}
+              copyPayload={servicePacketScanPayload}
+              detailsTargetId="service-vp-details"
+            />
+          )}
+          {protocolRequiresShl(protocol) && (
+            <BundleCard
+              user={user}
+              passType="shl"
+              title="Check-in SHL"
+              subtitle={`หมดอายุ ${shlPolicy.expiryHours} ชม. · เปิดได้ ${shlPolicy.maxAccessCount} ครั้ง · ${shlPolicy.passcodeRequired ? "ใช้ PIN" : "ไม่ใช้ PIN"}`}
+              status={checkinQr ? "สร้างแล้ว" : "ยังไม่ได้สร้าง"}
+              qrDataUrl={checkinQrDataUrl}
+              onCreate={onCheckinQr}
+              data={checkinQr}
+              copyPayload={checkinScanPayload}
+              detailsTargetId="checkin-shl-details"
+            />
+          )}
         </div>
       </Surface>
 
       <Surface className="packet-content-preview">
         <div className="section-title-row">
           <div>
-            <h3>4. ตรวจรายการก่อนส่ง</h3>
+            <h3>5. ตรวจรายการและ Timeline ก่อนส่ง</h3>
             <p>รายการด้านล่างคือเอกสารที่จะถูกใช้ในชุด VP/SHL ของบริการนี้</p>
           </div>
           <Badge tone={canCreateFullPacket ? "green" : "yellow"}>{canCreateFullPacket ? "ครบถ้วน" : "ยังไม่ครบ"}</Badge>
@@ -2354,6 +2746,22 @@ function PrepareView({
             </div>
           ))}
           {!packetContents.length && <p className="muted">ยังไม่มีเอกสารที่ตรงเงื่อนไข</p>}
+        </div>
+        <div className="timeline-panel">
+          <div>
+            <span className="eyebrow">Timeline</span>
+            <strong>{timeAnchor === "record" ? "เรียงตามเวลาของ record" : "เรียงตามเวลาที่จัด package"}</strong>
+          </div>
+          <div className="timeline-list">
+            {timelineItems.map(item => (
+              <div key={`${item.id}-${item.recordTimestamp}`} className="timeline-row">
+                <span>{item.displayDate}</span>
+                <strong>{item.title}</strong>
+                <small>{item.source} · record {item.recordDate} · package {item.packageDate}</small>
+              </div>
+            ))}
+            {!timelineItems.length && <p className="muted">จะสร้าง timeline หลังเลือกบริการและมีเอกสารตรงเงื่อนไข</p>}
+          </div>
         </div>
       </Surface>
 
@@ -3005,20 +3413,63 @@ function categoryLabel(category?: string): string {
   return categoryLabels[category]?.th ?? category;
 }
 
-function requirementForCard(
-  requirements: Array<{ cardTypes: string[]; label: string; required: boolean }>,
-  card: WalletCard
-) {
-  return requirements.find(requirement => requirement.cardTypes.includes(String(card.cardType)));
-}
-
-function transportLabel(transport: "vp_qr" | "shl_recommended" | "shl_manifest"): string {
+function transportLabel(transport: ShareTransport): string {
   const labels = {
     vp_qr: "VP QR",
     shl_recommended: "SHL/VP Bundle",
     shl_manifest: "SHL พร้อม TrustCare Manifest"
   };
   return labels[transport];
+}
+
+function getCardRecordTimestamp(card: WalletCard): string {
+  const data = card.credentialData ?? {};
+  const candidates = [
+    data.recordedAt,
+    data.recordDate,
+    data.serviceDate,
+    data.encounterDate,
+    data.effectiveDate,
+    data.issuedDate,
+    data.date,
+    data.timestamp,
+    card.issuedAt,
+    card.createdAt
+  ];
+  const value = candidates.find(item => typeof item === "string" && item.trim());
+  return typeof value === "string" ? value : card.createdAt;
+}
+
+function formatTimelineDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("th-TH", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function buildTimelineItems(cards: WalletCard[], packageTimestamp: string, anchor: TimeAnchor) {
+  return cards
+    .map(card => {
+      const recordTimestamp = getCardRecordTimestamp(card);
+      const sortTimestamp = anchor === "record" ? recordTimestamp : packageTimestamp;
+      return {
+        id: card.id,
+        title: card.displayName ?? card.displayNameEn ?? String(card.credentialId),
+        source: card.sourceSystem ?? card.issuerHospitalName ?? "wallet",
+        recordTimestamp,
+        packageTimestamp,
+        sortTimestamp,
+        displayDate: formatTimelineDate(sortTimestamp),
+        recordDate: formatTimelineDate(recordTimestamp),
+        packageDate: formatTimelineDate(packageTimestamp)
+      };
+    })
+    .sort((left, right) => new Date(right.sortTimestamp).getTime() - new Date(left.sortTimestamp).getTime());
 }
 
 function contextLabel(context: ScanOutcome["context"]): string {

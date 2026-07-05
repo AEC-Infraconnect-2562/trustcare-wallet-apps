@@ -286,6 +286,8 @@ export type ServicePacketResponse = {
   expiresAt: string;
   credentialCount: number;
   qrData: string;
+  mode?: string;
+  selectedFields?: string[];
 };
 
 export type CheckinQrResponse = {
@@ -351,6 +353,7 @@ export type WalletStoredObject = {
 export type WalletExchangeFormat =
   | "trustcare-vc-json"
   | "trustcare-vp-json"
+  | "trustcare-hybrid-vp-shl-json"
   | "shl-link"
   | "shl-json"
   | "oid4vci-offer"

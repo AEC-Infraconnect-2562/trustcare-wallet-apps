@@ -296,17 +296,21 @@ export function simulateImportForService(context: ReadinessContext, documentType
   };
 }
 
-export function createDemoCheckinQr(context: ReadinessContext, credentialCount: number): CheckinQrResponse {
+export function createDemoCheckinQr(
+  context: ReadinessContext,
+  credentialCount: number,
+  policy: Partial<Pick<CheckinQrResponse, "expiresAt" | "maxAccessCount" | "passcodeRequired" | "viewerUrl">> = {}
+): CheckinQrResponse {
   const shlId = `shl_${context}_${Date.now().toString(36)}`;
   return {
     checkId: `chk_${Date.now().toString(36)}`,
     shlId,
     shlUrl: `shlink:/demo-${shlId}`,
     qrPayload: `shlink:/demo-${shlId}`,
-    viewerUrl: `https://trustcare.example.com/shl-viewer/${shlId}`,
-    expiresAt: new Date(Date.now() + 4 * 60 * 60_000).toISOString(),
-    maxAccessCount: 3,
-    passcodeRequired: false,
+    viewerUrl: policy.viewerUrl ?? `https://trustcare.example.com/shl-viewer/${shlId}`,
+    expiresAt: policy.expiresAt ?? new Date(Date.now() + 4 * 60 * 60_000).toISOString(),
+    maxAccessCount: policy.maxAccessCount ?? 3,
+    passcodeRequired: policy.passcodeRequired ?? false,
     readinessScore: 100,
     credentialCount,
     status: "ready"
