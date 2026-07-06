@@ -212,6 +212,12 @@
   gap: 8px;
 }
 
+.home-action-row .portal-sync-primary {
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--card));
+  color: var(--accent);
+}
+
 .passport-summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1588,6 +1594,24 @@ button:disabled {
   color: var(--foreground);
   padding: 0 11px;
   box-shadow: var(--shadow-xs);
+}
+
+.status-strip .portal-sync-button {
+  order: -1;
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--card));
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.spin-icon {
+  animation: spin 0.85s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .interop-ok {

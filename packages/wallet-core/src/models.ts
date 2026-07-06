@@ -14,6 +14,25 @@ export type WalletCard = {
   credentialId: number | string;
   credentialStatus: CredentialStatus;
   credentialData?: Record<string, unknown> | null;
+  credentialJwt?: string | null;
+  credentialProof?: {
+    type?: string | null;
+    format?: string | null;
+    jwt?: string | null;
+    alg?: string | null;
+    kid?: string | null;
+    disclosures?: unknown;
+    selectiveDisclosure?: unknown;
+    source?: string | null;
+  } | null;
+  portalVerification?: {
+    verified?: boolean;
+    trustLevel?: TrustLevel | string;
+    status?: string;
+    message?: string;
+    checkedAt?: string;
+    payload?: unknown;
+  } | null;
   credentialType?: string | null;
   issuerHospitalName?: string | null;
   issuerDid?: string | null;
@@ -70,6 +89,7 @@ export type PresentationHistoryItem = {
   createdAt?: string | null;
   verificationResult?: string | null;
   presentationId?: string | null;
+  payload?: unknown;
 };
 
 export type ShlManifestDocument = {

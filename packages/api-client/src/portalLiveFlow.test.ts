@@ -39,6 +39,8 @@ describe("Portal live-demo wallet flow", () => {
     expect(cards).toHaveLength(1);
     expect(cards[0]?.id).toBe(41001);
     expect(cards[0]?.sourceSystem).toBe("trustcare_portal");
+    expect(cards[0]?.credentialJwt).toBe("ey.portal.live.patient.identity");
+    expect(cards[0]?.portalVerification?.trustLevel).toBe("green");
 
     const readiness = await walletApi.readiness(options, {
       context: "opd_visit",
@@ -89,18 +91,34 @@ function createPortalFetch(
   return async (url, init) => {
     const requestUrl = String(url);
     if (requestUrl.endsWith("/api/auth/demo-login")) {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        openId: "demo-patient-001",
+      });
       return jsonResponse({ success: true, token: "portal-token" });
     }
-    if (requestUrl.includes("/api/trpc/wallet.cardsByCategory")) {
+    if (requestUrl.endsWith("/api/wallet/sync")) {
       expect((init?.headers as Record<string, string>).authorization).toBe(
         "Bearer portal-token",
       );
       return jsonResponse({
-        result: {
-          data: {
-            json: groupedCards,
-          },
-        },
+        credentials: Object.values(groupedCards).flat(),
+        presentations: [],
+        syncedAt: "2026-07-06T12:00:00.000Z",
+        total: Object.values(groupedCards).flat().length,
+        hasMore: false,
+      });
+    }
+    if (requestUrl.endsWith("/api/wallet/sync/verify")) {
+      expect((init?.headers as Record<string, string>).authorization).toBe(
+        "Bearer portal-token",
+      );
+      expect(JSON.parse(String(init?.body))).toEqual({
+        jwt: "ey.portal.live.patient.identity",
+      });
+      return jsonResponse({
+        verified: true,
+        trustLevel: "green",
+        status: "verified",
       });
     }
     return jsonResponse({}, 404);
@@ -121,6 +139,12 @@ function portalCard(input: {
     credentialStatus: "active",
     issuedAt: "2026-07-01T02:00:00.000Z",
     expiresAt: "2027-07-01T02:00:00.000Z",
+    proof: {
+      type: "jwt",
+      jwt: "ey.portal.live.patient.identity",
+      alg: "ES256",
+      kid: "did:web:trustcare.network:hospital:tcc#vc-signing-key",
+    },
     credentialData: {
       "@context": [
         "https://www.w3.org/ns/credentials/v2",

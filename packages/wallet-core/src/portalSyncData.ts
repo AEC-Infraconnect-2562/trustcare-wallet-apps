@@ -2,26 +2,26 @@ export const TRUSTCARE_PORTAL_WEB_ORIGIN = "https://trustcarehealth.live";
 export const TRUSTCARE_PORTAL_JWKS_URL = `${TRUSTCARE_PORTAL_WEB_ORIGIN}/.well-known/jwks.json`;
 export const TRUSTCARE_PORTAL_SYNCED_AT = "2026-07-06T16:55:00.000Z";
 
-function storageProxy(path: string): string {
+function portalStorageAsset(path: string): string {
   const normalized = path.replace(/^\/?manus-storage\//, "");
-  return `${TRUSTCARE_PORTAL_WEB_ORIGIN}/api/storage-proxy/${normalized}`;
+  return `${TRUSTCARE_PORTAL_WEB_ORIGIN}/manus-storage/${normalized}`;
 }
 
 export const trustCarePortalPersonImages = {
-  demoPatient001: storageProxy("patient_somsak_a2e00e97.jpg"),
-  demoPatient002: storageProxy("patient_malee_74d2ef04.jpg"),
-  demoPatient003: storageProxy("patient_john_williams_b4e9e7f3.jpg"),
-  demoHospadmin001: storageProxy("hospadmin_wipa_aeeee791.jpg"),
-  sysadmin: storageProxy("sysadmin_somchai_7aa02209.jpg"),
-  doctorMale: storageProxy("doctor_thanawat_f91f7278.jpg"),
-  doctorFemale: storageProxy("doctor_napa_abd67502.jpg"),
-  nurseFemale: storageProxy("nurse_pimjai_ace1fd06.jpg"),
-  nurseMale: storageProxy("nurse_anucha_e814499a.jpg"),
-  pharmacistMale: storageProxy("engineer_piya_eb6aeff4.jpg"),
-  radiologist: storageProxy("doctor_kriangkrai_b6bcdefb.jpg"),
-  medTech: storageProxy("doctor_prasit_2ed84c26.jpg"),
-  patientMale: storageProxy("patient_somsak_a2e00e97.jpg"),
-  patientFemale: storageProxy("patient_malee_74d2ef04.jpg")
+  demoPatient001: portalStorageAsset("patient_somsak_a2e00e97.jpg"),
+  demoPatient002: portalStorageAsset("patient_malee_74d2ef04.jpg"),
+  demoPatient003: portalStorageAsset("patient_john_williams_b4e9e7f3.jpg"),
+  demoHospadmin001: portalStorageAsset("hospadmin_wipa_aeeee791.jpg"),
+  sysadmin: portalStorageAsset("sysadmin_somchai_7aa02209.jpg"),
+  doctorMale: portalStorageAsset("doctor_thanawat_f91f7278.jpg"),
+  doctorFemale: portalStorageAsset("doctor_napa_abd67502.jpg"),
+  nurseFemale: portalStorageAsset("nurse_pimjai_ace1fd06.jpg"),
+  nurseMale: portalStorageAsset("nurse_anucha_e814499a.jpg"),
+  pharmacistMale: portalStorageAsset("engineer_piya_eb6aeff4.jpg"),
+  radiologist: portalStorageAsset("doctor_kriangkrai_b6bcdefb.jpg"),
+  medTech: portalStorageAsset("doctor_prasit_2ed84c26.jpg"),
+  patientMale: portalStorageAsset("patient_somsak_a2e00e97.jpg"),
+  patientFemale: portalStorageAsset("patient_malee_74d2ef04.jpg")
 } as const;
 
 export type PortalSyncedUser = {
@@ -54,7 +54,7 @@ export const portalSyncedUsers: Record<string, PortalSyncedUser> = {
     name: "นางสาวมาลี วัฒนา",
     email: "napa@gmail.com",
     systemRole: "patient",
-    hospitalId: 8,
+    hospitalId: 4,
     avatarStoragePath: "/manus-storage/patient_malee_74d2ef04.jpg",
     avatarUrl: trustCarePortalPersonImages.demoPatient002,
     updatedAt: "2026-07-06T07:54:03.000Z"

@@ -79,6 +79,7 @@ import {
   parseShlLink,
   fetchShlManifest,
   mergeWalletObjects,
+  normalizePhotoUrl,
   readinessContextLabels,
   readinessContextValues,
   shlAccessSummary,
@@ -219,8 +220,14 @@ const baseApiOptions = {
   shlViewerUrl: env.shlViewerUrl,
   shareGatewayUrl: env.shareGatewayUrl,
   portalOrigin: "https://trustcarehealth.live",
-  portalSyncMode: "live_demo" as const,
+  portalSyncMode: "disabled" as const,
 };
+
+const isStaticStandaloneRuntime =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname.endsWith("github.io"));
 
 const walletSessionKey = "trustcare-wallet-active-user";
 const defaultLoginUserId = "demo-patient-001";
@@ -588,6 +595,7 @@ export default function App() {
   >({});
   const [lastImportMessage, setLastImportMessage] = useState("");
   const [portalSyncMessage, setPortalSyncMessage] = useState("");
+  const [portalSyncBusy, setPortalSyncBusy] = useState(false);
   const [storeFilter, setStoreFilter] = useState<StoreFilter>("all");
   const offlineWallet = useOfflineWallet();
   const webAuthn = useWebAuthn();
@@ -596,17 +604,31 @@ export default function App() {
     [selectedUserId],
   );
   const apiOptions = useMemo(
-    () => ({ ...baseApiOptions, userId: selectedUserId }),
+    () => ({
+      ...baseApiOptions,
+      demoMode: isStaticStandaloneRuntime ? true : baseApiOptions.demoMode,
+      portalSyncMode: "disabled" as const,
+      userId: selectedUserId,
+    }),
     [selectedUserId],
   );
-  const usesPortalLiveSync = portalSyncApi.canUsePortalDemoSync(selectedUserId);
+  const portalSyncOptions = useMemo(
+    () => ({
+      ...baseApiOptions,
+      demoMode: true,
+      portalSyncMode: "live_demo" as const,
+      userId: selectedUserId,
+    }),
+    [selectedUserId],
+  );
+  const canSyncPortalWallet = activeUser.source === "trustcare_portal";
   const interopFixtures = useMemo(() => {
-    if (usesPortalLiveSync) return emptyPortalInteropFixtures(activeUser);
+    if (canSyncPortalWallet) return emptyPortalInteropFixtures(activeUser);
     return buildPortalInteroperabilityFixtures(
       selectedUserId,
       baseApiOptions.demoOrigin,
     );
-  }, [activeUser, selectedUserId, usesPortalLiveSync]);
+  }, [activeUser, canSyncPortalWallet, selectedUserId]);
   const storedExtras = storedExtrasByUser[selectedUserId] ?? [];
   const scanHistory = scanHistoryByUser[selectedUserId] ?? [];
   const navigateTo = useCallback(
@@ -649,30 +671,12 @@ export default function App() {
     let cancelled = false;
     async function loadWallet() {
       setPortalSyncMessage("");
-      const canLiveSync = portalSyncApi.canUsePortalDemoSync(selectedUserId);
-      const [cards, walletHistory, shl, hub] = canLiveSync
-        ? await Promise.all([
-            portalSyncApi
-              .syncTrustCarePortalWallet(apiOptions)
-              .then((portalResult) => {
-                const report = portalResult.report;
-                setPortalSyncMessage(
-                  report.skipped.length
-                    ? `Sync จาก TrustCare Portal สำเร็จ ${report.importedCredentialCount}/${report.portalCardCount} credentials; ${report.metadataOnlyCount} รายการรอ Portal ออก VC`
-                    : `Sync จาก TrustCare Portal สำเร็จ ${report.importedCredentialCount} credentials`,
-                );
-                return portalResult.cardsByCategory;
-              }),
-            walletApi.history(apiOptions),
-            shlApi.listShl(apiOptions),
-            walletApi.contractHub(apiOptions),
-          ])
-        : await Promise.all([
-            walletApi.cardsByCategory(apiOptions),
-            walletApi.history(apiOptions),
-            shlApi.listShl(apiOptions),
-            walletApi.contractHub(apiOptions),
-          ]);
+      const [cards, walletHistory, shl, hub] = await Promise.all([
+        walletApi.cardsByCategory(apiOptions),
+        walletApi.history(apiOptions),
+        shlApi.listShl(apiOptions),
+        walletApi.contractHub(apiOptions),
+      ]);
       if (cancelled) return;
       setGrouped(cards);
       setHistory(walletHistory);
@@ -682,10 +686,12 @@ export default function App() {
     }
     void loadWallet().catch((error) => {
       if (cancelled) return;
-      const message =
-        error instanceof Error ? error.message : "ไม่สามารถ Sync Wallet ได้";
+      const message = friendlyWalletRuntimeError(
+        error,
+        "ไม่สามารถโหลดข้อมูล Wallet ได้",
+      );
       setGrouped({});
-      setPortalSyncMessage(`Sync จาก TrustCare Portal ไม่สำเร็จ: ${message}`);
+      setPortalSyncMessage(`โหลดข้อมูล Wallet ไม่สำเร็จ: ${message}`);
     });
     setSelectedCard(null);
     setDetailOpen(false);
@@ -716,16 +722,14 @@ export default function App() {
       })
       .catch((error) => {
         if (cancelled) return;
-        const message =
-          error instanceof Error
-            ? error.message
-            : "ไม่สามารถประเมินความพร้อมได้";
+        const message = friendlyWalletRuntimeError(
+          error,
+          "ไม่สามารถประเมินความพร้อมได้",
+        );
         setReadiness(null);
         setPrepareWorkbench(null);
         setDocumentRequests([]);
-        setPortalSyncMessage(
-          `ประเมินความพร้อมจากข้อมูล Portal ไม่สำเร็จ: ${message}`,
-        );
+        setPortalSyncMessage(`ประเมินความพร้อมไม่สำเร็จ: ${message}`);
       });
     return () => {
       cancelled = true;
@@ -734,9 +738,6 @@ export default function App() {
 
   const allCards = useMemo(() => {
     const online = flattenCardsByCategory(grouped);
-    const usesPortalLiveSync =
-      portalSyncApi.canUsePortalDemoSync(selectedUserId);
-    if (usesPortalLiveSync) return online;
     return online.length
       ? online
       : offlineWallet.offlineCards.filter(
@@ -856,6 +857,43 @@ export default function App() {
     },
     [selectedUserId],
   );
+
+  const syncActiveWalletFromPortal = useCallback(async () => {
+    if (activeUser.source !== "trustcare_portal") {
+      setPortalSyncMessage("Wallet นี้ไม่ได้ผูกกับ TrustCare Portal จึงไม่สามารถ Sync จาก Portal ได้");
+      return;
+    }
+    setPortalSyncBusy(true);
+    setPortalSyncMessage("กำลัง Sync VC/VP จาก TrustCare Portal...");
+    try {
+      const result =
+        await portalSyncApi.syncTrustCarePortalWallet(portalSyncOptions);
+      if (result.report.ownerUserId !== selectedUserId) {
+        throw new Error(
+          `Portal sync owner mismatch: expected ${selectedUserId}, received ${result.report.ownerUserId}`,
+        );
+      }
+      const syncedCards = flattenCardsByCategory(result.cardsByCategory);
+      if (syncedCards.some((card) => card.ownerUserId !== selectedUserId)) {
+        throw new Error("Portal sync returned credentials for another wallet user");
+      }
+      setGrouped(result.cardsByCategory);
+      setHistory(result.presentations);
+      setShlPackages([]);
+      await offlineWallet.syncCards(syncedCards);
+      const warningText = result.report.warnings.length
+        ? ` (${result.report.warnings.join(" / ")})`
+        : "";
+      setPortalSyncMessage(
+        `Sync จาก TrustCare Portal สำเร็จ: นำเข้า VC ${syncedCards.length} รายการ และ VP ${result.presentations.length} รายการ สำหรับ ${activeUser.nameTh}${warningText}`,
+      );
+    } catch (error) {
+      const message = friendlyPortalSyncError(error);
+      setPortalSyncMessage(`Sync จาก TrustCare Portal ไม่สำเร็จ: ${message}`);
+    } finally {
+      setPortalSyncBusy(false);
+    }
+  }, [activeUser, offlineWallet, portalSyncOptions, selectedUserId]);
 
   const addScanHistory = useCallback((outcome: ScanOutcome) => {
     setScanHistoryByUser((previous) => {
@@ -1439,6 +1477,20 @@ export default function App() {
               <KeyRound size={16} /> โหมดนักพัฒนา
             </div>
           )}
+          {canSyncPortalWallet && (
+            <button
+              type="button"
+              className="portal-sync-button"
+              onClick={syncActiveWalletFromPortal}
+              disabled={portalSyncBusy}
+            >
+              <RefreshCw
+                size={18}
+                className={portalSyncBusy ? "spin-icon" : undefined}
+              />{" "}
+              {portalSyncBusy ? "กำลัง Sync" : "Sync Portal"}
+            </button>
+          )}
           <button type="button" onClick={() => openDocumentsHub("receive")}>
             <Camera size={18} /> {t("wallet.scanQr")}
           </button>
@@ -1485,6 +1537,9 @@ export default function App() {
             onView={navigateTo}
             serviceReadiness={serviceReadinessSummaries}
             activeReadinessContext={readinessContext}
+            canSyncPortalWallet={canSyncPortalWallet}
+            portalSyncBusy={portalSyncBusy}
+            onSyncPortal={() => void syncActiveWalletFromPortal()}
             onPrepareContext={(context) => {
               changeReadinessContext(context);
               navigateTo("prepare");
@@ -1499,7 +1554,7 @@ export default function App() {
             counts={counts}
             user={activeUser}
             fixtures={interopFixtures}
-            livePortalSync={usesPortalLiveSync}
+            livePortalSync={canSyncPortalWallet}
             developerMode={developerMode}
             objects={filteredObjects}
             allObjects={storedObjects}
@@ -1531,7 +1586,7 @@ export default function App() {
           <ReceiveView
             user={activeUser}
             fixtures={interopFixtures}
-            livePortalSync={usesPortalLiveSync}
+            livePortalSync={canSyncPortalWallet}
             developerMode={developerMode}
             onOpenScanner={() => setScannerOpen(true)}
             onImportPayload={(value) => {
@@ -1848,6 +1903,9 @@ function HomeView({
   onView,
   serviceReadiness,
   activeReadinessContext,
+  canSyncPortalWallet,
+  portalSyncBusy,
+  onSyncPortal,
   onPrepareContext,
 }: {
   cards: WalletCard[];
@@ -1859,6 +1917,9 @@ function HomeView({
   onView: (view: View) => void;
   serviceReadiness: ServiceReadinessSummary[];
   activeReadinessContext: ReadinessContext;
+  canSyncPortalWallet: boolean;
+  portalSyncBusy: boolean;
+  onSyncPortal: () => void;
   onPrepareContext: (context: ReadinessContext) => void;
 }) {
   const [readinessExpanded, setReadinessExpanded] = useState(false);
@@ -1922,6 +1983,19 @@ function HomeView({
             <Button onClick={() => onView("documents")}>
               <FileText size={18} /> เอกสาร
             </Button>
+            {canSyncPortalWallet && (
+              <Button
+                className="secondary portal-sync-primary"
+                onClick={onSyncPortal}
+                disabled={portalSyncBusy}
+              >
+                <RefreshCw
+                  size={18}
+                  className={portalSyncBusy ? "spin-icon" : undefined}
+                />{" "}
+                {portalSyncBusy ? "กำลัง Sync" : "Sync Portal"}
+              </Button>
+            )}
             <Button className="secondary" onClick={() => onView("receive")}>
               <Inbox size={18} /> รับเอกสาร
             </Button>
@@ -5997,15 +6071,37 @@ async function copyText(value: string) {
   document.body.removeChild(textarea);
 }
 
+function friendlyWalletRuntimeError(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return fallback;
+}
+
+function friendlyPortalSyncError(error: unknown): string {
+  const message = friendlyWalletRuntimeError(
+    error,
+    "ไม่สามารถ Sync จาก TrustCare Portal ได้",
+  );
+  if (/load failed|failed to fetch|networkerror|cors/i.test(message)) {
+    return [
+      "Browser ติดต่อ TrustCare Portal ไม่สำเร็จ",
+      "กรุณาตรวจ CORS/Network ของ Portal สำหรับ GitHub Pages และ localhost",
+      "โดยต้องอนุญาต /api/auth/demo-login, /api/wallet/sync และ /api/wallet/sync/verify",
+    ].join(" · ");
+  }
+  return message;
+}
+
 function resolveAvatarUrl(url: string): string {
+  const normalized = normalizePhotoUrl(url);
   if (
-    /^https?:\/\//i.test(url) ||
-    url.startsWith("data:") ||
-    url.startsWith("/")
+    /^https?:\/\//i.test(normalized) ||
+    normalized.startsWith("data:") ||
+    normalized.startsWith("/")
   )
-    return url;
+    return normalized;
   const base = import.meta.env.BASE_URL || "/";
-  return `${base.replace(/\/$/, "")}/${url.replace(/^\//, "")}`;
+  return `${base.replace(/\/$/, "")}/${normalized.replace(/^\//, "")}`;
 }
 
 function shortDid(did: string): string {

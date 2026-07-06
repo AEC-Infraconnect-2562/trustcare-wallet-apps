@@ -403,7 +403,7 @@ describe("wallet-core", () => {
     const nativeUser = getDemoUser("partner-patient-001");
 
     expect(portalUser.avatarSource).toBe("trustcare_portal");
-    expect(portalUser.avatarUrl).toContain("https://trustcarehealth.live/api/storage-proxy/");
+    expect(portalUser.avatarUrl).toContain("https://trustcarehealth.live/manus-storage/");
     expect(portalUser.avatarUrl).toContain("patient_somsak");
     expect(nativeUser.avatarSource).toBe("wallet_generated");
     expect(nativeUser.avatarUrl).toBe("assets/users/wallet-native-02.png");

@@ -1,4 +1,5 @@
 import type { PresentationHistoryItem, ShlPackageDetail, WalletCard, WalletCardsByCategory } from "./models";
+import { trustCarePortalPersonImages } from "./portalSyncData";
 import { createTrustCareShlGatewayPublication } from "./shlGateway";
 
 /**
@@ -416,7 +417,7 @@ const completePatient = {
   phone: "089-123-4567",
   email: "somchai.jaidee.demo@example.test",
   address: "99/9 ถนนสาทร แขวงยานนาวา เขตสาทร กรุงเทพมหานคร 10120",
-  avatarUrl: "https://trustcarehealth-tylvb5l8.manus.space/api/storage-proxy/patient_male_realistic_opt_e9b1630b.jpg"
+  avatarUrl: trustCarePortalPersonImages.demoPatient001
 } as const;
 
 const completeStaff = {
@@ -431,7 +432,7 @@ const completeStaff = {
   department: "Cardiology Clinic",
   phone: "02-123-4567",
   email: "sirirak.r@trustcare-central.example.test",
-  avatarUrl: "https://trustcarehealth-tylvb5l8.manus.space/api/storage-proxy/doctor_female_realistic_opt_56d94f1d.jpg"
+  avatarUrl: trustCarePortalPersonImages.doctorFemale
 } as const;
 
 const hospital = {

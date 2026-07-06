@@ -8,10 +8,10 @@ These users mirror TrustCare Portal demo users and must keep their original Port
 
 | User ID | Name | Source | Primary Scope | Photo |
 | --- | --- | --- | --- | --- |
-| `demo-patient-001` | นายสมชาย ใจดี / Mr. Somchai Jaidee | TrustCare Portal | OPD, referral, claim, pharmacy, medical certificate | `https://trustcarehealth-tylvb5l8.manus.space/api/storage-proxy/patient_male_realistic_opt_e9b1630b.jpg` |
-| `demo-patient-002` | นางสาวมาลี วัฒนา / Ms. Malee Wattana | TrustCare Portal | OPD, emergency, lab | `https://trustcarehealth-tylvb5l8.manus.space/api/storage-proxy/patient_female_realistic_opt_d0edb245.jpg` |
-| `demo-patient-003` | Mr. John Williams | TrustCare Portal | Medical tourist, insurance, travel document | `https://trustcarehealth-tylvb5l8.manus.space/api/storage-proxy/patient_male_realistic_opt_e9b1630b.jpg` |
-| `demo-hospadmin-001` | นางวิภา บริหารเก่ง / Ms. Wipa Borihankeng | TrustCare Portal | Staff identity, maker/checker | `https://trustcarehealth-tylvb5l8.manus.space/api/storage-proxy/doctor_female_realistic_opt_56d94f1d.jpg` |
+| `demo-patient-001` | นายสมชาย ใจดี / Mr. Somchai Jaidee | TrustCare Portal | OPD, referral, claim, pharmacy, medical certificate | `https://trustcarehealth.live/manus-storage/patient_somsak_a2e00e97.jpg` |
+| `demo-patient-002` | นางสาวมาลี วัฒนา / Ms. Malee Wattana | TrustCare Portal | OPD, emergency, lab | `https://trustcarehealth.live/manus-storage/patient_malee_74d2ef04.jpg` |
+| `demo-patient-003` | Mr. John Williams | TrustCare Portal | Medical tourist, insurance, travel document | `https://trustcarehealth.live/manus-storage/patient_john_williams_b4e9e7f3.jpg` |
+| `demo-hospadmin-001` | นางวิภา บริหารเก่ง / Ms. Wipa Borihankeng | TrustCare Portal | Staff identity, maker/checker | `https://trustcarehealth.live/manus-storage/hospadmin_wipa_aeeee791.jpg` |
 
 ## Wallet-Native Users
 

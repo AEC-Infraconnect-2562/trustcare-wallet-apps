@@ -197,6 +197,66 @@ export const walletDemoUsers: WalletDemoUser[] = [
     cardBase: 4000
   },
   {
+    id: "portal-empty-patient-001",
+    patientId: 910000000001,
+    portalOpenId: "portal-empty-patient-001",
+    source: "trustcare_portal",
+    sourceLabel: "กระเป๋าเปล่าสำหรับทดสอบ Sync จาก TrustCare Portal",
+    role: "patient",
+    hospitalCode: "TCC",
+    hospitalName: "TrustCare Central Hospital",
+    hospitalNameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
+    nameTh: "ผู้ป่วยทดสอบ Sync",
+    nameEn: "Portal Sync Empty Patient",
+    initials: "S",
+    gender: "female",
+    birthDate: "1992-04-12",
+    email: "empty.patient.wallet@example.test",
+    phone: "080-000-0101",
+    thaiId: "910000000001",
+    carepassId: "CP-SYNC-EMPTY-001",
+    hn: "HN-SYNC-EMPTY-001",
+    holderDid: "did:key:z6MkhTrustCareEmptyPatientSync001",
+    issuerDid: "did:web:trustcare.network:hospital:tcc",
+    avatarUrl: trustCarePortalPersonImages.patientFemale,
+    avatarSource: "trustcare_portal",
+    persona: "กระเป๋าเปล่าสำหรับทดสอบปุ่ม Sync ข้อมูลรายบุคคลจาก TrustCare Portal",
+    tags: ["empty_wallet", "portal_sync_test"],
+    conditions: [],
+    allergies: [],
+    cardBase: 910000
+  },
+  {
+    id: "portal-empty-staff-001",
+    patientId: 910000000002,
+    portalOpenId: "portal-empty-staff-001",
+    source: "trustcare_portal",
+    sourceLabel: "กระเป๋าเปล่าสำหรับทดสอบ Sync จาก TrustCare Portal",
+    role: "staff",
+    hospitalCode: "TCC",
+    hospitalName: "TrustCare Central Hospital",
+    hospitalNameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
+    nameTh: "เจ้าหน้าที่ทดสอบ Sync",
+    nameEn: "Portal Sync Empty Staff",
+    initials: "S",
+    gender: "female",
+    birthDate: "1988-08-18",
+    email: "empty.staff.wallet@example.test",
+    phone: "080-000-0102",
+    thaiId: "910000000002",
+    carepassId: "STAFF-SYNC-EMPTY-001",
+    hn: "STAFF-SYNC-EMPTY-001",
+    holderDid: "did:key:z6MkhTrustCareEmptyStaffSync001",
+    issuerDid: "did:web:trustcare.network:hospital:tcc",
+    avatarUrl: trustCarePortalPersonImages.nurseFemale,
+    avatarSource: "trustcare_portal",
+    persona: "กระเป๋าเปล่าของเจ้าหน้าที่สำหรับทดสอบปุ่ม Sync จาก TrustCare Portal",
+    tags: ["empty_wallet", "portal_sync_test", "staff_identity"],
+    conditions: [],
+    allergies: [],
+    cardBase: 911000
+  },
+  {
     id: "demo-patient-complete-001",
     patientId: 9900700100017,
     portalOpenId: "demo-patient-complete-001",
@@ -326,6 +386,7 @@ export function getDemoUser(userId?: string | number): WalletDemoUser {
 
 export function getDemoWalletCards(userId?: string | number): WalletCard[] {
   const user = getDemoUser(userId);
+  if (user.tags.includes("empty_wallet")) return [];
   if (user.tags.includes("complete_seed")) {
     return getCompleteWalletSeed(user.id).sort((a, b) => a.id - b.id);
   }
@@ -345,6 +406,7 @@ export function getDemoCardsByCategory(userId?: string | number): WalletCardsByC
 
 export function getDemoHistory(userId?: string | number): PresentationHistoryItem[] {
   const user = getDemoUser(userId);
+  if (user.tags.includes("empty_wallet")) return [];
   if (user.id === "demo-patient-complete-001") return completeWalletPresentationHistory;
   if (user.id === "demo-staff-complete-001") return [];
   return [
@@ -369,6 +431,7 @@ export function getDemoHistory(userId?: string | number): PresentationHistoryIte
 
 export function getDemoShlPackages(userId?: string | number): ShlPackageDetail[] {
   const user = getDemoUser(userId);
+  if (user.tags.includes("empty_wallet")) return [];
   if (user.id === "demo-patient-complete-001") return completeWalletShlPackages;
   if (user.id === "demo-staff-complete-001") return [];
   if (user.role !== "patient") return [];
