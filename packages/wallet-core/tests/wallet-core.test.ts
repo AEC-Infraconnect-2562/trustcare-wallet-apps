@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import QRCode from "qrcode";
 import {
   assessLocalReadiness,
   buildContractHubCatalog,
@@ -350,6 +351,8 @@ describe("wallet-core", () => {
     expect(shl.mode).toBe("CertifiedSHLManifestPackage");
     expect("shl" in shl).toBe(true);
     if ("shl" in shl) {
+      expect(shl.shl.qrPayload.length).toBeLessThan(2000);
+      await expect(QRCode.toDataURL(shl.shl.qrPayload)).resolves.toContain("data:image/png;base64,");
       const fetched = await fetchShlManifest(shl.shl.qrPayload);
       expect(fetched.ok).toBe(true);
       expect(fetched.fileCount).toBe(cards.length);

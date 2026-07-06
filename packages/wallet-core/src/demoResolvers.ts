@@ -14,8 +14,30 @@ export function createDemoResolverUrl(origin: string, kind: DemoResolverKind, id
   return url.toString();
 }
 
+export function createDemoResolverReferenceUrl(origin: string, kind: DemoResolverKind, id: string): string {
+  const url = new URL(normalizeOrigin(origin));
+  url.searchParams.set("tc_resolver", kind);
+  url.searchParams.set("tc_id", id);
+  url.searchParams.set("tc_ref", "1");
+  return url.toString();
+}
+
 export function createDemoManifestUrl(origin: string, id: string, manifest: Record<string, unknown>): string {
-  return createDemoResolverUrl(origin, "shl-manifest", id, manifest);
+  const compact = compactShlManifest(manifest);
+  const trustcare = objectValue(compact.trustcare);
+  const access = objectValue(compact.access);
+  const files = arrayValue(compact.files).map(objectValue);
+  const url = new URL(normalizeOrigin(origin));
+  url.searchParams.set("tc_resolver", "shl-manifest");
+  url.searchParams.set("tc_id", id);
+  url.searchParams.set("tc_ref", "manifest");
+  url.searchParams.set("tc_file_count", String(files.length));
+  url.searchParams.set("tc_status", stringValue(trustcare.trustLayerStatus, "standard_shl"));
+  url.searchParams.set("tc_context", stringValue(compact.context, "opd_visit"));
+  url.searchParams.set("tc_label", stringValue(compact.label, id));
+  url.searchParams.set("tc_exp", stringValue(access.expiresAt ?? compact.expiresAt, ""));
+  url.searchParams.set("tc_types", files.map(file => stringValue(file.documentType, "document")).join(","));
+  return url.toString();
 }
 
 export function resolveDemoResolverPayload(value: string): DemoResolvedPayload | null {
@@ -37,7 +59,13 @@ export function resolveDemoResolverPayload(value: string): DemoResolvedPayload |
 
 export function resolveDemoShlManifestFromUrl(value: string): Record<string, unknown> | null {
   const resolved = resolveDemoResolverPayload(value);
-  return resolved?.kind === "shl-manifest" ? resolved.payload : null;
+  if (resolved?.kind === "shl-manifest") return resolved.payload;
+  const parsed = parseUrl(value);
+  if (!parsed) return null;
+  if (parsed.searchParams.get("tc_resolver") !== "shl-manifest") return null;
+  const id = parsed.searchParams.get("tc_id");
+  if (!id) return null;
+  return expandDemoManifestReference(parsed, id);
 }
 
 export function hashJson(value: unknown): string {
@@ -86,4 +114,125 @@ function stableHash(value: string): string {
   }
   const hex = (hash >>> 0).toString(16).padStart(8, "0");
   return hex.repeat(8).slice(0, 64);
+}
+
+function compactShlManifest(manifest: Record<string, unknown>): Record<string, unknown> {
+  const trustcare = objectValue(manifest.trustcare);
+  const access = objectValue(manifest.access);
+  return removeUndefined({
+    resourceType: manifest.resourceType,
+    manifestVersion: manifest.manifestVersion,
+    gatewayPublicationId: manifest.gatewayPublicationId,
+    shlId: manifest.shlId,
+    label: manifest.label,
+    context: manifest.context,
+    purpose: manifest.purpose,
+    createdAt: manifest.createdAt,
+    expiresAt: manifest.expiresAt,
+    receiver: manifest.receiver,
+    files: arrayValue(manifest.files).map(compactShlFile),
+    access: removeUndefined({
+      passcodeRequired: access.passcodeRequired,
+      accessCodeDelivery: access.accessCodeDelivery,
+      expiresAt: access.expiresAt,
+      maxAccessCount: access.maxAccessCount
+    }),
+    trustcare: removeUndefined({
+      trustLayerStatus: trustcare.trustLayerStatus,
+      makerCheckerStatus: trustcare.makerCheckerStatus,
+      manifestCredentialId: trustcare.manifestCredentialId,
+      holderPresentationId: trustcare.holderPresentationId,
+      holderAuthorizationCredentialId: trustcare.holderAuthorizationCredentialId,
+      manifestVpUrl: trustcare.manifestVpUrl,
+      manifestVpHash: trustcare.manifestVpHash,
+      contractHubVersion: trustcare.contractHubVersion
+    })
+  });
+}
+
+function compactShlFile(value: unknown): Record<string, unknown> {
+  const file = objectValue(value);
+  const embedded = objectValue(file.embedded);
+  return removeUndefined({
+    id: file.id,
+    contentType: file.contentType,
+    hash: file.hash,
+    location: file.location,
+    title: file.title,
+    documentType: file.documentType,
+    credentialId: file.credentialId,
+    embedded:
+      "embedded" in file
+        ? removeUndefined({
+            resourceType: embedded.resourceType ?? "Bundle",
+            type: embedded.type ?? "document",
+            id: embedded.id ?? file.id
+          })
+        : undefined
+  });
+}
+
+function expandDemoManifestReference(parsed: URL, id: string): Record<string, unknown> {
+  const fileCount = Math.max(0, Number.parseInt(parsed.searchParams.get("tc_file_count") ?? "0", 10) || 0);
+  const types = (parsed.searchParams.get("tc_types") ?? "")
+    .split(",")
+    .map(item => item.trim())
+    .filter(Boolean);
+  const trustLayerStatus = parsed.searchParams.get("tc_status") ?? "standard_shl";
+  const context = parsed.searchParams.get("tc_context") ?? "opd_visit";
+  const label = parsed.searchParams.get("tc_label") ?? id;
+  const expiresAt = parsed.searchParams.get("tc_exp") || undefined;
+  const files = Array.from({ length: fileCount }, (_, index) => {
+    const documentType = types[index] ?? "document";
+    return {
+      id: `${id}:file:${index + 1}:${documentType}`,
+      contentType: "application/fhir+json",
+      hash: `sha256:demo-${id}-${index + 1}`,
+      title: documentType,
+      documentType,
+      location: `${parsed.origin}${parsed.pathname}?tc_resolver=shl-file&tc_id=${encodeURIComponent(id)}&tc_file=${index + 1}`
+    };
+  });
+  return removeUndefined({
+    resourceType: "TrustCareShlManifest",
+    manifestVersion: 1,
+    gatewayPublicationId: id,
+    shlId: id,
+    label,
+    context,
+    purpose: label,
+    expiresAt,
+    files,
+    access: removeUndefined({
+      expiresAt,
+      passcodeRequired: false,
+      accessCodeDelivery: "not_required",
+      maxAccessCount: 5
+    }),
+    trustcare: removeUndefined({
+      trustLayerStatus,
+      makerCheckerStatus: trustLayerStatus === "certified_manifest_vp" ? "approved" : "not_required",
+      manifestCredentialId: trustLayerStatus === "certified_manifest_vp" ? `urn:trustcare:vc:manifest:${id}` : undefined,
+      holderPresentationId: trustLayerStatus === "certified_manifest_vp" ? `urn:trustcare:vp:manifest:${id}` : undefined,
+      holderAuthorizationCredentialId: trustLayerStatus === "certified_manifest_vp" ? `urn:trustcare:vc:holder-authorization:${id}` : undefined,
+      manifestVpHash: trustLayerStatus === "certified_manifest_vp" ? `sha256:demo-manifest-vp-${id}` : undefined,
+      contractHubVersion: "2026.07.prepare-service.v1"
+    })
+  });
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+
+function removeUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
 }

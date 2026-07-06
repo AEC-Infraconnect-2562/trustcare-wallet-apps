@@ -7,7 +7,7 @@ import type {
 } from "./models";
 import { readinessContextLabels } from "./readiness";
 import { createDemoShlKey, createShlLinkPayload, createShlViewerUrl } from "./shl";
-import { createDemoManifestUrl, createDemoResolverUrl, hashJson } from "./demoResolvers";
+import { createDemoManifestUrl, createDemoResolverReferenceUrl, hashJson } from "./demoResolvers";
 
 export type TrustCareShlGatewayMode = "portal_backend" | "static_demo_gateway" | "local_preview";
 export type TrustCareShlStorageProvider = "s3" | "static" | "local";
@@ -495,7 +495,7 @@ function buildTrustCareManifestCertification(input: {
     }
   });
   const manifestVpHash = hashJson(manifestVp);
-  const manifestVpUrl = createDemoResolverUrl(input.viewerBaseUrl, "manifest-vp", input.publicationId, manifestVp);
+  const manifestVpUrl = createDemoResolverReferenceUrl(input.viewerBaseUrl, "manifest-vp", input.publicationId);
   return { manifestCredential, holderAuthorizationCredential, manifestVp, manifestVpHash, manifestVpUrl };
 }
 

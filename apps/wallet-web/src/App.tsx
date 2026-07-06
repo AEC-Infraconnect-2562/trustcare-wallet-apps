@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactElement,
 } from "react";
@@ -539,16 +540,6 @@ export default function App() {
   const [documentRequests, setDocumentRequests] = useState<
     WalletDocumentRequest[]
   >([]);
-  const [prepareProtocol, setPrepareProtocol] = useState<PackageProtocol>("vp");
-  const [prepareDisclosureMode, setPrepareDisclosureMode] =
-    useState<DisclosureMode>("sd");
-  const [prepareSelectedFields, setPrepareSelectedFields] = useState<string[]>(
-    sharePurposeProfiles.opd_visit.fields.map((field) => field.key),
-  );
-  const [prepareTimeAnchor, setPrepareTimeAnchor] =
-    useState<TimeAnchor>("record");
-  const [prepareShlPolicy, setPrepareShlPolicy] =
-    useState<ShlAccessPolicyState>(defaultShlPolicyForContext("opd_visit"));
   const [importJob, setImportJob] = useState<WalletImportJob | null>(null);
   const [storedExtrasByUser, setStoredExtrasByUser] = useState<
     Record<string, WalletStoredObject[]>
@@ -923,15 +914,6 @@ export default function App() {
     setReadinessContext(context);
     setImportJob(null);
     setLastImportMessage("");
-    setPrepareProtocol(
-      protocolForTransport(sharePurposeProfiles[context].transport),
-    );
-    setPrepareDisclosureMode("sd");
-    setPrepareSelectedFields(
-      sharePurposeProfiles[context].fields.map((field) => field.key),
-    );
-    setPrepareTimeAnchor("record");
-    setPrepareShlPolicy(defaultShlPolicyForContext(context));
   }, []);
 
   const importMissing = useCallback(async () => {
@@ -1493,17 +1475,7 @@ export default function App() {
             workbench={prepareWorkbench}
             requests={documentRequests}
             importJob={importJob}
-            protocol={prepareProtocol}
-            disclosureMode={prepareDisclosureMode}
-            selectedFields={prepareSelectedFields}
-            timeAnchor={prepareTimeAnchor}
-            shlPolicy={prepareShlPolicy}
             onContext={changeReadinessContext}
-            onProtocol={setPrepareProtocol}
-            onDisclosureMode={setPrepareDisclosureMode}
-            onSelectedFields={setPrepareSelectedFields}
-            onTimeAnchor={setPrepareTimeAnchor}
-            onShlPolicy={setPrepareShlPolicy}
             onPrepareAll={() => navigateTo("share")}
             onRequestMissing={() => void requestMissing()}
             onImportMissing={() => void importMissing()}
@@ -2731,12 +2703,14 @@ function ShareView({
   const [sharePayload, setSharePayload] = useState("");
   const [shareExportPayload, setShareExportPayload] = useState("");
   const shareProfile = sharePurposeProfiles[purpose];
+  const previousInitialPurpose = useRef(initialPurpose);
 
   useEffect(() => {
-    if (initialPurpose && initialPurpose !== purpose) {
+    if (initialPurpose && initialPurpose !== previousInitialPurpose.current) {
       setPurpose(initialPurpose);
     }
-  }, [initialPurpose, purpose]);
+    previousInitialPurpose.current = initialPurpose;
+  }, [initialPurpose]);
   const purposeReadiness = useMemo(
     () => assessLocalReadiness(shareableCards, purpose),
     [purpose, shareableCards],
@@ -3526,17 +3500,7 @@ function PrepareView({
   workbench,
   requests,
   importJob,
-  protocol,
-  disclosureMode,
-  selectedFields,
-  timeAnchor,
-  shlPolicy,
   onContext,
-  onProtocol,
-  onDisclosureMode,
-  onSelectedFields,
-  onTimeAnchor,
-  onShlPolicy,
   onPrepareAll,
   onRequestMissing,
   onImportMissing,
@@ -3549,17 +3513,7 @@ function PrepareView({
   workbench: any;
   requests: WalletDocumentRequest[];
   importJob: WalletImportJob | null;
-  protocol: PackageProtocol;
-  disclosureMode: DisclosureMode;
-  selectedFields: string[];
-  timeAnchor: TimeAnchor;
-  shlPolicy: ShlAccessPolicyState;
   onContext: (context: ReadinessContext) => void;
-  onProtocol: (protocol: PackageProtocol) => void;
-  onDisclosureMode: (mode: DisclosureMode) => void;
-  onSelectedFields: (fields: string[]) => void;
-  onTimeAnchor: (anchor: TimeAnchor) => void;
-  onShlPolicy: (policy: ShlAccessPolicyState) => void;
   onPrepareAll: () => void;
   onRequestMissing: () => void;
   onImportMissing: () => void;
@@ -3580,10 +3534,8 @@ function PrepareView({
   const ready = readinessResult.ready ?? [];
   const missingRequired = missing.filter((item: any) => item.required);
   const canCreateFullPacket = missingRequired.length === 0;
-  const shlAccessReady =
-    !protocolRequiresShl(protocol) || shlPasscodeReady(shlPolicy);
   const packetContents = ready.flatMap((item: any) => item.matchedCards ?? []);
-  const isPrepared = canCreateFullPacket && shlAccessReady;
+  const isPrepared = canCreateFullPacket;
   const contextRequests = requests.filter(
     (request: any) => !request.context || request.context === context,
   );
@@ -3592,35 +3544,20 @@ function PrepareView({
     ((importJob as any).context ? (importJob as any).context === context : true)
       ? importJob
       : null;
-  const timelineItems = buildTimelineItems(
-    packetContents,
-    new Date().toISOString(),
-    timeAnchor,
-  );
-  const selectedFieldSet = new Set(selectedFields);
   const serviceDocumentSummary = [...ready, ...missing].slice(0, 6);
   const selectedServiceLabel = readinessContextLabels[context].th;
   const serviceDocumentCaption = `เอกสารที่ใช้ในบริการนี้ - ${selectedServiceLabel}`;
   const serviceDocumentDescription = activeContract
-    ? `${activeContract.patientLabel} · ${protocolProfiles[protocol].label} · ${activeContract.bundleTypes.patient}`
+    ? `${activeContract.patientLabel} · ${activeContract.bundleTypes.patient}`
     : readinessPurposeTh[context];
-  const toggleSelectedField = (field: string) => {
-    const next = selectedFieldSet.has(field)
-      ? selectedFields.filter((item) => item !== field)
-      : [...selectedFields, field];
-    onSelectedFields(next);
-  };
   const primaryActionText = !canCreateFullPacket
     ? "ขอเอกสารที่ขาด"
-    : !shlAccessReady
-      ? "ตั้ง PIN ก่อนสร้าง SHL"
-      : "ไปหน้าแชร์เพื่อสร้าง QR";
+    : "ไปหน้าแชร์เอกสาร";
   const primaryAction = () => {
     if (!canCreateFullPacket) {
       onRequestMissing();
       return;
     }
-    if (!shlAccessReady) return;
     onPrepareAll();
   };
   const prepSteps = [
@@ -3639,16 +3576,10 @@ function PrepareView({
       complete: canCreateFullPacket,
     },
     {
-      title: "เลือกชนิดชุดเอกสาร",
-      description: `${protocolProfiles[protocol].label} · ${protocolProfiles[protocol].description}`,
-      status: shlAccessReady ? "ตั้งค่าแล้ว" : "รอ PIN",
-      complete: isPrepared,
-    },
-    {
-      title: "สร้าง QR ในหน้าแชร์",
+      title: "ไปหน้าแชร์เอกสาร",
       description: isPrepared
-        ? "พร้อมไปหน้าแชร์เพื่อสร้าง VP/SHL ที่ตรวจสอบได้"
-        : "เตรียมเอกสารและเงื่อนไขก่อนแชร์",
+        ? "พร้อมเลือกผู้รับ วัตถุประสงค์ รูปแบบ VP/SHL และเงื่อนไขการเปิดเผย"
+        : "เตรียมเอกสารจำเป็นให้ครบก่อนแชร์",
       status: isPrepared ? "พร้อมแชร์" : "รอข้อมูล",
       complete: isPrepared,
     },
@@ -3660,19 +3591,16 @@ function PrepareView({
           <span className="eyebrow">เตรียมบริการ</span>
           <h2>เตรียมเอกสารก่อนเข้ารับบริการ</h2>
           <p>
-            ตรวจว่าเอกสารจำเป็นครบหรือไม่ เลือกรูปแบบชุดข้อมูลที่เหมาะสม
-            แล้วไปหน้าแชร์เพื่อสร้าง VP, SHL หรือ SHL + Manifest VP เพียงหนึ่งชุด
+            ตรวจว่าเอกสารจำเป็นครบตามบริการที่เลือกหรือไม่
+            แล้วไปหน้าแชร์เพื่อเลือกผู้รับ วัตถุประสงค์ และรูปแบบการส่งข้อมูล
           </p>
           <div className="prep-hero-actions">
             <Button
               className={isPrepared ? "green" : "purple"}
               onClick={primaryAction}
-              disabled={!isPrepared && canCreateFullPacket && !shlAccessReady}
             >
               {isPrepared ? (
-                <QrCode size={18} />
-              ) : canCreateFullPacket ? (
-                <Layers3 size={18} />
+                <Send size={18} />
               ) : (
                 <FilePlus2 size={18} />
               )}
@@ -3742,180 +3670,22 @@ function PrepareView({
           </div>
         </Surface>
 
-        <Surface className="package-policy-panel">
+        <Surface className="package-policy-panel readiness-route-panel">
           <div className="section-title-row">
             <div>
-              <h2>2. เลือกชนิดชุดเอกสารและเงื่อนไข</h2>
+              <h2>2. ตรวจเอกสารที่ระบบจะใช้</h2>
               <p>
-                เลือกว่าจะสร้าง VP, SHL หรือ Hybrid
-                ตามลักษณะข้อมูลและปลายทางที่รับข้อมูล
+                รายการนี้เปลี่ยนตามบริการที่เลือก
+                ส่วนการเลือก VP, SHL, Manifest VP และเงื่อนไขการเปิดเผยอยู่ในหน้าแชร์
               </p>
             </div>
-            <Badge tone="blue">{protocolProfiles[protocol].badge}</Badge>
-          </div>
-          <div className="protocol-choice-grid">
-            {(Object.keys(protocolProfiles) as PackageProtocol[]).map(
-              (item) => (
-                <button
-                  type="button"
-                  key={item}
-                  className={
-                    protocol === item
-                      ? "protocol-choice active"
-                      : "protocol-choice"
-                  }
-                  onClick={() => onProtocol(item)}
-                >
-                  <strong>{protocolProfiles[item].label}</strong>
-                  <span>{protocolProfiles[item].description}</span>
-                </button>
-              ),
-            )}
-          </div>
-          <div className="policy-grid">
-            {protocolRequiresVp(protocol) && (
-              <div className="policy-box">
-                <span className="eyebrow">VC/VP policy</span>
-                <div className="segmented compact">
-                  {(["full", "sd", "zkp"] as DisclosureMode[]).map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      className={disclosureMode === item ? "active" : ""}
-                      onClick={() => onDisclosureMode(item)}
-                    >
-                      {item === "full"
-                        ? "Full VC"
-                        : item === "sd"
-                          ? "Selective Disclosure"
-                          : "ZKP"}
-                    </button>
-                  ))}
-                </div>
-                <div className="field-chip-grid disclosure-field-grid compact">
-                  {vpDisclosureFields.map((field) => (
-                    <button
-                      key={field.key}
-                      type="button"
-                      className={
-                        selectedFieldSet.has(field.key) ? "active" : ""
-                      }
-                      onClick={() => toggleSelectedField(field.key)}
-                    >
-                      {field.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {protocolRequiresShl(protocol) && (
-              <div className="policy-box">
-                <span className="eyebrow">SHL access policy</span>
-                <label className="policy-toggle">
-                  <input
-                    type="checkbox"
-                    checked={shlPolicy.passcodeRequired}
-                    onChange={(event) =>
-                      onShlPolicy({
-                        ...shlPolicy,
-                        passcodeRequired: event.target.checked,
-                        passcode: event.target.checked
-                          ? shlPolicy.passcode ||
-                            defaultShlPolicyForContext(context).passcode
-                          : "",
-                      })
-                    }
-                  />
-                  <span>ตั้งค่า PIN / Passcode</span>
-                </label>
-                {shlPolicy.passcodeRequired && (
-                  <label className="pin-code-field">
-                    PIN สำหรับเปิด SHL
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      value={shlPolicy.passcode}
-                      placeholder="ตั้ง PIN 4-8 หลัก"
-                      onChange={(event) =>
-                        onShlPolicy({
-                          ...shlPolicy,
-                          passcode: normalizeShlPasscode(event.target.value),
-                        })
-                      }
-                    />
-                    <small>
-                      {shlPasscodeReady(shlPolicy)
-                        ? `ตั้งค่าแล้ว ${maskShlPasscode(shlPolicy.passcode)} · ส่ง PIN แยกจาก QR`
-                        : "กรุณาตั้ง PIN อย่างน้อย 4 หลักก่อนสร้าง SHL"}
-                    </small>
-                  </label>
-                )}
-                <label>
-                  หมดอายุ
-                  <select
-                    value={shlPolicy.expiryHours}
-                    onChange={(event) =>
-                      onShlPolicy({
-                        ...shlPolicy,
-                        expiryHours: Number(event.target.value),
-                      })
-                    }
-                  >
-                    <option value={1}>1 ชั่วโมง</option>
-                    <option value={4}>4 ชั่วโมง</option>
-                    <option value={24}>24 ชั่วโมง</option>
-                    <option value={72}>72 ชั่วโมง</option>
-                    <option value={720}>30 วัน</option>
-                  </select>
-                </label>
-                <label>
-                  จำนวนครั้งที่เปิดได้
-                  <select
-                    value={shlPolicy.maxAccessCount}
-                    onChange={(event) =>
-                      onShlPolicy({
-                        ...shlPolicy,
-                        maxAccessCount: Number(event.target.value),
-                      })
-                    }
-                  >
-                    <option value={1}>1 ครั้ง</option>
-                    <option value={3}>3 ครั้ง</option>
-                    <option value={5}>5 ครั้ง</option>
-                    <option value={8}>8 ครั้ง</option>
-                    <option value={20}>20 ครั้ง</option>
-                  </select>
-                </label>
-              </div>
-            )}
-            <div className="policy-box">
-              <span className="eyebrow">Timeline anchor</span>
-              <p>
-                การเรียงลำดับใช้เวลาของ record เป็นหลัก
-                ถ้าต้องตรวจชุดที่สร้างล่าสุดให้เลือก package time
-              </p>
-              <div className="segmented compact">
-                <button
-                  type="button"
-                  className={timeAnchor === "record" ? "active" : ""}
-                  onClick={() => onTimeAnchor("record")}
-                >
-                  Record time
-                </button>
-                <button
-                  type="button"
-                  className={timeAnchor === "package" ? "active" : ""}
-                  onClick={() => onTimeAnchor("package")}
-                >
-                  Package time
-                </button>
-              </div>
-            </div>
+            <Badge tone={canCreateFullPacket ? "green" : "yellow"}>
+              {canCreateFullPacket ? "ครบตามบริการ" : "ยังขาดเอกสาร"}
+            </Badge>
           </div>
           <div className="interop-bridge-strip document-summary-strip">
             <span className="summary-heading">
-              <FileText size={16} /> เอกสารในบริการนี้
+              <FileText size={16} /> {serviceDocumentCaption}
             </span>
             {serviceDocumentSummary.map((item: any) => (
               <span
@@ -4028,34 +3798,28 @@ function PrepareView({
       <Surface className="bundle-dashboard service-output-panel">
         <div className="section-title-row">
           <div>
-            <span className="eyebrow">Share Package</span>
-            <h2>4. ไปสร้าง QR ที่หน้าแชร์</h2>
+            <span className="eyebrow">ขั้นตอนถัดไป</span>
+            <h2>4. ไปหน้าแชร์เอกสาร</h2>
             <p>
-              หน้าเตรียมบริการทำหน้าที่ตรวจความพร้อมเท่านั้น
-              เมื่อพร้อมแล้วให้ไปหน้าแชร์เพื่อสร้าง VP, SHL หรือ SHL + Manifest VP เพียงหนึ่งชุด
+              หน้าเตรียมบริการตรวจความพร้อมเท่านั้น
+              หลังจากนี้หน้าแชร์จะให้เลือกผู้รับ วัตถุประสงค์ รูปแบบ VP/SHL
+              และเงื่อนไขการเปิดเผยก่อนสร้าง QR
             </p>
           </div>
-          <Badge
-            tone={isPrepared ? "green" : "yellow"}
-          >
-            {isPrepared ? "พร้อมสร้าง QR" : "ยังไม่พร้อม"}
+          <Badge tone={isPrepared ? "green" : "yellow"}>
+            {isPrepared ? "พร้อมแชร์" : "ยังไม่พร้อม"}
           </Badge>
         </div>
         <div className="prep-primary-row">
           <Button
-            className={
-              canCreateFullPacket && shlAccessReady ? "purple" : "secondary"
-            }
+            className={canCreateFullPacket ? "purple" : "secondary"}
             onClick={onPrepareAll}
-            disabled={!canCreateFullPacket || !shlAccessReady}
+            disabled={!canCreateFullPacket}
           >
-            <Send size={18} /> ไปหน้าแชร์เพื่อสร้าง QR
+            <Send size={18} /> ไปหน้าแชร์เอกสาร
           </Button>
           {!canCreateFullPacket && (
-            <span>สร้างชุดสมบูรณ์ได้หลังเอกสารจำเป็นครบ</span>
-          )}
-          {canCreateFullPacket && !shlAccessReady && (
-            <span>กรุณาตั้ง PIN 4-8 หลักก่อนสร้าง SHL</span>
+            <span>ไปหน้าแชร์ได้หลังเอกสารจำเป็นครบ</span>
           )}
         </div>
         <div className="share-route-summary">
@@ -4064,8 +3828,8 @@ function PrepareView({
             <small>{serviceDocumentDescription}</small>
           </div>
           <div>
-            <strong>{protocolProfiles[protocol].label}</strong>
-            <small>{protocolProfiles[protocol].description}</small>
+            <strong>เลือก Package ในหน้าแชร์</strong>
+            <small>Direct VP, Purpose VP, SHL หรือ SHL + Manifest VP</small>
           </div>
           <div>
             <strong>
@@ -4083,8 +3847,11 @@ function PrepareView({
       <Surface className="packet-content-preview">
         <div className="section-title-row">
           <div>
-            <h3>5. ตรวจรายการและ Timeline ก่อนส่ง</h3>
-            <p>รายการด้านล่างคือเอกสารที่จะถูกใช้ในชุด VP/SHL ของบริการนี้</p>
+            <h3>5. รายการเอกสารที่พร้อมใช้</h3>
+            <p>
+              รายการด้านล่างคือเอกสารที่ตรงเงื่อนไขของบริการนี้
+              และจะถูกส่งต่อไปเป็นค่าเริ่มต้นในหน้าแชร์
+            </p>
           </div>
           <Badge tone={canCreateFullPacket ? "green" : "yellow"}>
             {canCreateFullPacket ? "ครบถ้วน" : "ยังไม่ครบ"}
@@ -4104,36 +3871,6 @@ function PrepareView({
           {!packetContents.length && (
             <p className="muted">ยังไม่มีเอกสารที่ตรงเงื่อนไข</p>
           )}
-        </div>
-        <div className="timeline-panel">
-          <div>
-            <span className="eyebrow">Timeline</span>
-            <strong>
-              {timeAnchor === "record"
-                ? "เรียงตามเวลาของ record"
-                : "เรียงตามเวลาที่จัด package"}
-            </strong>
-          </div>
-          <div className="timeline-list">
-            {timelineItems.map((item) => (
-              <div
-                key={`${item.id}-${item.recordTimestamp}`}
-                className="timeline-row"
-              >
-                <span>{item.displayDate}</span>
-                <strong>{item.title}</strong>
-                <small>
-                  {item.source} · record {item.recordDate} · package{" "}
-                  {item.packageDate}
-                </small>
-              </div>
-            ))}
-            {!timelineItems.length && (
-              <p className="muted">
-                จะสร้าง timeline หลังเลือกบริการและมีเอกสารตรงเงื่อนไข
-              </p>
-            )}
-          </div>
         </div>
       </Surface>
 
