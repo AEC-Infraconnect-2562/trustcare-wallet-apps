@@ -5,7 +5,7 @@ import {
   TRUSTCARE_PORTAL_WEB_ORIGIN,
   type PortalWalletImportResult,
   type TrustCarePortalWalletCard,
-  type WalletCardsByCategory
+  type WalletCardsByCategory,
 } from "@trustcare/wallet-core";
 import type { TrustCareClientOptions } from "./trpc";
 import { TrustCareApiError } from "./errors";
@@ -25,9 +25,11 @@ type DemoLoginResponse = {
 
 type TrpcResponse<T> = {
   result?: {
-    data?: {
-      json?: T;
-    } | T;
+    data?:
+      | {
+          json?: T;
+        }
+      | T;
   };
   error?: {
     message?: string;
@@ -38,70 +40,108 @@ type TrpcResponse<T> = {
 export function canUsePortalDemoSync(userId?: string | number): boolean {
   const user = getDemoUser(userId);
   const openId = user.portalOpenId ?? user.id;
-  return user.source === "trustcare_portal" && Boolean(portalSyncedUsers[openId] ?? portalSyncedUsers[user.id]);
+  return (
+    user.source === "trustcare_portal" &&
+    Boolean(portalSyncedUsers[openId] ?? portalSyncedUsers[user.id])
+  );
 }
 
-export async function syncTrustCarePortalWallet(options: PortalWalletSyncOptions): Promise<PortalWalletImportResult> {
+export async function syncTrustCarePortalWallet(
+  options: PortalWalletSyncOptions,
+): Promise<PortalWalletImportResult> {
   const user = getDemoUser(options.userId);
-  const portalOrigin = (options.portalOrigin ?? TRUSTCARE_PORTAL_WEB_ORIGIN).replace(/\/$/, "");
+  const portalOrigin = (
+    options.portalOrigin ?? TRUSTCARE_PORTAL_WEB_ORIGIN
+  ).replace(/\/$/, "");
   const fetcher = options.fetchImpl ?? fetch;
   const openId = user.portalOpenId ?? user.id;
   if (!canUsePortalDemoSync(openId)) {
-    throw new TrustCareApiError(`Portal demo sync is not configured for ${openId}`);
+    throw new TrustCareApiError(
+      `Portal demo sync is not configured for ${openId}`,
+    );
   }
 
   const token = await getPortalDemoToken(fetcher, portalOrigin, openId);
-  const groupedCards = await getPortalCardsByCategory(fetcher, portalOrigin, token);
+  const groupedCards = await getPortalCardsByCategory(
+    fetcher,
+    portalOrigin,
+    token,
+  );
   return normalizeTrustCarePortalWalletCards({
     owner: user,
     groupedCards,
     source: "trustcare_portal_demo_login",
     sourceUrl: `${portalOrigin}/api/trpc/wallet.cardsByCategory`,
-    portalOrigin
+    portalOrigin,
   });
 }
 
-export async function syncTrustCarePortalCardsByCategory(options: PortalWalletSyncOptions): Promise<WalletCardsByCategory> {
+export async function syncTrustCarePortalCardsByCategory(
+  options: PortalWalletSyncOptions,
+): Promise<WalletCardsByCategory> {
   return (await syncTrustCarePortalWallet(options)).cardsByCategory;
 }
 
-async function getPortalDemoToken(fetcher: typeof fetch, portalOrigin: string, openId: string): Promise<string> {
+async function getPortalDemoToken(
+  fetcher: typeof fetch,
+  portalOrigin: string,
+  openId: string,
+): Promise<string> {
   const response = await fetcher(`${portalOrigin}/api/auth/demo-login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ openId })
+    body: JSON.stringify({ openId }),
   });
-  const payload = (await response.json().catch(() => null)) as DemoLoginResponse | null;
-  if (!response.ok || !payload?.token) {
-    throw new TrustCareApiError(`TrustCare Portal demo-login failed for ${openId}`, {
-      status: response.status
-    });
+  const payload = (await response
+    .json()
+    .catch(() => null)) as DemoLoginResponse | null;
+  const token = payload?.token ?? payload?.accessToken;
+  if (!response.ok || !token) {
+    throw new TrustCareApiError(
+      `TrustCare Portal demo-login failed for ${openId}`,
+      {
+        status: response.status,
+      },
+    );
   }
-  return payload.token ?? payload.accessToken ?? "";
+  return token;
 }
 
 async function getPortalCardsByCategory(
   fetcher: typeof fetch,
   portalOrigin: string,
-  token: string
+  token: string,
 ): Promise<Record<string, TrustCarePortalWalletCard[]>> {
   const input = encodeURIComponent(JSON.stringify({ json: null }));
-  const response = await fetcher(`${portalOrigin}/api/trpc/wallet.cardsByCategory?input=${input}`, {
-    headers: { authorization: `Bearer ${token}` }
-  });
-  const payload = (await response.json().catch(() => null)) as TrpcResponse<Record<string, TrustCarePortalWalletCard[]>> | null;
+  const response = await fetcher(
+    `${portalOrigin}/api/trpc/wallet.cardsByCategory?input=${input}`,
+    {
+      headers: { authorization: `Bearer ${token}` },
+    },
+  );
+  const payload = (await response.json().catch(() => null)) as TrpcResponse<
+    Record<string, TrustCarePortalWalletCard[]>
+  > | null;
   if (!response.ok || payload?.error) {
-    throw new TrustCareApiError(payload?.error?.message ?? "TrustCare Portal wallet.cardsByCategory failed", {
-      status: response.status,
-      code: payload?.error?.code
-    });
+    throw new TrustCareApiError(
+      payload?.error?.message ??
+        "TrustCare Portal wallet.cardsByCategory failed",
+      {
+        status: response.status,
+        code: payload?.error?.code,
+      },
+    );
   }
   const data = payload?.result?.data;
-  const grouped = isTrpcJsonData<Record<string, TrustCarePortalWalletCard[]>>(data)
+  const grouped = isTrpcJsonData<Record<string, TrustCarePortalWalletCard[]>>(
+    data,
+  )
     ? data.json
     : data;
   if (!grouped || typeof grouped !== "object" || Array.isArray(grouped)) {
-    throw new TrustCareApiError("TrustCare Portal returned an invalid wallet.cardsByCategory payload");
+    throw new TrustCareApiError(
+      "TrustCare Portal returned an invalid wallet.cardsByCategory payload",
+    );
   }
   return grouped as Record<string, TrustCarePortalWalletCard[]>;
 }

@@ -55,7 +55,12 @@ import {
   Upload,
   Wallet,
 } from "lucide-react";
-import { portalSyncApi, shlApi, verifierApi, walletApi } from "@trustcare/api-client";
+import {
+  portalSyncApi,
+  shlApi,
+  verifierApi,
+  walletApi,
+} from "@trustcare/api-client";
 import { useLanguage } from "@trustcare/i18n/src/provider.web";
 import { Badge, Button, Surface, WalletCardView } from "@trustcare/ui-web";
 import {
@@ -595,16 +600,13 @@ export default function App() {
     [selectedUserId],
   );
   const usesPortalLiveSync = portalSyncApi.canUsePortalDemoSync(selectedUserId);
-  const interopFixtures = useMemo(
-    () => {
-      if (usesPortalLiveSync) return emptyPortalInteropFixtures(activeUser);
-      return buildPortalInteroperabilityFixtures(
-        selectedUserId,
-        baseApiOptions.demoOrigin,
-      );
-    },
-    [activeUser, selectedUserId, usesPortalLiveSync],
-  );
+  const interopFixtures = useMemo(() => {
+    if (usesPortalLiveSync) return emptyPortalInteropFixtures(activeUser);
+    return buildPortalInteroperabilityFixtures(
+      selectedUserId,
+      baseApiOptions.demoOrigin,
+    );
+  }, [activeUser, selectedUserId, usesPortalLiveSync]);
   const storedExtras = storedExtrasByUser[selectedUserId] ?? [];
   const scanHistory = scanHistoryByUser[selectedUserId] ?? [];
   const navigateTo = useCallback(
@@ -650,8 +652,9 @@ export default function App() {
       const canLiveSync = portalSyncApi.canUsePortalDemoSync(selectedUserId);
       const [cards, walletHistory, shl, hub] = canLiveSync
         ? await Promise.all([
-            portalSyncApi.syncTrustCarePortalWallet(apiOptions).then(
-              (portalResult) => {
+            portalSyncApi
+              .syncTrustCarePortalWallet(apiOptions)
+              .then((portalResult) => {
                 const report = portalResult.report;
                 setPortalSyncMessage(
                   report.skipped.length
@@ -659,8 +662,7 @@ export default function App() {
                     : `Sync จาก TrustCare Portal สำเร็จ ${report.importedCredentialCount} credentials`,
                 );
                 return portalResult.cardsByCategory;
-              },
-            ),
+              }),
             walletApi.history(apiOptions),
             shlApi.listShl(apiOptions),
             walletApi.contractHub(apiOptions),
@@ -715,11 +717,15 @@ export default function App() {
       .catch((error) => {
         if (cancelled) return;
         const message =
-          error instanceof Error ? error.message : "ไม่สามารถประเมินความพร้อมได้";
+          error instanceof Error
+            ? error.message
+            : "ไม่สามารถประเมินความพร้อมได้";
         setReadiness(null);
         setPrepareWorkbench(null);
         setDocumentRequests([]);
-        setPortalSyncMessage(`ประเมินความพร้อมจากข้อมูล Portal ไม่สำเร็จ: ${message}`);
+        setPortalSyncMessage(
+          `ประเมินความพร้อมจากข้อมูล Portal ไม่สำเร็จ: ${message}`,
+        );
       });
     return () => {
       cancelled = true;
@@ -728,7 +734,8 @@ export default function App() {
 
   const allCards = useMemo(() => {
     const online = flattenCardsByCategory(grouped);
-    const usesPortalLiveSync = portalSyncApi.canUsePortalDemoSync(selectedUserId);
+    const usesPortalLiveSync =
+      portalSyncApi.canUsePortalDemoSync(selectedUserId);
     if (usesPortalLiveSync) return online;
     return online.length
       ? online
@@ -819,13 +826,7 @@ export default function App() {
         scanHistoryObjects,
         storedExtras,
       ),
-    [
-      allCards,
-      history,
-      scanHistoryObjects,
-      shlPackages,
-      storedExtras,
-    ],
+    [allCards, history, scanHistoryObjects, shlPackages, storedExtras],
   );
 
   const filteredObjects = useMemo(() => {
@@ -1208,11 +1209,13 @@ export default function App() {
     },
     prepare: {
       title: "เตรียมเข้ารับบริการ",
-      subtitle: "ตรวจความพร้อมจากกติกา Contract Hub แล้วส่งต่อไปสร้าง QR ในหน้าแชร์",
+      subtitle:
+        "ตรวจความพร้อมจากกติกา Contract Hub แล้วส่งต่อไปสร้าง QR ในหน้าแชร์",
     },
     store: {
       title: "คลังพกพา",
-      subtitle: "ตรวจดูและส่งออก VC, VP, SHL, Manifest VP, Holder VC และ sync receipt ในเครื่อง",
+      subtitle:
+        "ตรวจดูและส่งออก VC, VP, SHL, Manifest VP, Holder VC และ sync receipt ในเครื่อง",
     },
     history: {
       title: "ประวัติ",
@@ -2469,8 +2472,9 @@ function ReceiveView({
             <div>
               <h2>Payload จาก Portal จริง</h2>
               <p>
-                Wallet นี้ใช้ข้อมูลที่ Sync จาก TrustCare Portal โดยตรง จึงไม่แสดง
-                fixture ที่สร้างจาก seed local เพื่อป้องกันผลทดสอบปนกัน
+                Wallet นี้ใช้ข้อมูลที่ Sync จาก TrustCare Portal โดยตรง
+                จึงไม่แสดง fixture ที่สร้างจาก seed local
+                เพื่อป้องกันผลทดสอบปนกัน
               </p>
             </div>
             <Badge tone="green">Live Portal Sync</Badge>
@@ -2817,11 +2821,12 @@ function ShareView({
   const [shareQrDataUrl, setShareQrDataUrl] = useState("");
   const [sharePayload, setSharePayload] = useState("");
   const [shareExportPayload, setShareExportPayload] = useState("");
-  const [sharePublication, setSharePublication] = useState<SharePublicationState>({
-    state: "idle",
-    message: "",
-    warnings: [],
-  });
+  const [sharePublication, setSharePublication] =
+    useState<SharePublicationState>({
+      state: "idle",
+      message: "",
+      warnings: [],
+    });
   const shareProfile = sharePurposeProfiles[purpose];
   const previousInitialPurpose = useRef(initialPurpose);
 
@@ -2923,11 +2928,10 @@ function ShareView({
     const ok = await onConfirmBiometric();
     if (!ok) return;
     setSharePublication({
-      state: packageProtocol === "vp" ? "publishing" : "idle",
-      message:
-        packageProtocol === "vp"
-          ? "กำลัง publish VP ไปยัง Share Gateway"
-          : "",
+      state: "publishing",
+      message: protocolRequiresShl(packageProtocol)
+        ? "กำลัง publish SHL manifest ไปยัง Share Gateway"
+        : "กำลัง publish VP ไปยัง Share Gateway",
       warnings: [],
     });
     const createdAt = new Date().toISOString();
@@ -3038,16 +3042,34 @@ function ShareView({
         return;
       }
 
-      setSharePayload(result.shl.qrPayload);
+      const shlPublication = shareGatewayBaseUrl
+        ? await publishShlSharePackage({
+            gatewayBaseUrl: shareGatewayBaseUrl,
+            result,
+            userId: user.id,
+            holderDid: user.holderDid,
+            purpose,
+            recipient,
+            expiresAt,
+          })
+        : null;
+      const shlQrPayload = shlPublication?.qrPayload ?? result.shl.qrPayload;
+      setSharePayload(shlQrPayload);
       setShareExportPayload(exportPayload);
       setShareQrDataUrl(
-        await toQrDataUrl(result.shl.qrPayload, { margin: 1, width: 240 }),
+        await toQrDataUrl(shlQrPayload, { margin: 1, width: 240 }),
       );
       setSharePublication({
-        state: "idle",
-        message: "",
-        warnings: result.shl.warnings ?? [],
-        artifactUrl: result.shl.viewerUrl ?? result.shl.webViewerUrl,
+        state: "published",
+        message: shlPublication
+          ? "สร้าง SHL และ publish manifest ให้เครื่องอื่น fetch ได้แล้ว"
+          : "สร้าง SHL แบบ static demo resolver แล้ว",
+        warnings: shlPublication?.warnings ?? result.shl.warnings ?? [],
+        artifactUrl:
+          shlPublication?.publicUrl ??
+          result.shl.manifestUrl ??
+          result.shl.viewerUrl ??
+          result.shl.webViewerUrl,
       });
     } catch (error) {
       setSharePayload("");
@@ -3436,7 +3458,9 @@ function ShareView({
                   </strong>
                   <span>{sharePublication.message}</span>
                   {sharePublication.artifactUrl && (
-                    <small className="mono">{sharePublication.artifactUrl}</small>
+                    <small className="mono">
+                      {sharePublication.artifactUrl}
+                    </small>
                   )}
                   {sharePublication.warnings.map((warning) => (
                     <small key={warning}>{warning}</small>
@@ -3462,9 +3486,9 @@ function ShareView({
                   className="secondary"
                   disabled={!sharePayload}
                   onClick={() =>
-                  onExport({
-                    ok: true,
-                    format:
+                    onExport({
+                      ok: true,
+                      format:
                         packageProtocol === "vp"
                           ? "trustcare-vp-json"
                           : packageProtocol === "shl"
@@ -3812,11 +3836,7 @@ function PrepareView({
               className={isPrepared ? "green" : "purple"}
               onClick={primaryAction}
             >
-              {isPrepared ? (
-                <Send size={18} />
-              ) : (
-                <FilePlus2 size={18} />
-              )}
+              {isPrepared ? <Send size={18} /> : <FilePlus2 size={18} />}
               {primaryActionText}
             </Button>
             {!canCreateFullPacket && (
@@ -3888,8 +3908,8 @@ function PrepareView({
             <div>
               <h2>2. ตรวจเอกสารที่ระบบจะใช้</h2>
               <p>
-                รายการนี้เปลี่ยนตามบริการที่เลือก
-                ส่วนการเลือก VP, SHL, Manifest VP และเงื่อนไขการเปิดเผยอยู่ในหน้าแชร์
+                รายการนี้เปลี่ยนตามบริการที่เลือก ส่วนการเลือก VP, SHL, Manifest
+                VP และเงื่อนไขการเปิดเผยอยู่ในหน้าแชร์
               </p>
             </div>
             <Badge tone={canCreateFullPacket ? "green" : "yellow"}>
@@ -5713,7 +5733,10 @@ function currentShareGatewayBaseUrl(): string | null {
   const configured = env.shareGatewayUrl;
   if (configured) return configured.replace(/\/$/, "");
   if (typeof window === "undefined") return null;
-  if (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost") {
+  if (
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname === "localhost"
+  ) {
     return `${window.location.origin}/api/share-gateway`;
   }
   return null;
@@ -5746,21 +5769,163 @@ async function publishVpSharePackage(input: {
   });
 }
 
+async function publishShlSharePackage(input: {
+  gatewayBaseUrl: string;
+  result: Extract<BuiltSharePackage, { shl: unknown }>;
+  userId: string | number;
+  holderDid: string;
+  purpose: ReadinessContext;
+  recipient: string;
+  expiresAt: string;
+}): Promise<ShareGatewayPublicationResponse> {
+  const shl = input.result.shl;
+  const manifest = recordValue(shl.manifest);
+  if (!manifest) {
+    throw new Error("SHL package ไม่มี manifest สำหรับ publish");
+  }
+  const publicationId = String(
+    shl.gatewayPublicationId ?? shl.shlId ?? input.result.payload.shlUrl,
+  );
+  const certified = shl.trustLayerStatus === "certified_manifest_vp";
+  const manifestPublication = await publishShareArtifact(input.gatewayBaseUrl, {
+    artifactId: publicationId,
+    kind: certified ? "certified_shl_manifest" : "standard_shl_manifest",
+    contentType: "application/json",
+    payload: manifest,
+    ownerUserId: input.userId,
+    holderDid: input.holderDid,
+    context: input.purpose,
+    purpose: readinessContextLabels[input.purpose].th,
+    recipient: input.recipient,
+    expiresAt: input.expiresAt,
+    accessPolicy: {
+      expiresAt: shl.expiresAt,
+      passcodeRequired: shl.passcodeRequired,
+      passcodeHint: shl.passcodeHint,
+      maxAccessCount: shl.maxAccessCount,
+      accessCodeDelivery: shl.accessCodeDelivery,
+    },
+    trustcare: {
+      trustLayerStatus: shl.trustLayerStatus,
+      manifestUrl: shl.manifestUrl,
+      canonicalShlUrl: shl.canonicalShlUrl ?? shl.shlUrl,
+    },
+  });
+
+  const trustcare = recordValue(manifest.trustcare);
+  const supportPublications = certified
+    ? await publishCertifiedShlTrustArtifacts({
+        gatewayBaseUrl: input.gatewayBaseUrl,
+        publicationId,
+        trustcare,
+        userId: input.userId,
+        holderDid: input.holderDid,
+        purpose: input.purpose,
+        recipient: input.recipient,
+        expiresAt: input.expiresAt,
+      })
+    : [];
+
+  return {
+    ...manifestPublication,
+    publicUrl: manifestPublication.publicUrl ?? shl.manifestUrl,
+    qrPayload: shl.qrPayload,
+    warnings: [
+      ...(manifestPublication.warnings ?? []),
+      ...supportPublications.flatMap(
+        (publication) => publication.warnings ?? [],
+      ),
+      ...(shl.warnings ?? []),
+    ],
+  };
+}
+
+async function publishCertifiedShlTrustArtifacts(input: {
+  gatewayBaseUrl: string;
+  publicationId: string;
+  trustcare: Record<string, unknown> | null;
+  userId: string | number;
+  holderDid: string;
+  purpose: ReadinessContext;
+  recipient: string;
+  expiresAt: string;
+}): Promise<ShareGatewayPublicationResponse[]> {
+  if (!input.trustcare) return [];
+  const artifactInputs: Array<{
+    key: "manifestVp" | "manifestCredential" | "holderAuthorizationCredential";
+    kind: "manifest_vp" | "manifest_credential" | "holder_authorization";
+    contentType: string;
+  }> = [
+    {
+      key: "manifestVp",
+      kind: "manifest_vp",
+      contentType: "application/vp+json",
+    },
+    {
+      key: "manifestCredential",
+      kind: "manifest_credential",
+      contentType: "application/vc+json",
+    },
+    {
+      key: "holderAuthorizationCredential",
+      kind: "holder_authorization",
+      contentType: "application/vc+json",
+    },
+  ];
+
+  const publications: ShareGatewayPublicationResponse[] = [];
+  for (const artifact of artifactInputs) {
+    const payload = recordValue(input.trustcare[artifact.key]);
+    if (!payload) continue;
+    publications.push(
+      await publishShareArtifact(input.gatewayBaseUrl, {
+        artifactId: input.publicationId,
+        kind: artifact.kind,
+        contentType: artifact.contentType,
+        payload,
+        ownerUserId: input.userId,
+        holderDid: input.holderDid,
+        context: input.purpose,
+        purpose: readinessContextLabels[input.purpose].th,
+        recipient: input.recipient,
+        expiresAt: input.expiresAt,
+      }),
+    );
+  }
+  return publications;
+}
+
 async function publishShareArtifact(
   gatewayBaseUrl: string,
   request: Parameters<typeof createShareGatewayPublicationRequest>[0],
 ): Promise<ShareGatewayPublicationResponse> {
-  const response = await fetch(`${gatewayBaseUrl.replace(/\/$/, "")}/artifacts`, {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify(createShareGatewayPublicationRequest(request)),
-  });
-  const payload = (await response.json().catch(() => null)) as ShareGatewayPublicationResponse | null;
+  const response = await fetch(
+    `${gatewayBaseUrl.replace(/\/$/, "")}/artifacts`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify(createShareGatewayPublicationRequest(request)),
+    },
+  );
+  const payload = (await response
+    .json()
+    .catch(() => null)) as ShareGatewayPublicationResponse | null;
   if (!response.ok || !payload?.ok) {
-    const errors = payload?.errors?.length ? payload.errors.join(" ") : response.statusText;
+    const errors = payload?.errors?.length
+      ? payload.errors.join(" ")
+      : response.statusText;
     throw new Error(`Share Gateway publish failed: ${errors}`);
   }
   return payload;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function currentAppBaseUrl(): string {

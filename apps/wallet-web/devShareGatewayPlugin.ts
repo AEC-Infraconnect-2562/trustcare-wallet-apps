@@ -3,7 +3,7 @@ import {
   createEphemeralEs256SigningKey,
   publicJwksForSigningKey,
   signTrustCarePresentationJwt,
-  type TrustCareSigningKey
+  type TrustCareSigningKey,
 } from "../../packages/wallet-core/src/trustcareJwt.ts";
 import type { Plugin } from "vite";
 
@@ -19,36 +19,57 @@ export function devShareGatewayPlugin(): Plugin {
   const artifacts = new Map<string, StoredArtifact>();
   let signingKeyPromise: Promise<TrustCareSigningKey> | undefined;
 
+  const installGatewayMiddleware = (server: {
+    middlewares: {
+      use: (
+        handler: (
+          req: IncomingMessage,
+          res: ServerResponse,
+          next: () => void,
+        ) => void,
+      ) => void;
+    };
+  }) => {
+    server.middlewares.use(async (req, res, next) => {
+      const url = new URL(req.url ?? "/", requestOrigin(req));
+      if (url.pathname === "/.well-known/jwks.json") {
+        const signingKey = await localSigningKey(signingKeyPromise, "");
+        signingKeyPromise = Promise.resolve(signingKey);
+        json(res, 200, publicJwksForSigningKey(signingKey));
+        return;
+      }
+      if (!url.pathname.startsWith("/api/share-gateway")) {
+        next();
+        return;
+      }
+
+      try {
+        await handleGatewayRequest(req, res, url, artifacts, async () => {
+          const signingKey = await localSigningKey(signingKeyPromise, "");
+          signingKeyPromise = Promise.resolve(signingKey);
+          return signingKey;
+        });
+      } catch (error) {
+        json(res, 500, {
+          ok: false,
+          errors: [
+            error instanceof Error
+              ? error.message
+              : "Local share gateway error.",
+          ],
+        });
+      }
+    });
+  };
+
   return {
     name: "trustcare-local-share-gateway",
     configureServer(server) {
-      server.middlewares.use(async (req, res, next) => {
-        const url = new URL(req.url ?? "/", requestOrigin(req));
-        if (url.pathname === "/.well-known/jwks.json") {
-          const signingKey = await localSigningKey(signingKeyPromise, "");
-          signingKeyPromise = Promise.resolve(signingKey);
-          json(res, 200, publicJwksForSigningKey(signingKey));
-          return;
-        }
-        if (!url.pathname.startsWith("/api/share-gateway")) {
-          next();
-          return;
-        }
-
-        try {
-          await handleGatewayRequest(req, res, url, artifacts, async () => {
-            const signingKey = await localSigningKey(signingKeyPromise, "");
-            signingKeyPromise = Promise.resolve(signingKey);
-            return signingKey;
-          });
-        } catch (error) {
-          json(res, 500, {
-            ok: false,
-            errors: [error instanceof Error ? error.message : "Local share gateway error."]
-          });
-        }
-      });
-    }
+      installGatewayMiddleware(server);
+    },
+    configurePreviewServer(server) {
+      installGatewayMiddleware(server);
+    },
   };
 }
 
@@ -57,7 +78,7 @@ async function handleGatewayRequest(
   res: ServerResponse,
   url: URL,
   artifacts: Map<string, StoredArtifact>,
-  getSigningKey: () => Promise<TrustCareSigningKey>
+  getSigningKey: () => Promise<TrustCareSigningKey>,
 ) {
   const origin = requestOrigin(req);
   const pathname = url.pathname.replace(/^\/api\/share-gateway/, "") || "/";
@@ -73,14 +94,17 @@ async function handleGatewayRequest(
     const artifactId = stringValue(body.artifactId);
     const kind = stringValue(body.kind);
     if (!artifactId || !kind) {
-      json(res, 400, { ok: false, errors: ["artifactId and kind are required."] });
+      json(res, 400, {
+        ok: false,
+        errors: ["artifactId and kind are required."],
+      });
       return;
     }
     const contentType = stringValue(body.contentType) || "application/json";
     let storedPayload = body.payload;
     let storedContentType = contentType;
     const warnings = [
-      "Local dev gateway ใช้ contract เดียวกับ Portal Backend แต่เก็บ artifact ใน memory ของ Vite server สำหรับทดสอบเท่านั้น."
+      "Local dev gateway ใช้ contract เดียวกับ Portal Backend แต่เก็บ artifact ใน memory ของ Vite server สำหรับทดสอบเท่านั้น.",
     ];
     const jku = `${origin}/api/share-gateway/.well-known/jwks.json`;
     if (kind === "vp") {
@@ -99,7 +123,7 @@ async function handleGatewayRequest(
       storedContentType = "application/vp+jwt";
       warnings.push(
         "VP ถูก sign ด้วย ES256 ใน local gateway และเปิด public JWKS สำหรับ verifier ที่ต้องตรวจลายเซ็นจริง.",
-        ...signed.warnings
+        ...signed.warnings,
       );
     }
     artifacts.set(artifactKey(kind, artifactId), {
@@ -107,7 +131,7 @@ async function handleGatewayRequest(
       artifactId,
       contentType: storedContentType,
       payload: storedPayload,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     });
     const publicUrl = `${origin}${publicArtifactPath(kind, artifactId)}`;
     json(res, 201, {
@@ -119,7 +143,7 @@ async function handleGatewayRequest(
       qrPayload: publicUrl,
       jwksUrl: kind === "vp" ? jku : undefined,
       warnings,
-      errors: []
+      errors: [],
     });
     return;
   }
@@ -135,9 +159,13 @@ async function handleGatewayRequest(
           artifactId,
           contentType: "application/json",
           payload: body,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
         });
-        json(res, 201, { ok: true, artifactId, kind: "certified_shl_manifest" });
+        json(res, 201, {
+          ok: true,
+          artifactId,
+          kind: "certified_shl_manifest",
+        });
         return;
       }
     }
@@ -154,12 +182,20 @@ async function handleGatewayRequest(
 
   const artifactRoute = matchArtifactRoute(pathname);
   if (artifactRoute) {
-    const stored = artifacts.get(artifactKey(artifactRoute.kind, artifactRoute.artifactId));
+    const stored = artifacts.get(
+      artifactKey(artifactRoute.kind, artifactRoute.artifactId),
+    );
     if (!stored) {
-      json(res, 404, { ok: false, errors: [`${artifactRoute.kind} not found.`] });
+      json(res, 404, {
+        ok: false,
+        errors: [`${artifactRoute.kind} not found.`],
+      });
       return;
     }
-    if (artifactRoute.extension === "jwt" || stored.contentType.includes("jwt")) {
+    if (
+      artifactRoute.extension === "jwt" ||
+      stored.contentType.includes("jwt")
+    ) {
       text(res, 200, String(stored.payload), stored.contentType);
       return;
     }
@@ -175,7 +211,7 @@ async function handleGatewayRequest(
       resourceType: "Bundle",
       id: `${publicationId}:${fileId}`,
       type: "document",
-      note: "Local dev gateway returns a plaintext FHIR-like document for demo. Portal Backend must return encrypted SHL file content."
+      note: "Local dev gateway returns a plaintext FHIR-like document for demo. Portal Backend must return encrypted SHL file content.",
     });
     return;
   }
@@ -183,17 +219,24 @@ async function handleGatewayRequest(
   json(res, 404, { ok: false, errors: ["Unknown local share gateway route."] });
 }
 
-function matchArtifactRoute(pathname: string): { kind: string; artifactId: string; extension: "json" | "jwt" } | null {
+function matchArtifactRoute(
+  pathname: string,
+): { kind: string; artifactId: string; extension: "json" | "jwt" } | null {
   const routes: Array<[RegExp, string, "json" | "jwt"]> = [
     [/^\/presentations\/([^/]+)\.json$/, "vp", "json"],
     [/^\/presentations\/([^/]+)\.jwt$/, "vp", "jwt"],
     [/^\/manifest-vps\/([^/]+)\.json$/, "manifest_vp", "json"],
     [/^\/manifest-credentials\/([^/]+)\.json$/, "manifest_credential", "json"],
-    [/^\/holder-authorizations\/([^/]+)\.json$/, "holder_authorization", "json"]
+    [
+      /^\/holder-authorizations\/([^/]+)\.json$/,
+      "holder_authorization",
+      "json",
+    ],
   ];
   for (const [pattern, kind, extension] of routes) {
     const match = pattern.exec(pathname);
-    if (match) return { kind, artifactId: decodeURIComponent(match[1]), extension };
+    if (match)
+      return { kind, artifactId: decodeURIComponent(match[1]), extension };
   }
   return null;
 }
@@ -221,9 +264,12 @@ function artifactKey(kind: string, artifactId: string): string {
   return `${kind}:${artifactId}`;
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, any>> {
+async function readJsonBody(
+  req: IncomingMessage,
+): Promise<Record<string, any>> {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  for await (const chunk of req)
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   if (!chunks.length) return {};
   const raw = Buffer.concat(chunks).toString("utf8");
   if (!raw.trim()) return {};
@@ -232,7 +278,10 @@ async function readJsonBody(req: IncomingMessage): Promise<Record<string, any>> 
 
 function requestOrigin(req: IncomingMessage): string {
   const host = req.headers.host ?? "127.0.0.1:5173";
-  const proto = typeof req.headers["x-forwarded-proto"] === "string" ? req.headers["x-forwarded-proto"] : "http";
+  const proto =
+    typeof req.headers["x-forwarded-proto"] === "string"
+      ? req.headers["x-forwarded-proto"]
+      : "http";
   return `${proto}://${host}`;
 }
 
@@ -250,15 +299,23 @@ function json(res: ServerResponse, status: number, payload: unknown) {
   res.end(JSON.stringify(payload));
 }
 
-function text(res: ServerResponse, status: number, payload: string, contentType: string) {
+function text(
+  res: ServerResponse,
+  status: number,
+  payload: string,
+  contentType: string,
+) {
   res.statusCode = status;
-  res.setHeader("content-type", contentType.includes(";") ? contentType : `${contentType}; charset=utf-8`);
+  res.setHeader(
+    "content-type",
+    contentType.includes(";") ? contentType : `${contentType}; charset=utf-8`,
+  );
   res.end(payload);
 }
 
 async function localSigningKey(
   existing: Promise<TrustCareSigningKey> | undefined,
-  jku: string
+  jku: string,
 ): Promise<TrustCareSigningKey> {
   if (existing) return existing;
   return createEphemeralEs256SigningKey({
