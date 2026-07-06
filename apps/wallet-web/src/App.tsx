@@ -55,7 +55,7 @@ import {
   Upload,
   Wallet,
 } from "lucide-react";
-import { shlApi, verifierApi, walletApi } from "@trustcare/api-client";
+import { portalSyncApi, shlApi, verifierApi, walletApi } from "@trustcare/api-client";
 import { useLanguage } from "@trustcare/i18n/src/provider.web";
 import { Badge, Button, Surface, WalletCardView } from "@trustcare/ui-web";
 import {
@@ -213,11 +213,37 @@ const baseApiOptions = {
   shlGatewayUrl: env.shlGatewayUrl,
   shlViewerUrl: env.shlViewerUrl,
   shareGatewayUrl: env.shareGatewayUrl,
+  portalOrigin: "https://trustcarehealth.live",
+  portalSyncMode: "live_demo" as const,
 };
 
 const walletSessionKey = "trustcare-wallet-active-user";
-const defaultLoginUserId = "demo-patient-complete-001";
+const defaultLoginUserId = "demo-patient-001";
 const scanHistoryStorageKey = "trustcare-wallet-scan-history";
+
+function emptyPortalInteropFixtures(user: WalletDemoUser) {
+  return {
+    user,
+    counts: {
+      cards: 0,
+      shlPackages: 0,
+      oid4vciOffers: 0,
+      oid4vpRequests: 0,
+    },
+    credentialOfferUrl: "",
+    presentationRequestUrl: "",
+    shlQrPayload: undefined,
+    sampleCredentialIds: [],
+    samplePresentationIds: [],
+    scope: {
+      ownerUserId: user.id,
+      patientId: user.patientId,
+      holderDid: user.holderDid,
+      sourceSystem: user.source,
+      portalOpenId: user.portalOpenId,
+    },
+  };
+}
 
 const categoryLabels: Record<string, { th: string; en: string }> = {
   identity_and_access: { th: "ตัวตนและสิทธิ์", en: "Identity & Access" },
@@ -556,6 +582,7 @@ export default function App() {
     Record<string, WalletStoredObject[]>
   >({});
   const [lastImportMessage, setLastImportMessage] = useState("");
+  const [portalSyncMessage, setPortalSyncMessage] = useState("");
   const [storeFilter, setStoreFilter] = useState<StoreFilter>("all");
   const offlineWallet = useOfflineWallet();
   const webAuthn = useWebAuthn();
@@ -567,13 +594,16 @@ export default function App() {
     () => ({ ...baseApiOptions, userId: selectedUserId }),
     [selectedUserId],
   );
+  const usesPortalLiveSync = portalSyncApi.canUsePortalDemoSync(selectedUserId);
   const interopFixtures = useMemo(
-    () =>
-      buildPortalInteroperabilityFixtures(
+    () => {
+      if (usesPortalLiveSync) return emptyPortalInteropFixtures(activeUser);
+      return buildPortalInteroperabilityFixtures(
         selectedUserId,
         baseApiOptions.demoOrigin,
-      ),
-    [selectedUserId],
+      );
+    },
+    [activeUser, selectedUserId, usesPortalLiveSync],
   );
   const storedExtras = storedExtrasByUser[selectedUserId] ?? [];
   const scanHistory = scanHistoryByUser[selectedUserId] ?? [];
@@ -614,17 +644,46 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    void Promise.all([
-      walletApi.cardsByCategory(apiOptions),
-      walletApi.history(apiOptions),
-      shlApi.listShl(apiOptions),
-      walletApi.contractHub(apiOptions),
-    ]).then(([cards, walletHistory, shl, hub]) => {
+    let cancelled = false;
+    async function loadWallet() {
+      setPortalSyncMessage("");
+      const canLiveSync = portalSyncApi.canUsePortalDemoSync(selectedUserId);
+      const [cards, walletHistory, shl, hub] = canLiveSync
+        ? await Promise.all([
+            portalSyncApi.syncTrustCarePortalWallet(apiOptions).then(
+              (portalResult) => {
+                const report = portalResult.report;
+                setPortalSyncMessage(
+                  report.skipped.length
+                    ? `Sync จาก TrustCare Portal สำเร็จ ${report.importedCredentialCount}/${report.portalCardCount} credentials; ${report.metadataOnlyCount} รายการรอ Portal ออก VC`
+                    : `Sync จาก TrustCare Portal สำเร็จ ${report.importedCredentialCount} credentials`,
+                );
+                return portalResult.cardsByCategory;
+              },
+            ),
+            walletApi.history(apiOptions),
+            shlApi.listShl(apiOptions),
+            walletApi.contractHub(apiOptions),
+          ])
+        : await Promise.all([
+            walletApi.cardsByCategory(apiOptions),
+            walletApi.history(apiOptions),
+            shlApi.listShl(apiOptions),
+            walletApi.contractHub(apiOptions),
+          ]);
+      if (cancelled) return;
       setGrouped(cards);
       setHistory(walletHistory);
       setShlPackages(shl);
       setContractHub(hub);
       void offlineWallet.syncCards(flattenCardsByCategory(cards));
+    }
+    void loadWallet().catch((error) => {
+      if (cancelled) return;
+      const message =
+        error instanceof Error ? error.message : "ไม่สามารถ Sync Wallet ได้";
+      setGrouped({});
+      setPortalSyncMessage(`Sync จาก TrustCare Portal ไม่สำเร็จ: ${message}`);
     });
     setSelectedCard(null);
     setDetailOpen(false);
@@ -635,22 +694,42 @@ export default function App() {
     setScanResponseOpen(false);
     setImportJob(null);
     setLastImportMessage("");
+    return () => {
+      cancelled = true;
+    };
   }, [apiOptions, selectedUserId]);
 
   useEffect(() => {
+    let cancelled = false;
     void Promise.all([
       walletApi.readiness(apiOptions, { context: readinessContext }),
       walletApi.prepareWorkbench(apiOptions, { context: readinessContext }),
       walletApi.documentRequests(apiOptions, { context: readinessContext }),
-    ]).then(([nextReadiness, workbench, requests]) => {
-      setReadiness(nextReadiness);
-      setPrepareWorkbench(workbench);
-      setDocumentRequests(requests);
-    });
+    ])
+      .then(([nextReadiness, workbench, requests]) => {
+        if (cancelled) return;
+        setReadiness(nextReadiness);
+        setPrepareWorkbench(workbench);
+        setDocumentRequests(requests);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message =
+          error instanceof Error ? error.message : "ไม่สามารถประเมินความพร้อมได้";
+        setReadiness(null);
+        setPrepareWorkbench(null);
+        setDocumentRequests([]);
+        setPortalSyncMessage(`ประเมินความพร้อมจากข้อมูล Portal ไม่สำเร็จ: ${message}`);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [apiOptions, readinessContext]);
 
   const allCards = useMemo(() => {
     const online = flattenCardsByCategory(grouped);
+    const usesPortalLiveSync = portalSyncApi.canUsePortalDemoSync(selectedUserId);
+    if (usesPortalLiveSync) return online;
     return online.length
       ? online
       : offlineWallet.offlineCards.filter(
@@ -1383,6 +1462,9 @@ export default function App() {
         {lastImportMessage && (
           <div className="toast-line">{lastImportMessage}</div>
         )}
+        {portalSyncMessage && (
+          <div className="toast-line portal-sync-line">{portalSyncMessage}</div>
+        )}
 
         {view === "home" && (
           <HomeView
@@ -1414,6 +1496,7 @@ export default function App() {
             counts={counts}
             user={activeUser}
             fixtures={interopFixtures}
+            livePortalSync={usesPortalLiveSync}
             developerMode={developerMode}
             objects={filteredObjects}
             allObjects={storedObjects}
@@ -1445,6 +1528,7 @@ export default function App() {
           <ReceiveView
             user={activeUser}
             fixtures={interopFixtures}
+            livePortalSync={usesPortalLiveSync}
             developerMode={developerMode}
             onOpenScanner={() => setScannerOpen(true)}
             onImportPayload={(value) => {
@@ -2020,6 +2104,7 @@ function DocumentsHubView({
   counts,
   user,
   fixtures,
+  livePortalSync,
   developerMode,
   objects,
   allObjects,
@@ -2039,6 +2124,7 @@ function DocumentsHubView({
   counts: Record<string, number>;
   user: WalletDemoUser;
   fixtures: ReturnType<typeof buildPortalInteroperabilityFixtures>;
+  livePortalSync: boolean;
   developerMode: boolean;
   objects: WalletStoredObject[];
   allObjects: WalletStoredObject[];
@@ -2106,6 +2192,7 @@ function DocumentsHubView({
         <ReceiveView
           user={user}
           fixtures={fixtures}
+          livePortalSync={livePortalSync}
           developerMode={developerMode}
           onOpenScanner={onOpenScanner}
           onImportPayload={onImportPayload}
@@ -2300,6 +2387,7 @@ function DocumentsView({
 function ReceiveView({
   user,
   fixtures,
+  livePortalSync,
   developerMode,
   onOpenScanner,
   onImportPayload,
@@ -2307,6 +2395,7 @@ function ReceiveView({
 }: {
   user: WalletDemoUser;
   fixtures: ReturnType<typeof buildPortalInteroperabilityFixtures>;
+  livePortalSync: boolean;
   developerMode: boolean;
   onOpenScanner: () => void;
   onImportPayload: (value: string) => void;
@@ -2374,76 +2463,91 @@ function ReceiveView({
         </div>
       </Surface>
 
-      <Surface
-        className={
-          developerMode
-            ? "fixture-panel developer-panel enabled"
-            : "fixture-panel developer-panel"
-        }
-      >
-        <div className="section-title-row">
-          <div>
-            <h2>ชุดทดสอบจาก TrustCare Portal</h2>
-            <p>
-              สร้างจาก login ที่ใช้งานอยู่เท่านั้น
-              ใช้ทดสอบการส่งข้อมูลไปกลับระหว่าง TrustCare Portal และ Wallet
-            </p>
+      {livePortalSync ? (
+        <Surface className="fixture-panel developer-panel">
+          <div className="section-title-row">
+            <div>
+              <h2>Payload จาก Portal จริง</h2>
+              <p>
+                Wallet นี้ใช้ข้อมูลที่ Sync จาก TrustCare Portal โดยตรง จึงไม่แสดง
+                fixture ที่สร้างจาก seed local เพื่อป้องกันผลทดสอบปนกัน
+              </p>
+            </div>
+            <Badge tone="green">Live Portal Sync</Badge>
           </div>
-          <Badge tone={developerMode ? "green" : "neutral"}>
-            {developerMode ? "โหมดนักพัฒนา" : "เครื่องมือรับเอกสาร"}
-          </Badge>
-        </div>
-        <div className="fixture-grid">
-          <button
-            type="button"
-            onClick={() => onImportPayload(fixtures.credentialOfferUrl)}
-          >
-            <KeyRound size={18} />
-            <span>
-              <strong>Import OID4VCI</strong>
-              <small>offer {fixtures.counts.cards} เอกสาร</small>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onImportPayload(fixtures.presentationRequestUrl)}
-          >
-            <QrCode size={18} />
-            <span>
-              <strong>Import OID4VP</strong>
-              <small>request ตรงกับเอกสารที่ใช้งานได้</small>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              onCopyFixture("OID4VP request", fixtures.presentationRequestUrl)
-            }
-          >
-            <Copy size={18} />
-            <span>
-              <strong>คัดลอก VP Request</strong>
-              <small>วางใน Portal verifier</small>
-            </span>
-          </button>
-          <button
-            type="button"
-            disabled={!fixtures.shlQrPayload}
-            onClick={() =>
-              fixtures.shlQrPayload &&
-              onCopyFixture("SHL payload", fixtures.shlQrPayload)
-            }
-          >
-            <Network size={18} />
-            <span>
-              <strong>คัดลอก SHL</strong>
-              <small>
-                {fixtures.shlQrPayload ? "พร้อมใช้งาน" : "ไม่มีสำหรับ staff"}
-              </small>
-            </span>
-          </button>
-        </div>
-      </Surface>
+        </Surface>
+      ) : (
+        <Surface
+          className={
+            developerMode
+              ? "fixture-panel developer-panel enabled"
+              : "fixture-panel developer-panel"
+          }
+        >
+          <div className="section-title-row">
+            <div>
+              <h2>ชุดทดสอบจาก TrustCare Portal</h2>
+              <p>
+                สร้างจาก login ที่ใช้งานอยู่เท่านั้น
+                ใช้ทดสอบการส่งข้อมูลไปกลับระหว่าง TrustCare Portal และ Wallet
+              </p>
+            </div>
+            <Badge tone={developerMode ? "green" : "neutral"}>
+              {developerMode ? "โหมดนักพัฒนา" : "เครื่องมือรับเอกสาร"}
+            </Badge>
+          </div>
+          <div className="fixture-grid">
+            <button
+              type="button"
+              onClick={() => onImportPayload(fixtures.credentialOfferUrl)}
+            >
+              <KeyRound size={18} />
+              <span>
+                <strong>Import OID4VCI</strong>
+                <small>offer {fixtures.counts.cards} เอกสาร</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onImportPayload(fixtures.presentationRequestUrl)}
+            >
+              <QrCode size={18} />
+              <span>
+                <strong>Import OID4VP</strong>
+                <small>request ตรงกับเอกสารที่ใช้งานได้</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                onCopyFixture("OID4VP request", fixtures.presentationRequestUrl)
+              }
+            >
+              <Copy size={18} />
+              <span>
+                <strong>คัดลอก VP Request</strong>
+                <small>วางใน Portal verifier</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              disabled={!fixtures.shlQrPayload}
+              onClick={() =>
+                fixtures.shlQrPayload &&
+                onCopyFixture("SHL payload", fixtures.shlQrPayload)
+              }
+            >
+              <Network size={18} />
+              <span>
+                <strong>คัดลอก SHL</strong>
+                <small>
+                  {fixtures.shlQrPayload ? "พร้อมใช้งาน" : "ไม่มีสำหรับ staff"}
+                </small>
+              </span>
+            </button>
+          </div>
+        </Surface>
+      )}
     </div>
   );
 }

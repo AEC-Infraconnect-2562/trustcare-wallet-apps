@@ -7,6 +7,10 @@ import {
 } from "./completeSeedData";
 import { demoPresentationUrl } from "./qr";
 import { createTrustCareShlGatewayPublication } from "./shlGateway";
+import {
+  TRUSTCARE_PORTAL_WEB_ORIGIN,
+  trustCarePortalPersonImages
+} from "./portalSyncData";
 
 export {
   completeCardsByCategory,
@@ -62,16 +66,8 @@ export type WalletDemoUser = {
   cardBase: number;
 };
 
-export const TRUSTCARE_PORTAL_ASSET_ORIGIN = "https://trustcarehealth-tylvb5l8.manus.space";
-
-export const trustCarePortalPersonImages = {
-  patientMale: `${TRUSTCARE_PORTAL_ASSET_ORIGIN}/api/storage-proxy/patient_male_realistic_opt_e9b1630b.jpg`,
-  patientFemale: `${TRUSTCARE_PORTAL_ASSET_ORIGIN}/api/storage-proxy/patient_female_realistic_opt_d0edb245.jpg`,
-  doctorMale: `${TRUSTCARE_PORTAL_ASSET_ORIGIN}/api/storage-proxy/doctor_male_realistic_opt_b09f1058.jpg`,
-  doctorFemale: `${TRUSTCARE_PORTAL_ASSET_ORIGIN}/api/storage-proxy/doctor_female_realistic_opt_56d94f1d.jpg`,
-  nurseFemale: `${TRUSTCARE_PORTAL_ASSET_ORIGIN}/api/storage-proxy/nurse_female_realistic_opt_d0e35459.jpg`,
-  pharmacistMale: `${TRUSTCARE_PORTAL_ASSET_ORIGIN}/api/storage-proxy/pharmacist_male_realistic_opt_2b3b0f56.jpg`
-} as const;
+export const TRUSTCARE_PORTAL_ASSET_ORIGIN = TRUSTCARE_PORTAL_WEB_ORIGIN;
+export { TRUSTCARE_PORTAL_WEB_ORIGIN, portalSyncedUsers, trustCarePortalPersonImages } from "./portalSyncData";
 
 export const walletNativePersonImages = {
   nativeFemale: "assets/users/wallet-native-02.png",
@@ -101,7 +97,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     hn: "HN-TCC-00100001",
     holderDid: "did:key:z6MkhSomchaiPortalWallet001",
     issuerDid: "did:web:trustcare.network:hospital:tcc",
-    avatarUrl: trustCarePortalPersonImages.patientMale,
+    avatarUrl: trustCarePortalPersonImages.demoPatient001,
     avatarSource: "trustcare_portal",
     persona: "ผู้ป่วยจาก TrustCare Portal สำหรับทดสอบ OPD การส่งต่อ เคลม และงานยา",
     tags: ["opd", "referral", "claim", "pharmacy", "medical_certificate"],
@@ -131,7 +127,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     hn: "HN-TCC-00100002",
     holderDid: "did:key:z6MkhMaleePortalWallet002",
     issuerDid: "did:web:trustcare.network:hospital:tcc",
-    avatarUrl: trustCarePortalPersonImages.patientFemale,
+    avatarUrl: trustCarePortalPersonImages.demoPatient002,
     avatarSource: "trustcare_portal",
     persona: "ผู้ป่วยจาก TrustCare Portal สำหรับทดสอบ OPD เหตุฉุกเฉิน และผลแล็บ",
     tags: ["opd", "emergency", "lab"],
@@ -162,7 +158,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     hn: "HN-TCP-00100003",
     holderDid: "did:key:z6MkhJohnPortalWallet003",
     issuerDid: "did:web:trustcare.network:hospital:tcp",
-    avatarUrl: trustCarePortalPersonImages.patientMale,
+    avatarUrl: trustCarePortalPersonImages.demoPatient003,
     avatarSource: "trustcare_portal",
     persona: "ผู้ป่วยต่างชาติจาก TrustCare Portal สำหรับทดสอบประกันและเอกสารเดินทาง",
     tags: ["medical_tourist", "insurance", "travel_document"],
@@ -192,7 +188,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     hn: "STAFF-TCC-000408",
     holderDid: "did:key:z6MkhWipaPortalStaff004",
     issuerDid: "did:web:trustcare.network:hospital:tcc",
-    avatarUrl: trustCarePortalPersonImages.doctorFemale,
+    avatarUrl: trustCarePortalPersonImages.demoHospadmin001,
     avatarSource: "trustcare_portal",
     persona: "เจ้าหน้าที่โรงพยาบาลจาก TrustCare Portal สำหรับทดสอบสิทธิ์ผู้ปฏิบัติงาน",
     tags: ["staff_identity", "maker_checker"],
@@ -223,7 +219,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     hn: "HN-TCC-670001",
     holderDid: "did:key:z6MkhTrustCareCompletePatient001",
     issuerDid: "did:web:trustcare.network:hospital:tcc",
-    avatarUrl: trustCarePortalPersonImages.patientMale,
+    avatarUrl: trustCarePortalPersonImages.demoPatient001,
     avatarSource: "trustcare_portal",
     persona: "Wallet ผู้ป่วยครบชุด ครอบคลุมเอกสารสุขภาพทุกประเภทที่เกี่ยวข้องกับผู้ป่วย",
     tags: ["complete_seed", "opd", "emergency", "referral", "claim", "pharmacy", "medical_tourist", "insurance", "travel_document", "shl"],
@@ -474,7 +470,7 @@ export function buildPortalInteroperabilityFixtures(userId?: string | number, or
       ? "InsuranceEligibilityCredential"
       : "PatientSummaryCredential";
   const credentialOffer = {
-    credential_issuer: user.source === "trustcare_portal" ? "https://trustcarehealth-tylvb5l8.manus.space" : origin,
+    credential_issuer: user.source === "trustcare_portal" ? TRUSTCARE_PORTAL_WEB_ORIGIN : origin,
     credential_configuration_ids: cards.map(card => card.credentialType).filter(Boolean),
     grants: {
       "urn:ietf:params:oauth:grant-type:pre-authorized_code": {
@@ -494,7 +490,7 @@ export function buildPortalInteroperabilityFixtures(userId?: string | number, or
   const presentationRequest = {
     response_type: "vp_token",
     response_mode: "direct_post",
-    client_id: user.source === "trustcare_portal" ? "did:web:partner-wallet.example:verifier" : "did:web:trustcarehealth-tylvb5l8.manus.space:verifier",
+    client_id: user.source === "trustcare_portal" ? "did:web:partner-wallet.example:verifier" : "did:web:trustcarehealth.live:verifier",
     redirect_uri: `${origin}/verifier/callback`,
     nonce,
     state,

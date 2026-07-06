@@ -26,6 +26,7 @@ import {
 } from "@trustcare/wallet-core";
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
+import { canUsePortalDemoSync, syncTrustCarePortalCardsByCategory, type PortalSyncMode } from "./portalSync";
 
 export type WalletApiOptions = TrustCareClientOptions & {
   demoMode?: boolean;
@@ -33,10 +34,12 @@ export type WalletApiOptions = TrustCareClientOptions & {
   shlGatewayUrl?: string;
   shlViewerUrl?: string;
   userId?: string | number;
+  portalSyncMode?: PortalSyncMode;
+  portalOrigin?: string;
 };
 
 export async function cardsByCategory(options: WalletApiOptions): Promise<WalletCardsByCategory> {
-  if (options.demoMode ?? true) return getDemoCardsByCategory(options.userId);
+  if (options.demoMode ?? true) return demoCardsByCategory(options);
   return callTrpcProcedure<WalletCardsByCategory>(options, "wallet.cardsByCategory");
 }
 
@@ -46,13 +49,16 @@ export async function superseded(options: WalletApiOptions): Promise<unknown[]> 
 }
 
 export async function history(options: WalletApiOptions): Promise<PresentationHistoryItem[]> {
-  if (options.demoMode ?? true) return getDemoHistory(options.userId);
+  if (options.demoMode ?? true) {
+    if (options.portalSyncMode === "live_demo" && canUsePortalDemoSync(options.userId)) return [];
+    return getDemoHistory(options.userId);
+  }
   return callTrpcProcedure<PresentationHistoryItem[]>(options, "wallet.history");
 }
 
 export async function present(options: WalletApiOptions, input: WalletPresentationRequest): Promise<WalletPresentationResponse> {
   if (options.demoMode ?? true) {
-    const cards = getDemoWalletCards(options.userId);
+    const cards = await demoWalletCards(options);
     const card = cards.find(item => item.id === input.cardId);
     if (!card) throw new Error("Wallet card not found");
     if (card.credentialStatus !== "active") throw new Error("This wallet card is not active");
@@ -63,8 +69,8 @@ export async function present(options: WalletApiOptions, input: WalletPresentati
 
 export async function readiness(options: WalletApiOptions, input: { context: ReadinessContext; patientId?: number }) {
   const user = getDemoUser(options.userId ?? input.patientId);
-  const cards = getDemoWalletCards(user.id);
   if (options.demoMode ?? true) {
+    const cards = await demoWalletCards({ ...options, userId: user.id });
     return {
       patientId: input.patientId ?? user.patientId,
       readiness: assessLocalReadiness(cards, input.context),
@@ -78,7 +84,7 @@ export async function readiness(options: WalletApiOptions, input: { context: Rea
 export async function prepareWorkbench(options: WalletApiOptions, input: { context: ReadinessContext; patientId?: number }) {
   if (options.demoMode ?? true) {
     const user = getDemoUser(options.userId ?? input.patientId);
-    return buildPrepareWorkbench(input.context, getDemoWalletCards(user.id), input.patientId ?? user.patientId);
+    return buildPrepareWorkbench(input.context, await demoWalletCards({ ...options, userId: user.id }), input.patientId ?? user.patientId);
   }
   return callTrpcProcedure(options, "wallet.prepareWorkbench", input);
 }
@@ -119,9 +125,10 @@ export async function buildServiceBundle(options: WalletApiOptions, input: {
 }): Promise<ServiceBundleEnvelope> {
   if (options.demoMode ?? true) {
     const user = getDemoUser(options.userId ?? input.patientId);
+    const cards = await demoWalletCards({ ...options, userId: user.id });
     return buildServiceBundleEnvelope({
       context: input.context,
-      cards: getDemoWalletCards(user.id),
+      cards,
       audience: input.audience,
       patientId: input.patientId ?? user.patientId,
       receiver: input.receiver
@@ -208,7 +215,7 @@ export async function buildServicePacket(options: WalletApiOptions, input: {
 }): Promise<ServicePacketResponse> {
   if (options.demoMode ?? true) {
     const user = getDemoUser(options.userId ?? input.patientId);
-    const cards = getDemoWalletCards(user.id);
+    const cards = await demoWalletCards({ ...options, userId: user.id });
     const readiness = assessLocalReadiness(cards, input.context);
     const selectedCardIds = input.selectedCardIds?.length ? input.selectedCardIds : readiness.selectedCardIds;
     const packageResult = buildSharePackage({
@@ -252,7 +259,7 @@ export async function generateCheckinQR(options: WalletApiOptions, input: {
 }): Promise<CheckinQrResponse> {
   if (options.demoMode ?? true) {
     const user = getDemoUser(options.userId ?? input.patientId);
-    const cards = getDemoWalletCards(user.id);
+    const cards = await demoWalletCards({ ...options, userId: user.id });
     const selected = input.selectedCardIds?.length ? cards.filter(card => input.selectedCardIds?.includes(card.id)) : cards;
     return createTrustCareShlGatewayPublication({
       context: input.context,
@@ -279,6 +286,40 @@ export async function generateCheckinQR(options: WalletApiOptions, input: {
 }
 
 export async function interoperabilityFixtures(options: WalletApiOptions) {
-  if (options.demoMode ?? true) return buildPortalInteroperabilityFixtures(options.userId, options.demoOrigin);
+  if (options.demoMode ?? true) {
+    if (options.portalSyncMode === "live_demo" && canUsePortalDemoSync(options.userId)) {
+      return {
+        user: getDemoUser(options.userId),
+        counts: { cards: 0, shlPackages: 0, oid4vciOffers: 0, oid4vpRequests: 0 },
+        credentialOfferUrl: "",
+        presentationRequestUrl: "",
+        shlQrPayload: undefined,
+        sampleCredentialIds: [],
+        samplePresentationIds: [],
+        scope: {
+          ownerUserId: String(options.userId ?? ""),
+          patientId: getDemoUser(options.userId).patientId,
+          holderDid: getDemoUser(options.userId).holderDid,
+          sourceSystem: "trustcare_portal",
+          portalOpenId: getDemoUser(options.userId).portalOpenId
+        }
+      };
+    }
+    return buildPortalInteroperabilityFixtures(options.userId, options.demoOrigin);
+  }
   return callTrpcProcedure(options, "wallet.interoperabilityFixtures", { userId: options.userId });
+}
+
+async function demoCardsByCategory(options: WalletApiOptions): Promise<WalletCardsByCategory> {
+  if (options.portalSyncMode === "live_demo" && canUsePortalDemoSync(options.userId)) {
+    return syncTrustCarePortalCardsByCategory(options);
+  }
+  return getDemoCardsByCategory(options.userId);
+}
+
+async function demoWalletCards(options: WalletApiOptions) {
+  if (options.portalSyncMode === "live_demo" && canUsePortalDemoSync(options.userId)) {
+    return Object.values(await syncTrustCarePortalCardsByCategory(options)).flat();
+  }
+  return getDemoWalletCards(options.userId);
 }
