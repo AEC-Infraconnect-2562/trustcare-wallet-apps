@@ -63,11 +63,12 @@ VC/VP QR ต้องเป็น resolver-backed URL ไม่ใช่ raw VP/
 
 - Share สร้าง VP payload ก่อน
 - Wallet publish VP ไปที่ Share Gateway
-- QR ใช้ resolver URL ที่ Gateway คืนกลับมา เช่น `/presentations/<presentationId>.json` หรือ Portal `/verify?vp=<presentationId>`
-- Verifier fetch VP จาก resolver แล้วตรวจ proof/signature/status/policy
+- Gateway ลงลายเซ็น VP เป็น `vp+JWT` ด้วย ES256/EdDSA และเปิด JWKS endpoint สำหรับ verifier
+- QR ใช้ resolver URL ที่ Gateway คืนกลับมา เช่น `/presentations/<presentationId>.jwt` หรือ Portal `/verify?vp=<presentationId>`
+- Verifier fetch VP จาก resolver แล้วตรวจ JWT signature, nested VC JWT, status และ policy
 - ถ้า resolver ดึง payload ได้แต่ยังไม่มี ES256/EdDSA/Data Integrity proof ที่ตรวจสอบได้ UI ต้องแสดงเป็น pending/yellow ไม่ใช่ green
 
-Local development ใช้ Vite in-memory gateway ที่ `/api/share-gateway` เพื่อทดสอบ flow เดียวกันโดยไม่ฝัง payload ลง QR. Production ต้องชี้ `VITE_TRUSTCARE_SHARE_GATEWAY_URL` ไปที่ TrustCare Portal Backend/S3-backed resolver.
+Local development ใช้ Vite in-memory gateway ที่ `/api/share-gateway` เพื่อทดสอบ flow เดียวกันโดยไม่ฝัง payload ลง QR และเปิด `/api/share-gateway/.well-known/jwks.json` ให้ verifier ตรวจลายเซ็นจริง. Production ต้องชี้ `VITE_TRUSTCARE_SHARE_GATEWAY_URL` ไปที่ TrustCare Portal Backend/S3-backed resolver และให้ private key อยู่ใน backend/KMS เท่านั้น ไม่อยู่ใน browser.
 
 ## Demo Resolver
 

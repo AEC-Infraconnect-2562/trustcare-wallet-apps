@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createDemoResolverUrl } from "@trustcare/wallet-core";
+import { Buffer } from "node:buffer";
+import {
+  createDemoResolverUrl,
+  createEphemeralEs256SigningKey,
+  publicJwksForSigningKey,
+  signTrustCarePresentationJwt
+} from "@trustcare/wallet-core";
 import { verifyQr } from "./verifier";
 
 const unsignedVp = {
@@ -78,4 +84,100 @@ describe("verifyQr VP resolver behavior", () => {
     expect(result.trustLevel).toBe("yellow");
     expect(result.warnings?.join(" ")).toContain("legacy");
   });
+
+  it("returns green for ES256 vp+jwt when the public key resolves from JWKS", async () => {
+    const jwksUrl = "https://wallet.example/.well-known/jwks.json";
+    const signingKey = await createEphemeralEs256SigningKey({
+      issuerDid: "did:web:wallet.example",
+      kidPrefix: "did:web:wallet.example",
+      jku: jwksUrl
+    });
+    const signed = await signTrustCarePresentationJwt({
+      vp: unsignedVp,
+      signingKey,
+      signUnsignedCredentials: true
+    });
+    const presentationUrl = "https://wallet.example/api/share-gateway/presentations/vp-test-001.jwt";
+    const result = await verifyQr(
+      {
+        url: "https://trustcare.example.com/trpc",
+        fetchImpl: async (input) => {
+          const url = String(input);
+          if (url === presentationUrl) {
+            return new Response(signed.jwt, {
+              headers: { "content-type": "application/vp+jwt" }
+            });
+          }
+          if (url === jwksUrl) {
+            return new Response(JSON.stringify(publicJwksForSigningKey(signingKey)), {
+              headers: { "content-type": "application/json" }
+            });
+          }
+          return new Response("not found", { status: 404 });
+        }
+      },
+      presentationUrl
+    );
+
+    expect(result.protocol).toBe("trustcare-vp");
+    expect(result.verified).toBe(true);
+    expect(result.trustLevel).toBe("green");
+    expect(JSON.stringify(result.verificationChecklist)).toContain("Signature status");
+  });
+
+  it("rejects a tampered ES256 vp+jwt even when JWKS resolves", async () => {
+    const jwksUrl = "https://wallet.example/.well-known/jwks.json";
+    const signingKey = await createEphemeralEs256SigningKey({
+      issuerDid: "did:web:wallet.example",
+      kidPrefix: "did:web:wallet.example",
+      jku: jwksUrl
+    });
+    const signed = await signTrustCarePresentationJwt({
+      vp: unsignedVp,
+      signingKey,
+      signUnsignedCredentials: true
+    });
+    const tamperedJwt = tamperJwtPayload(signed.jwt, (payload) => ({
+      ...payload,
+      vp: {
+        ...(payload.vp as Record<string, unknown>),
+        holder: "did:key:attacker"
+      }
+    }));
+    const presentationUrl = "https://wallet.example/api/share-gateway/presentations/vp-test-001.jwt";
+    const result = await verifyQr(
+      {
+        url: "https://trustcare.example.com/trpc",
+        fetchImpl: async (input) => {
+          const url = String(input);
+          if (url === presentationUrl) {
+            return new Response(tamperedJwt, {
+              headers: { "content-type": "application/vp+jwt" }
+            });
+          }
+          if (url === jwksUrl) {
+            return new Response(JSON.stringify(publicJwksForSigningKey(signingKey)), {
+              headers: { "content-type": "application/json" }
+            });
+          }
+          return new Response("not found", { status: 404 });
+        }
+      },
+      presentationUrl
+    );
+
+    expect(result.verified).toBe(false);
+    expect(result.trustLevel).toBe("yellow");
+    expect(result.warnings?.join(" ")).toContain("signature");
+  });
 });
+
+function tamperJwtPayload(
+  jwt: string,
+  mutate: (payload: Record<string, unknown>) => Record<string, unknown>
+): string {
+  const [header, payload, signature] = jwt.split(".");
+  const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, unknown>;
+  const nextPayload = Buffer.from(JSON.stringify(mutate(decoded))).toString("base64url");
+  return `${header}.${nextPayload}.${signature}`;
+}

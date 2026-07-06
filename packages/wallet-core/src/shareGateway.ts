@@ -54,7 +54,7 @@ export function shareGatewayArtifactPath(kind: ShareGatewayArtifactKind, artifac
   const encoded = encodeURIComponent(artifactId);
   switch (kind) {
     case "vp":
-      return `/presentations/${encoded}.json`;
+      return `/presentations/${encoded}.jwt`;
     case "standard_shl_manifest":
     case "certified_shl_manifest":
       return `/manifests/${encoded}.json`;
@@ -102,4 +102,3 @@ export function createShareGatewayPublicationRequest(input: {
     trustcare: input.trustcare
   };
 }
-

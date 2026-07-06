@@ -154,6 +154,9 @@ importers:
       '@trustcare/wallet-core':
         specifier: workspace:*
         version: link:../wallet-core
+      jose:
+        specifier: 6.1.0
+        version: 6.1.0
       superjson:
         specifier: ^2.2.2
         version: 2.2.6
@@ -248,6 +251,9 @@ importers:
       '@trustcare/design-tokens':
         specifier: workspace:*
         version: link:../design-tokens
+      jose:
+        specifier: 6.1.0
+        version: 6.1.0
     devDependencies:
       '@types/qrcode':
         specifier: ^1.5.5
@@ -2551,6 +2557,9 @@ packages:
 
   jimp-compact@0.16.1:
     resolution: {integrity: sha512-dZ6Ra7u1G8c4Letq/B5EzAxj4tLFHL+cGtdpR+PVm4yzPDj+lCk+AbivWt1eOM+ikzkowtyV7qSqX6qr3t71Ww==}
+
+  jose@6.1.0:
+    resolution: {integrity: sha512-TTQJyoEoKcC1lscpVDCSsVgYzUDg/0Bt3WE//WiTPK6uOCQC2KZS4MpugbMWt/zyjkopgZoXhZuCi00gLudfUA==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -6286,6 +6295,8 @@ snapshots:
       supports-color: 8.1.1
 
   jimp-compact@0.16.1: {}
+
+  jose@6.1.0: {}
 
   js-tokens@4.0.0: {}
 

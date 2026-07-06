@@ -5,6 +5,7 @@ export * from "./canonicalDocuments";
 export * from "./demoResolvers";
 export * from "./shareGateway";
 export * from "./sharePackages";
+export * from "./trustcareJwt";
 export * from "./sorting";
 export * from "./selectiveDisclosure";
 export * from "./qr";

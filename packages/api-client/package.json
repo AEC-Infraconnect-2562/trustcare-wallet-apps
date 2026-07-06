@@ -12,6 +12,7 @@
   "dependencies": {
     "@trpc/client": "^11.4.4",
     "@trustcare/wallet-core": "workspace:*",
+    "jose": "6.1.0",
     "superjson": "^2.2.2"
   },
   "devDependencies": {

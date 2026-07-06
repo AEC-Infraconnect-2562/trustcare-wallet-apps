@@ -1,4 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  createEphemeralEs256SigningKey,
+  publicJwksForSigningKey,
+  signTrustCarePresentationJwt,
+  type TrustCareSigningKey
+} from "../../packages/wallet-core/src/trustcareJwt.ts";
 import type { Plugin } from "vite";
 
 type StoredArtifact = {
@@ -11,19 +17,30 @@ type StoredArtifact = {
 
 export function devShareGatewayPlugin(): Plugin {
   const artifacts = new Map<string, StoredArtifact>();
+  let signingKeyPromise: Promise<TrustCareSigningKey> | undefined;
 
   return {
     name: "trustcare-local-share-gateway",
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const url = new URL(req.url ?? "/", requestOrigin(req));
+        if (url.pathname === "/.well-known/jwks.json") {
+          const signingKey = await localSigningKey(signingKeyPromise, "");
+          signingKeyPromise = Promise.resolve(signingKey);
+          json(res, 200, publicJwksForSigningKey(signingKey));
+          return;
+        }
         if (!url.pathname.startsWith("/api/share-gateway")) {
           next();
           return;
         }
 
         try {
-          await handleGatewayRequest(req, res, url, artifacts);
+          await handleGatewayRequest(req, res, url, artifacts, async () => {
+            const signingKey = await localSigningKey(signingKeyPromise, "");
+            signingKeyPromise = Promise.resolve(signingKey);
+            return signingKey;
+          });
         } catch (error) {
           json(res, 500, {
             ok: false,
@@ -39,10 +56,17 @@ async function handleGatewayRequest(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  artifacts: Map<string, StoredArtifact>
+  artifacts: Map<string, StoredArtifact>,
+  getSigningKey: () => Promise<TrustCareSigningKey>
 ) {
   const origin = requestOrigin(req);
   const pathname = url.pathname.replace(/^\/api\/share-gateway/, "") || "/";
+
+  if (req.method === "GET" && pathname === "/.well-known/jwks.json") {
+    const signingKey = await getSigningKey();
+    json(res, 200, publicJwksForSigningKey(signingKey));
+    return;
+  }
 
   if (req.method === "POST" && pathname === "/artifacts") {
     const body = await readJsonBody(req);
@@ -53,11 +77,36 @@ async function handleGatewayRequest(
       return;
     }
     const contentType = stringValue(body.contentType) || "application/json";
+    let storedPayload = body.payload;
+    let storedContentType = contentType;
+    const warnings = [
+      "Local dev gateway ใช้ contract เดียวกับ Portal Backend แต่เก็บ artifact ใน memory ของ Vite server สำหรับทดสอบเท่านั้น."
+    ];
+    const jku = `${origin}/api/share-gateway/.well-known/jwks.json`;
+    if (kind === "vp") {
+      const baseSigningKey = await getSigningKey();
+      const signed = await signTrustCarePresentationJwt({
+        vp: isRecord(body.payload) ? body.payload : {},
+        signingKey: {
+          ...baseSigningKey,
+          jku,
+        },
+        purpose: stringValue(body.purpose),
+        expiresAt: stringValue(body.expiresAt) || undefined,
+        signUnsignedCredentials: true,
+      });
+      storedPayload = signed.jwt;
+      storedContentType = "application/vp+jwt";
+      warnings.push(
+        "VP ถูก sign ด้วย ES256 ใน local gateway และเปิด public JWKS สำหรับ verifier ที่ต้องตรวจลายเซ็นจริง.",
+        ...signed.warnings
+      );
+    }
     artifacts.set(artifactKey(kind, artifactId), {
       kind,
       artifactId,
-      contentType,
-      payload: body.payload,
+      contentType: storedContentType,
+      payload: storedPayload,
       createdAt: new Date().toISOString()
     });
     const publicUrl = `${origin}${publicArtifactPath(kind, artifactId)}`;
@@ -68,9 +117,8 @@ async function handleGatewayRequest(
       kind,
       publicUrl,
       qrPayload: publicUrl,
-      warnings: [
-        "Local dev gateway ใช้ contract เดียวกับ Portal Backend แต่เก็บ artifact ใน memory ของ Vite server สำหรับทดสอบเท่านั้น."
-      ],
+      jwksUrl: kind === "vp" ? jku : undefined,
+      warnings,
       errors: []
     });
     return;
@@ -111,6 +159,10 @@ async function handleGatewayRequest(
       json(res, 404, { ok: false, errors: [`${artifactRoute.kind} not found.`] });
       return;
     }
+    if (artifactRoute.extension === "jwt" || stored.contentType.includes("jwt")) {
+      text(res, 200, String(stored.payload), stored.contentType);
+      return;
+    }
     json(res, 200, stored.payload);
     return;
   }
@@ -131,16 +183,17 @@ async function handleGatewayRequest(
   json(res, 404, { ok: false, errors: ["Unknown local share gateway route."] });
 }
 
-function matchArtifactRoute(pathname: string): { kind: string; artifactId: string } | null {
-  const routes: Array<[RegExp, string]> = [
-    [/^\/presentations\/([^/]+)\.json$/, "vp"],
-    [/^\/manifest-vps\/([^/]+)\.json$/, "manifest_vp"],
-    [/^\/manifest-credentials\/([^/]+)\.json$/, "manifest_credential"],
-    [/^\/holder-authorizations\/([^/]+)\.json$/, "holder_authorization"]
+function matchArtifactRoute(pathname: string): { kind: string; artifactId: string; extension: "json" | "jwt" } | null {
+  const routes: Array<[RegExp, string, "json" | "jwt"]> = [
+    [/^\/presentations\/([^/]+)\.json$/, "vp", "json"],
+    [/^\/presentations\/([^/]+)\.jwt$/, "vp", "jwt"],
+    [/^\/manifest-vps\/([^/]+)\.json$/, "manifest_vp", "json"],
+    [/^\/manifest-credentials\/([^/]+)\.json$/, "manifest_credential", "json"],
+    [/^\/holder-authorizations\/([^/]+)\.json$/, "holder_authorization", "json"]
   ];
-  for (const [pattern, kind] of routes) {
+  for (const [pattern, kind, extension] of routes) {
     const match = pattern.exec(pathname);
-    if (match) return { kind, artifactId: decodeURIComponent(match[1]) };
+    if (match) return { kind, artifactId: decodeURIComponent(match[1]), extension };
   }
   return null;
 }
@@ -149,7 +202,7 @@ function publicArtifactPath(kind: string, artifactId: string): string {
   const encoded = encodeURIComponent(artifactId);
   switch (kind) {
     case "vp":
-      return `/api/share-gateway/presentations/${encoded}.json`;
+      return `/api/share-gateway/presentations/${encoded}.jwt`;
     case "manifest_vp":
       return `/api/share-gateway/manifest-vps/${encoded}.json`;
     case "manifest_credential":
@@ -187,9 +240,30 @@ function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
 function json(res: ServerResponse, status: number, payload: unknown) {
   res.statusCode = status;
   res.setHeader("content-type", "application/json; charset=utf-8");
   res.end(JSON.stringify(payload));
 }
 
+function text(res: ServerResponse, status: number, payload: string, contentType: string) {
+  res.statusCode = status;
+  res.setHeader("content-type", contentType.includes(";") ? contentType : `${contentType}; charset=utf-8`);
+  res.end(payload);
+}
+
+async function localSigningKey(
+  existing: Promise<TrustCareSigningKey> | undefined,
+  jku: string
+): Promise<TrustCareSigningKey> {
+  if (existing) return existing;
+  return createEphemeralEs256SigningKey({
+    issuerDid: "did:web:wallet.trustcare.local",
+    kidPrefix: "did:web:wallet.trustcare.local",
+    jku: jku || undefined,
+  });
+}

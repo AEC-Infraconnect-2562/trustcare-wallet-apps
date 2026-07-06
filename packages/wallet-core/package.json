@@ -10,7 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@trustcare/design-tokens": "workspace:*"
+    "@trustcare/design-tokens": "workspace:*",
+    "jose": "6.1.0"
   },
   "devDependencies": {
     "@types/qrcode": "^1.5.5",
