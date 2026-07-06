@@ -61,6 +61,7 @@ import { Badge, Button, Surface, WalletCardView } from "@trustcare/ui-web";
 import {
   buildPortalInteroperabilityFixtures,
   buildSharePackage,
+  createShareGatewayPublicationRequest,
   countCardsByCategory,
   assessLocalReadiness,
   createShlViewerUrl,
@@ -98,6 +99,8 @@ import {
   type WalletPresentationResponse,
   type WalletStoredObject,
   type VerifierResult,
+  type BuiltSharePackage,
+  type ShareGatewayPublicationResponse,
 } from "@trustcare/wallet-core";
 import { env } from "./env";
 import { useOfflineWallet } from "./hooks/useOfflineWallet";
@@ -193,6 +196,13 @@ type ScanPayloadDescriptor = {
     "pending_manifest_vp" | "certified_manifest_vp" | "standard_only";
 };
 
+type SharePublicationState = {
+  state: "idle" | "publishing" | "published" | "blocked" | "error";
+  message: string;
+  warnings: string[];
+  artifactUrl?: string;
+};
+
 const baseApiOptions = {
   url: env.apiUrl,
   demoMode: env.demoMode,
@@ -202,6 +212,7 @@ const baseApiOptions = {
       : "https://trustcare.example.com",
   shlGatewayUrl: env.shlGatewayUrl,
   shlViewerUrl: env.shlViewerUrl,
+  shareGatewayUrl: env.shareGatewayUrl,
 };
 
 const walletSessionKey = "trustcare-wallet-active-user";
@@ -2702,6 +2713,11 @@ function ShareView({
   const [shareQrDataUrl, setShareQrDataUrl] = useState("");
   const [sharePayload, setSharePayload] = useState("");
   const [shareExportPayload, setShareExportPayload] = useState("");
+  const [sharePublication, setSharePublication] = useState<SharePublicationState>({
+    state: "idle",
+    message: "",
+    warnings: [],
+  });
   const shareProfile = sharePurposeProfiles[purpose];
   const previousInitialPurpose = useRef(initialPurpose);
 
@@ -2763,6 +2779,7 @@ function ShareView({
     setSharePayload("");
     setShareExportPayload("");
     setShareQrDataUrl("");
+    setSharePublication({ state: "idle", message: "", warnings: [] });
   }, [purpose, purposeSelectedKey, shareProfile, shareableCards]);
 
   const selectedCards = useMemo(
@@ -2801,10 +2818,33 @@ function ShareView({
     if (!selectedCards.length) return;
     const ok = await onConfirmBiometric();
     if (!ok) return;
+    setSharePublication({
+      state: packageProtocol === "vp" ? "publishing" : "idle",
+      message:
+        packageProtocol === "vp"
+          ? "กำลัง publish VP ไปยัง Share Gateway"
+          : "",
+      warnings: [],
+    });
     const createdAt = new Date().toISOString();
     const expiresAt = protocolRequiresShl(packageProtocol)
       ? shlPolicyExpiry(shlPolicy)
       : new Date(Date.now() + expiryMinutes * 60_000).toISOString();
+    const shareGatewayBaseUrl = currentShareGatewayBaseUrl();
+    if (packageProtocol === "vp" && !shareGatewayBaseUrl) {
+      setSharePayload("");
+      setShareExportPayload("");
+      setShareQrDataUrl("");
+      setSharePublication({
+        state: "blocked",
+        message:
+          "ยังไม่ได้ตั้งค่า Share Gateway สำหรับ publish VP ให้เครื่องอื่นสแกนได้",
+        warnings: [
+          "ตั้งค่า VITE_TRUSTCARE_SHARE_GATEWAY_URL ให้ชี้ TrustCare Portal Backend หรือใช้ local dev gateway ก่อนสร้าง QR ใช้งานจริง.",
+        ],
+      });
+      return;
+    }
     const packageMode =
       packageProtocol === "shl"
         ? "StandardSHL"
@@ -2828,6 +2868,8 @@ function ShareView({
         : [],
       expiresAt,
       origin: currentAppBaseUrl(),
+      gatewayBaseUrl: shareGatewayBaseUrl ?? undefined,
+      viewerBaseUrl: currentAppBaseUrl(),
       shlPolicy: protocolRequiresShl(packageProtocol)
         ? {
             passcodeRequired: shlPolicy.passcodeRequired,
@@ -2841,10 +2883,6 @@ function ShareView({
           }
         : undefined,
     });
-    const scannablePayload =
-      "shl" in result
-        ? result.shl.qrPayload
-        : result.presentation.qrData;
     const exportPayload = JSON.stringify(
       {
         ...result.payload,
@@ -2864,11 +2902,62 @@ function ShareView({
       null,
       2,
     );
-    setSharePayload(scannablePayload);
-    setShareExportPayload(exportPayload);
-    setShareQrDataUrl(
-      await toQrDataUrl(scannablePayload, { margin: 1, width: 240 }),
-    );
+    try {
+      if ("presentation" in result) {
+        if (!shareGatewayBaseUrl) {
+          throw new Error("ยังไม่ได้ตั้งค่า Share Gateway สำหรับ publish VP");
+        }
+        const publication = await publishVpSharePackage({
+          gatewayBaseUrl: shareGatewayBaseUrl,
+          result,
+          userId: user.id,
+          holderDid: user.holderDid,
+          purpose,
+          recipient,
+          expiresAt,
+        });
+        if (!publication.qrPayload) {
+          throw new Error("Share Gateway ไม่ได้ส่ง VP resolver URL กลับมา");
+        }
+        setSharePayload(publication.qrPayload);
+        setShareExportPayload(exportPayload);
+        setShareQrDataUrl(
+          await toQrDataUrl(publication.qrPayload, { margin: 1, width: 240 }),
+        );
+        setSharePublication({
+          state: "published",
+          message:
+            "สร้าง VP และ publish เป็น resolver URL แล้ว verifier จะ fetch และตรวจ proof/signature จาก backend ก่อนให้ผลยืนยัน",
+          warnings: publication.warnings,
+          artifactUrl: publication.publicUrl,
+        });
+        return;
+      }
+
+      setSharePayload(result.shl.qrPayload);
+      setShareExportPayload(exportPayload);
+      setShareQrDataUrl(
+        await toQrDataUrl(result.shl.qrPayload, { margin: 1, width: 240 }),
+      );
+      setSharePublication({
+        state: "idle",
+        message: "",
+        warnings: result.shl.warnings ?? [],
+        artifactUrl: result.shl.viewerUrl ?? result.shl.webViewerUrl,
+      });
+    } catch (error) {
+      setSharePayload("");
+      setShareExportPayload(exportPayload);
+      setShareQrDataUrl("");
+      setSharePublication({
+        state: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Publish share package ไม่สำเร็จ",
+        warnings: [],
+      });
+    }
   }, [
     biometricEnabled,
     expiryMinutes,
@@ -3230,6 +3319,26 @@ function ShareView({
               <p className="share-step-hint">
                 รูปแบบแนะนำ: {protocolProfiles[packageProtocol].description}
               </p>
+              {sharePublication.state !== "idle" && (
+                <div className={`publication-status ${sharePublication.state}`}>
+                  <strong>
+                    {sharePublication.state === "publishing"
+                      ? "กำลัง publish"
+                      : sharePublication.state === "published"
+                        ? "พร้อมให้สแกน"
+                        : sharePublication.state === "blocked"
+                          ? "ยังไม่พร้อม"
+                          : "publish ไม่สำเร็จ"}
+                  </strong>
+                  <span>{sharePublication.message}</span>
+                  {sharePublication.artifactUrl && (
+                    <small className="mono">{sharePublication.artifactUrl}</small>
+                  )}
+                  {sharePublication.warnings.map((warning) => (
+                    <small key={warning}>{warning}</small>
+                  ))}
+                </div>
+              )}
               {shareQrDataUrl ? (
                 <img src={shareQrDataUrl} alt="Share VP QR" />
               ) : (
@@ -3424,8 +3533,8 @@ function ShareView({
       {verifierResult && (
         <Surface className="verification-result">
           <div className="result-heading">
-            <Badge tone={verifierResult.verified ? "green" : "red"}>
-              {verifierResult.verified ? "Verified" : "Invalid"}
+            <Badge tone={verifierBadgeTone(verifierResult)}>
+              {verifierBadgeLabel(verifierResult)}
             </Badge>
             {verifierResult.protocol && (
               <Badge tone="blue">{verifierResult.protocol}</Badge>
@@ -5082,6 +5191,28 @@ function statusLabel(status?: string | null): string {
   return labels[String(status ?? "")] ?? String(status ?? "-");
 }
 
+function verifierBadgeTone(
+  result: VerifierResult,
+): "green" | "yellow" | "blue" | "red" {
+  if (result.trustLevel === "green") return "green";
+  if (result.trustLevel === "blue") return "blue";
+  if (result.trustLevel === "yellow") return "yellow";
+  return "red";
+}
+
+function verifierBadgeLabel(result: VerifierResult): string {
+  if (result.trustLevel === "green" || result.verified) {
+    return "ตรวจสอบผ่าน";
+  }
+  if (result.trustLevel === "blue") {
+    return "ตรวจสอบ transport แล้ว";
+  }
+  if (result.trustLevel === "yellow") {
+    return "ต้องตรวจสอบเพิ่มเติม";
+  }
+  return "ตรวจสอบไม่ผ่าน";
+}
+
 function scanTransportLabel(
   transport?: ScanPayloadDescriptor["transport"],
 ): string {
@@ -5472,6 +5603,60 @@ function clearScanPayloadFromLocation() {
     "",
     `${url.pathname}${url.search}${url.hash}`,
   );
+}
+
+function currentShareGatewayBaseUrl(): string | null {
+  const configured = env.shareGatewayUrl;
+  if (configured) return configured.replace(/\/$/, "");
+  if (typeof window === "undefined") return null;
+  if (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost") {
+    return `${window.location.origin}/api/share-gateway`;
+  }
+  return null;
+}
+
+async function publishVpSharePackage(input: {
+  gatewayBaseUrl: string;
+  result: Extract<BuiltSharePackage, { presentation: unknown }>;
+  userId: string | number;
+  holderDid: string;
+  purpose: ReadinessContext;
+  recipient: string;
+  expiresAt: string;
+}): Promise<ShareGatewayPublicationResponse> {
+  return publishShareArtifact(input.gatewayBaseUrl, {
+    artifactId: input.result.presentation.presentationId,
+    kind: "vp",
+    contentType: "application/vp+json",
+    payload: input.result.payload,
+    ownerUserId: input.userId,
+    holderDid: input.holderDid,
+    context: input.purpose,
+    purpose: readinessContextLabels[input.purpose].th,
+    recipient: input.recipient,
+    expiresAt: input.expiresAt,
+    trustcare: {
+      signingStatus: "pending_backend_signature",
+      expectedProof: ["ES256", "EdDSA", "DataIntegrityProof"],
+    },
+  });
+}
+
+async function publishShareArtifact(
+  gatewayBaseUrl: string,
+  request: Parameters<typeof createShareGatewayPublicationRequest>[0],
+): Promise<ShareGatewayPublicationResponse> {
+  const response = await fetch(`${gatewayBaseUrl.replace(/\/$/, "")}/artifacts`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(createShareGatewayPublicationRequest(request)),
+  });
+  const payload = (await response.json().catch(() => null)) as ShareGatewayPublicationResponse | null;
+  if (!response.ok || !payload?.ok) {
+    const errors = payload?.errors?.length ? payload.errors.join(" ") : response.statusText;
+    throw new Error(`Share Gateway publish failed: ${errors}`);
+  }
+  return payload;
 }
 
 function currentAppBaseUrl(): string {

@@ -3,6 +3,7 @@ export * from "./documentCategories";
 export * from "./credentialTypes";
 export * from "./canonicalDocuments";
 export * from "./demoResolvers";
+export * from "./shareGateway";
 export * from "./sharePackages";
 export * from "./sorting";
 export * from "./selectiveDisclosure";

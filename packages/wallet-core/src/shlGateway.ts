@@ -7,7 +7,8 @@ import type {
 } from "./models";
 import { readinessContextLabels } from "./readiness";
 import { createDemoShlKey, createShlLinkPayload, createShlViewerUrl } from "./shl";
-import { createDemoManifestUrl, createDemoResolverReferenceUrl, hashJson } from "./demoResolvers";
+import { createDemoManifestUrl, hashJson } from "./demoResolvers";
+import { shareGatewayArtifactUrl } from "./shareGateway";
 
 export type TrustCareShlGatewayMode = "portal_backend" | "static_demo_gateway" | "local_preview";
 export type TrustCareShlStorageProvider = "s3" | "static" | "local";
@@ -233,7 +234,7 @@ export function buildTrustCareShlGatewayManifest(input: {
         files,
         documents,
         selectedCards: input.selectedCards,
-        viewerBaseUrl: input.viewerBaseUrl
+        gatewayBaseUrl: input.gatewayBaseUrl
       })
     : null;
   return {
@@ -430,7 +431,7 @@ function buildTrustCareManifestCertification(input: {
   files: Array<Record<string, unknown>>;
   documents: ShlManifestDocument[];
   selectedCards: WalletCard[];
-  viewerBaseUrl: string;
+  gatewayBaseUrl: string;
 }) {
   const holderDid = input.selectedCards.find(card => card.holderDid)?.holderDid ?? `did:key:holder:${input.publicationId}`;
   const issuerDid = input.selectedCards.find(card => card.issuerDid)?.issuerDid ?? "did:web:trustcare.network:contract-hub";
@@ -495,8 +496,14 @@ function buildTrustCareManifestCertification(input: {
     }
   });
   const manifestVpHash = hashJson(manifestVp);
-  const manifestVpUrl = createDemoResolverReferenceUrl(input.viewerBaseUrl, "manifest-vp", input.publicationId);
-  return { manifestCredential, holderAuthorizationCredential, manifestVp, manifestVpHash, manifestVpUrl };
+  const manifestVpUrl = shareGatewayArtifactUrl(input.gatewayBaseUrl, "manifest_vp", input.publicationId);
+  return {
+    manifestCredential,
+    holderAuthorizationCredential,
+    manifestVp,
+    manifestVpHash,
+    manifestVpUrl
+  };
 }
 
 function filterSelectedCards(cards: WalletCard[], selectedCardIds?: Array<number | string>): WalletCard[] {

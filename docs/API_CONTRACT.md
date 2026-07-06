@@ -40,6 +40,15 @@ https://trustcare.example.com/verifier?vp=<presentationId>
 
 The apps must not put raw oversized JWT VP payloads directly into QR for normal presentation flows.
 
+Standalone Wallet follows the same rule. The Share screen publishes a VP artifact to a Share Gateway first, then QR encodes the resolver URL returned by that gateway. The local Vite gateway uses:
+
+```txt
+POST /api/share-gateway/artifacts
+GET  /api/share-gateway/presentations/<presentationId>.json
+```
+
+Production should point `VITE_TRUSTCARE_SHARE_GATEWAY_URL` to TrustCare Portal Backend. The verifier may parse and fetch VP payloads locally, but a green trust badge requires a verifiable proof/signature such as ES256, EdDSA, or W3C Data Integrity proof that the verifier backend can validate. Resolver-only or legacy `tc_payload` flows must stay yellow/red, never green.
+
 ## External Wallet Exchange
 
 The standalone wallet accepts and stores these payload families:
@@ -57,7 +66,7 @@ Latest inspected TrustCare source:
 
 ```txt
 AEC-Infraconnect-2562/trustcare-hospital-network main
-153e99bc6788490241c385260f4b3d048a059cdc
+1d93e7c96694828478c94003010a84f40cb5d933
 ```
 
 The wallet mirrors the current Contract Hub direction for service readiness contexts, external wallet deployment handshakes, document imports, canonical share packages, Standard SHL, and Certified SHL + Manifest VP packages.

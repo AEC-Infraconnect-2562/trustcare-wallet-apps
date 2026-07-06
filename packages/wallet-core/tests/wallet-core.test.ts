@@ -338,6 +338,10 @@ describe("wallet-core", () => {
     expect(vp.mode).toBe("PurposeVP");
     expect("presentation" in vp).toBe(true);
     expect(JSON.stringify(vp.payload)).not.toContain("ServiceBundleEnvelope");
+    if ("presentation" in vp) {
+      expect(vp.presentation.qrData).toBe("");
+      expect(JSON.stringify(vp)).not.toContain("tc_payload");
+    }
 
     const shl = buildSharePackage({
       mode: "CertifiedSHLManifestPackage",

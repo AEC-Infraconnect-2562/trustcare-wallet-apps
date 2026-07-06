@@ -1,6 +1,6 @@
 import type { CheckinQrResponse, ReadinessContext, WalletCard, WalletPresentationResponse } from "./models";
 import { canonicalServiceProfiles, type SharePackageMode, walletDocumentRecordFromCard } from "./canonicalDocuments";
-import { createDemoResolverUrl, hashJson } from "./demoResolvers";
+import { hashJson } from "./demoResolvers";
 import { createTrustCareShlGatewayPublication } from "./shlGateway";
 
 export type SharePackageBuildInput = {
@@ -14,6 +14,8 @@ export type SharePackageBuildInput = {
   selectedFields?: string[];
   expiresAt?: string;
   origin?: string;
+  gatewayBaseUrl?: string;
+  viewerBaseUrl?: string;
   shlPolicy?: {
     passcodeRequired?: boolean;
     passcodeHint?: string | null;
@@ -56,6 +58,8 @@ export function buildSharePackage(input: SharePackageBuildInput): BuiltSharePack
       receiver: input.recipient,
       purpose,
       origin: input.origin,
+      gatewayBaseUrl: input.gatewayBaseUrl,
+      viewerBaseUrl: input.viewerBaseUrl,
       includeTrustCareManifestVp: input.mode === "CertifiedSHLManifestPackage",
       policy: {
         expiresAt,
@@ -110,7 +114,6 @@ export function buildSharePackage(input: SharePackageBuildInput): BuiltSharePack
       payloadHash: hashJson(records.map(record => record.credentialId))
     }
   };
-  const qrData = createDemoResolverUrl(input.origin ?? "https://trustcare.example.com/wallet", "vp", presentationId, payload);
   return {
     mode: input.mode,
     payload,
@@ -121,7 +124,7 @@ export function buildSharePackage(input: SharePackageBuildInput): BuiltSharePack
       credentialCount: selectedCards.length,
       selectedFields: input.selectedFields ?? [],
       expiresAt,
-      qrData,
+      qrData: "",
       verificationChecklist: [
         { key: "holder", label: "Holder DID", ok: Boolean(holderDid), detail: holderDid },
         { key: "purpose", label: "Purpose bound", ok: Boolean(purpose), detail: purpose },

@@ -57,13 +57,25 @@ Standard SHL ต้องยัง compatible กับ SMART Health Links
 
 Certified SHL ยังเป็น Standard SHL สำหรับระบบภายนอก แต่ TrustCare verifier ใช้ optional `trustcare` extension เพื่อยืนยัน provenance
 
+## VC/VP Share Gateway
+
+VC/VP QR ต้องเป็น resolver-backed URL ไม่ใช่ raw VP/JWT ขนาดใหญ่และไม่ใช่ URL ที่ฝัง `tc_payload`
+
+- Share สร้าง VP payload ก่อน
+- Wallet publish VP ไปที่ Share Gateway
+- QR ใช้ resolver URL ที่ Gateway คืนกลับมา เช่น `/presentations/<presentationId>.json` หรือ Portal `/verify?vp=<presentationId>`
+- Verifier fetch VP จาก resolver แล้วตรวจ proof/signature/status/policy
+- ถ้า resolver ดึง payload ได้แต่ยังไม่มี ES256/EdDSA/Data Integrity proof ที่ตรวจสอบได้ UI ต้องแสดงเป็น pending/yellow ไม่ใช่ green
+
+Local development ใช้ Vite in-memory gateway ที่ `/api/share-gateway` เพื่อทดสอบ flow เดียวกันโดยไม่ฝัง payload ลง QR. Production ต้องชี้ `VITE_TRUSTCARE_SHARE_GATEWAY_URL` ไปที่ TrustCare Portal Backend/S3-backed resolver.
+
 ## Demo Resolver
 
-GitHub Pages ไม่มี backend สำหรับ enforce passcode, expiry, revocation, access count และ audit ดังนั้น demo mode ใช้ static resolver:
+GitHub Pages ไม่มี backend สำหรับ enforce passcode, expiry, revocation, access count และ audit ดังนั้น demo mode สำหรับ SHL ยังใช้ static resolver เดิมจนกว่า Standard SHL และ SHL+Manifest VP จะตกลง architecture รอบถัดไป
 
-- VP QR ใช้ resolver URL ที่บรรจุ payload แบบ deterministic
 - SHL manifest ใช้ `tc_resolver=shl-manifest`
 - Manifest VP ใช้ `tc_resolver=manifest-vp`
+- Legacy VP `tc_payload` รองรับเฉพาะ backward compatibility และห้ามใช้ให้ green badge
 
 Production ต้องเปลี่ยน `manifestUrl` ไปที่ TrustCare Portal Backend/S3 ตาม `docs/SHL_GATEWAY_ARCHITECTURE.md`
 
