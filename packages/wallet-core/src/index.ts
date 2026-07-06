@@ -2,6 +2,7 @@ export * from "./models";
 export * from "./documentCategories";
 export * from "./credentialTypes";
 export * from "./canonicalDocuments";
+export * from "./documentRequestFlow";
 export * from "./demoResolvers";
 export * from "./shareGateway";
 export * from "./sharePackages";

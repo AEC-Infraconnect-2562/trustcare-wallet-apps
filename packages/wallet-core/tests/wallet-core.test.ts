@@ -10,6 +10,8 @@ import {
   createShlViewerUrl,
   createTrustCareShlGatewayPublication,
   buildSharePackage,
+  buildDocumentRequestPlan,
+  createDocumentRequestDraft,
   canonicalServiceProfiles,
   CANONICAL_DOCUMENT_CATEGORIES,
   CANONICAL_DOCUMENT_TYPES,
@@ -280,6 +282,83 @@ describe("wallet-core", () => {
         expect(requirement.documentTypes).not.toContain("sync_receipt");
       }
     }
+  });
+
+  it("plans missing-document requests with format and source guardrails", () => {
+    const coverageRequirement = canonicalServiceProfiles.opd_visit.requirements.find(item => item.key === "coverage")!;
+    const plan = buildDocumentRequestPlan({
+      context: "opd_visit",
+      requirements: [coverageRequirement],
+      source: "patient_upload",
+      format: "certified_shl_manifest",
+      scope: "single_document"
+    });
+
+    expect(plan.sourceOptions.find(option => option.id === "payer")?.enabled).toBe(true);
+    expect(plan.formatOptions.find(option => option.id === "certified_shl_manifest")?.enabled).toBe(false);
+    expect(plan.formatOptions.find(option => option.id === "vc_vp")?.enabled).toBe(false);
+    expect(plan.selectedFormat).toBe("pdf_image");
+    expect(plan.controls.manualFileUpload).toBe(true);
+    expect(plan.trustPolicy).toBe("patient_provided_unverified");
+  });
+
+  it("keeps patient uploads as unverified DocumentReference imports", () => {
+    const allergyRequirement = canonicalServiceProfiles.opd_visit.requirements.find(item => item.key === "allergy")!;
+    const draft = createDocumentRequestDraft({
+      context: "opd_visit",
+      requirements: [allergyRequirement],
+      source: "patient_upload",
+      format: "pdf_image",
+      scope: "single_document",
+      patientId: 9501
+    });
+
+    expect(draft.returnChannel).toBe("manual_upload");
+    expect(draft.trustPolicy).toBe("patient_provided_unverified");
+    expect(draft.requestedDocumentTypes).toContain("allergy_alert");
+    expect(draft.nextSteps.join(" ")).toContain("DocumentReference");
+  });
+
+  it("normalizes incompatible document request drafts instead of preserving invalid fallbacks", () => {
+    const requirement = canonicalServiceProfiles.opd_visit.requirements.find(item => item.key === "allergy")!;
+    const draft = createDocumentRequestDraft({
+      context: "opd_visit",
+      requirements: [requirement],
+      source: "patient_upload",
+      format: "certified_shl_manifest",
+      scope: "single_document",
+      patientId: 9501,
+      returnChannel: "shl_link"
+    });
+
+    expect(draft.source).toBe("patient_upload");
+    expect(draft.format).toBe("pdf_image");
+    expect(draft.returnChannel).toBe("manual_upload");
+    expect(draft.destinationLabel).toContain("นำเข้าเอง");
+    expect(draft.formatLabel).toContain("PDF");
+  });
+
+  it("enables SHL policy controls only for SHL formats", () => {
+    const requirements = canonicalServiceProfiles.referral.requirements.slice(0, 3);
+    const certifiedPlan = buildDocumentRequestPlan({
+      context: "referral",
+      requirements,
+      source: "trustcare_portal",
+      format: "certified_shl_manifest",
+      scope: "document_bundle"
+    });
+    const vpPlan = buildDocumentRequestPlan({
+      context: "referral",
+      requirements,
+      source: "trustcare_portal",
+      format: "vc_vp",
+      scope: "document_bundle"
+    });
+
+    expect(certifiedPlan.controls.shlAccessPolicy).toBe(true);
+    expect(certifiedPlan.controls.trustCareCertification).toBe(true);
+    expect(vpPlan.controls.shlAccessPolicy).toBe(false);
+    expect(vpPlan.controls.selectiveDisclosure).toBe(true);
   });
 
   it("keeps all wallet seed cards canonical with VC-like payloads and DocumentReference evidence", () => {

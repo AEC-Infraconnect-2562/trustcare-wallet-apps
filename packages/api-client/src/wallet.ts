@@ -295,6 +295,8 @@ export async function importForService(
     patientId?: number;
     sourceType?: string;
     documentType?: string;
+    requestFormat?: string;
+    returnChannel?: string;
     consentRef?: string;
   },
 ): Promise<WalletImportJob> {

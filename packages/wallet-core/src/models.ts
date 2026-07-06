@@ -354,6 +354,12 @@ export type WalletDocumentRequest = {
   documentCategory?: string | null;
   sourceType?: string;
   sourceName?: string | null;
+  requestFormat?: string;
+  returnChannel?: string;
+  packageScope?: string;
+  trustPolicy?: string;
+  requestedDocumentTypes?: string[];
+  accessPolicy?: Record<string, unknown>;
   status: string;
   notes?: string | null;
   createdAt?: string | null;
@@ -389,7 +395,7 @@ export type WalletStoredObject = {
   title: string;
   subtitle?: string;
   status: "active" | "pending" | "expired" | "verified" | "invalid" | string;
-  protocol?: "trustcare" | "oid4vci" | "oid4vp" | "shl";
+  protocol?: "trustcare" | "oid4vci" | "oid4vp" | "shl" | "fhir" | "document_reference";
   createdAt: string;
   expiresAt?: string | null;
   source?: string;

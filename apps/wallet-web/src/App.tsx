@@ -68,9 +68,14 @@ import {
   buildSharePackage,
   createShareGatewayPublicationRequest,
   countCardsByCategory,
+  buildDocumentRequestPlan,
   assessLocalReadiness,
   createShlViewerUrl,
+  createDocumentRequestDraft,
   credentialTypeForDocument,
+  documentRequestFormatLabel,
+  documentRequestReturnChannelLabel,
+  documentRequestSourceLabel,
   exportWalletObject,
   exportWalletObjects,
   flattenCardsByCategory,
@@ -88,6 +93,12 @@ import {
   walletObjectsFromShl,
   walletDemoUsers,
   type ContractHubCatalog,
+  type DocumentPackageScope,
+  type DocumentRequestDraft,
+  type DocumentRequestFormat,
+  type DocumentRequestOption,
+  type DocumentRequestReturnChannel,
+  type DocumentRequestSource,
   type PresentationHistoryItem,
   type ReadinessContext,
   type ReadinessRequirement,
@@ -144,6 +155,12 @@ type ShareTransport = "vp_qr" | "shl_recommended" | "shl_manifest";
 type PackageProtocol = "vp" | "shl" | "hybrid";
 type TimeAnchor = "record" | "package";
 type DisclosureMode = "full" | "sd" | "zkp";
+type DocumentFlowMode = "request" | "import";
+
+type DocumentFlowState = {
+  mode: DocumentFlowMode;
+  requirements: ReadinessRequirement[];
+};
 
 type ShlAccessPolicyState = {
   passcodeRequired: boolean;
@@ -589,6 +606,9 @@ export default function App() {
   const [documentRequests, setDocumentRequests] = useState<
     WalletDocumentRequest[]
   >([]);
+  const [documentFlow, setDocumentFlow] = useState<DocumentFlowState | null>(
+    null,
+  );
   const [importJob, setImportJob] = useState<WalletImportJob | null>(null);
   const [storedExtrasByUser, setStoredExtrasByUser] = useState<
     Record<string, WalletStoredObject[]>
@@ -1045,139 +1065,119 @@ export default function App() {
     setLastImportMessage("");
   }, []);
 
-  const importMissing = useCallback(async () => {
-    const missing = readiness?.readiness?.missing?.[0];
-    if (!missing) {
-      setLastImportMessage("เอกสารจำเป็นครบแล้ว ยังไม่ต้องนำเข้าเพิ่ม");
-      return;
-    }
-    const documentType =
-      missing.cardTypes?.[0] ?? missing.key ?? "patient_summary";
-    const documentCategory = missing.category ?? "clinical_summary";
-    const result = await walletApi.importForService(apiOptions, {
-      context: readinessContext,
-      patientId: activeUser.patientId,
-      documentType,
-      sourceType: "patient_upload",
-    });
-    setImportJob({
-      ...(result as WalletImportJob),
-      context: readinessContext,
-    } as WalletImportJob);
-    const now = new Date();
-    const importedCard: WalletCard = {
-      id: now.getTime(),
-      cardType: documentType,
-      displayName: missing.label ?? documentType,
-      displayNameEn: missing.labelEn ?? documentType,
-      documentCategory,
-      credentialId: `imported:${selectedUserId}:${result.importId}`,
-      credentialStatus: "active",
-      credentialType: credentialTypeForDocument(documentType),
-      issuerHospitalName: activeUser.hospitalNameTh,
-      issuerDid: activeUser.issuerDid,
-      holderDid: activeUser.holderDid,
-      patientAvatarUrl: activeUser.avatarUrl,
-      ownerUserId: activeUser.id,
-      patientId: activeUser.patientId,
-      sourceSystem: "partner_wallet",
-      scopeLabel: "นำเข้าใน TrustCare Wallet",
-      createdAt: now.toISOString(),
-      issuedAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + 365 * 24 * 60 * 60_000).toISOString(),
-      credentialData: {
-        "@context": [
-          "https://www.w3.org/ns/credentials/v2",
-          "https://trustcare.network/contexts/service-readiness/v1",
-        ],
-        type: ["VerifiableCredential", credentialTypeForDocument(documentType)],
-        id: `urn:uuid:${selectedUserId}:${result.importId}`,
-        issuer: activeUser.issuerDid,
-        validFrom: now.toISOString(),
-        credentialSubject: {
-          id: activeUser.holderDid,
+  const getMissingRequirements = useCallback(
+    (requirements?: ReadinessRequirement[]) => {
+      if (requirements?.length) return requirements;
+      const fallback = readiness?.readiness?.missing ?? [];
+      return fallback as ReadinessRequirement[];
+    },
+    [readiness],
+  );
+
+  const openDocumentFlow = useCallback(
+    (mode: DocumentFlowMode, requirements?: ReadinessRequirement[]) => {
+      const missing = getMissingRequirements(requirements);
+      if (!missing.length) {
+        setLastImportMessage(
+          mode === "import"
+            ? "เอกสารจำเป็นครบแล้ว ยังไม่ต้องนำเข้าเพิ่ม"
+            : "เอกสารจำเป็นครบแล้ว ไม่มีรายการที่ต้องขอเพิ่ม",
+        );
+        return;
+      }
+      setDocumentFlow({ mode, requirements: missing });
+    },
+    [getMissingRequirements],
+  );
+
+  const submitDocumentFlow = useCallback(
+    async (draft: DocumentRequestDraft, mode: DocumentFlowMode) => {
+      if (mode === "import") {
+        const documentType = draft.requestedDocumentTypes[0] ?? "patient_summary";
+        const result = await walletApi.importForService(apiOptions, {
+          context: draft.context,
           patientId: activeUser.patientId,
           documentType,
-          serviceContext: readinessContext,
-          importedFor: readinessContextLabels[readinessContext].th,
-          evidence: result.documentReference,
-        },
-        evidence: [
-          {
-            type: "DocumentReference",
-            source: result.sourceType,
-            resource: result.documentReference,
+          sourceType: draft.source,
+          requestFormat: draft.format,
+          returnChannel: draft.returnChannel,
+        });
+        setImportJob({
+          ...(result as WalletImportJob),
+          context: draft.context,
+        } as WalletImportJob);
+        addStoredObject({
+          id: `import_job:${result.importId}`,
+          type: "document_reference",
+          title: `เอกสารนำเข้า: ${documentRequestFormatLabel(draft.format)}`,
+          subtitle: documentRequestSourceLabel(draft.source),
+          status: "needs_review",
+          protocol:
+            draft.format === "standard_shl" ||
+            draft.format === "certified_shl_manifest"
+              ? "shl"
+              : draft.format.startsWith("fhir")
+                ? "fhir"
+                : "document_reference",
+          createdAt: new Date().toISOString(),
+          payload: {
+            ...result,
+            draft,
+            trustPolicy: "patient_provided_unverified",
+            note: "Imported evidence is stored as DocumentReference until a trusted issuer signs it.",
           },
-        ],
-        proof: {
-          type: "DataIntegrityProof",
-          cryptosuite: "eddsa-rdfc-2022",
-          proofPurpose: "assertionMethod",
-          verificationMethod: activeUser.issuerDid,
-          created: now.toISOString(),
-        },
-      },
-    };
-    setGrouped((previous) => ({
-      ...previous,
-      [documentCategory]: [
-        ...(previous[documentCategory] ?? []).filter(
-          (card) => card.cardType !== documentType,
-        ),
-        importedCard,
-      ],
-    }));
-    addStoredObject({
-      id: `import_job:${result.importId}`,
-      type: "document_reference",
-      title: "เอกสารบริการที่นำเข้า",
-      subtitle: result.documentType ?? result.sourceType,
-      status: result.status,
-      protocol: "trustcare",
-      createdAt: new Date().toISOString(),
-      payload: result,
-    });
-    setLastImportMessage(`สร้างงานนำเข้า ${result.importId} แล้ว`);
-  }, [
-    activeUser,
-    addStoredObject,
-    apiOptions,
-    readiness,
-    readinessContext,
-    selectedUserId,
-  ]);
+        });
+        setLastImportMessage(
+          `สร้างงานนำเข้า ${result.importId} แล้ว · ${documentRequestFormatLabel(
+            draft.format,
+          )} · ยังไม่ยืนยันจนกว่า issuer จะลงนาม`,
+        );
+        setDocumentFlow(null);
+        return;
+      }
 
-  const requestMissing = useCallback(async () => {
-    const missing = readiness?.readiness?.missing?.[0];
-    if (!missing) {
-      setLastImportMessage("เอกสารจำเป็นครบแล้ว ไม่มีรายการที่ต้องขอเพิ่ม");
-      return;
-    }
-    const result = await walletApi.requestDocument(apiOptions, {
-      context: readinessContext,
-      documentType: missing.cardTypes?.[0] ?? missing.key ?? "patient_summary",
-      sourceType: "hospital",
-      patientId: activeUser.patientId,
-    });
-    const requestId = (result as any).requestId ?? `wdr_demo_${Date.now()}`;
-    setDocumentRequests((prev) => [
-      {
-        ...(result as WalletDocumentRequest),
-        id: (result as any).id ?? requestId,
-        requestId,
-        context: readinessContext,
-        documentType:
-          missing.cardTypes?.[0] ?? missing.key ?? "patient_summary",
-        sourceType: "hospital",
-        status: (result as any).status ?? "requested",
-        createdAt: new Date().toISOString(),
-      } as WalletDocumentRequest,
-      ...prev,
-    ]);
-    setLastImportMessage(
-      `สร้างคำขอเอกสาร ${(result as any).requestId ?? (result as any).id} แล้ว`,
-    );
-  }, [activeUser.patientId, apiOptions, readiness, readinessContext]);
+      const result = await walletApi.requestDocument(apiOptions, {
+        context: draft.context,
+        patientId: activeUser.patientId,
+        documentTypes: draft.requestedDocumentTypes,
+        sourceType: draft.source,
+        requestFormat: draft.format,
+        returnChannel: draft.returnChannel,
+        accessPolicy: draft.accessPolicy,
+        selectiveDisclosureFields: draft.selectiveDisclosureFields,
+      });
+      const requestId = (result as any).requestId ?? `wdr_demo_${Date.now()}`;
+      setDocumentRequests((prev) => [
+        {
+          ...(result as WalletDocumentRequest),
+          id: (result as any).id ?? requestId,
+          requestId,
+          context: draft.context,
+          documentType: draft.requestedDocumentTypes.join(","),
+          sourceType: draft.source,
+          sourceName: draft.destinationLabel,
+          status: (result as any).status ?? "requested",
+          notes: [
+            draft.formatLabel,
+            documentRequestReturnChannelLabel(draft.returnChannel),
+            ...draft.nextSteps,
+          ].join(" · "),
+          createdAt: new Date().toISOString(),
+          requestFormat: draft.format,
+          returnChannel: draft.returnChannel,
+          packageScope: draft.scope,
+          trustPolicy: draft.trustPolicy,
+          requestedDocumentTypes: draft.requestedDocumentTypes,
+        } as WalletDocumentRequest,
+        ...prev,
+      ]);
+      setLastImportMessage(
+        `ส่งคำขอเอกสาร ${requestId} ไปที่ ${draft.destinationLabel} แล้ว · ${draft.formatLabel}`,
+      );
+      setDocumentFlow(null);
+    },
+    [activeUser.patientId, addStoredObject, apiOptions],
+  );
 
   const exportResult = useCallback((result: WalletExportResult) => {
     downloadExport(result);
@@ -1630,8 +1630,12 @@ export default function App() {
             importJob={importJob}
             onContext={changeReadinessContext}
             onPrepareAll={() => navigateTo("share")}
-            onRequestMissing={() => void requestMissing()}
-            onImportMissing={() => void importMissing()}
+            onRequestMissing={(requirements) =>
+              openDocumentFlow("request", requirements)
+            }
+            onImportMissing={(requirements) =>
+              openDocumentFlow("import", requirements)
+            }
           />
         )}
         {view === "store" && (
@@ -1659,6 +1663,17 @@ export default function App() {
           />
         )}
       </section>
+
+      {documentFlow && (
+        <DocumentFlowDialog
+          mode={documentFlow.mode}
+          user={activeUser}
+          context={readinessContext}
+          requirements={documentFlow.requirements}
+          onClose={() => setDocumentFlow(null)}
+          onSubmit={(draft) => void submitDocumentFlow(draft, documentFlow.mode)}
+        />
+      )}
 
       <nav className="bottom-nav">
         <NavButton
@@ -3802,6 +3817,443 @@ function ShareView({
   );
 }
 
+function DocumentFlowDialog({
+  mode,
+  user,
+  context,
+  requirements,
+  onClose,
+  onSubmit,
+}: {
+  mode: DocumentFlowMode;
+  user: WalletDemoUser;
+  context: ReadinessContext;
+  requirements: ReadinessRequirement[];
+  onClose: () => void;
+  onSubmit: (draft: DocumentRequestDraft) => void;
+}) {
+  const [source, setSource] = useState<DocumentRequestSource | undefined>(
+    mode === "import" ? "patient_upload" : undefined,
+  );
+  const [format, setFormat] = useState<DocumentRequestFormat | undefined>();
+  const [scope, setScope] = useState<DocumentPackageScope>(
+    requirements.flatMap((item) => item.cardTypes ?? []).length > 1
+      ? "document_bundle"
+      : "single_document",
+  );
+  const [returnChannel, setReturnChannel] =
+    useState<DocumentRequestReturnChannel | undefined>();
+  const [passcodeRequired, setPasscodeRequired] = useState(false);
+  const [expiryHours, setExpiryHours] = useState(24);
+  const [maxAccessCount, setMaxAccessCount] = useState(5);
+  const [selectedFields, setSelectedFields] = useState<string[]>([
+    "identity",
+    "clinical_summary",
+  ]);
+
+  const plan = useMemo(
+    () =>
+      buildDocumentRequestPlan({
+        context,
+        requirements,
+        source,
+        format,
+        scope,
+      }),
+    [context, format, requirements, scope, source],
+  );
+  const fallbackReturnChannel =
+    plan.returnChannelOptions.find(
+      (option) => option.enabled && option.recommended,
+    )?.id ??
+    plan.returnChannelOptions.find((option) => option.enabled)?.id ??
+    "manual_upload";
+  const selectedReturnChannel =
+    plan.returnChannelOptions.find(
+      (option) => option.id === returnChannel && option.enabled,
+    )?.id ?? fallbackReturnChannel;
+  const hasShlPasscodeError =
+    plan.controls.shlAccessPolicy && passcodeRequired && maxAccessCount < 1;
+
+  const submit = () => {
+    if (hasShlPasscodeError) return;
+    onSubmit(
+      createDocumentRequestDraft({
+        context,
+        requirements,
+        source: plan.selectedSource,
+        format: plan.selectedFormat,
+        scope: plan.selectedScope,
+        returnChannel: selectedReturnChannel,
+        patientId: user.patientId,
+        accessPolicy: plan.controls.shlAccessPolicy
+          ? {
+              passcodeRequired,
+              expiryHours,
+              maxAccessCount,
+            }
+          : undefined,
+        selectiveDisclosureFields: plan.controls.selectiveDisclosure
+          ? selectedFields
+          : undefined,
+      }),
+    );
+  };
+
+  const title = mode === "import" ? "นำเข้าเอกสาร" : "ขอเอกสารที่ขาด";
+  const subtitle =
+    mode === "import"
+      ? "เลือกแหล่งที่มาและรูปแบบไฟล์ ระบบจะเก็บเป็น DocumentReference ก่อน จนกว่าจะมี issuer ลงนาม"
+      : "เลือกว่าจะขอเอกสารจากระบบไหน รับกลับมาเป็นรูปแบบใด และต้องมีเงื่อนไขอะไรบ้าง";
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="credential-dialog document-flow-dialog">
+        <div className="modal-header">
+          <div className="dialog-title-stack">
+            <div className="breadcrumb-row">
+              <button className="dialog-back-button" onClick={onClose}>
+                <ArrowLeft size={16} /> กลับ
+              </button>
+              <span>เตรียมบริการ / {title}</span>
+            </div>
+            <h2>{title}</h2>
+            <p>{subtitle}</p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="ปิด">
+            ×
+          </button>
+        </div>
+
+        <div className="document-flow-body">
+          <Surface className="document-flow-section">
+            <div className="section-title-row">
+              <div>
+                <span className="eyebrow">1. เอกสารที่ต้องจัดการ</span>
+                <h3>{plan.serviceLabel}</h3>
+                <p>
+                  Wallet จะใช้ canonical document type เดียวกันทุกหน้า
+                  เพื่อไม่ให้เอกสารพร้อมบริการกับเอกสารที่แชร์คนละชุดกัน
+                </p>
+              </div>
+              <Badge tone={requirements.length ? "yellow" : "green"}>
+                {requirements.length} รายการ
+              </Badge>
+            </div>
+            <div className="document-flow-requirements">
+              {plan.selectedRequirements.map((requirement) => (
+                <div key={requirement.key}>
+                  <strong>{requirement.label}</strong>
+                  <small>
+                    {requirement.required ? "จำเป็น" : "แนะนำ"} ·{" "}
+                    {requirement.documentTypes.join(", ")}
+                  </small>
+                </div>
+              ))}
+            </div>
+          </Surface>
+
+          <div className="document-flow-grid">
+            <Surface className="document-flow-section">
+              <span className="eyebrow">2. แหล่งข้อมูล</span>
+              <h3>{mode === "import" ? "นำเข้าจากที่ไหน" : "ขอไปที่ไหน"}</h3>
+              <OptionGrid
+                options={plan.sourceOptions}
+                activeId={plan.selectedSource}
+                onSelect={(id) => {
+                  setSource(id);
+                  setFormat(undefined);
+                  setReturnChannel(undefined);
+                }}
+              />
+            </Surface>
+
+            <Surface className="document-flow-section">
+              <span className="eyebrow">3. รูปแบบเอกสารหรือ Bundle</span>
+              <div className="mini-toggle-group">
+                <button
+                  className={scope === "single_document" ? "active" : ""}
+                  onClick={() => {
+                    setScope("single_document");
+                    setFormat(undefined);
+                    setReturnChannel(undefined);
+                  }}
+                >
+                  เอกสารเดี่ยว
+                </button>
+                <button
+                  className={scope === "document_bundle" ? "active" : ""}
+                  onClick={() => {
+                    setScope("document_bundle");
+                    setFormat(undefined);
+                    setReturnChannel(undefined);
+                  }}
+                >
+                  Document Bundle
+                </button>
+              </div>
+              <OptionGrid
+                options={plan.formatOptions}
+                activeId={plan.selectedFormat}
+                onSelect={(id) => {
+                  setFormat(id);
+                  setReturnChannel(undefined);
+                }}
+              />
+            </Surface>
+          </div>
+
+          <div className="document-flow-grid">
+            <Surface className="document-flow-section">
+              <span className="eyebrow">4. วิธีรับกลับ</span>
+              <h3>Return Channel</h3>
+              <OptionGrid
+                options={plan.returnChannelOptions}
+                activeId={selectedReturnChannel}
+                onSelect={setReturnChannel}
+              />
+            </Surface>
+
+            <Surface className="document-flow-section">
+              <span className="eyebrow">5. เงื่อนไขตาม Format</span>
+              <DocumentFlowControls
+                plan={plan}
+                selectedFields={selectedFields}
+                setSelectedFields={setSelectedFields}
+                passcodeRequired={passcodeRequired}
+                setPasscodeRequired={setPasscodeRequired}
+                expiryHours={expiryHours}
+                setExpiryHours={setExpiryHours}
+                maxAccessCount={maxAccessCount}
+                setMaxAccessCount={setMaxAccessCount}
+              />
+            </Surface>
+          </div>
+
+          <Surface className="document-flow-review">
+            <div>
+              <span className="eyebrow">6. ตรวจสอบก่อนส่ง</span>
+              <h3>
+                {documentRequestSourceLabel(plan.selectedSource)} ·{" "}
+                {documentRequestFormatLabel(plan.selectedFormat)}
+              </h3>
+              <p>
+                {plan.trustPolicy === "trustcare_certified"
+                  ? "ผลลัพธ์ต้องมี Manifest VP, Holder VC และ hash ของไฟล์ก่อนขึ้นสถานะ TrustCare-certified"
+                  : plan.trustPolicy === "patient_provided_unverified"
+                    ? "ผลลัพธ์จะเป็นหลักฐานที่ผู้ใช้ให้มาเอง จึงยังไม่ใช้แทน VC ที่ trusted issuer ลงนาม"
+                    : "ผลลัพธ์ต้องตรวจ issuer, signature, status และอายุเอกสารก่อนใช้ใน readiness"}
+              </p>
+            </div>
+            <div className="document-flow-warning-list">
+              {plan.warnings.map((warning) => (
+                <div key={warning} className="document-flow-warning">
+                  <AlertTriangle size={16} />
+                  <span>{warning}</span>
+                </div>
+              ))}
+              {plan.nextSteps.map((step) => (
+                <div key={step} className="document-flow-next-step">
+                  <CheckCircle2 size={16} />
+                  <span>{step}</span>
+                </div>
+              ))}
+            </div>
+            <div className="document-flow-actions">
+              <Button className="secondary" onClick={onClose}>
+                ยกเลิก
+              </Button>
+              <Button onClick={submit} disabled={hasShlPasscodeError}>
+                {mode === "import" ? <Upload size={18} /> : <FilePlus2 size={18} />}
+                {mode === "import" ? "สร้างงานนำเข้า" : "ส่งคำขอเอกสาร"}
+              </Button>
+            </div>
+          </Surface>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OptionGrid<T extends string>({
+  options,
+  activeId,
+  onSelect,
+}: {
+  options: DocumentRequestOption<T>[];
+  activeId: T;
+  onSelect: (id: T) => void;
+}) {
+  return (
+    <div className="document-flow-option-grid">
+      {options.map((option) => (
+        <button
+          key={option.id}
+          className={[
+            "document-flow-option",
+            option.id === activeId ? "active" : "",
+            option.enabled ? "" : "disabled",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          onClick={() => option.enabled && onSelect(option.id)}
+          disabled={!option.enabled}
+        >
+          <span>
+            <strong>{option.label}</strong>
+            <small>{option.description}</small>
+          </span>
+          {option.recommended && <Badge tone="blue">แนะนำ</Badge>}
+          {!option.enabled && option.reasonDisabled && (
+            <em>{option.reasonDisabled}</em>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DocumentFlowControls({
+  plan,
+  selectedFields,
+  setSelectedFields,
+  passcodeRequired,
+  setPasscodeRequired,
+  expiryHours,
+  setExpiryHours,
+  maxAccessCount,
+  setMaxAccessCount,
+}: {
+  plan: ReturnType<typeof buildDocumentRequestPlan>;
+  selectedFields: string[];
+  setSelectedFields: (fields: string[]) => void;
+  passcodeRequired: boolean;
+  setPasscodeRequired: (value: boolean) => void;
+  expiryHours: number;
+  setExpiryHours: (value: number) => void;
+  maxAccessCount: number;
+  setMaxAccessCount: (value: number) => void;
+}) {
+  const toggleField = (field: string) => {
+    setSelectedFields(
+      selectedFields.includes(field)
+        ? selectedFields.filter((item) => item !== field)
+        : [...selectedFields, field],
+    );
+  };
+  return (
+    <div className="document-flow-control-stack">
+      {plan.controls.selectiveDisclosure && (
+        <div className="document-flow-control-panel">
+          <strong>Selective Disclosure</strong>
+          <p>
+            เลือก claim ที่จำเป็นต่อวัตถุประสงค์นี้เท่านั้น
+            ไม่รวม technical properties เช่น watermark, payload hash หรือ UI state
+          </p>
+          <div className="field-chip-grid">
+            {[
+              ["identity", "ตัวตน"],
+              ["birthdate", "วันเกิด"],
+              ["clinical_summary", "สรุปสุขภาพ"],
+              ["medication", "ยา"],
+              ["allergy", "ภูมิแพ้"],
+              ["coverage", "สิทธิรักษา"],
+            ].map(([field, label]) => (
+              <button
+                key={field}
+                className={selectedFields.includes(field) ? "active" : ""}
+                onClick={() => toggleField(field)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {plan.controls.shlAccessPolicy && (
+        <div className="document-flow-control-panel">
+          <strong>SHL Access Policy</strong>
+          <p>
+            PIN/Passcode ต้องส่งแยกจาก QR ตามแนวทาง SHL
+            และใช้ควบคุมการเปิด manifest หรือไฟล์ที่เข้ารหัสไว้
+          </p>
+          <label className="inline-check">
+            <input
+              type="checkbox"
+              checked={passcodeRequired}
+              onChange={(event) => setPasscodeRequired(event.target.checked)}
+            />
+            ต้องใช้ PIN / Passcode
+          </label>
+          <div className="document-flow-field-grid">
+            <label>
+              หมดอายุ
+              <select
+                value={expiryHours}
+                onChange={(event) => setExpiryHours(Number(event.target.value))}
+              >
+                <option value={1}>1 ชั่วโมง</option>
+                <option value={24}>24 ชั่วโมง</option>
+                <option value={72}>3 วัน</option>
+                <option value={168}>7 วัน</option>
+              </select>
+            </label>
+            <label>
+              จำนวนครั้งที่เปิดได้
+              <select
+                value={maxAccessCount}
+                onChange={(event) =>
+                  setMaxAccessCount(Number(event.target.value))
+                }
+              >
+                <option value={1}>1 ครั้ง</option>
+                <option value={3}>3 ครั้ง</option>
+                <option value={5}>5 ครั้ง</option>
+                <option value={8}>8 ครั้ง</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      )}
+      {plan.controls.fhirEndpoint && (
+        <div className="document-flow-control-panel">
+          <strong>FHIR Source Scope</strong>
+          <p>
+            ต้องมี consent และ scope ที่ระบุ resource เช่น DocumentReference,
+            Bundle, DiagnosticReport, Observation หรือ MedicationRequest
+          </p>
+          <input value="patient/*.read documentreference.read" readOnly />
+        </div>
+      )}
+      {plan.controls.trustCareCertification && (
+        <div className="document-flow-control-panel">
+          <strong>TrustCare Certification</strong>
+          <p>
+            ต้องผ่าน Maker/Checker จาก TrustCare Portal ก่อน SHL
+            จึงจะกลายเป็น Certified SHL+Manifest VP
+          </p>
+        </div>
+      )}
+      {plan.controls.manualFileUpload && (
+        <div className="document-flow-control-panel">
+          <strong>Manual Import</strong>
+          <p>
+            รองรับ PDF, รูปภาพ, FHIR JSON หรือ Bundle
+            และเก็บเป็นหลักฐานที่ยังไม่ยืนยันก่อน
+          </p>
+          <div className="manual-drop-zone">
+            <Upload size={18} />
+            เลือกไฟล์หรือวาง JSON ในขั้นตอนนำเข้าจริง
+          </div>
+        </div>
+      )}
+      {!Object.values(plan.controls).some(Boolean) && (
+        <p className="muted">ไม่มีเงื่อนไขพิเศษสำหรับรูปแบบนี้</p>
+      )}
+    </div>
+  );
+}
+
 function PrepareView({
   user,
   cards,
@@ -3826,8 +4278,8 @@ function PrepareView({
   importJob: WalletImportJob | null;
   onContext: (context: ReadinessContext) => void;
   onPrepareAll: () => void;
-  onRequestMissing: () => void;
-  onImportMissing: () => void;
+  onRequestMissing: (requirements?: ReadinessRequirement[]) => void;
+  onImportMissing: (requirements?: ReadinessRequirement[]) => void;
 }) {
   const activeContract = contractHub?.contracts.find(
     (item) => item.context === context,
@@ -3866,7 +4318,7 @@ function PrepareView({
     : "ไปหน้าแชร์เอกสาร";
   const primaryAction = () => {
     if (!canCreateFullPacket) {
-      onRequestMissing();
+      onRequestMissing(missing as ReadinessRequirement[]);
       return;
     }
     onPrepareAll();
@@ -3914,7 +4366,10 @@ function PrepareView({
               {primaryActionText}
             </Button>
             {!canCreateFullPacket && (
-              <Button className="secondary" onClick={onImportMissing}>
+              <Button
+                className="secondary"
+                onClick={() => onImportMissing(missing as ReadinessRequirement[])}
+              >
                 <Upload size={18} /> นำเข้าเอกสาร
               </Button>
             )}
@@ -4088,12 +4543,15 @@ function PrepareView({
             ))}
           </div>
           <div className="prep-doc-actions">
-            <Button onClick={onRequestMissing} disabled={!missing.length}>
+            <Button
+              onClick={() => onRequestMissing(missing as ReadinessRequirement[])}
+              disabled={!missing.length}
+            >
               <FilePlus2 size={18} /> ขอเอกสารที่ขาด
             </Button>
             <Button
               className="secondary"
-              onClick={onImportMissing}
+              onClick={() => onImportMissing(missing as ReadinessRequirement[])}
               disabled={!missing.length}
             >
               <Upload size={18} /> นำเข้าเอกสาร
