@@ -53,6 +53,8 @@ export function recommendSharePacket(
 
   if (selectedCount <= 1 && !hasLarge) {
     mode = "DirectVP";
+  } else if (profile.defaultSharePackage === "PurposeVP" && !wantsCertified) {
+    mode = "PurposeVP";
   } else if (!hasLarge && !wantsCertified) {
     mode = "PurposeVP";
   } else if (wantsCertified && input.trustcareCertificationAvailable) {

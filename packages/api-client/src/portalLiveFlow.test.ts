@@ -53,6 +53,9 @@ describe("Portal live-demo wallet flow", () => {
       cardId: 41001,
       selectedFields: ["identity"],
     });
+    expect(presentation.format).toBe("vc+jwt");
+    expect(presentation.mode).toBe("direct_vc_jwt");
+    expect(presentation.qrData).toBe("ey.portal.live.patient.identity");
     expect(presentation.credentialCount).toBe(1);
     expect(presentation.selectedFields).toEqual(["identity"]);
 

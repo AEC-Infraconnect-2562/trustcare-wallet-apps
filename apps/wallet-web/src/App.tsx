@@ -69,7 +69,9 @@ import {
   buildMissingDocumentCards,
   buildPurposePickerCards,
   buildReadinessSummary,
+  createShareDraftFromPrepare,
   createShareGatewayPublicationRequest,
+  createSharePolicy,
   countCardsByCategory,
   buildDocumentRequestPlan,
   assessLocalReadiness,
@@ -86,15 +88,16 @@ import {
   importWalletExchange,
   parseShlLink,
   fetchShlManifest,
-  getDisabledReason,
   mergePortalSyncedCards,
   mergeWalletObjects,
-  normalizeDocumentType,
   normalizePhotoUrl,
-  recommendSharePacket,
+  recommendPolicyForDraft,
   readinessContextLabels,
   readinessContextValues,
   shlAccessSummary,
+  shareModePatientDescription,
+  shareModePatientLabel,
+  validateShareDraft,
   walletObjectsFromCards,
   walletObjectsFromHistory,
   walletObjectsFromShl,
@@ -123,9 +126,10 @@ import {
   type WalletStoredObject,
   type VerifierResult,
   type BuiltSharePackage,
-  type CanonicalDocumentType,
   type ShareGatewayPublicationResponse,
   type SharePackageMode,
+  type ShareAccessPolicy,
+  type ShareValidationResult,
 } from "@trustcare/wallet-core";
 import { AcquisitionPlanner } from "./components/acquisition/AcquisitionPlanner";
 import { DisabledReason } from "./components/common/DisabledReason";
@@ -199,13 +203,6 @@ type ServiceReadinessSummary = {
   missingRequired: number;
   readyLabels: string[];
   missingLabels: string[];
-};
-
-type ShareDocumentRow = {
-  key: string;
-  requirement: ReadinessRequirement;
-  card: WalletCard | null;
-  missing: boolean;
 };
 
 type ScanOutcome = {
@@ -565,6 +562,15 @@ function sharePackageModeForUi(
   return disclosureMode === "full" && selectedCount <= 1
     ? "DirectVP"
     : "PurposeVP";
+}
+
+function shareTrustStatusLabel(value: string): { label: string; tone: "green" | "yellow" | "blue" } {
+  if (value === "issuer_signed") return { label: "Issuer ลงนามแล้ว", tone: "green" };
+  if (value === "trust_artifact") return { label: "Trust artifact", tone: "blue" };
+  if (value === "patient_provided_unverified") {
+    return { label: "ผู้ใช้นำเข้า รอตรวจ", tone: "yellow" };
+  }
+  return { label: "รอผูกกับ TrustCare", tone: "yellow" };
 }
 
 const readinessContexts = Object.keys(
@@ -3002,36 +3008,7 @@ function ShareView({
     () => assessLocalReadiness(shareableCards, purpose),
     [purpose, shareableCards],
   );
-  const purposeRequirements = useMemo(
-    () => [...purposeReadiness.ready, ...purposeReadiness.missing],
-    [purposeReadiness],
-  );
   const purposeSelectedKey = purposeReadiness.selectedCardIds.join("|");
-  const shareDocumentRows = useMemo<ShareDocumentRow[]>(() => {
-    const rows: ShareDocumentRow[] = [];
-    for (const requirement of purposeRequirements) {
-      const matchedCards =
-        "matchedCards" in requirement ? requirement.matchedCards : [];
-      if (matchedCards.length) {
-        matchedCards.forEach((card) => {
-          rows.push({
-            key: `${requirement.key}:${card.id}`,
-            requirement,
-            card,
-            missing: false,
-          });
-        });
-        continue;
-      }
-      rows.push({
-        key: `${requirement.key}:missing`,
-        requirement,
-        card: null,
-        missing: true,
-      });
-    }
-    return rows;
-  }, [purposeRequirements]);
 
   useEffect(() => {
     const recommendedIds = purposeReadiness.selectedCardIds.length
@@ -3057,66 +3034,92 @@ function ShareView({
     () => shareableCards.filter((card) => selectedCardIds.includes(card.id)),
     [selectedCardIds, shareableCards],
   );
-  const selectedDocumentTypes = useMemo(
-    () =>
-      selectedCards
-        .map((card) => normalizeDocumentType(card.cardType))
-        .filter(Boolean) as CanonicalDocumentType[],
-    [selectedCards],
-  );
   const shareGatewayReady = Boolean(currentShareGatewayBaseUrl());
   const sharePackageMode = sharePackageModeForUi(
     packageProtocol,
     mode,
     selectedCards.length,
   );
+  const sharePolicy = useMemo<ShareAccessPolicy>(
+    () =>
+      createSharePolicy({
+        mode: sharePackageMode,
+        disclosureMode: mode,
+        selectedFields: protocolRequiresVp(packageProtocol)
+          ? mode === "full"
+            ? ["full_vc"]
+            : selectedFields
+          : [],
+        expiryMinutes,
+        timelineAnchor: timeAnchor,
+        shl: protocolRequiresShl(packageProtocol)
+          ? {
+              passcodeRequired: shlPolicy.passcodeRequired,
+              passcode: shlPolicy.passcode,
+              expiryHours: shlPolicy.expiryHours,
+              maxAccessCount: shlPolicy.maxAccessCount,
+              longTermAccess: shlPolicy.longTermAccess,
+            }
+          : undefined,
+      }),
+    [
+      expiryMinutes,
+      mode,
+      packageProtocol,
+      selectedFields,
+      sharePackageMode,
+      shlPolicy,
+      timeAnchor,
+    ],
+  );
+  const shareDraft = useMemo(
+    () =>
+      createShareDraftFromPrepare({
+        context: purpose,
+        cards: shareableCards,
+        readiness: purposeReadiness,
+        selectedCardIds,
+        ownerUserId: user.id,
+        holderDid: user.holderDid,
+        recipient,
+        purpose: readinessContextLabels[purpose].th,
+      }),
+    [
+      purpose,
+      purposeReadiness,
+      recipient,
+      selectedCardIds,
+      shareableCards,
+      user.holderDid,
+      user.id,
+    ],
+  );
   const packetRecommendation = useMemo(
     () =>
-      recommendSharePacket({
-        context: purpose,
-        selectedDocumentTypes,
-        selectedCount: selectedCards.length,
-        hasLargeRecordSet: selectedCards.length > 3,
+      recommendPolicyForDraft(shareDraft, {
         recipientSupportsShl: true,
         trustcareCertificationAvailable: shareGatewayReady,
-        containsPatientProvidedUpload: selectedCards.some(
-          (card) => card.credentialStatus === "unverified",
-        ),
       }),
-    [purpose, selectedCards, selectedDocumentTypes, shareGatewayReady],
+    [shareDraft, shareGatewayReady],
   );
-  const shareDisabledReason = useMemo(
+  const shareValidation = useMemo<ShareValidationResult>(
     () =>
-      getDisabledReason({
-        action: "create_share_package",
-        context: purpose,
-        packageMode: sharePackageMode,
-        selectedDocumentCount: selectedCards.length,
-        missingRequiredCount: purposeReadiness.missing.filter(
-          (item) => item.required,
-        ).length,
+      validateShareDraft(shareDraft, sharePolicy, {
         shareGatewayReady,
+        requireResolvableQr: true,
         biometricRequired: shareProfile.biometricRequired,
         biometricReady: biometricEnabled,
-        shlPasscodeRequired:
-          protocolRequiresShl(packageProtocol) && shlPolicy.passcodeRequired,
-        shlPasscodeReady:
-          !protocolRequiresShl(packageProtocol) || shlPasscodeReady(shlPolicy),
-        trustcareCertificationAvailable:
-          packageProtocol !== "hybrid" || shareGatewayReady,
+        certifiedShlReady: shareGatewayReady,
       }),
     [
       biometricEnabled,
-      packageProtocol,
-      purpose,
-      purposeReadiness.missing,
-      selectedCards.length,
+      shareDraft,
       shareGatewayReady,
-      sharePackageMode,
+      sharePolicy,
       shareProfile.biometricRequired,
-      shlPolicy,
     ],
   );
+  const shareDisabledReason = shareValidation.primaryDisabledReason;
   const selectedTimeline = useMemo(
     () =>
       buildTimelineItems(selectedCards, new Date().toISOString(), timeAnchor),
@@ -3147,11 +3150,13 @@ function ShareView({
 
   const createSharePacket = useCallback(async () => {
     if (!selectedCards.length) return;
-    if (shareDisabledReason) {
+    if (!shareValidation.ok) {
       setSharePublication({
         state: "blocked",
-        message: shareDisabledReason.reason,
-        warnings: [shareDisabledReason.fix],
+        message:
+          shareValidation.blockers[0]?.message ??
+          "ยังสร้างชุดแชร์เอกสารไม่ได้",
+        warnings: shareValidation.blockers.map((issue) => issue.fix),
       });
       return;
     }
@@ -3191,11 +3196,7 @@ function ShareView({
       holderDid: user.holderDid,
       recipient,
       purpose: readinessContextLabels[purpose].th,
-      selectedFields: protocolRequiresVp(packageProtocol)
-        ? mode === "full"
-          ? ["full_vc"]
-          : selectedFields
-        : [],
+      selectedFields: sharePolicy.selectedFields,
       expiresAt,
       origin: currentAppBaseUrl(),
       gatewayBaseUrl: shareGatewayBaseUrl ?? undefined,
@@ -3316,10 +3317,10 @@ function ShareView({
     purposeReadiness,
     recipient,
     selectedCards,
-    selectedFields,
-    shareDisabledReason,
+    sharePolicy,
     sharePackageMode,
     shareProfile,
+    shareValidation,
     shlPolicy,
     timeAnchor,
     user,
@@ -3373,26 +3374,32 @@ function ShareView({
         biometricRequired={shareProfile.biometricRequired}
         biometricReady={biometricEnabled}
         recommendation={packetRecommendation}
+        mode={sharePackageMode}
+        modeLabel={shareModePatientLabel(sharePackageMode)}
+        modeDescription={shareModePatientDescription(sharePackageMode)}
+        validation={shareValidation}
       />
-      <Surface className="share-flow">
+      <Surface className="share-flow premium-share-flow">
         <div className="section-title-row">
           <div>
-            <h2>แชร์เอกสารสุขภาพที่ตรวจสอบได้</h2>
+            <span className="eyebrow">Share flow</span>
+            <h2>สร้างชุดแชร์เอกสาร</h2>
             <p>
-              เลือกผู้รับ วัตถุประสงค์ ข้อมูลที่จะเปิดเผย อายุการใช้งาน
-              และเอกสารก่อนสร้าง VP QR
+              เลือกผู้รับ วัตถุประสงค์ เอกสาร และเงื่อนไขการเปิดอ่าน
+              ระบบจะแนะนำรูปแบบ QR/VP หรือ SHL ที่เหมาะสม
             </p>
           </div>
-          <Badge tone={biometricEnabled ? "green" : "yellow"}>
-            {biometricEnabled
-              ? "ป้องกันด้วย Biometric"
-              : "ยังไม่บังคับ Biometric"}
+          <Badge tone={shareValidation.publishEnabled ? "green" : "yellow"}>
+            {shareValidation.publishEnabled
+              ? "พร้อมตรวจทาน"
+              : "ยังต้องแก้ไข"}
           </Badge>
         </div>
-        <div className="share-workspace">
+        <div className="share-workspace premium-share-workspace">
           <div className="share-form-column">
-            <div className="share-step">
+            <div className="share-step share-intent-card">
               <span className="step-number">1</span>
+              <strong>ตั้งค่าการแชร์</strong>
               <label>
                 ผู้รับ
                 <input
@@ -3439,60 +3446,85 @@ function ShareView({
               </div>
               <div className="protocol-mini-grid">
                 {(Object.keys(protocolProfiles) as PackageProtocol[]).map(
-                  (item) => (
+                  (item) => {
+                    const itemMode = sharePackageModeForUi(
+                      item,
+                      mode,
+                      selectedCards.length,
+                    );
+                    const itemDisabled = item === "hybrid" && !shareGatewayReady;
+                    return (
                     <button
                       key={item}
                       type="button"
                       className={packageProtocol === item ? "active" : ""}
+                      disabled={itemDisabled}
                       onClick={() => setPackageProtocol(item)}
+                      title={
+                        itemDisabled
+                          ? "ต้องมี Share Gateway และ TrustCare manifest service ก่อนสร้าง Certified SHL"
+                          : protocolProfiles[item].description
+                      }
                     >
-                      <strong>{protocolProfiles[item].label}</strong>
-                      <small>{protocolProfiles[item].badge}</small>
+                      <strong>{shareModePatientLabel(itemMode)}</strong>
+                      <small>{protocolProfiles[item].description}</small>
                     </button>
-                  ),
+                    );
+                  },
                 )}
               </div>
             </div>
 
-            <div className="share-step">
+            <div className="share-step share-document-step">
               <span className="step-number">2</span>
               <strong>
                 เอกสารที่เลือกสำหรับ {readinessContextLabels[purpose].th}
               </strong>
               <div className="share-select-list purpose-doc-list">
-                {shareDocumentRows.map((row) => {
-                  const requirement = row.requirement;
-                  const card = row.card;
-                  if (!card) {
+                {shareDraft.documents.map((document) => {
+                  const card = document.card;
+                  const trust = shareTrustStatusLabel(document.trustStatus);
+                  if (document.status === "missing" || !card) {
                     return (
-                      <div key={row.key} className="share-missing-doc-row">
+                      <div key={document.key} className="share-missing-doc-row">
                         <AlertTriangle size={18} />
                         <span>
-                          <b>{requirement.labelEn}</b>
+                          <b>{document.label}</b>
                           <small>
-                            {requirement.label} ·{" "}
-                            {requirement.required ? "จำเป็น" : "แนะนำ"} ·
+                            {document.labelEn} ·{" "}
+                            {document.required ? "จำเป็น" : "แนะนำ"} ·
                             ยังไม่มีใน Wallet
                           </small>
+                          {document.sourceHint && (
+                            <small>แนะนำขอจาก {document.sourceHint}</small>
+                          )}
                         </span>
                       </div>
                     );
                   }
                   return (
-                    <label key={row.key}>
+                    <label key={document.key} className="share-document-row">
                       <input
                         type="checkbox"
-                        checked={selectedCardIds.includes(card.id)}
+                        checked={Boolean(document.selected)}
+                        disabled={document.locked || document.status === "unsupported"}
                         onChange={() => toggleSelectedCard(card.id)}
                       />
                       <span>
-                        <b>{card.displayNameEn ?? card.displayName}</b>
+                        <b>{document.label}</b>
                         <small>
-                          {requirement?.label ??
-                            categoryLabel(card.documentCategory)}{" "}
-                          · {requirement?.required ? "จำเป็น" : "แนะนำ"}
+                          {document.labelEn} ·{" "}
+                          {document.required ? "จำเป็น" : "แนะนำ"}
+                        </small>
+                        <small>
+                          {document.locked
+                            ? "กำหนดโดยคำขอ verifier"
+                            : document.status === "unsupported"
+                              ? "รูปแบบนี้ยังไม่รองรับใน flow นี้"
+                              : card.issuerHospitalName ?? categoryLabel(card.documentCategory)}
                         </small>
                       </span>
+                      <Badge tone={trust.tone}>{trust.label}</Badge>
                     </label>
                   );
                 })}
@@ -3544,8 +3576,11 @@ function ShareView({
                         key={field.key}
                         type="button"
                         className={
-                          selectedFields.includes(field.key) ? "active" : ""
+                          selectedFields.includes(field.key) || mode === "full"
+                            ? "active"
+                            : ""
                         }
+                        disabled={mode === "full"}
                         onClick={() => toggleField(field.key)}
                       >
                         {field.label}
@@ -3634,6 +3669,50 @@ function ShareView({
                   </label>
                 </div>
               )}
+              <div className="share-review-card">
+                <span className="eyebrow">ตรวจทานก่อนสร้าง QR</span>
+                <div>
+                  <strong>{shareModePatientLabel(sharePackageMode)}</strong>
+                  <small>{shareModePatientDescription(sharePackageMode)}</small>
+                </div>
+                <dl>
+                  <div>
+                    <dt>ผู้รับ</dt>
+                    <dd>{recipient}</dd>
+                  </div>
+                  <div>
+                    <dt>วัตถุประสงค์</dt>
+                    <dd>{readinessContextLabels[purpose].th}</dd>
+                  </div>
+                  <div>
+                    <dt>เอกสารที่เลือก</dt>
+                    <dd>{shareValidation.selectedReadyCount} รายการ</dd>
+                  </div>
+                  <div>
+                    <dt>หมดอายุ</dt>
+                    <dd>
+                      {protocolRequiresShl(packageProtocol)
+                        ? `${shlPolicy.expiryHours} ชั่วโมง`
+                        : `${expiryMinutes} นาที`}
+                    </dd>
+                  </div>
+                </dl>
+                {(shareValidation.blockers.length > 0 ||
+                  shareValidation.warnings.length > 0) && (
+                  <div className="share-validation-list">
+                    {shareValidation.blockers.map((issue) => (
+                      <span key={issue.key} className="blocked">
+                        {issue.message}
+                      </span>
+                    ))}
+                    {shareValidation.warnings.map((issue) => (
+                      <span key={issue.key} className="warning">
+                        {issue.message}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="segmented compact">
                 <button
                   type="button"
@@ -3660,7 +3739,7 @@ function ShareView({
               </div>
               <Button
                 onClick={() => void createSharePacket()}
-                disabled={Boolean(shareDisabledReason)}
+                disabled={!shareValidation.publishEnabled}
               >
                 <UserCheck size={18} /> ยืนยันและสร้าง QR
               </Button>
@@ -3669,12 +3748,21 @@ function ShareView({
           </div>
 
           <aside className="share-live-panel">
-            <div className="share-step output">
+            <div className="share-step output share-result-card">
               <span className="step-number">4</span>
-              <strong>ผลลัพธ์ {protocolProfiles[packageProtocol].label}</strong>
+              <strong>ผลลัพธ์ {shareModePatientLabel(sharePackageMode)}</strong>
               <p className="share-step-hint">
-                รูปแบบแนะนำ: {protocolProfiles[packageProtocol].description}
+                {shareModePatientDescription(sharePackageMode)}
               </p>
+              <div
+                className={`share-result-readiness ${
+                  shareValidation.publishEnabled ? "ready" : "blocked"
+                }`}
+              >
+                {shareValidation.publishEnabled
+                  ? "พร้อมตรวจทานและสร้าง QR"
+                  : shareValidation.blockers[0]?.message ?? "ยังไม่พร้อมสร้าง QR"}
+              </div>
               {sharePublication.state !== "idle" && (
                 <div className={`publication-status ${sharePublication.state}`}>
                   <strong>
@@ -3698,10 +3786,11 @@ function ShareView({
                 </div>
               )}
               {shareQrDataUrl ? (
-                <img src={shareQrDataUrl} alt="Share VP QR" />
+                <img src={shareQrDataUrl} alt="Share package QR" />
               ) : (
                 <div className="qr-placeholder">
                   <QrCode size={54} />
+                  <span>QR จะแสดงหลังตรวจเงื่อนไขสำเร็จ</span>
                 </div>
               )}
               <div className="button-row">
@@ -3770,50 +3859,52 @@ function ShareView({
         </div>
       </Surface>
 
-      <Surface className="portal-section verifier-mode-section">
-        <div className="portal-card-header">
-          <div className="portal-card-title">
-            <ShieldCheck size={22} />
-            <span>เลือก Mode การตรวจสอบ</span>
+      <details className="share-secondary-tools">
+        <summary>เครื่องมือตรวจสอบและรายละเอียดทางเทคนิค</summary>
+        <Surface className="portal-section verifier-mode-section">
+          <div className="portal-card-header">
+            <div className="portal-card-title">
+              <ShieldCheck size={22} />
+              <span>เลือก Mode การตรวจสอบ</span>
+            </div>
+            <Badge tone="blue">Full VC / SD / ZKP</Badge>
           </div>
-          <Badge tone="blue">Full VC / SD / ZKP</Badge>
-        </div>
-        <div className="mode-grid">
-          <button
-            type="button"
-            className={mode === "full" ? "mode-card selected" : "mode-card"}
-            aria-pressed={mode === "full"}
-            onClick={() => setMode("full")}
-          >
-            <FileJson size={26} />
-            <strong>Full VC</strong>
-            <span>ตรวจสอบ VC ทั้งฉบับ เปิดเผยข้อมูลครบ</span>
-          </button>
-          <button
-            type="button"
-            className={mode === "sd" ? "mode-card selected" : "mode-card"}
-            aria-pressed={mode === "sd"}
-            onClick={() => setMode("sd")}
-          >
-            <Eye size={26} />
-            <strong>Selective Disclosure</strong>
-            <span>เลือกเปิดเผยเฉพาะฟิลด์ที่ต้องการ</span>
-          </button>
-          <button
-            type="button"
-            className={mode === "zkp" ? "mode-card selected" : "mode-card"}
-            aria-pressed={mode === "zkp"}
-            onClick={() => setMode("zkp")}
-          >
-            <Fingerprint size={26} />
-            <strong>Zero Knowledge Proof</strong>
-            <span>พิสูจน์เงื่อนไขโดยไม่เปิดเผยข้อมูลจริง</span>
-          </button>
-        </div>
-      </Surface>
+          <div className="mode-grid">
+            <button
+              type="button"
+              className={mode === "full" ? "mode-card selected" : "mode-card"}
+              aria-pressed={mode === "full"}
+              onClick={() => setMode("full")}
+            >
+              <FileJson size={26} />
+              <strong>Full VC</strong>
+              <span>ตรวจสอบ VC ทั้งฉบับ เปิดเผยข้อมูลครบ</span>
+            </button>
+            <button
+              type="button"
+              className={mode === "sd" ? "mode-card selected" : "mode-card"}
+              aria-pressed={mode === "sd"}
+              onClick={() => setMode("sd")}
+            >
+              <Eye size={26} />
+              <strong>Selective Disclosure</strong>
+              <span>เลือกเปิดเผยเฉพาะฟิลด์ที่ต้องการ</span>
+            </button>
+            <button
+              type="button"
+              className={mode === "zkp" ? "mode-card selected" : "mode-card"}
+              aria-pressed={mode === "zkp"}
+              onClick={() => setMode("zkp")}
+            >
+              <Fingerprint size={26} />
+              <strong>Zero Knowledge Proof</strong>
+              <span>พิสูจน์เงื่อนไขโดยไม่เปิดเผยข้อมูลจริง</span>
+            </button>
+          </div>
+        </Surface>
 
-      <div className="verifier-grid">
-        <Surface className="portal-section">
+        <div className="verifier-grid">
+          <Surface className="portal-section">
           <div className="portal-card-header">
             <div className="portal-card-title">
               <Shield size={22} />
@@ -3960,6 +4051,7 @@ function ShareView({
           );
         })}
       </section>
+      </details>
     </div>
   );
 }

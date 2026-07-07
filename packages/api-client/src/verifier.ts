@@ -16,9 +16,14 @@ import {
 } from "jose";
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
+import {
+  verifyPortalCredentialJwt,
+  type PortalCredentialVerifyResponse,
+} from "./portalSync";
 
 export type VerifierApiOptions = TrustCareClientOptions & {
   demoMode?: boolean;
+  portalOrigin?: string;
 };
 
 type ResolvedVpPayload = {
@@ -37,6 +42,7 @@ type JwtVerificationResult = {
   alg?: string;
   kid?: string;
   jku?: string;
+  disclosureCount?: number;
   issuer?: string;
   subject?: string;
   audience?: string;
@@ -156,6 +162,12 @@ export async function verifyQr(
       errors: credentialCount > 0 ? [] : ["VP ไม่มี verifiableCredential"],
     };
   }
+  const directJwt = await verifyDirectJwtQr(
+    qrData.trim(),
+    options,
+    options.fetchImpl ?? fetch,
+  );
+  if (directJwt) return directJwt;
   const shl = parseShlLink(qrData);
   if (shl) {
     const fetched = await fetchShlManifest(qrData);
@@ -557,6 +569,194 @@ async function fetchJsonVp(
   }
 }
 
+async function verifyDirectJwtQr(
+  jwt: string,
+  options: VerifierApiOptions,
+  fetcher: typeof fetch,
+): Promise<VerifierResult | null> {
+  if (!looksLikeJwt(jwt)) return null;
+  const decodedPayload = parseJwtPayload(jwt) ?? {};
+  const directVp = unwrapVpPayload(decodedPayload);
+  if (directVp) {
+    const verification = await verifyJwtArtifact(jwt, "vp", fetcher, "inline-jwt");
+    const vp = unwrapVpPayload(verification.payload) ?? directVp;
+    const nestedCredentialResults = await verifyNestedCredentialJwts(
+      vp,
+      fetcher,
+      "inline-jwt",
+    );
+    return verifyResolvedVpPayload({
+      id: stringValue(vp.id, verification.credentialId ?? "inline-vp-jwt"),
+      payload: vp,
+      sourceUrl: "inline-jwt",
+      jwt,
+      jwtVerification: verification,
+      nestedCredentialResults,
+      warnings: [
+        ...verification.warnings,
+        ...nestedCredentialResults.flatMap((result) => result.warnings),
+      ],
+    });
+  }
+
+  const directVc = unwrapVcPayload(decodedPayload);
+  if (!directVc) return null;
+  const verification = await verifyJwtArtifact(jwt, "vc", fetcher, "inline-jwt");
+  const vc = unwrapVcPayload(verification.payload) ?? directVc;
+  const portalStatus = await verifyPortalStatusIfTrustCare(
+    options,
+    jwt,
+    verification,
+  );
+  return buildDirectVcVerifierResult(jwt, vc, verification, portalStatus);
+}
+
+async function verifyPortalStatusIfTrustCare(
+  options: VerifierApiOptions,
+  jwt: string,
+  verification: JwtVerificationResult,
+): Promise<PortalCredentialVerifyResponse | null> {
+  const trustHints = [
+    verification.issuer,
+    verification.kid,
+    verification.jku,
+    verification.jwksUrl,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  if (!/trustcare/i.test(trustHints)) return null;
+  try {
+    return await verifyPortalCredentialJwt({
+      fetchImpl: options.fetchImpl,
+      portalOrigin: options.portalOrigin,
+      jwt,
+    });
+  } catch (error) {
+    return {
+      verified: false,
+      trustLevel: "yellow",
+      status: "portal_status_unavailable",
+      message:
+        error instanceof Error
+          ? error.message
+          : "TrustCare Portal status check unavailable",
+    };
+  }
+}
+
+function buildDirectVcVerifierResult(
+  jwt: string,
+  vc: Record<string, any>,
+  verification: JwtVerificationResult,
+  portalStatus: PortalCredentialVerifyResponse | null,
+): VerifierResult {
+  const expiresAt = stringOrUndefined(vc.validUntil);
+  const notExpired = !expiresAt || new Date(expiresAt).getTime() >= Date.now();
+  const portalChecked = Boolean(portalStatus);
+  const portalOk = !portalStatus || Boolean(portalStatus.verified);
+  const verified = verification.verified && portalOk && notExpired;
+  const trustLevel = verified
+    ? "green"
+    : !verification.verified ||
+        portalStatus?.trustLevel === "red" ||
+        !notExpired
+      ? "red"
+      : "yellow";
+  const portalError =
+    portalStatus && !portalOk
+      ? portalStatus.message ?? portalStatus.error ?? portalStatus.status
+      : undefined;
+  const credentialType =
+    lastCredentialType(vc) ?? verification.credentialType ?? "VerifiableCredential";
+  const issuer = issuerName(vc) ?? verification.issuer ?? "Signed credential";
+  const subject = objectValue(vc.credentialSubject);
+  const subjectName =
+    stringOrUndefined(subject?.name) ??
+    stringOrUndefined(objectValue(subject?.patient)?.fullNameEn) ??
+    stringOrUndefined(objectValue(subject?.patient)?.fullNameTh) ??
+    stringOrUndefined(objectValue(subject?.staff)?.fullNameEn) ??
+    stringOrUndefined(objectValue(subject?.staff)?.fullNameTh);
+  return {
+    verified,
+    trustLevel,
+    protocol: "trustcare-vc",
+    issuer,
+    holderDid:
+      stringOrUndefined(subject?.id) ??
+      verification.subject,
+    requestSummary: `${credentialType} / ${verification.credentialId ?? vc.id ?? "signed credential"}`,
+    matchedCredentialIds: [String(verification.credentialId ?? vc.id ?? "")].filter(Boolean),
+    credentials: [vc],
+    verificationChecklist: [
+      {
+        key: "jwt",
+        label: "อ่าน VC JWT ได้",
+        ok: true,
+        detail: `${verification.alg ?? "-"} / ${verification.kid ?? "-"}`,
+      },
+      {
+        key: "signature",
+        label: "Signature status",
+        ok: verification.verified,
+        detail: verification.verified
+          ? `verified via ${verification.jwksUrl ?? verification.jku ?? "-"}`
+          : verification.errors.join(" "),
+      },
+      {
+        key: "portal_status",
+        label: "TrustCare Portal status",
+        ok: portalOk,
+        detail: portalChecked
+          ? `${portalStatus?.trustLevel ?? "unknown"} / ${portalStatus?.status ?? "-"}`
+          : "not required for non-Portal issuer",
+      },
+      {
+        key: "schema",
+        label: "Schema and claims",
+        ok: Boolean(credentialType),
+        detail: credentialType,
+      },
+      {
+        key: "subject",
+        label: "Subject",
+        ok: Boolean(subject),
+        detail: subjectName ?? stringOrUndefined(subject?.id) ?? "-",
+      },
+      {
+        key: "expiry",
+        label: "ยังไม่หมดอายุ",
+        ok: notExpired,
+        detail: expiresAt ?? "-",
+      },
+    ],
+    warnings: [
+      ...verification.warnings,
+      ...verification.errors,
+      ...(portalStatus?.message ? [portalStatus.message] : []),
+      ...(!portalChecked && /trustcare/i.test(`${verification.issuer ?? ""} ${verification.kid ?? ""}`)
+        ? [
+            "ตรวจลายเซ็นได้แล้ว แต่ยังไม่ได้รับผล DB cross-check จาก TrustCare Portal.",
+          ]
+        : []),
+      ...(!notExpired ? ["VC หมดอายุแล้ว"] : []),
+    ],
+    errors: [
+      ...(!verification.verified ? verification.errors : []),
+      ...(portalError ? [portalError] : []),
+      ...(!notExpired ? ["VC หมดอายุแล้ว"] : []),
+    ],
+    verificationPayload: {
+      trustLevel,
+      verified,
+      issuer,
+      holderDid: stringOrUndefined(subject?.id) ?? verification.subject,
+      credentials: [vc],
+      jwt,
+      portalStatus,
+    },
+  };
+}
+
 function verifyResolvedVpPayload(resolved: ResolvedVpPayload): VerifierResult {
   const payload = resolved.payload;
   const rawCredentials = Array.isArray(payload.verifiableCredential)
@@ -778,11 +978,25 @@ async function verifyJwtArtifact(
 ): Promise<JwtVerificationResult> {
   const warnings: string[] = [];
   const errors: string[] = [];
+  const token = splitJwtToken(jwt);
+  if (!token) {
+    return {
+      kind,
+      verified: false,
+      warnings,
+      errors: ["JWT decode failed."],
+    };
+  }
+  if (token.disclosures.length > 0) {
+    warnings.push(
+      `SD-JWT-VC มี disclosure ${token.disclosures.length} รายการ; Wallet ตรวจลายเซ็น issuer JWT และส่ง token เต็มให้ Portal cross-check.`,
+    );
+  }
   let header: Record<string, any> = {};
   let decodedPayload: Record<string, any> = {};
   try {
-    header = decodeProtectedHeader(jwt) as Record<string, any>;
-    decodedPayload = decodeJwt(jwt) as Record<string, any>;
+    header = decodeProtectedHeader(token.issuerJwt) as Record<string, any>;
+    decodedPayload = decodeJwt(token.issuerJwt) as Record<string, any>;
   } catch (error) {
     return {
       kind,
@@ -812,7 +1026,7 @@ async function verifyJwtArtifact(
     if (!jwk) continue;
     try {
       const key = await importJWK(jwk, alg ?? String(jwk.alg ?? "ES256"));
-      const result = await jwtVerify(jwt, key);
+      const result = await jwtVerify(token.issuerJwt, key);
       const payload = result.payload as Record<string, any>;
       return {
         kind,
@@ -820,6 +1034,7 @@ async function verifyJwtArtifact(
         alg,
         kid,
         jku,
+        disclosureCount: token.disclosures.length,
         issuer: stringOrUndefined(payload.iss),
         subject: stringOrUndefined(payload.sub),
         audience: audienceSummary(payload.aud),
@@ -862,6 +1077,7 @@ async function verifyJwtArtifact(
     alg,
     kid,
     jku,
+    disclosureCount: token.disclosures.length,
     issuer: stringOrUndefined(decodedPayload.iss),
     subject: stringOrUndefined(decodedPayload.sub),
     audience: audienceSummary(decodedPayload.aud),
@@ -918,10 +1134,17 @@ async function fetchMatchingJwk(
       headers: { accept: "application/json, application/jwk-set+json" },
     });
     if (!response.ok) return null;
-    const jwks = (await response.json()) as { keys?: JWK[] };
-    const keys = Array.isArray(jwks.keys) ? jwks.keys : [];
+    const jwks = (await response.json()) as Record<string, any>;
+    const keys = jwksToKeys(jwks);
     if (!keys.length) return null;
-    if (kid) return keys.find((key) => key.kid === kid) ?? null;
+    if (kid) {
+      const matching = keys.find((key) => keyMatchesKid(key, kid));
+      if (matching) return matching;
+      if (keys.length === 1 && !stringOrUndefined(keys[0]?.kid)) {
+        return keys[0];
+      }
+      return null;
+    }
     return keys.length === 1 ? keys[0] : null;
   } catch {
     return null;
@@ -936,7 +1159,68 @@ function didWebJwksCandidates(issuer: string | undefined): string[] {
     .map(decodeURIComponent);
   const host = parts[0];
   if (!host) return [];
-  return [`https://${host}/.well-known/jwks.json`];
+  const pathParts = parts.slice(1).filter(Boolean);
+  const candidates = new Set<string>();
+  candidates.add(`https://${host}/.well-known/jwks.json`);
+  if (pathParts.length) {
+    const didPath = pathParts.join("/");
+    candidates.add(`https://${host}/${didPath}/did/jwks.json`);
+    candidates.add(`https://${host}/${didPath}/jwks.json`);
+    candidates.add(`https://${host}/${didPath}/did.json`);
+  }
+  const hospitalIndex = pathParts.findIndex(
+    (part) => part.toLowerCase() === "hospital",
+  );
+  const hospitalCode =
+    hospitalIndex >= 0 ? pathParts[hospitalIndex + 1] : undefined;
+  if (hospitalCode) {
+    const code = encodeURIComponent(hospitalCode.toLowerCase());
+    for (const portalHost of [
+      "trustcarehealth.live",
+      "www.trustcarehealth.live",
+    ]) {
+      candidates.add(`https://${portalHost}/hospital/${code}/did/jwks.json`);
+      candidates.add(`https://${portalHost}/hospital/${code}/did.json`);
+    }
+  }
+  return Array.from(candidates);
+}
+
+function jwksToKeys(payload: Record<string, any>): JWK[] {
+  if (Array.isArray(payload.keys)) return payload.keys as JWK[];
+  if (payload.kty) return [payload as JWK];
+  const methods = Array.isArray(payload.verificationMethod)
+    ? payload.verificationMethod
+    : [];
+  return methods
+    .map((method) => {
+      const object = objectValue(method);
+      const jwk = objectValue(object?.publicKeyJwk);
+      if (!jwk) return null;
+      return {
+        ...jwk,
+        kid:
+          stringOrUndefined(jwk.kid) ??
+          stringOrUndefined(object?.id) ??
+          stringOrUndefined(payload.id),
+      } as JWK;
+    })
+    .filter((value): value is JWK => Boolean(value));
+}
+
+function keyMatchesKid(key: JWK, kid: string): boolean {
+  const keyKid = stringOrUndefined(key.kid);
+  if (!keyKid) return false;
+  if (keyKid === kid) return true;
+  const keyFragment = keyKid.split("#").at(-1);
+  const requestedFragment = kid.split("#").at(-1);
+  return Boolean(
+    keyFragment &&
+      requestedFragment &&
+      (keyFragment === requestedFragment ||
+        keyKid.endsWith(`#${requestedFragment}`) ||
+        kid.endsWith(`#${keyFragment}`)),
+  );
 }
 
 function hasVerifiableProof(value: Record<string, any>): boolean {
@@ -1075,18 +1359,32 @@ function stringOrUndefined(value: unknown): string | undefined {
 }
 
 function looksLikeJwt(value: string): boolean {
-  const parts = value.split(".");
-  return parts.length === 3 && parts[0].startsWith("eyJ");
+  return Boolean(splitJwtToken(value));
 }
 
 function parseJwtPayload(value: string): Record<string, any> | null {
-  const parts = value.split(".");
-  if (parts.length !== 3 || !parts[0].startsWith("eyJ")) return null;
+  const token = splitJwtToken(value);
+  if (!token) return null;
   try {
-    return parseJson(base64UrlDecode(parts[1]));
+    return parseJson(base64UrlDecode(token.issuerJwt.split(".")[1]));
   } catch {
     return null;
   }
+}
+
+function splitJwtToken(value: string): {
+  issuerJwt: string;
+  disclosures: string[];
+} | null {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("eyJ")) return null;
+  const [issuerJwt, ...disclosures] = trimmed.split("~");
+  const parts = issuerJwt.split(".");
+  if (parts.length !== 3 || !parts[0].startsWith("eyJ")) return null;
+  return {
+    issuerJwt,
+    disclosures: disclosures.filter(Boolean),
+  };
 }
 
 function base64UrlDecode(value: string): string {

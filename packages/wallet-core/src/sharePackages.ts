@@ -86,6 +86,13 @@ export function buildSharePackage(input: SharePackageBuildInput): BuiltSharePack
   }
 
   const records = selectedCards.map(walletDocumentRecordFromCard);
+  const credentialPayloads = selectedCards
+    .map((card, index) =>
+      card.credentialProof?.jwt ??
+      card.credentialJwt ??
+      records[index]?.credentialData
+    )
+    .filter((value): value is string | Record<string, unknown> => Boolean(value));
   const presentationId = `vp_${stableId({
     mode: input.mode,
     context: input.context,
@@ -105,12 +112,13 @@ export function buildSharePackage(input: SharePackageBuildInput): BuiltSharePack
     recipient: input.recipient,
     validUntil: expiresAt,
     selectedFields: input.selectedFields ?? [],
-    verifiableCredential: records.map(record => record.credentialData),
+    verifiableCredential: credentialPayloads,
     trustcare: {
       mode: input.mode,
       context: input.context,
       documentTypes: records.map(record => record.documentType),
       documentReferences: records.map(record => record.documentReference),
+      credentialJwtCount: credentialPayloads.filter(value => typeof value === "string").length,
       payloadHash: hashJson(records.map(record => record.credentialId))
     }
   };

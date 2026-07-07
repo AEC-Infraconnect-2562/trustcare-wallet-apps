@@ -103,6 +103,11 @@ export async function present(
     if (!card) throw new Error("Wallet card not found");
     if (card.credentialStatus !== "active")
       throw new Error("This wallet card is not active");
+    const signedCredentialPresentation = createSignedCredentialPresentation(
+      card,
+      input,
+    );
+    if (signedCredentialPresentation) return signedCredentialPresentation;
     return createDemoPresentation(
       card,
       input.selectedFields,
@@ -523,4 +528,63 @@ async function demoWalletCards(options: WalletApiOptions) {
     ).flat();
   }
   return getDemoWalletCards(options.userId);
+}
+
+function createSignedCredentialPresentation(
+  card: Awaited<ReturnType<typeof demoWalletCards>>[number],
+  input: WalletPresentationRequest,
+): WalletPresentationResponse | null {
+  const credentialJwt = card.credentialProof?.jwt ?? card.credentialJwt;
+  if (!credentialJwt) return null;
+  const presentationId = `vc_${String(card.credentialId).replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+  const expiresAt =
+    card.expiresAt ??
+    new Date(Date.now() + (input.validMinutes ?? 10) * 60_000).toISOString();
+  return {
+    presentationId,
+    format: "vc+jwt",
+    mode: input.selectedFields?.length ? "direct_vc_jwt" : "direct_vc_jwt",
+    credentialCount: 1,
+    selectedFields: input.selectedFields ?? [],
+    expiresAt,
+    qrData: credentialJwt,
+    transportDecision: {
+      mode: "direct_vc_jwt",
+      label: "Signed credential JWT",
+      reason:
+        "Single synced credential already has an issuer-signed ES256/EdDSA JWT envelope, so the QR can be verified directly without a legacy resolver fallback.",
+    },
+    verificationChecklist: [
+      {
+        key: "issuer",
+        label: "Issuer DID",
+        ok: Boolean(card.issuerDid),
+        detail: card.issuerDid ?? "",
+      },
+      {
+        key: "proof",
+        label: "Signed VC JWT",
+        ok: true,
+        detail:
+          card.credentialProof?.kid ??
+          card.credentialProof?.alg ??
+          "credential proof",
+      },
+      {
+        key: "portal_status",
+        label: "Portal verification status",
+        ok: card.portalVerification?.verified !== false,
+        detail:
+          card.portalVerification?.status ??
+          card.portalVerification?.trustLevel ??
+          "pending verifier check",
+      },
+      {
+        key: "status",
+        label: "Credential active",
+        ok: card.credentialStatus === "active",
+        detail: card.credentialStatus,
+      },
+    ],
+  };
 }

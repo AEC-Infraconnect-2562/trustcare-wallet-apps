@@ -154,7 +154,11 @@ export function walletDocumentRecordFromCard(card: WalletCard): WalletDocumentRe
     title: card.displayName,
     titleEn: card.displayNameEn,
     status: String(card.credentialStatus ?? "active"),
-    trustStatus: isTrustArtifactDocumentType(documentType) ? "trust_artifact" : "issuer_signed",
+    trustStatus: isTrustArtifactDocumentType(documentType)
+      ? "trust_artifact"
+      : String(card.credentialStatus ?? "active") === "unverified"
+        ? "patient_provided_unverified"
+        : "issuer_signed",
     issuedAt: card.issuedAt,
     expiresAt: card.expiresAt,
     issuerDid: card.issuerDid,

@@ -191,7 +191,7 @@ export type VerifierResult = {
   trustLevel: TrustLevel;
   issuer?: string;
   holderDid?: string;
-  protocol?: "trustcare-vp" | "oid4vp" | "oid4vci" | "shl" | "jwt" | "json" | "unknown";
+  protocol?: "trustcare-vp" | "trustcare-vc" | "oid4vp" | "oid4vci" | "shl" | "jwt" | "json" | "unknown";
   requestSummary?: string;
   matchedCredentialIds?: Array<number | string>;
   credentials?: unknown[];
@@ -200,6 +200,7 @@ export type VerifierResult = {
   errors?: string[];
   transportDecision?: unknown;
   verificationChecklist?: unknown;
+  verificationPayload?: unknown;
 };
 
 export type ReadinessContext =
