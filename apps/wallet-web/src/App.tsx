@@ -66,6 +66,9 @@ import { Badge, Button, Surface, WalletCardView } from "@trustcare/ui-web";
 import {
   buildPortalInteroperabilityFixtures,
   buildSharePackage,
+  buildMissingDocumentCards,
+  buildPurposePickerCards,
+  buildReadinessSummary,
   createShareGatewayPublicationRequest,
   countCardsByCategory,
   buildDocumentRequestPlan,
@@ -83,8 +86,11 @@ import {
   importWalletExchange,
   parseShlLink,
   fetchShlManifest,
+  getDisabledReason,
   mergeWalletObjects,
+  normalizeDocumentType,
   normalizePhotoUrl,
+  recommendSharePacket,
   readinessContextLabels,
   readinessContextValues,
   shlAccessSummary,
@@ -96,7 +102,6 @@ import {
   type DocumentPackageScope,
   type DocumentRequestDraft,
   type DocumentRequestFormat,
-  type DocumentRequestOption,
   type DocumentRequestReturnChannel,
   type DocumentRequestSource,
   type PresentationHistoryItem,
@@ -117,8 +122,18 @@ import {
   type WalletStoredObject,
   type VerifierResult,
   type BuiltSharePackage,
+  type CanonicalDocumentType,
   type ShareGatewayPublicationResponse,
+  type SharePackageMode,
 } from "@trustcare/wallet-core";
+import { AcquisitionPlanner } from "./components/acquisition/AcquisitionPlanner";
+import { DisabledReason } from "./components/common/DisabledReason";
+import { ImportHub } from "./components/import/ImportHub";
+import { MissingDocumentCard } from "./components/prepare/MissingDocumentCard";
+import { PurposePickerCard } from "./components/prepare/PurposePickerCard";
+import { ReadinessSummaryCard } from "./components/prepare/ReadinessSummaryCard";
+import { SharePacketComposer } from "./components/share/SharePacketComposer";
+import { TrustChecklist } from "./components/trust/TrustChecklist";
 import { env } from "./env";
 import { useOfflineWallet } from "./hooks/useOfflineWallet";
 import { useWebAuthn } from "./hooks/useWebAuthn";
@@ -536,6 +551,18 @@ function protocolRequiresVp(protocol: PackageProtocol): boolean {
 
 function protocolRequiresShl(protocol: PackageProtocol): boolean {
   return protocol === "shl" || protocol === "hybrid";
+}
+
+function sharePackageModeForUi(
+  protocol: PackageProtocol,
+  disclosureMode: DisclosureMode,
+  selectedCount: number,
+): SharePackageMode {
+  if (protocol === "shl") return "StandardSHL";
+  if (protocol === "hybrid") return "CertifiedSHLManifestPackage";
+  return disclosureMode === "full" && selectedCount <= 1
+    ? "DirectVP"
+    : "PurposeVP";
 }
 
 const readinessContexts = Object.keys(
@@ -1556,6 +1583,8 @@ export default function App() {
             fixtures={interopFixtures}
             livePortalSync={canSyncPortalWallet}
             developerMode={developerMode}
+            canSyncPortal={canSyncPortalWallet}
+            portalSyncBusy={portalSyncBusy}
             objects={filteredObjects}
             allObjects={storedObjects}
             filter={storeFilter}
@@ -1568,6 +1597,7 @@ export default function App() {
               setDetailOpen(true);
             }}
             onOpenScanner={() => setScannerOpen(true)}
+            onSyncPortal={() => void syncActiveWalletFromPortal()}
             onImportPayload={(value) => {
               importPayload(value);
               setDocumentsTab("store");
@@ -1588,7 +1618,10 @@ export default function App() {
             fixtures={interopFixtures}
             livePortalSync={canSyncPortalWallet}
             developerMode={developerMode}
+            canSyncPortal={canSyncPortalWallet}
+            portalSyncBusy={portalSyncBusy}
             onOpenScanner={() => setScannerOpen(true)}
+            onSyncPortal={() => void syncActiveWalletFromPortal()}
             onImportPayload={(value) => {
               importPayload(value);
               navigateTo("store");
@@ -2198,6 +2231,8 @@ function DocumentsHubView({
   fixtures,
   livePortalSync,
   developerMode,
+  canSyncPortal,
+  portalSyncBusy,
   objects,
   allObjects,
   filter,
@@ -2205,6 +2240,7 @@ function DocumentsHubView({
   history,
   onOpenCard,
   onOpenScanner,
+  onSyncPortal,
   onImportPayload,
   onCopyFixture,
   onFilter,
@@ -2218,6 +2254,8 @@ function DocumentsHubView({
   fixtures: ReturnType<typeof buildPortalInteroperabilityFixtures>;
   livePortalSync: boolean;
   developerMode: boolean;
+  canSyncPortal: boolean;
+  portalSyncBusy: boolean;
   objects: WalletStoredObject[];
   allObjects: WalletStoredObject[];
   filter: StoreFilter;
@@ -2225,6 +2263,7 @@ function DocumentsHubView({
   history: PresentationHistoryItem[];
   onOpenCard: (card: WalletCard) => void;
   onOpenScanner: () => void;
+  onSyncPortal: () => void;
   onImportPayload: (value: string) => void;
   onCopyFixture: (label: string, value: string) => void;
   onFilter: (filter: StoreFilter) => void;
@@ -2286,7 +2325,10 @@ function DocumentsHubView({
           fixtures={fixtures}
           livePortalSync={livePortalSync}
           developerMode={developerMode}
+          canSyncPortal={canSyncPortal}
+          portalSyncBusy={portalSyncBusy}
           onOpenScanner={onOpenScanner}
+          onSyncPortal={onSyncPortal}
           onImportPayload={onImportPayload}
           onCopyFixture={onCopyFixture}
         />
@@ -2481,7 +2523,10 @@ function ReceiveView({
   fixtures,
   livePortalSync,
   developerMode,
+  canSyncPortal,
+  portalSyncBusy,
   onOpenScanner,
+  onSyncPortal,
   onImportPayload,
   onCopyFixture,
 }: {
@@ -2489,7 +2534,10 @@ function ReceiveView({
   fixtures: ReturnType<typeof buildPortalInteroperabilityFixtures>;
   livePortalSync: boolean;
   developerMode: boolean;
+  canSyncPortal: boolean;
+  portalSyncBusy: boolean;
   onOpenScanner: () => void;
+  onSyncPortal: () => void;
   onImportPayload: (value: string) => void;
   onCopyFixture: (label: string, value: string) => void;
 }) {
@@ -2527,32 +2575,19 @@ function ReceiveView({
       </section>
 
       <Surface>
-        <div className="section-title-row">
-          <div>
-            <h2>วางหรือ import payload</h2>
-            <p>
-              วาง OID4VCI offer, OID4VP request, SHL link, VC/VP JSON, JWT หรือ
-              TrustCare QR URL
-            </p>
-          </div>
-          <Badge tone="blue">กล่องรับเอกสาร</Badge>
-        </div>
-        <div className="import-panel">
-          <textarea
-            value={payload}
-            onChange={(event) => setPayload(event.target.value)}
-            placeholder="openid-credential-offer://..., openid4vp://..., shlink:/..., VC/VP JSON or JWT"
-          />
-          <Button
-            disabled={!payload.trim()}
-            onClick={() => {
-              onImportPayload(payload);
-              setPayload("");
-            }}
-          >
-            <Inbox size={18} /> Import เข้าคลัง
-          </Button>
-        </div>
+        <ImportHub
+          payload={payload}
+          livePortalSync={livePortalSync}
+          canSyncPortal={canSyncPortal}
+          syncBusy={portalSyncBusy}
+          onPayload={setPayload}
+          onScan={onOpenScanner}
+          onSyncPortal={onSyncPortal}
+          onImport={() => {
+            onImportPayload(payload);
+            setPayload("");
+          }}
+        />
       </Surface>
 
       {livePortalSync ? (
@@ -2984,6 +3019,66 @@ function ShareView({
     () => shareableCards.filter((card) => selectedCardIds.includes(card.id)),
     [selectedCardIds, shareableCards],
   );
+  const selectedDocumentTypes = useMemo(
+    () =>
+      selectedCards
+        .map((card) => normalizeDocumentType(card.cardType))
+        .filter(Boolean) as CanonicalDocumentType[],
+    [selectedCards],
+  );
+  const shareGatewayReady = Boolean(currentShareGatewayBaseUrl());
+  const sharePackageMode = sharePackageModeForUi(
+    packageProtocol,
+    mode,
+    selectedCards.length,
+  );
+  const packetRecommendation = useMemo(
+    () =>
+      recommendSharePacket({
+        context: purpose,
+        selectedDocumentTypes,
+        selectedCount: selectedCards.length,
+        hasLargeRecordSet: selectedCards.length > 3,
+        recipientSupportsShl: true,
+        trustcareCertificationAvailable: shareGatewayReady,
+        containsPatientProvidedUpload: selectedCards.some(
+          (card) => card.credentialStatus === "unverified",
+        ),
+      }),
+    [purpose, selectedCards, selectedDocumentTypes, shareGatewayReady],
+  );
+  const shareDisabledReason = useMemo(
+    () =>
+      getDisabledReason({
+        action: "create_share_package",
+        context: purpose,
+        packageMode: sharePackageMode,
+        selectedDocumentCount: selectedCards.length,
+        missingRequiredCount: purposeReadiness.missing.filter(
+          (item) => item.required,
+        ).length,
+        shareGatewayReady,
+        biometricRequired: shareProfile.biometricRequired,
+        biometricReady: biometricEnabled,
+        shlPasscodeRequired:
+          protocolRequiresShl(packageProtocol) && shlPolicy.passcodeRequired,
+        shlPasscodeReady:
+          !protocolRequiresShl(packageProtocol) || shlPasscodeReady(shlPolicy),
+        trustcareCertificationAvailable:
+          packageProtocol !== "hybrid" || shareGatewayReady,
+      }),
+    [
+      biometricEnabled,
+      packageProtocol,
+      purpose,
+      purposeReadiness.missing,
+      selectedCards.length,
+      shareGatewayReady,
+      sharePackageMode,
+      shareProfile.biometricRequired,
+      shlPolicy,
+    ],
+  );
   const selectedTimeline = useMemo(
     () =>
       buildTimelineItems(selectedCards, new Date().toISOString(), timeAnchor),
@@ -3014,6 +3109,14 @@ function ShareView({
 
   const createSharePacket = useCallback(async () => {
     if (!selectedCards.length) return;
+    if (shareDisabledReason) {
+      setSharePublication({
+        state: "blocked",
+        message: shareDisabledReason.reason,
+        warnings: [shareDisabledReason.fix],
+      });
+      return;
+    }
     const ok = await onConfirmBiometric();
     if (!ok) return;
     setSharePublication({
@@ -3042,16 +3145,8 @@ function ShareView({
       });
       return;
     }
-    const packageMode =
-      packageProtocol === "shl"
-        ? "StandardSHL"
-        : packageProtocol === "hybrid"
-          ? "CertifiedSHLManifestPackage"
-          : mode === "full" && selectedCards.length === 1
-            ? "DirectVP"
-            : "PurposeVP";
     const result = buildSharePackage({
-      mode: packageMode,
+      mode: sharePackageMode,
       context: purpose,
       cards: selectedCards,
       selectedCardIds: selectedCards.map((card) => card.id),
@@ -3184,6 +3279,8 @@ function ShareView({
     recipient,
     selectedCards,
     selectedFields,
+    shareDisabledReason,
+    sharePackageMode,
     shareProfile,
     shlPolicy,
     timeAnchor,
@@ -3230,6 +3327,15 @@ function ShareView({
   return (
     <div className="view-stack">
       {scanOutcome && <ScanOutcomePanel outcome={scanOutcome} />}
+      <SharePacketComposer
+        purpose={purpose}
+        recipient={recipient}
+        readiness={purposeReadiness}
+        selectedCount={selectedCards.length}
+        biometricRequired={shareProfile.biometricRequired}
+        biometricReady={biometricEnabled}
+        recommendation={packetRecommendation}
+      />
       <Surface className="share-flow">
         <div className="section-title-row">
           <div>
@@ -3516,14 +3622,11 @@ function ShareView({
               </div>
               <Button
                 onClick={() => void createSharePacket()}
-                disabled={
-                  !selectedCards.length ||
-                  (protocolRequiresShl(packageProtocol) &&
-                    !shlPasscodeReady(shlPolicy))
-                }
+                disabled={Boolean(shareDisabledReason)}
               >
                 <UserCheck size={18} /> ยืนยันและสร้าง QR
               </Button>
+              <DisabledReason reason={shareDisabledReason} />
             </div>
           </div>
 
@@ -3772,6 +3875,12 @@ function ShareView({
               {item}
             </small>
           ))}
+          {Array.isArray(verifierResult.verificationChecklist) && (
+            <TrustChecklist
+              title="ผลตรวจความน่าเชื่อถือ"
+              items={verifierResult.verificationChecklist}
+            />
+          )}
         </Surface>
       )}
       <section className="shl-grid">
@@ -3926,96 +4035,27 @@ function DocumentFlowDialog({
         </div>
 
         <div className="document-flow-body">
-          <Surface className="document-flow-section">
-            <div className="section-title-row">
-              <div>
-                <span className="eyebrow">1. เอกสารที่ต้องจัดการ</span>
-                <h3>{plan.serviceLabel}</h3>
-                <p>
-                  Wallet จะใช้ canonical document type เดียวกันทุกหน้า
-                  เพื่อไม่ให้เอกสารพร้อมบริการกับเอกสารที่แชร์คนละชุดกัน
-                </p>
-              </div>
-              <Badge tone={requirements.length ? "yellow" : "green"}>
-                {requirements.length} รายการ
-              </Badge>
-            </div>
-            <div className="document-flow-requirements">
-              {plan.selectedRequirements.map((requirement) => (
-                <div key={requirement.key}>
-                  <strong>{requirement.label}</strong>
-                  <small>
-                    {requirement.required ? "จำเป็น" : "แนะนำ"} ·{" "}
-                    {requirement.documentTypes.join(", ")}
-                  </small>
-                </div>
-              ))}
-            </div>
-          </Surface>
-
-          <div className="document-flow-grid">
-            <Surface className="document-flow-section">
-              <span className="eyebrow">2. แหล่งข้อมูล</span>
-              <h3>{mode === "import" ? "นำเข้าจากที่ไหน" : "ขอไปที่ไหน"}</h3>
-              <OptionGrid
-                options={plan.sourceOptions}
-                activeId={plan.selectedSource}
-                onSelect={(id) => {
-                  setSource(id);
-                  setFormat(undefined);
-                  setReturnChannel(undefined);
-                }}
-              />
-            </Surface>
-
-            <Surface className="document-flow-section">
-              <span className="eyebrow">3. รูปแบบเอกสารหรือ Bundle</span>
-              <div className="mini-toggle-group">
-                <button
-                  className={scope === "single_document" ? "active" : ""}
-                  onClick={() => {
-                    setScope("single_document");
-                    setFormat(undefined);
-                    setReturnChannel(undefined);
-                  }}
-                >
-                  เอกสารเดี่ยว
-                </button>
-                <button
-                  className={scope === "document_bundle" ? "active" : ""}
-                  onClick={() => {
-                    setScope("document_bundle");
-                    setFormat(undefined);
-                    setReturnChannel(undefined);
-                  }}
-                >
-                  Document Bundle
-                </button>
-              </div>
-              <OptionGrid
-                options={plan.formatOptions}
-                activeId={plan.selectedFormat}
-                onSelect={(id) => {
-                  setFormat(id);
-                  setReturnChannel(undefined);
-                }}
-              />
-            </Surface>
-          </div>
-
-          <div className="document-flow-grid">
-            <Surface className="document-flow-section">
-              <span className="eyebrow">4. วิธีรับกลับ</span>
-              <h3>Return Channel</h3>
-              <OptionGrid
-                options={plan.returnChannelOptions}
-                activeId={selectedReturnChannel}
-                onSelect={setReturnChannel}
-              />
-            </Surface>
-
-            <Surface className="document-flow-section">
-              <span className="eyebrow">5. เงื่อนไขตาม Format</span>
+          <AcquisitionPlanner
+            mode={mode}
+            plan={plan}
+            scope={scope}
+            selectedReturnChannel={selectedReturnChannel}
+            onSource={(id) => {
+              setSource(id);
+              setFormat(undefined);
+              setReturnChannel(undefined);
+            }}
+            onFormat={(id) => {
+              setFormat(id);
+              setReturnChannel(undefined);
+            }}
+            onScope={(nextScope) => {
+              setScope(nextScope);
+              setFormat(undefined);
+              setReturnChannel(undefined);
+            }}
+            onReturnChannel={setReturnChannel}
+            controls={
               <DocumentFlowControls
                 plan={plan}
                 selectedFields={selectedFields}
@@ -4027,88 +4067,13 @@ function DocumentFlowDialog({
                 maxAccessCount={maxAccessCount}
                 setMaxAccessCount={setMaxAccessCount}
               />
-            </Surface>
-          </div>
-
-          <Surface className="document-flow-review">
-            <div>
-              <span className="eyebrow">6. ตรวจสอบก่อนส่ง</span>
-              <h3>
-                {documentRequestSourceLabel(plan.selectedSource)} ·{" "}
-                {documentRequestFormatLabel(plan.selectedFormat)}
-              </h3>
-              <p>
-                {plan.trustPolicy === "trustcare_certified"
-                  ? "ผลลัพธ์ต้องมี Manifest VP, Holder VC และ hash ของไฟล์ก่อนขึ้นสถานะ TrustCare-certified"
-                  : plan.trustPolicy === "patient_provided_unverified"
-                    ? "ผลลัพธ์จะเป็นหลักฐานที่ผู้ใช้ให้มาเอง จึงยังไม่ใช้แทน VC ที่ trusted issuer ลงนาม"
-                    : "ผลลัพธ์ต้องตรวจ issuer, signature, status และอายุเอกสารก่อนใช้ใน readiness"}
-              </p>
-            </div>
-            <div className="document-flow-warning-list">
-              {plan.warnings.map((warning) => (
-                <div key={warning} className="document-flow-warning">
-                  <AlertTriangle size={16} />
-                  <span>{warning}</span>
-                </div>
-              ))}
-              {plan.nextSteps.map((step) => (
-                <div key={step} className="document-flow-next-step">
-                  <CheckCircle2 size={16} />
-                  <span>{step}</span>
-                </div>
-              ))}
-            </div>
-            <div className="document-flow-actions">
-              <Button className="secondary" onClick={onClose}>
-                ยกเลิก
-              </Button>
-              <Button onClick={submit} disabled={hasShlPasscodeError}>
-                {mode === "import" ? <Upload size={18} /> : <FilePlus2 size={18} />}
-                {mode === "import" ? "สร้างงานนำเข้า" : "ส่งคำขอเอกสาร"}
-              </Button>
-            </div>
-          </Surface>
+            }
+            onCancel={onClose}
+            onSubmit={submit}
+            submitDisabled={hasShlPasscodeError}
+          />
         </div>
       </div>
-    </div>
-  );
-}
-
-function OptionGrid<T extends string>({
-  options,
-  activeId,
-  onSelect,
-}: {
-  options: DocumentRequestOption<T>[];
-  activeId: T;
-  onSelect: (id: T) => void;
-}) {
-  return (
-    <div className="document-flow-option-grid">
-      {options.map((option) => (
-        <button
-          key={option.id}
-          className={[
-            "document-flow-option",
-            option.id === activeId ? "active" : "",
-            option.enabled ? "" : "disabled",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          onClick={() => option.enabled && onSelect(option.id)}
-          disabled={!option.enabled}
-        >
-          <span>
-            <strong>{option.label}</strong>
-            <small>{option.description}</small>
-          </span>
-          {option.recommended && <Badge tone="blue">แนะนำ</Badge>}
-          {!option.enabled && option.reasonDisabled && (
-            <em>{option.reasonDisabled}</em>
-          )}
-        </button>
-      ))}
     </div>
   );
 }
@@ -4313,9 +4278,22 @@ function PrepareView({
   const serviceDocumentDescription = activeContract
     ? `${activeContract.patientLabel} · ${activeContract.bundleTypes.patient}`
     : readinessPurposeTh[context];
-  const primaryActionText = !canCreateFullPacket
-    ? "ขอเอกสารที่ขาด"
-    : "ไปหน้าแชร์เอกสาร";
+  const purposeCards = useMemo(
+    () => buildPurposePickerCards(context),
+    [context],
+  );
+  const readinessSummary = useMemo(
+    () => buildReadinessSummary(readinessResult),
+    [readinessResult],
+  );
+  const missingDocumentCards = useMemo(
+    () =>
+      buildMissingDocumentCards(
+        context,
+        missing as ReadinessRequirement[],
+      ),
+    [context, missing],
+  );
   const primaryAction = () => {
     if (!canCreateFullPacket) {
       onRequestMissing(missing as ReadinessRequirement[]);
@@ -4349,55 +4327,11 @@ function PrepareView({
   ];
   return (
     <div className="view-stack">
-      <Surface className="service-prep-hero">
-        <div className="service-prep-copy">
-          <span className="eyebrow">เตรียมบริการ</span>
-          <h2>เตรียมเอกสารก่อนเข้ารับบริการ</h2>
-          <p>
-            ตรวจว่าเอกสารจำเป็นครบตามบริการที่เลือกหรือไม่
-            แล้วไปหน้าแชร์เพื่อเลือกผู้รับ วัตถุประสงค์ และรูปแบบการส่งข้อมูล
-          </p>
-          <div className="prep-hero-actions">
-            <Button
-              className={isPrepared ? "green" : "purple"}
-              onClick={primaryAction}
-            >
-              {isPrepared ? <Send size={18} /> : <FilePlus2 size={18} />}
-              {primaryActionText}
-            </Button>
-            {!canCreateFullPacket && (
-              <Button
-                className="secondary"
-                onClick={() => onImportMissing(missing as ReadinessRequirement[])}
-              >
-                <Upload size={18} /> นำเข้าเอกสาร
-              </Button>
-            )}
-          </div>
-        </div>
-        <div className="prep-score-card">
-          <div
-            className={
-              canCreateFullPacket
-                ? "prep-score-ring ready"
-                : "prep-score-ring warning"
-            }
-          >
-            {readinessResult.score ?? 0}%
-          </div>
-          <div>
-            <strong>
-              {canCreateFullPacket ? "พร้อมเข้ารับบริการ" : "ยังขาดเอกสาร"}
-            </strong>
-            <span>
-              จำเป็น {readinessResult.requiredReady ?? 0}/
-              {readinessResult.requiredTotal ?? 0} · แนะนำ{" "}
-              {readinessResult.recommendedReady ?? 0}/
-              {readinessResult.recommendedTotal ?? 0}
-            </span>
-          </div>
-        </div>
-      </Surface>
+      <ReadinessSummaryCard
+        summary={readinessSummary}
+        onPrimary={primaryAction}
+        onImport={() => onImportMissing(missing as ReadinessRequirement[])}
+      />
 
       <section className="prepare-decision-grid">
         <Surface className="service-context-panel">
@@ -4413,22 +4347,13 @@ function PrepareView({
             </Badge>
           </div>
           <div className="service-context-grid">
-            {(Object.keys(readinessContextLabels) as ReadinessContext[]).map(
-              (key) => (
-                <button
-                  key={key}
-                  className={
-                    context === key
-                      ? "service-context-card active"
-                      : "service-context-card"
-                  }
-                  onClick={() => onContext(key)}
-                >
-                  <span>{readinessContextLabels[key].th}</span>
-                  <small>{readinessPurposeTh[key]}</small>
-                </button>
-              ),
-            )}
+            {purposeCards.map((card) => (
+              <PurposePickerCard
+                key={card.context}
+                card={card}
+                onSelect={onContext}
+              />
+            ))}
           </div>
         </Surface>
 
@@ -4518,6 +4443,30 @@ function PrepareView({
                 ยังขาดเอกสารจำเป็น {missingRequired.length} รายการ
                 ควรขอจากโรงพยาบาลหรือนำเข้าเอกสารก่อนสร้างชุดพร้อมรับบริการ
               </span>
+            </div>
+          )}
+          {!!missingDocumentCards.length && (
+            <div className="missing-document-grid">
+              {missingDocumentCards.map((card) => (
+                <MissingDocumentCard
+                  key={card.key}
+                  card={card}
+                  onRequest={() =>
+                    onRequestMissing(
+                      (missing as ReadinessRequirement[]).filter(
+                        (item) => item.key === card.key,
+                      ),
+                    )
+                  }
+                  onImport={() =>
+                    onImportMissing(
+                      (missing as ReadinessRequirement[]).filter(
+                        (item) => item.key === card.key,
+                      ),
+                    )
+                  }
+                />
+              ))}
             </div>
           )}
           <div className="readiness-doc-list">

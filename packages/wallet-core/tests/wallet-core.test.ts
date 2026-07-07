@@ -12,6 +12,12 @@ import {
   buildSharePackage,
   buildDocumentRequestPlan,
   createDocumentRequestDraft,
+  buildMissingDocumentCards,
+  buildPurposePickerCards,
+  buildReadinessSummary,
+  detectImportPayload,
+  getDisabledReason,
+  recommendSharePacket,
   canonicalServiceProfiles,
   CANONICAL_DOCUMENT_CATEGORIES,
   CANONICAL_DOCUMENT_TYPES,
@@ -498,5 +504,95 @@ describe("wallet-core", () => {
     expect(offer?.kind).toBe("oid4vci");
     expect(request?.kind).toBe("oid4vp");
     expect(request?.requestedCredentialTypes.length).toBeGreaterThan(0);
+  });
+
+  it("provides human disabled reasons with fixes for blocked actions", () => {
+    const noSelection = getDisabledReason({
+      action: "create_share_package",
+      packageMode: "PurposeVP",
+      selectedDocumentCount: 0,
+      shareGatewayReady: true
+    });
+    const noGateway = getDisabledReason({
+      action: "create_share_package",
+      packageMode: "PurposeVP",
+      selectedDocumentCount: 1,
+      shareGatewayReady: false
+    });
+    const noPasscode = getDisabledReason({
+      action: "create_share_package",
+      packageMode: "StandardSHL",
+      selectedDocumentCount: 3,
+      shlPasscodeRequired: true,
+      shlPasscodeReady: false
+    });
+
+    expect(noSelection?.reason).toContain("ยังไม่ได้เลือกเอกสาร");
+    expect(noSelection?.fix).toContain("เลือกเอกสาร");
+    expect(noGateway?.fix).toContain("Share Gateway");
+    expect(noPasscode?.fix).toContain("PIN");
+    expect(noPasscode?.ariaLabel).toContain("วิธีแก้");
+  });
+
+  it("recommends VP for OPD/pharmacy and certified SHL for large TrustCare service bundles", () => {
+    const opd = recommendSharePacket({
+      context: "opd_visit",
+      selectedDocumentTypes: ["patient_identity", "allergy_alert"],
+      selectedCount: 2,
+      trustcareCertificationAvailable: true
+    });
+    const pharmacy = recommendSharePacket({
+      context: "pharmacy_dispense",
+      selectedDocumentTypes: ["patient_identity", "prescription"],
+      selectedCount: 2,
+      trustcareCertificationAvailable: true
+    });
+    const referral = recommendSharePacket({
+      context: "referral",
+      selectedDocumentTypes: ["patient_identity", "referral_vc", "patient_summary", "lab_result"],
+      selectedCount: 4,
+      hasLargeRecordSet: true,
+      trustcareCertificationAvailable: true
+    });
+    const fallback = recommendSharePacket({
+      context: "cross_border",
+      selectedDocumentTypes: ["patient_identity", "patient_summary", "lab_result"],
+      selectedCount: 3,
+      hasLargeRecordSet: true,
+      trustcareCertificationAvailable: false
+    });
+
+    expect(opd.mode).toBe("PurposeVP");
+    expect(pharmacy.mode).toBe("PurposeVP");
+    expect(referral.mode).toBe("CertifiedSHLManifestPackage");
+    expect(fallback.mode).toBe("StandardSHL");
+    expect(fallback.warnings.join(" ")).toContain("TrustCare-certified");
+  });
+
+  it("builds Thai-first purpose and readiness UX models with accessibility labels", () => {
+    const readiness = assessLocalReadiness(getDemoWalletCards("demo-patient-complete-001"), "opd_visit");
+    const summary = buildReadinessSummary(readiness);
+    const purposeCards = buildPurposePickerCards("opd_visit");
+    const missingCards = buildMissingDocumentCards("opd_visit", readiness.missing);
+
+    expect(summary.requiredText).toContain("จำเป็น");
+    expect(summary.primaryCtaLabel).toBe("ไปหน้าแชร์เอกสาร");
+    expect(purposeCards.find(card => card.context === "opd_visit")?.ariaLabel).toContain("OPD");
+    expect(purposeCards.every(card => card.ariaLabel.length > card.label.length)).toBe(true);
+    expect(missingCards.every(card => card.ariaLabel.length > 0)).toBe(true);
+  });
+
+  it("detects import payload states with patient-friendly labels", () => {
+    const shl = detectImportPayload("shlink:/abc");
+    const offer = detectImportPayload("openid-credential-offer://?credential_offer_uri=https://issuer.example/offer");
+    const fhir = detectImportPayload(JSON.stringify({ resourceType: "DocumentReference", status: "current" }));
+    const unknown = detectImportPayload("not-a-supported-payload");
+
+    expect(shl.formatLabel).toContain("SMART Health Link");
+    expect(shl.trustLabel).toContain("อ่านได้");
+    expect(offer.recommendedAction).toContain("credential offer");
+    expect(fhir.trustLabel).toContain("รอตรวจสอบ");
+    expect(unknown.canImport).toBe(false);
+    expect(unknown.trustLabel).toContain("ไม่รู้จักรูปแบบ");
   });
 });
