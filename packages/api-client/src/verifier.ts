@@ -5,6 +5,7 @@ import {
   parseTrustCareQr,
   fetchShlManifest,
   resolveDemoResolverPayload,
+  verifyShlManifestTrust,
   type VerifierResult,
 } from "@trustcare/wallet-core";
 import {
@@ -105,12 +106,7 @@ export async function verifyQr(
     const hasProof = hasVerifiableProof(payload);
     return {
       verified: credentialCount > 0 && hasProof,
-      trustLevel:
-        credentialCount > 0 && hasProof
-          ? "green"
-          : credentialCount > 0
-            ? "yellow"
-            : "red",
+      trustLevel: credentialCount > 0 ? "yellow" : "red",
       protocol: "trustcare-vp",
       issuer: "TrustCare Wallet legacy demo resolver",
       holderDid:
@@ -153,6 +149,7 @@ export async function verifyQr(
       ],
       warnings: [
         "QR รูปแบบ legacy ที่ฝัง payload ใน URL ใช้ได้เฉพาะ backward compatibility เท่านั้น.",
+        "ไม่ให้ green badge เพราะ legacy tc_payload ไม่ใช่ resolver-backed artifact ตาม production trust model.",
         ...(!hasProof
           ? [
               "ไม่ให้ green badge เพราะ VP ยังไม่มี proof/signature แบบ ES256/EdDSA/Data Integrity ที่ตรวจสอบได้.",
@@ -171,63 +168,30 @@ export async function verifyQr(
   const shl = parseShlLink(qrData);
   if (shl) {
     const fetched = await fetchShlManifest(qrData);
-    const trustcare =
-      fetched.manifest?.trustcare &&
-      typeof fetched.manifest.trustcare === "object"
-        ? (fetched.manifest.trustcare as Record<string, any>)
-        : {};
-    const manifestVp =
-      trustcare.manifestVp && typeof trustcare.manifestVp === "object"
-        ? (trustcare.manifestVp as Record<string, any>)
-        : undefined;
-    const manifestCredential =
-      trustcare.manifestCredential &&
-      typeof trustcare.manifestCredential === "object"
-        ? (trustcare.manifestCredential as Record<string, any>)
-        : undefined;
-    const holderAuthorizationCredential =
-      trustcare.holderAuthorizationCredential &&
-      typeof trustcare.holderAuthorizationCredential === "object"
-        ? (trustcare.holderAuthorizationCredential as Record<string, any>)
-        : undefined;
-    const certified = Boolean(
-      fetched.ok &&
-      trustcare.trustLayerStatus === "certified_manifest_vp" &&
-      trustcare.manifestVpHash &&
-      manifestVp &&
-      manifestCredential &&
-      holderAuthorizationCredential,
-    );
-    const pendingTrustCare = Boolean(
-      fetched.ok && trustcare.trustLayerStatus === "pending_manifest_vp",
-    );
+    const trustResult = fetched.ok
+      ? verifyShlManifestTrust(fetched.manifest)
+      : null;
+    const trustcare = objectValue(fetched.manifest?.trustcare) ?? {};
+    const manifestVp = objectValue(trustcare.manifestVp);
     const passcodeMissing = shl.passcodeRequired && !fetched.ok;
     return {
-      verified: certified,
-      trustLevel: certified
-        ? "green"
-        : fetched.ok
-          ? pendingTrustCare
-            ? "yellow"
-            : "blue"
-          : passcodeMissing
-            ? "yellow"
-            : "red",
+      verified: Boolean(trustResult?.verified),
+      trustLevel: trustResult?.trustLevel ?? (passcodeMissing ? "yellow" : "red"),
       protocol: "shl",
-      issuer: certified
+      issuer: trustResult?.status === "trustcare_certified"
         ? "TrustCare Certified SHL"
         : fetched.ok
           ? "SMART Health Links transport"
           : "SMART Health Links parser",
       holderDid:
         typeof manifestVp?.holder === "string" ? manifestVp.holder : undefined,
-      requestSummary: certified
+      requestSummary: trustResult?.status === "trustcare_certified"
         ? `Certified SHL + Manifest VP / เอกสาร ${fetched.fileCount} รายการ`
         : fetched.ok
           ? `Standard SHL transport-valid / เอกสาร ${fetched.fileCount} รายการ`
           : "อ่าน SHL ได้ แต่ยังดึง manifest ไม่สำเร็จ",
       credentials: fetched.manifest ? [fetched.manifest] : [],
-      verificationChecklist: [
+      verificationChecklist: trustResult?.checklist ?? [
         {
           key: "parsed",
           label: "อ่าน SHL QR ได้",
@@ -240,45 +204,22 @@ export async function verifyQr(
           ok: fetched.ok,
           detail: fetched.requestMethod ?? "-",
         },
-        {
-          key: "standard_files",
-          label: "manifest มี files[].location หรือ files[].embedded",
-          ok: manifestFilesAreStandard(fetched.manifest),
-          detail: String(fetched.fileCount),
-        },
-        {
-          key: "manifest_vp",
-          label: "มี TrustCare Manifest VP",
-          ok: Boolean(manifestVp),
-          detail: String(trustcare.manifestVpHash ?? "-"),
-        },
-        {
-          key: "holder_vc",
-          label: "มี Holder Authorization VC",
-          ok: Boolean(holderAuthorizationCredential),
-          detail: String(holderAuthorizationCredential?.id ?? "-"),
-        },
-        {
-          key: "manifest_vc",
-          label: "มี Manifest Credential",
-          ok: Boolean(manifestCredential),
-          detail: String(manifestCredential?.id ?? "-"),
-        },
       ],
       warnings: [
         ...fetched.warnings,
+        ...(trustResult?.warnings ?? []),
         ...(shl.passcodeRequired
           ? [
               "SHL นี้ต้องใช้ passcode โดย passcode ต้องส่งผ่านช่องทางแยกจาก QR.",
             ]
           : []),
-        ...(!certified && fetched.ok
+        ...(!trustResult?.verified && fetched.ok
           ? [
               "SHL นี้เป็น transport-valid เท่านั้น ยังไม่ถือเป็น TrustCare-certified จนกว่าจะมี Manifest VP + Manifest Credential + Holder VC ที่ verify ได้ครบ.",
             ]
           : []),
       ],
-      errors: fetched.errors,
+      errors: [...fetched.errors, ...(trustResult?.errors ?? [])],
     };
   }
   const jsonPayload = parseJson(qrData);

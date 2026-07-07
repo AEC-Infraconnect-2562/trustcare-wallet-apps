@@ -193,6 +193,102 @@ function expandDemoManifestReference(parsed: URL, id: string): Record<string, un
       location: `${parsed.origin}${parsed.pathname}?tc_resolver=shl-file&tc_id=${encodeURIComponent(id)}&tc_file=${index + 1}`
     };
   });
+  const documents = files.map((file, index) => ({
+    id: `${id}:doc:${index + 1}:${String(file.documentType)}`,
+    sequence: index + 1,
+    title: String(file.title),
+    documentType: String(file.documentType),
+    category: "clinical_summary",
+    status: "available_in_manifest",
+    sourceRole: "issuer",
+    fhirResource: "DocumentReference",
+    contentType: String(file.contentType),
+    manifestFileId: String(file.id),
+    manifestVersion: 1,
+    objectLinks: {
+      fhirDocumentReference: `DocumentReference/${String(file.id)}`
+    },
+    accessBinding: {
+      passcodeRequired: false,
+      expiresAt,
+      currentAccessCount: 0,
+      maxAccessCount: 5
+    }
+  }));
+  const manifestHash = hashJson({ files, documents });
+  const holderDid = `did:key:demo-holder-${stableHash(id).slice(0, 12)}`;
+  const accessPolicy = {
+    expiresAt,
+    recipient: "TrustCare static demo verifier",
+    purpose: label,
+    maxAccessCount: 5,
+    passcodeRequired: false
+  };
+  const accessPolicyHash = hashJson(accessPolicy);
+  const manifestCredential = trustLayerStatus === "certified_manifest_vp"
+    ? {
+        "@context": ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/shl-manifest/v1"],
+        id: `urn:trustcare:vc:manifest:${id}`,
+        type: ["VerifiableCredential", "TrustCareManifestCredential"],
+        issuer: "did:web:trustcare.network:contract-hub",
+        validFrom: new Date(0).toISOString(),
+        validUntil: expiresAt,
+        credentialSubject: {
+          id: holderDid,
+          shlPublicationId: id,
+          manifestUrl: parsed.toString(),
+          manifestHash,
+          fileHashes: files.map(file => file.hash),
+          documentReferences: documents.map(document => document.objectLinks.fhirDocumentReference),
+          accessPolicy,
+          accessPolicyHash,
+          documentCount: documents.length,
+          context,
+          purpose: label
+        }
+      }
+    : undefined;
+  const holderAuthorizationCredential = trustLayerStatus === "certified_manifest_vp"
+    ? {
+        "@context": ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/holder-authorization/v1"],
+        id: `urn:trustcare:vc:holder-authorization:${id}`,
+        type: ["VerifiableCredential", "HolderAuthorizationCredential"],
+        issuer: holderDid,
+        validFrom: new Date(0).toISOString(),
+        validUntil: expiresAt,
+        credentialSubject: {
+          id: holderDid,
+          authorizedRecipient: "TrustCare static demo verifier",
+          purpose: label,
+          shlPublicationId: id,
+          authorizedManifestCredentialId: `urn:trustcare:vc:manifest:${id}`,
+          selectedDocumentIds: documents.map(document => document.id),
+          consentReceiptId: null,
+          accessPolicyHash,
+          minimumNecessary: true,
+          accessPolicyConfirmed: true
+        }
+      }
+    : undefined;
+  const manifestVp = trustLayerStatus === "certified_manifest_vp"
+    ? {
+        "@context": ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/shl-manifest-presentation/v1"],
+        id: `urn:trustcare:vp:manifest:${id}`,
+        type: ["VerifiablePresentation", "TrustCareManifestVP"],
+        holder: holderDid,
+        verifiableCredential: [manifestCredential, holderAuthorizationCredential],
+        trustcare: {
+          certification: "certified_manifest_vp",
+          makerCheckerStatus: "approved",
+          shlPublicationId: id,
+          manifestUrl: parsed.toString(),
+          documentIds: documents.map(document => document.id),
+          fileHashes: files.map(file => file.hash),
+          accessPolicyHash
+        }
+      }
+    : undefined;
+  const manifestVpHash = manifestVp ? hashJson(manifestVp) : undefined;
   return removeUndefined({
     resourceType: "TrustCareShlManifest",
     manifestVersion: 1,
@@ -203,6 +299,18 @@ function expandDemoManifestReference(parsed: URL, id: string): Record<string, un
     purpose: label,
     expiresAt,
     files,
+    documentBundle: {
+      bundleId: `shl_bundle_${id}`,
+      manifestVersion: 1,
+      source: parsed.origin,
+      bindingModel: trustLayerStatus === "certified_manifest_vp" ? "standard_shl_plus_trustcare_manifest_vp" : "standard_shl",
+      standards: trustLayerStatus === "certified_manifest_vp"
+        ? ["SMART Health Links", "FHIR DocumentReference", "W3C VC/VP"]
+        : ["SMART Health Links", "FHIR DocumentReference"],
+      status: trustLayerStatus,
+      documents,
+      files
+    },
     access: removeUndefined({
       expiresAt,
       passcodeRequired: false,
@@ -215,7 +323,10 @@ function expandDemoManifestReference(parsed: URL, id: string): Record<string, un
       manifestCredentialId: trustLayerStatus === "certified_manifest_vp" ? `urn:trustcare:vc:manifest:${id}` : undefined,
       holderPresentationId: trustLayerStatus === "certified_manifest_vp" ? `urn:trustcare:vp:manifest:${id}` : undefined,
       holderAuthorizationCredentialId: trustLayerStatus === "certified_manifest_vp" ? `urn:trustcare:vc:holder-authorization:${id}` : undefined,
-      manifestVpHash: trustLayerStatus === "certified_manifest_vp" ? `sha256:demo-manifest-vp-${id}` : undefined,
+      manifestCredential,
+      holderAuthorizationCredential,
+      manifestVp,
+      manifestVpHash,
       contractHubVersion: "2026.07.prepare-service.v1"
     })
   });

@@ -461,7 +461,7 @@ const protocolProfiles: Record<
     label: "SHL + Manifest VP",
     description:
       "ใช้ SHL เป็น transport และใช้ VC/VP เป็นชั้นความน่าเชื่อถือสำหรับ TrustCare verifier",
-    badge: "Hybrid",
+    badge: "Certified SHL",
   },
 };
 
@@ -3130,7 +3130,7 @@ function ShareView({
       ? "คัดลอก VP"
       : packageProtocol === "shl"
         ? "คัดลอก SHL"
-        : "คัดลอก Hybrid";
+        : "คัดลอก SHL + Manifest VP";
 
   const toggleSelectedCard = (cardId: number) => {
     setSelectedCardIds((previous) =>

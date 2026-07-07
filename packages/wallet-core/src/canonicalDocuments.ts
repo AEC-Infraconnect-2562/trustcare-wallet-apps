@@ -1,4 +1,6 @@
 import type { ReadinessContext, ReadinessRequirement, WalletCard } from "./models";
+import { buildIpsDocumentBundle, buildIpsSectionSummaries, type FhirBundleDocumentLike, type IpsSectionSummary } from "./ips";
+import { documentReferenceFromCard, type FhirDocumentReferenceLike } from "./mhd";
 
 export const CANONICAL_DOCUMENT_TYPES = [
   "patient_identity",
@@ -48,10 +50,12 @@ export type WalletDocumentRecord = {
   id: string;
   ownerUserId?: string;
   holderDid?: string;
+  patientId?: number | string | null;
   documentType: CanonicalDocumentType;
   category: CanonicalDocumentCategory;
   title: string;
   titleEn?: string | null;
+  lifecycleStatus?: "active" | "expired" | "revoked" | "superseded" | "unverified" | string;
   status: "active" | "expired" | "revoked" | "superseded" | "unverified" | string;
   trustStatus: "issuer_signed" | "patient_provided_unverified" | "trust_artifact" | "pending_trustcare_binding";
   issuedAt?: string | null;
@@ -60,8 +64,34 @@ export type WalletDocumentRecord = {
   issuerName?: string | null;
   sourceSystem?: string | null;
   credentialId: string;
+  credentialType?: string | null;
+  vcFormat?: "vc+json" | "vc+jwt" | "sd-jwt-vc" | string;
   credentialData: Record<string, unknown>;
-  documentReference: Record<string, unknown>;
+  documentReference: FhirDocumentReferenceLike;
+  fhirDocumentBundle?: FhirBundleDocumentLike;
+  ipsSections?: IpsSectionSummary[];
+  source: {
+    system?: string | null;
+    facilityId?: string | null;
+    repositoryEndpoint?: string | null;
+    mhdDocumentReferenceUrl?: string | null;
+    shlPackageId?: string | null;
+    importedAt?: string | null;
+    dataQualityScore?: number | null;
+  };
+  version: {
+    versionId: string;
+    replaces?: string | null;
+    replacedBy?: string | null;
+    documentDate?: string | null;
+    clinicalPeriod?: { start?: string | null; end?: string | null } | null;
+  };
+  privacy: {
+    confidentiality?: "normal" | "restricted" | "very_restricted" | string;
+    sensitivity?: string[];
+    defaultDisclosure?: string[];
+    selectiveDisclosureFields?: string[];
+  };
   walletCard?: WalletCard;
 };
 
@@ -144,15 +174,27 @@ export function walletDocumentRecordFromCard(card: WalletCard): WalletDocumentRe
   }
   const category = normalizeCategory(card.documentCategory);
   const credentialData = coerceCredentialData(card.credentialData);
-  const documentReference = extractDocumentReference(credentialData);
+  const documentReference = documentReferenceFromCard(card);
+  const ipsSections = buildIpsSectionSummaries([card]);
+  const fhirDocumentBundle = documentType === "patient_summary"
+    ? buildIpsDocumentBundle({
+        id: `ips-${String(card.credentialId)}`,
+        subjectId: card.holderDid ?? String(card.patientId ?? ""),
+        author: card.issuerHospitalName ?? card.issuerDid,
+        timestamp: card.issuedAt ?? card.createdAt,
+        cards: [card]
+      })
+    : undefined;
   return {
     id: `${documentType}:${String(card.credentialId)}`,
     ownerUserId: card.ownerUserId ?? undefined,
     holderDid: card.holderDid ?? undefined,
+    patientId: card.patientId ?? null,
     documentType,
     category,
     title: card.displayName,
     titleEn: card.displayNameEn,
+    lifecycleStatus: String(card.credentialStatus ?? "active"),
     status: String(card.credentialStatus ?? "active"),
     trustStatus: isTrustArtifactDocumentType(documentType)
       ? "trust_artifact"
@@ -165,8 +207,32 @@ export function walletDocumentRecordFromCard(card: WalletCard): WalletDocumentRe
     issuerName: card.issuerHospitalName,
     sourceSystem: card.sourceSystem,
     credentialId: String(card.credentialId),
+    credentialType: card.credentialType ?? null,
+    vcFormat: card.credentialProof?.format ?? (card.credentialProof?.jwt || card.credentialJwt ? "vc+jwt" : "vc+json"),
     credentialData,
     documentReference,
+    fhirDocumentBundle,
+    ipsSections,
+    source: {
+      system: card.sourceSystem,
+      facilityId: extractFacilityId(card.issuerDid),
+      repositoryEndpoint: extractString(credentialData, ["credentialSubject", "repositoryEndpoint"]),
+      mhdDocumentReferenceUrl: extractString(documentReference, ["content", "0", "attachment", "url"]),
+      shlPackageId: extractString(credentialData, ["credentialSubject", "shlPackageId"]),
+      importedAt: card.createdAt,
+      dataQualityScore: typeof card.portalVerification?.payload === "object" ? undefined : null
+    },
+    version: {
+      versionId: extractString(credentialData, ["credentialSubject", "versionId"]) ?? String(card.credentialId),
+      documentDate: card.issuedAt ?? card.createdAt,
+      clinicalPeriod: extractClinicalPeriod(credentialData)
+    },
+    privacy: {
+      confidentiality: isTrustArtifactDocumentType(documentType) ? "restricted" : "normal",
+      sensitivity: inferSensitivity(documentType),
+      defaultDisclosure: [documentType],
+      selectiveDisclosureFields: inferSelectiveDisclosureFields(documentType)
+    },
     walletCard: card
   };
 }
@@ -322,23 +388,44 @@ function coerceCredentialData(value: WalletCard["credentialData"]): Record<strin
   };
 }
 
-function extractDocumentReference(credentialData: Record<string, unknown>): Record<string, unknown> {
-  const subject = credentialData.credentialSubject;
-  if (subject && typeof subject === "object" && !Array.isArray(subject)) {
-    const documentReference = (subject as Record<string, unknown>).documentReference;
-    if (documentReference && typeof documentReference === "object" && !Array.isArray(documentReference)) {
-      return documentReference as Record<string, unknown>;
+function extractFacilityId(issuerDid?: string | null): string | null {
+  if (!issuerDid) return null;
+  const parts = issuerDid.split(":");
+  return parts[parts.length - 1] ?? null;
+}
+
+function extractString(value: unknown, path: string[]): string | null {
+  let cursor: unknown = value;
+  for (const key of path) {
+    if (Array.isArray(cursor)) {
+      const index = Number.parseInt(key, 10);
+      cursor = Number.isFinite(index) ? cursor[index] : undefined;
+      continue;
     }
+    if (!cursor || typeof cursor !== "object") return null;
+    cursor = (cursor as Record<string, unknown>)[key];
   }
-  const evidence = credentialData.evidence;
-  if (Array.isArray(evidence)) {
-    const item = evidence.find(entry => entry && typeof entry === "object" && String((entry as Record<string, unknown>).type).includes("DocumentReference"));
-    const resource = item && typeof item === "object" ? (item as Record<string, unknown>).resource : undefined;
-    if (resource && typeof resource === "object" && !Array.isArray(resource)) return resource as Record<string, unknown>;
-  }
-  return {
-    resourceType: "DocumentReference",
-    status: "current",
-    docStatus: "preliminary"
-  };
+  return typeof cursor === "string" && cursor.length > 0 ? cursor : null;
+}
+
+function extractClinicalPeriod(credentialData: Record<string, unknown>): { start?: string | null; end?: string | null } | null {
+  const start = extractString(credentialData, ["credentialSubject", "clinicalPeriod", "start"]);
+  const end = extractString(credentialData, ["credentialSubject", "clinicalPeriod", "end"]);
+  return start || end ? { start, end } : null;
+}
+
+function inferSensitivity(documentType: CanonicalDocumentType): string[] {
+  if (["allergy_alert", "medication_summary", "prescription", "pharmacy_dispense"].includes(documentType)) return ["medication"];
+  if (["lab_result", "diagnostic_report", "patient_summary", "discharge_summary"].includes(documentType)) return ["clinical"];
+  if (["insurance_eligibility", "claim_package", "claim_receipt"].includes(documentType)) return ["financial"];
+  if (["travel_document_verification", "visa_support_letter"].includes(documentType)) return ["travel"];
+  return [];
+}
+
+function inferSelectiveDisclosureFields(documentType: CanonicalDocumentType): string[] {
+  if (documentType === "patient_identity") return ["name", "dateOfBirth", "patientId", "issuer", "validUntil"];
+  if (documentType === "insurance_eligibility") return ["memberId", "coverageStatus", "payer", "plan", "validUntil"];
+  if (documentType === "patient_summary") return ["problems", "allergies", "medications", "carePlan"];
+  if (documentType === "lab_result") return ["testName", "result", "referenceRange", "issuedAt"];
+  return ["issuer", "documentType", "status", "validUntil"];
 }

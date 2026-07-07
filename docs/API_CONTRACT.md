@@ -63,6 +63,28 @@ The standalone wallet accepts and stores these payload families:
 
 The wallet treats OID4VCI offers and OID4VP requests as pending exchange objects until issuer/verifier metadata, nonce, holder binding, consent, and backend verification are complete.
 
+## Wallet Document Facade
+
+New wallet-facing integration should use the document/share facade instead of overloading service bundle endpoints:
+
+```ts
+walletApi.listDocuments(options, filter)
+walletApi.importFromMhd(options, { documentReference, documentType, category })
+walletApi.importFromShl(options, { payload, passcode? })
+walletApi.createSharePackage(options, { mode, context, selectedCardIds, recipient })
+walletApi.resolveSharePackage(options, { qrPayload })
+walletApi.verifySharePackage(options, { qrPayload })
+```
+
+Implementation rule:
+
+- `listDocuments` returns canonical `WalletDocumentRecord` records with FHIR `DocumentReference`.
+- `importFromMhd` imports evidence as unverified until a trusted issuer signs or TrustCare certifies it.
+- `importFromShl` parses/fetches SHL and reports `transport_valid`, `trustcare_pending`, or `trustcare_certified`.
+- `createSharePackage` creates exactly one of DirectVP, PurposeVP, StandardSHL, or CertifiedSHLManifestPackage.
+- `resolveSharePackage` and `verifySharePackage` classify the QR payload before trust decisions are shown.
+- Legacy `wallet.buildServiceBundle` remains only for compatibility and must not be exposed as a primary verifier QR flow.
+
 ## Contract Hub Alignment
 
 Latest inspected TrustCare source:

@@ -9,6 +9,7 @@ import {
   createShlLinkPayload,
   createShlViewerUrl,
   createTrustCareShlGatewayPublication,
+  buildIpsDocumentBundle,
   buildSharePackage,
   buildDocumentRequestPlan,
   createDocumentRequestDraft,
@@ -16,8 +17,12 @@ import {
   buildPurposePickerCards,
   buildReadinessSummary,
   detectImportPayload,
+  classifyQrPayload,
+  documentReferenceFromCard,
   getDisabledReason,
   recommendSharePacket,
+  normalizeDocumentType,
+  validateDocumentReference,
   canonicalServiceProfiles,
   CANONICAL_DOCUMENT_CATEGORIES,
   CANONICAL_DOCUMENT_TYPES,
@@ -36,6 +41,7 @@ import {
   parseShlLink,
   parseTrustCareQr,
   fetchShlManifest,
+  verifyShlManifestTrust,
   getDemoShlPackages,
   sortIdentityFirst,
   getDemoUser,
@@ -391,6 +397,13 @@ describe("wallet-core", () => {
     }
   });
 
+  it("normalizes only known document aliases and rejects service-profile names as document types", () => {
+    expect(normalizeDocumentType("patient_id")).toBe("patient_identity");
+    expect(normalizeDocumentType("identity")).toBe("patient_identity");
+    expect(normalizeDocumentType("patient_outbound")).toBeNull();
+    expect(normalizeDocumentType("opd_readiness_bundle")).toBeNull();
+  });
+
   it("keeps demo SHL seed packages resolvable without placeholder trust proof", async () => {
     const shlPackages = walletDemoUsers.flatMap(user => getDemoShlPackages(user.id));
 
@@ -418,13 +431,18 @@ describe("wallet-core", () => {
       cards,
       selectedCardIds: cards.slice(0, 2).map(card => card.id),
       recipient: "TrustCare demo verifier",
-      origin: "https://wallet.example"
+      origin: "https://wallet.example",
+      gatewayBaseUrl: "https://wallet.example/api/share-gateway"
     });
     expect(vp.mode).toBe("PurposeVP");
     expect("presentation" in vp).toBe(true);
     expect(JSON.stringify(vp.payload)).not.toContain("ServiceBundleEnvelope");
     if ("presentation" in vp) {
-      expect(vp.presentation.qrData).toBe("");
+      const classified = classifyQrPayload(vp.presentation.qrData);
+      expect(classified.kind).toBe("vp_resolver");
+      expect(classified.verifierResolvable).toBe(true);
+      expect(classified.productionResolvable).toBe(true);
+      expect(vp.presentation.qrData).toContain("/presentations/");
       expect(JSON.stringify(vp)).not.toContain("tc_payload");
     }
 
@@ -446,7 +464,34 @@ describe("wallet-core", () => {
       expect(fetched.ok).toBe(true);
       expect(fetched.fileCount).toBe(cards.length);
       expect((fetched.manifest?.trustcare as any)?.trustLayerStatus).toBe("certified_manifest_vp");
+      const trust = verifyShlManifestTrust(fetched.manifest);
+      expect(trust.status).toBe("trustcare_certified");
+      expect(trust.verified).toBe(true);
     }
+  });
+
+  it("models patient summary records as MHD DocumentReference plus IPS document Bundle", () => {
+    const cards = getDemoWalletCards("demo-patient-complete-001");
+    const patientSummary = cards.find(card => card.cardType === "patient_summary");
+    expect(patientSummary).toBeTruthy();
+
+    const documentReference = documentReferenceFromCard(patientSummary!);
+    const validation = validateDocumentReference(documentReference);
+    const ipsBundle = buildIpsDocumentBundle({
+      id: "ips-test",
+      subjectId: patientSummary!.holderDid,
+      author: patientSummary!.issuerHospitalName,
+      timestamp: patientSummary!.issuedAt ?? patientSummary!.createdAt,
+      cards: [patientSummary!]
+    });
+
+    expect(validation.ok).toBe(true);
+    expect(documentReference.resourceType).toBe("DocumentReference");
+    expect(documentReference.content.length).toBeGreaterThan(0);
+    expect(ipsBundle.resourceType).toBe("Bundle");
+    expect(ipsBundle.type).toBe("document");
+    expect(ipsBundle.entry[0]?.resource?.resourceType).toBe("Composition");
+    expect(JSON.stringify(ipsBundle.entry)).toContain("DocumentReference");
   });
 
   it("builds Contract Hub catalog for all prepare service contexts", () => {

@@ -1,6 +1,8 @@
 import type { CheckinQrResponse, ReadinessContext, WalletCard, WalletPresentationResponse } from "./models";
 import { canonicalServiceProfiles, type SharePackageMode, walletDocumentRecordFromCard } from "./canonicalDocuments";
 import { hashJson } from "./demoResolvers";
+import { assertPrimaryVerifierQrPayload } from "./qrContracts";
+import { shareGatewayArtifactUrl } from "./shareGateway";
 import { createTrustCareShlGatewayPublication } from "./shlGateway";
 
 export type SharePackageBuildInput = {
@@ -103,6 +105,9 @@ export function buildSharePackage(input: SharePackageBuildInput): BuiltSharePack
     expiresAt
   })}`;
   const holderDid = input.holderDid ?? selectedCards.find(card => card.holderDid)?.holderDid ?? records[0]?.holderDid ?? "did:key:wallet-holder";
+  const directCredentialJwt = selectedCards.length === 1
+    ? selectedCards[0]?.credentialProof?.jwt ?? selectedCards[0]?.credentialJwt ?? null
+    : null;
   const payload = {
     "@context": ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/share-package/v1"],
     id: presentationId,
@@ -122,6 +127,10 @@ export function buildSharePackage(input: SharePackageBuildInput): BuiltSharePack
       payloadHash: hashJson(records.map(record => record.credentialId))
     }
   };
+  const qrData = input.gatewayBaseUrl
+    ? shareGatewayArtifactUrl(input.gatewayBaseUrl, "vp", presentationId)
+    : directCredentialJwt ?? "";
+  if (qrData) assertPrimaryVerifierQrPayload(qrData);
   return {
     mode: input.mode,
     payload,
@@ -132,7 +141,7 @@ export function buildSharePackage(input: SharePackageBuildInput): BuiltSharePack
       credentialCount: selectedCards.length,
       selectedFields: input.selectedFields ?? [],
       expiresAt,
-      qrData: "",
+      qrData,
       verificationChecklist: [
         { key: "holder", label: "Holder DID", ok: Boolean(holderDid), detail: holderDid },
         { key: "purpose", label: "Purpose bound", ok: Boolean(purpose), detail: purpose },

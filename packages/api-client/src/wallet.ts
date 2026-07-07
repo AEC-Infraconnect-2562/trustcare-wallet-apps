@@ -23,10 +23,24 @@ import {
   type WalletPresentationResponse,
   assessLocalReadiness,
   buildSharePackage,
+  classifyQrPayload,
+  fetchShlManifest,
   buildPortalInteroperabilityFixtures,
+  mhdDocumentReferenceFromRecord,
+  recordFromMhdDocumentReference,
+  validateDocumentReference,
+  verifyShlManifestTrust,
+  walletDocumentRecordFromCard,
+  type BuiltSharePackage,
+  type CanonicalDocumentCategory,
+  type CanonicalDocumentType,
+  type FhirDocumentReferenceLike,
+  type SharePackageBuildInput,
+  type WalletDocumentRecord,
 } from "@trustcare/wallet-core";
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
+import { verifyQr } from "./verifier";
 import {
   canUsePortalDemoSync,
   syncTrustCarePortalCardsByCategory,
@@ -36,6 +50,7 @@ import {
 export type WalletApiOptions = TrustCareClientOptions & {
   demoMode?: boolean;
   demoOrigin?: string;
+  shareGatewayUrl?: string;
   shlGatewayUrl?: string;
   shlViewerUrl?: string;
   userId?: string | number;
@@ -54,6 +69,40 @@ export type WalletInteroperabilityFixtures = ReturnType<
   typeof buildPortalInteroperabilityFixtures
 >;
 
+export type WalletDocumentListOptions = {
+  category?: CanonicalDocumentCategory | "all";
+  documentTypes?: CanonicalDocumentType[];
+};
+
+export type WalletMhdImportInput = {
+  documentReference: FhirDocumentReferenceLike;
+  documentType: CanonicalDocumentType;
+  category: CanonicalDocumentCategory;
+  title?: string;
+  titleEn?: string;
+  repositoryEndpoint?: string;
+};
+
+export type WalletShlImportInput = {
+  payload: string;
+  passcode?: string;
+};
+
+export type WalletCreateSharePackageInput = Omit<SharePackageBuildInput, "cards">;
+
+export type WalletShlImportResult = {
+  classification: ReturnType<typeof classifyQrPayload>;
+  manifest: Awaited<ReturnType<typeof fetchShlManifest>>;
+  trust?: ReturnType<typeof verifyShlManifestTrust>;
+  importedAt: string;
+};
+
+export type WalletSharePackageResolution = {
+  classification: ReturnType<typeof classifyQrPayload>;
+  shl: Awaited<ReturnType<typeof fetchShlManifest>> | null;
+  resolvedAt: string;
+};
+
 function usesPortalLiveSync(
   options: Pick<WalletApiOptions, "portalSyncMode" | "userId">,
 ): boolean {
@@ -71,6 +120,138 @@ export async function cardsByCategory(
     options,
     "wallet.cardsByCategory",
   );
+}
+
+export async function listDocuments(
+  options: WalletApiOptions,
+  input: WalletDocumentListOptions = {},
+): Promise<WalletDocumentRecord[]> {
+  if (options.demoMode ?? true) {
+    const cards = await demoWalletCards(options);
+    const documentTypes = input.documentTypes?.map(String);
+    return cards
+      .map(walletDocumentRecordFromCard)
+      .filter((record) =>
+        input.category && input.category !== "all"
+          ? record.category === input.category
+          : true,
+      )
+      .filter((record) =>
+        documentTypes?.length
+          ? documentTypes.includes(record.documentType)
+          : true,
+      );
+  }
+  return callTrpcProcedure<WalletDocumentRecord[]>(
+    options,
+    "wallet.listDocuments",
+    input,
+  );
+}
+
+export async function importFromMhd(
+  options: WalletApiOptions,
+  input: WalletMhdImportInput,
+): Promise<WalletDocumentRecord> {
+  const validation = validateDocumentReference(input.documentReference);
+  if (!validation.ok) {
+    throw new Error(`MHD DocumentReference import failed: ${validation.errors.join("; ")}`);
+  }
+  if (options.demoMode ?? true) {
+    const user = getDemoUser(options.userId);
+    return recordFromMhdDocumentReference(input.documentReference, {
+      id: `mhd:${input.documentReference.id}`,
+      ownerUserId: user.id,
+      holderDid: user.holderDid,
+      patientId: user.patientId,
+      documentType: input.documentType,
+      category: input.category,
+      title: input.title,
+      titleEn: input.titleEn,
+      repositoryEndpoint: input.repositoryEndpoint,
+      importedAt: new Date().toISOString()
+    });
+  }
+  return callTrpcProcedure<WalletDocumentRecord>(
+    options,
+    "wallet.importFromMhd",
+    input,
+  );
+}
+
+export async function importFromShl(
+  options: WalletApiOptions,
+  input: WalletShlImportInput,
+): Promise<WalletShlImportResult> {
+  if (options.demoMode ?? true) {
+    const classification = classifyQrPayload(input.payload);
+    const manifest = await fetchShlManifest(input.payload);
+    const trust = manifest.ok
+      ? verifyShlManifestTrust(manifest.manifest)
+      : undefined;
+    return {
+      classification,
+      manifest,
+      trust,
+      importedAt: new Date().toISOString(),
+    };
+  }
+  return callTrpcProcedure<WalletShlImportResult>(options, "wallet.importFromShl", input);
+}
+
+export async function createSharePackage(
+  options: WalletApiOptions,
+  input: WalletCreateSharePackageInput,
+): Promise<BuiltSharePackage> {
+  if (options.demoMode ?? true) {
+    const cards = await demoWalletCards(options);
+    const vpMode = input.mode === "DirectVP" || input.mode === "PurposeVP";
+    const defaultShareGatewayUrl =
+      options.demoOrigin && vpMode
+        ? `${options.demoOrigin.replace(/\/$/, "")}/api/share-gateway`
+        : undefined;
+    return buildSharePackage({
+      ...input,
+      cards,
+      origin: input.origin ?? options.demoOrigin,
+      gatewayBaseUrl: input.gatewayBaseUrl ?? (vpMode ? options.shareGatewayUrl ?? defaultShareGatewayUrl : options.shlGatewayUrl),
+      viewerBaseUrl: input.viewerBaseUrl ?? options.shlViewerUrl ?? options.demoOrigin
+    });
+  }
+  return callTrpcProcedure<BuiltSharePackage>(
+    options,
+    "wallet.createSharePackage",
+    input,
+  );
+}
+
+export async function resolveSharePackage(
+  options: WalletApiOptions,
+  input: { qrPayload: string },
+): Promise<WalletSharePackageResolution> {
+  if (options.demoMode ?? true) {
+    const classification = classifyQrPayload(input.qrPayload);
+    const shl =
+      classification.kind === "standard_shl" || classification.kind === "certified_shl"
+        ? await fetchShlManifest(input.qrPayload)
+        : null;
+    return {
+      classification,
+      shl,
+      resolvedAt: new Date().toISOString()
+    };
+  }
+  return callTrpcProcedure<WalletSharePackageResolution>(options, "wallet.resolveSharePackage", input);
+}
+
+export async function verifySharePackage(
+  options: WalletApiOptions,
+  input: { qrPayload: string },
+) {
+  if (options.demoMode ?? true) {
+    return verifyQr(options, input.qrPayload);
+  }
+  return callTrpcProcedure(options, "wallet.verifySharePackage", input);
 }
 
 export async function superseded(

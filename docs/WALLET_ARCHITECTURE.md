@@ -14,6 +14,32 @@ Wallet เก็บข้อมูลหลักเป็น `WalletDocumentRec
 
 ถ้า seed/mock ไม่ผ่านกฎนี้ต้องแก้ seed ให้ถูกต้องหรือลบทิ้ง ไม่สร้าง fallback เพื่อหลบ error
 
+## Clinical Document Pipeline
+
+ระบบใช้ pipeline เดียวกันทั้งขาเข้าและขาออก:
+
+```text
+EHR / HIS / LIS / PACS
+  -> FHIR Resources
+  -> FHIR Document Bundle
+  -> IPS profile หรือ document profile อื่น
+  -> DocumentReference + Binary / Bundle
+  -> IHE MHD API สำหรับ publish / search / retrieve
+  -> Patient App / Hospital Portal / HIE
+  -> SHL หรือ QR สำหรับ patient-mediated sharing
+  -> VC/VP สำหรับพิสูจน์ issuer + integrity
+  -> Consent/Contract สำหรับควบคุมสิทธิ วัตถุประสงค์ อายุการเข้าถึง และ audit
+```
+
+Wallet ไม่ถือว่า FHIR Bundle, MHD SubmissionSet, SHL manifest, VP และ consent contract เป็นสิ่งเดียวกัน:
+
+- FHIR Bundle คือ clinical payload ที่ immutable และควรมี `Composition` เป็น resource แรก
+- `DocumentReference` คือ metadata/index สำหรับค้นหาและ retrieve เอกสาร
+- MHD คือ exchange pattern ไม่ใช่ QR payload ของผู้ใช้
+- SHL คือ transport manifest/file link ที่ยังไม่แปลว่า TrustCare verified
+- VC/VP คือ proof layer สำหรับ issuer, holder binding, integrity และ verifier policy
+- Consent/Contract กำหนด purpose, audience, expiry, access count และ audit
+
 ## Canonical Document Types
 
 Wallet ใช้ canonical document types ต่อไปนี้เท่านั้น:

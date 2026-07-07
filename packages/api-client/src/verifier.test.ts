@@ -70,20 +70,30 @@ describe("verifyQr VP resolver behavior", () => {
   });
 
   it("keeps legacy embedded demo VP URLs out of green trust", async () => {
+    const legacyVpWithProof = {
+      ...unsignedVp,
+      proof: {
+        type: "DataIntegrityProof",
+        cryptosuite: "ecdsa-rdfc-2019",
+        proofPurpose: "authentication",
+        proofValue: "zLegacyProofForCompatibilityOnly"
+      }
+    };
     const legacyUrl = createDemoResolverUrl(
       "https://wallet.example",
       "vp",
       "vp-legacy",
-      unsignedVp
+      legacyVpWithProof
     );
     const result = await verifyQr(
       { url: "https://trustcare.example.com/trpc" },
       legacyUrl
     );
 
-    expect(result.verified).toBe(false);
+    expect(result.verified).toBe(true);
     expect(result.trustLevel).toBe("yellow");
     expect(result.warnings?.join(" ")).toContain("legacy");
+    expect(result.warnings?.join(" ")).toContain("tc_payload");
   });
 
   it("returns green for ES256 vp+jwt when the public key resolves from JWKS", async () => {

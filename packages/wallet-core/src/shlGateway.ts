@@ -436,10 +436,20 @@ function buildTrustCareManifestCertification(input: {
   const holderDid = input.selectedCards.find(card => card.holderDid)?.holderDid ?? `did:key:holder:${input.publicationId}`;
   const issuerDid = input.selectedCards.find(card => card.issuerDid)?.issuerDid ?? "did:web:trustcare.network:contract-hub";
   const fileHashes = input.files.map(file => file.hash).filter(Boolean);
+  const documentReferences = input.documents.map(document => document.objectLinks?.fhirDocumentReference).filter(Boolean);
+  const manifestHash = hashJson({ files: input.files, documents: input.documents });
+  const accessPolicy = {
+    expiresAt: input.expiresAt,
+    recipient: input.receiver,
+    purpose: input.purpose,
+    maxAccessCount: input.documents[0]?.accessBinding?.maxAccessCount ?? 5,
+    passcodeRequired: Boolean(input.documents[0]?.accessBinding?.passcodeRequired)
+  };
+  const accessPolicyHash = hashJson(accessPolicy);
   const manifestCredential = removeUndefined({
     "@context": ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/shl-manifest/v1"],
     id: `urn:trustcare:vc:manifest:${input.publicationId}`,
-    type: ["VerifiableCredential", "TrustCareShlManifestCredential"],
+    type: ["VerifiableCredential", "TrustCareManifestCredential"],
     issuer: issuerDid,
     validFrom: input.createdAt,
     validUntil: input.expiresAt,
@@ -447,8 +457,11 @@ function buildTrustCareManifestCertification(input: {
       id: holderDid,
       shlPublicationId: input.publicationId,
       manifestUrl: input.manifestUrl,
-      manifestHash: hashJson({ files: input.files, documents: input.documents }),
+      manifestHash,
       fileHashes,
+      documentReferences,
+      accessPolicy,
+      accessPolicyHash,
       documentCount: input.documents.length,
       context: input.context,
       purpose: input.purpose
@@ -471,6 +484,10 @@ function buildTrustCareManifestCertification(input: {
       authorizedRecipient: input.receiver,
       purpose: input.purpose,
       shlPublicationId: input.publicationId,
+      authorizedManifestCredentialId: `urn:trustcare:vc:manifest:${input.publicationId}`,
+      selectedDocumentIds: input.documents.map(document => document.id),
+      consentReceiptId: input.selectedCards.find(card => card.cardType === "consent_receipt")?.credentialId ?? null,
+      accessPolicyHash,
       minimumNecessary: true,
       accessPolicyConfirmed: true
     },
@@ -483,7 +500,7 @@ function buildTrustCareManifestCertification(input: {
   const manifestVp = removeUndefined({
     "@context": ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/shl-manifest-presentation/v1"],
     id: `urn:trustcare:vp:manifest:${input.publicationId}`,
-    type: ["VerifiablePresentation", "TrustCareShlManifestPresentation"],
+    type: ["VerifiablePresentation", "TrustCareManifestVP"],
     holder: holderDid,
     verifiableCredential: [manifestCredential, holderAuthorizationCredential],
     trustcare: {
@@ -492,7 +509,15 @@ function buildTrustCareManifestCertification(input: {
       shlPublicationId: input.publicationId,
       manifestUrl: input.manifestUrl,
       documentIds: input.documents.map(document => document.id),
-      fileHashes
+      fileHashes,
+      accessPolicyHash,
+      verifierInstructions: [
+        "Resolve the SHL manifest using standard SMART Health Links rules.",
+        "Validate manifest files[].location or files[].embedded.",
+        "Validate TrustCare Manifest Credential manifestHash against manifest files and documents.",
+        "Validate Holder Authorization Credential subject matches VP holder.",
+        "Validate manifestVpHash equals hash of this VP before showing TrustCare-certified status."
+      ]
     }
   });
   const manifestVpHash = hashJson(manifestVp);
