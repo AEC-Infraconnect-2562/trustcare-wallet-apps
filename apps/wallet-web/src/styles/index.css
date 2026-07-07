@@ -6488,6 +6488,16 @@ body {
   background: #fff7ed;
 }
 
+.finance-table.two-column .medical-table-head,
+.finance-table.two-column .medical-table-row {
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.35fr);
+}
+
+.finance-table.two-column .medical-table-head span:last-child,
+.finance-table.two-column .medical-table-row span:last-child {
+  text-align: right;
+}
+
 .finance-total {
   display: flex;
   justify-content: space-between;

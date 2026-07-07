@@ -85,6 +85,7 @@ import {
   exportWalletObjects,
   flattenCardsByCategory,
   getDemoUser,
+  groupCardsByCategory,
   importWalletExchange,
   parseShlLink,
   fetchShlManifest,
@@ -743,11 +744,17 @@ export default function App() {
         walletApi.contractHub(apiOptions),
       ]);
       if (cancelled) return;
-      setGrouped(cards);
+      const cachedUserCards = offlineWallet.offlineCards.filter(
+        (card) => card.ownerUserId === selectedUserId,
+      );
+      const activeCards =
+        offlineWallet.isLoaded && cachedUserCards.length
+          ? groupCardsByCategory(cachedUserCards)
+          : cards;
+      setGrouped(activeCards);
       setHistory(walletHistory);
       setShlPackages(shl);
       setContractHub(hub);
-      void offlineWallet.syncCards(flattenCardsByCategory(cards));
     }
     void loadWallet().catch((error) => {
       if (cancelled) return;
@@ -770,7 +777,12 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiOptions, selectedUserId]);
+  }, [
+    apiOptions,
+    offlineWallet.isLoaded,
+    offlineWallet.offlineCards,
+    selectedUserId,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -948,12 +960,23 @@ export default function App() {
           "Portal sync returned credentials for another wallet user",
         );
       }
+      const existingPortalCards = allCards.filter(
+        (card) =>
+          card.ownerUserId === selectedUserId &&
+          card.sourceSystem === "trustcare_portal",
+      );
+      const preservedWalletCards = allCards.filter(
+        (card) => card.sourceSystem !== "trustcare_portal",
+      );
       const mergedSync = mergePortalSyncedCards({
-        existingCards: allCards,
+        existingCards: existingPortalCards,
         incomingCards: syncedCards,
         syncedAt: result.report.syncedAt,
+        authoritativeSnapshot: true,
       });
-      setGrouped(mergedSync.cardsByCategory);
+      const activeCards = [...preservedWalletCards, ...mergedSync.cards];
+      const activeCardsByCategory = groupCardsByCategory(activeCards);
+      setGrouped(activeCardsByCategory);
       setHistory(result.presentations);
       setShlPackages([]);
       if (mergedSync.archivedObjects.length) {
@@ -965,7 +988,7 @@ export default function App() {
           ),
         }));
       }
-      await offlineWallet.syncCards(mergedSync.cards);
+      await offlineWallet.syncCards(activeCards);
       const warningText = result.report.warnings.length
         ? ` (${result.report.warnings.join(" / ")})`
         : "";

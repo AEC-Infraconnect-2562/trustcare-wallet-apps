@@ -83,4 +83,93 @@ describe("normalizeTrustCarePortalWalletCards", () => {
     expect(result.report.metadataOnlyCount).toBe(1);
     expect(result.report.skipped[0]?.reason).toBe("metadata_only");
   });
+
+  it("uses credentialSubject.documentType before broad Portal cardType metadata", () => {
+    const owner = getDemoUser("demo-patient-003");
+    const result = normalizeTrustCarePortalWalletCards({
+      owner,
+      groupedCards: {
+        claims_and_finance: [
+          portalCard({
+            id: 101,
+            cardType: "claim",
+            displayName: "ใบเสร็จรับเงิน",
+            displayNameEn: "Claim Receipt",
+            documentType: "claim_receipt"
+          }),
+          portalCard({
+            id: 102,
+            cardType: "claim",
+            displayName: "ชุดเอกสารเคลม",
+            displayNameEn: "Claim Package",
+            documentType: "claim_package"
+          })
+        ],
+        medical_tourism: [
+          portalCard({
+            id: 201,
+            cardType: "travel_document",
+            displayName: "ตรวจเอกสารผู้ป่วยต่างชาติ",
+            displayNameEn: "Travel Document Verification",
+            documentType: "travel_document_verification"
+          })
+        ]
+      },
+      syncedAt: "2026-07-06T10:00:00.000Z"
+    });
+
+    expect(result.cards.map((card) => card.cardType).sort()).toEqual([
+      "claim_package",
+      "claim_receipt",
+      "travel_document_verification"
+    ]);
+  });
 });
+
+function portalCard(input: {
+  id: number;
+  cardType: string;
+  displayName: string;
+  displayNameEn: string;
+  documentType: string;
+}) {
+  return {
+    id: input.id,
+    patientId: 3003,
+    credentialId: input.id + 10_000,
+    cardType: input.cardType,
+    displayName: input.displayName,
+    displayNameEn: input.displayNameEn,
+    documentCategory: "clinical_summary",
+    issuerHospitalName: "TrustCare Phuket International Hospital",
+    credentialStatus: "active",
+    issuedAt: "2026-07-01T02:00:00.000Z",
+    expiresAt: "2027-07-01T02:00:00.000Z",
+    credentialData: {
+      "@context": ["https://www.w3.org/ns/credentials/v2"],
+      id: `urn:trustcare:portal:vc:test:${input.id}`,
+      type: ["VerifiableCredential", "TrustCareHealthCredential"],
+      issuer: {
+        id: "did:web:trustcare.network:hospital:tcp",
+        name: "TrustCare Phuket International Hospital"
+      },
+      validFrom: "2026-07-01T02:00:00.000Z",
+      validUntil: "2027-07-01T02:00:00.000Z",
+      credentialSubject: {
+        id: "did:key:test-holder",
+        documentType: input.documentType,
+        patient: {
+          fullNameEn: "Mr. John Williams"
+        }
+      },
+      evidence: [
+        {
+          type: "DocumentReference",
+          documentReference: {
+            id: `DocumentReference/${input.id}`
+          }
+        }
+      ]
+    }
+  };
+}

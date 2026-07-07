@@ -23,7 +23,13 @@ import {
 import { useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import type { PhotoCandidate, WalletCard } from "@trustcare/wallet-core";
-import { initialsFromName, photoCandidatesForCard } from "@trustcare/wallet-core";
+import {
+  extractPortalRenderData,
+  initialsFromName,
+  mergePortalRenderPayload,
+  normalizePortalRenderSubject,
+  photoCandidatesForCard
+} from "@trustcare/wallet-core";
 import { Badge } from "./primitives";
 
 type Field = {
@@ -43,7 +49,7 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
   const issuerNameEn = getText(hospital, "nameEn") ?? getText(issuer, "nameEn") ?? getText(issuer, "name") ?? "TRUSTCARE NETWORK";
   const displayNameTh = getText(patient, "fullNameTh") ?? getText(patient, "nameTh") ?? getText(patient, "name") ?? "ผู้ใช้ TrustCare";
   const displayNameEn = getText(patient, "fullNameEn") ?? getText(patient, "nameEn") ?? getText(patient, "name") ?? displayNameTh;
-  const patientId = getText(patient, "carepassId") ?? getText(patient, "hn") ?? getText(patient, "id") ?? getText(document, "no") ?? String(card.credentialId);
+  const patientId = documentIdentifier(card, subject, patient, document);
   const photoCandidates = photoDocumentTypes.has(card.cardType) ? photoCandidatesForCard(card) : [];
   const accent = documentAccent(card.cardType);
   const documentFields = fieldsForDocument(card, subject, patient);
@@ -204,9 +210,9 @@ function extractDocumentRenderData(card: WalletCard): {
   issuer: Record<string, unknown>;
 } {
   const credential = card.credentialData ?? {};
-  const subject = getObject(credential, "credentialSubject") ?? credential;
-  const humanDocument = getObject(subject, "humanDocument");
-  const renderData = getObject(humanDocument, "renderData") ?? humanDocument ?? {};
+  const rawSubject = getObject(credential, "credentialSubject") ?? credential;
+  const subject = normalizePortalRenderSubject(rawSubject, credential);
+  const renderData = extractPortalRenderData(rawSubject);
   const hospital =
     getObject(renderData, "hospital") ??
     getObject(renderData, "issuer") ??
@@ -230,49 +236,85 @@ function extractDocumentRenderData(card: WalletCard): {
 function renderDocumentBody(card: WalletCard, subject: Record<string, unknown>, fields: Field[]): ReactElement {
   switch (card.cardType) {
     case "lab_result":
-      return <LabResultSection report={getObject(subject, "labReport") ?? { observations: getNested(subject, ["observations"]) }} />;
+      return <LabResultSection report={labReportPayload(subject)} />;
     case "diagnostic_report":
-      return <DiagnosticReportSection report={getObject(subject, "diagnosticReport")} />;
+      return <DiagnosticReportSection report={diagnosticReportPayload(subject)} />;
     case "prescription":
-      return <MedicationSection title="รายการยาในใบสั่งยา" items={getArray(getObject(subject, "prescription"), "items").length ? getArray(getObject(subject, "prescription"), "items") : getArray(getObject(subject, "fhir"), "medicationRequests")} />;
+      return <MedicationSection title="รายการยาในใบสั่งยา" items={prescriptionItems(subject)} />;
     case "medication_summary":
-      return <MedicationSection title="รายการยาปัจจุบัน" items={getArray(getObject(subject, "medicationSummary"), "medications")} />;
+      return <MedicationSection title="รายการยาปัจจุบัน" items={medicationSummaryItems(subject)} />;
     case "pharmacy_dispense":
-      return <MedicationSection title="รายการจ่ายยา" items={getArray(getObject(subject, "medicationDispense"), "items")} />;
+      return <MedicationSection title="รายการจ่ายยา" items={pharmacyDispenseItems(subject)} />;
     case "allergy_alert":
-      return <AllergySection items={getArray(subject, "allergyIntolerances").length ? getArray(subject, "allergyIntolerances") : getArray(subject, "allergies")} instruction={getText(subject, "emergencyInstruction")} />;
+      return <AllergySection items={allergyItems(subject)} instruction={firstText(getText(subject, "emergencyInstruction"), getText(subject, "clinicalNote"))} />;
     case "immunization":
-      return <ImmunizationSection items={getArray(subject, "immunizations")} registryStatus={getText(subject, "registryStatus")} />;
+      return <ImmunizationSection items={firstNonEmptyArray(getArray(subject, "immunizations"), getArray(getObject(subject, "fhir"), "immunizations"))} registryStatus={getText(subject, "registryStatus")} />;
     case "medical_certificate":
-      return <MedicalCertificateSection certificate={getObject(subject, "certificate")} />;
+      return <MedicalCertificateSection certificate={medicalCertificatePayload(subject)} />;
     case "patient_summary":
-      return <ClinicalSummarySection summary={getObject(subject, "summary") ?? getObject(subject, "clinical")} />;
+      return <ClinicalSummarySection summary={clinicalSummaryPayload(subject)} />;
     case "consent_receipt":
-      return <ConsentReceiptSection consent={getObject(subject, "consent")} />;
+      return <ConsentReceiptSection consent={consentPayload(subject)} />;
     case "mpi_link_certificate":
-      return <MpiLinkSection mpi={getObject(subject, "mpi")} />;
+      return <MpiLinkSection mpi={mpiPayload(subject)} />;
     case "referral_vc":
-      return <ReferralSection referral={getObject(subject, "referral")} />;
+      return <ReferralSection referral={referralPayload(subject)} />;
     case "discharge_summary":
-      return <DischargeSummarySection summary={getObject(subject, "dischargeSummary")} />;
+      return <DischargeSummarySection summary={dischargeSummaryPayload(subject)} />;
     case "insurance_eligibility":
-      return <CoverageEligibilitySection coverage={getObject(subject, "coverage") ?? getObject(subject, "payer")} />;
-    case "claim_package":
-      return <FinancialSection title="รายการค่าใช้จ่ายสำหรับเคลม" items={getArray(getObject(subject, "claimPackage"), "serviceLines")} total={getNested(subject, ["claimPackage", "totalAmount"])} currency={getNested(subject, ["claimPackage", "currency"])} />;
-    case "claim_receipt":
-      return <FinancialSection title="ใบเสร็จรับเงิน" items={getArray(getObject(subject, "receipt"), "items")} total={getNested(subject, ["receipt", "netAmount"])} currency="THB" />;
-    case "quotation":
-      return <FinancialSection title="ใบเสนอราคา" items={getArray(getObject(subject, "quotation"), "lineItems")} total={getNested(subject, ["quotation", "estimatedTotal"])} currency={getNested(subject, ["quotation", "currency"])} />;
+      return <CoverageEligibilitySection coverage={coveragePayload(subject)} />;
+    case "claim_package": {
+      const claimPackage = claimPackagePayload(subject);
+      return (
+        <>
+          <FieldGridSection fields={financialContextFields(claimPackage, "claim_package")} />
+          <FinancialSection
+            title="รายการค่าใช้จ่ายสำหรับเคลม"
+            items={firstNonEmptyArray(getArray(claimPackage, "items"), getArray(claimPackage, "serviceLines"), getArray(claimPackage, "serviceItems"), getArray(claimPackage, "lineItems"))}
+            total={getNested(claimPackage, ["totalAmount"]) ?? getNested(claimPackage, ["estimatedTotal"])}
+            currency={getNested(claimPackage, ["currency"])}
+          />
+        </>
+      );
+    }
+    case "claim_receipt": {
+      const receipt = claimReceiptPayload(subject);
+      return (
+        <>
+          <FieldGridSection fields={financialContextFields(receipt, "claim_receipt")} />
+          <FinancialSection
+            title="รายการค่าใช้จ่าย / ใบเสร็จ"
+            items={firstNonEmptyArray(getArray(receipt, "items"), getArray(receipt, "breakdown"), getArray(receipt, "lineItems"))}
+            total={getNested(receipt, ["netAmount"]) ?? getNested(receipt, ["approvedAmount"]) ?? getNested(receipt, ["totalAmount"]) ?? getNested(receipt, ["totalClaimed"])}
+            currency={getNested(receipt, ["currency"]) ?? "THB"}
+          />
+        </>
+      );
+    }
+    case "quotation": {
+      const quotation = quotationPayload(subject);
+      return (
+        <>
+          <FieldGridSection fields={financialContextFields(quotation, "quotation")} />
+          <FinancialSection
+            title="ใบเสนอราคา"
+            items={firstNonEmptyArray(getArray(quotation, "items"), getArray(quotation, "lineItems"), getArray(quotation, "costItems"))}
+            total={getNested(quotation, ["estimatedTotal"])}
+            currency={getNested(quotation, ["currency"])}
+          />
+        </>
+      );
+    }
     case "visa_support_letter":
-      return <VisaSupportLetterSection letter={getObject(subject, "visaSupportLetter")} />;
+      return <VisaSupportLetterSection letter={visaSupportLetterPayload(subject)} />;
     case "guarantee_letter":
-      return <GuaranteeLetterSection letter={getObject(subject, "guaranteeLetter")} />;
+      return <GuaranteeLetterSection letter={guaranteeLetterPayload(subject)} />;
     case "shl_manifest":
-      return <ManifestSection manifest={getObject(subject, "shlManifest")} />;
+      return <ManifestSection manifest={manifestPayload(subject)} />;
     case "sync_receipt":
-      return <SyncReceiptSection receipt={getObject(subject, "syncReceipt")} />;
+      return <SyncReceiptSection receipt={syncReceiptPayload(subject)} />;
     case "appointment":
-      return <AppointmentSection appointment={getObject(subject, "appointment")} />;
+      return <AppointmentSection appointment={appointmentPayload(subject)} />;
     default:
       return <FieldGridSection fields={fields} />;
   }
@@ -364,19 +406,23 @@ function ImmunizationSection({ items, registryStatus }: { items: ListItem[]; reg
 }
 
 function MedicalCertificateSection({ certificate }: { certificate?: Record<string, unknown> }) {
+  const practitioner = getObject(certificate, "practitioner");
+  const fit = getNested(certificate, ["fitnessForWork", "fit"]);
   return (
     <section className="document-field-section certificate-layout">
       <div className="certificate-statement">
         <h4>ใบรับรองแพทย์</h4>
-        <p>{getText(certificate, "result") ?? "แพทย์ผู้ตรวจรับรองผลตามข้อมูลการตรวจในระบบโรงพยาบาล"}</p>
+        <p>{getText(certificate, "result") ?? getText(certificate, "diagnosisText") ?? "แพทย์ผู้ตรวจรับรองผลตามข้อมูลการตรวจในระบบโรงพยาบาล"}</p>
       </div>
       <div className="document-field-grid compact">
         <InfoField label="เลขที่ใบรับรอง" value={getText(certificate, "certificateNo")} />
         <InfoField label="ประเภท" value={getText(certificate, "type")} />
         <InfoField label="วันที่ตรวจ" value={formatDate(getText(certificate, "examinationDate"))} />
         <InfoField label="ใช้ได้ถึง" value={formatDate(getText(certificate, "validUntil"))} />
-        <InfoField label="การวินิจฉัย/เหตุผล" value={getText(certificate, "diagnosis")} />
-        <InfoField label="ข้อจำกัด/คำแนะนำ" value={getText(certificate, "restrictions")} />
+        <InfoField label="การวินิจฉัย/เหตุผล" value={getText(certificate, "diagnosis") ?? getText(certificate, "diagnosisText")} />
+        <InfoField label="ความสามารถทำงาน" value={fit === true ? "ปฏิบัติงานได้" : fit === false ? "จำกัดการปฏิบัติงาน" : getText(certificate, "fitnessForWork")} />
+        <InfoField label="ข้อจำกัด/คำแนะนำ" value={getText(certificate, "restrictions") ?? getText(certificate, "recommendations")} />
+        <InfoField label="แพทย์ผู้รับรอง" value={displayName(practitioner)} />
       </div>
       <p className="document-note">เอกสารนี้เหมาะสำหรับแสดงต่อหน่วยบริการ นายจ้าง หรือหน่วยงานที่ต้องการยืนยันผลตรวจ โดยตรวจสอบแหล่งที่มาได้จาก Credential ID และ DocumentReference evidence</p>
     </section>
@@ -392,7 +438,7 @@ function ConsentReceiptSection({ consent }: { consent?: Record<string, unknown> 
         <InfoField label="วัตถุประสงค์" value={getText(consent, "purpose")} />
         <InfoField label="หมดอายุ" value={formatDateTime(getText(consent, "expiresAt"))} />
         <InfoField label="ขอบเขตข้อมูล" value={getNested(consent, ["scope"])} />
-        <InfoField label="ผู้รับข้อมูล" value={getNested(consent, ["grantedTo"])} />
+        <InfoField label="ผู้รับข้อมูล" value={getText(consent, "recipient") ?? getNested(consent, ["grantedTo"])} />
       </div>
       <InfoList title="เงื่อนไข PDPA / purpose bound" items={arrayToItems(getNested(consent, ["pdpaControls"]))} primaryKey="label" />
     </section>
@@ -404,12 +450,14 @@ function MpiLinkSection({ mpi }: { mpi?: Record<string, unknown> }) {
     <section className="document-field-section">
       <div className="document-field-grid compact">
         <InfoField label="Golden Record" value={getText(mpi, "goldenRecordId")} />
+        <InfoField label="สถานะ" value={getText(mpi, "linkStatus")} />
         <InfoField label="ความเชื่อมั่น" value={getText(mpi, "confidence")} />
         <InfoField label="นโยบายจับคู่" value={getText(mpi, "matchingPolicy")} />
         <InfoField label="ตรวจทานโดย" value={getText(mpi, "reviewedBy")} />
+        <InfoField label="ตรวจสอบล่าสุด" value={formatDateTime(getText(mpi, "linkedAt"))} />
       </div>
       <div className="medical-table">
-        <div className="medical-table-head"><span>องค์กร</span><span>HN</span><span>สถานะการเชื่อมโยง</span></div>
+        <div className="medical-table-head"><span>ระบบ</span><span>เลขประจำตัว</span><span>สถานะการเชื่อมโยง</span></div>
         {getArray(mpi, "linkedIdentifiers").map((item, index) => (
           <div className="medical-table-row" key={`${getText(item, "organization") ?? index}`}>
             <strong>{getText(item, "organization") ?? "-"}</strong>
@@ -462,10 +510,10 @@ function MedicationSection({ title, items }: { title: string; items: ListItem[] 
       <div className="medical-table">
         <div className="medical-table-head"><span>ยา</span><span>ขนาด/วิธีใช้</span><span>จำนวน</span></div>
         {items.map((item, index) => (
-          <div className="medical-table-row" key={`${getText(item, "medicationName") ?? getText(item, "name") ?? index}`}>
-            <strong>{getText(item, "medicationName") ?? getText(item, "name") ?? "-"}</strong>
-            <span>{[getText(item, "strength"), getText(item, "dosageInstruction") ?? getText(item, "instructions") ?? getText(item, "dose"), getText(item, "frequency")].filter(Boolean).join(" · ") || "-"}</span>
-            <span>{formatValue(getText(item, "quantity") ?? getText(item, "quantityDispensed") ?? getText(item, "daysSupply") ?? "-")}</span>
+        <div className="medical-table-row" key={`${getText(item, "medicationName") ?? getText(item, "name") ?? index}`}>
+            <strong>{medicationName(item)}</strong>
+            <span>{medicationInstruction(item)}</span>
+            <span>{medicationQuantity(item)}</span>
           </div>
         ))}
       </div>
@@ -486,8 +534,8 @@ function LabResultSection({ report }: { report?: Record<string, unknown> }) {
       <div className="medical-table lab-table">
         <div className="medical-table-head"><span>รายการตรวจ</span><span>ผล</span><span>ค่าอ้างอิง</span></div>
         {observations.map((item, index) => (
-          <div className={getText(item, "interpretation") === "H" ? "medical-table-row abnormal" : "medical-table-row"} key={`${getText(item, "code") ?? index}`}>
-            <strong>{getText(item, "display") ?? "-"}</strong>
+          <div className={isAbnormalObservation(item) ? "medical-table-row abnormal" : "medical-table-row"} key={`${getText(item, "code") ?? getText(item, "loincCode") ?? index}`}>
+            <strong>{firstText(getText(item, "display"), getText(item, "nameTh"), getText(item, "name"), getText(item, "loincCode")) ?? "-"}</strong>
             <span>{[getText(item, "value"), getText(item, "unit")].filter(Boolean).join(" ")}</span>
             <span>{getText(item, "referenceRange") ?? "-"}</span>
           </div>
@@ -529,6 +577,8 @@ function ReferralSection({ referral }: { referral?: Record<string, unknown> }) {
         <InfoField label="เอกสารแนบ" value={getNested(referral, ["attachments"])} />
         <InfoField label="วันที่ออก" value={formatDateTime(getText(referral, "authoredOn"))} />
       </div>
+      <InfoList title="สรุปทางคลินิก" items={clinicalSummaryItems(getObject(referral, "clinicalSummary"))} primaryKey="label" secondaryKey="value" />
+      <InfoList title="บริการที่ต้องการ" items={arrayToItems(getNested(referral, ["requestedServices"]))} primaryKey="label" />
     </section>
   );
 }
@@ -554,6 +604,7 @@ function DischargeSummarySection({ summary }: { summary?: Record<string, unknown
 
 function CoverageEligibilitySection({ coverage }: { coverage?: Record<string, unknown> }) {
   const payer = getObject(coverage, "payer");
+  const benefits = getObject(coverage, "benefits") ?? {};
   return (
     <section className="document-field-section">
       <div className="coverage-banner">
@@ -562,11 +613,16 @@ function CoverageEligibilitySection({ coverage }: { coverage?: Record<string, un
       </div>
       <div className="document-field-grid compact">
         <InfoField label="ผู้รับประกัน/ผู้จ่าย" value={getText(payer, "nameEn") ?? getText(payer, "name") ?? getText(coverage, "payer")} />
-        <InfoField label="เลขกรมธรรม์" value={getText(payer, "policyNo") ?? getText(coverage, "policyNo")} />
-        <InfoField label="เครือข่าย" value={getText(coverage, "network")} />
+        <InfoField label="แผนประกัน" value={getText(coverage, "planName")} />
+        <InfoField label="เลขสมาชิก" value={getText(coverage, "memberId") ?? getText(payer, "policyNo") ?? getText(coverage, "policyNo")} />
+        <InfoField label="เครือข่าย" value={getText(coverage, "network") ?? getText(coverage, "directBilling")} />
         <InfoField label="ตรวจสอบล่าสุด" value={formatDateTime(getText(coverage, "lastCheckedAt"))} />
         <InfoField label="คุ้มครองตั้งแต่" value={formatDate(getNested(coverage, ["coveragePeriod", "start"]))} />
         <InfoField label="คุ้มครองถึง" value={formatDate(getNested(coverage, ["coveragePeriod", "end"]))} />
+        <InfoField label="วงเงินคุ้มครองต่อปี" value={formatMoney(getNested(benefits, ["annualLimit"]), getText(benefits, "annualLimitCurrency") ?? getText(coverage, "currency") ?? "THB")} />
+        <InfoField label="Copay" value={getText(coverage, "copay") ?? getText(benefits, "copay")} />
+        <InfoField label="Pre-authorization" value={getNested(coverage, ["preAuthorizationRequired"]) === true ? "ต้องขออนุมัติก่อน" : "ไม่จำเป็น"} />
+        <InfoField label="Direct billing" value={getNested(benefits, ["directBilling"]) === true || getNested(coverage, ["directBilling"]) === true ? "รองรับ" : getText(coverage, "directBilling")} />
       </div>
       <div className="medical-table">
         <div className="medical-table-head"><span>สิทธิประโยชน์</span><span>วงเงิน</span><span>คงเหลือ</span></div>
@@ -583,22 +639,165 @@ function CoverageEligibilitySection({ coverage }: { coverage?: Record<string, un
 }
 
 function FinancialSection({ title, items, total, currency }: { title: string; items: ListItem[]; total: unknown; currency: unknown }) {
+  const hasQuantityColumn = items.some((item) => getFinancialQuantity(item) != null);
   return (
     <section className="document-field-section">
       <h4>{title}</h4>
-      <div className="medical-table finance-table">
-        <div className="medical-table-head"><span>รายการ</span><span>จำนวน</span><span>ยอด</span></div>
-        {items.map((item, index) => (
-          <div className="medical-table-row" key={`${getText(item, "code") ?? getText(item, "description") ?? index}`}>
-            <strong>{getText(item, "description") ?? "-"}</strong>
-            <span>{getText(item, "quantity") ?? "-"}</span>
-            <span>{formatMoney(getText(item, "amount"), getText(item, "currency") ?? currency)}</span>
+      <div className={hasQuantityColumn ? "medical-table finance-table" : "medical-table finance-table two-column"}>
+        <div className="medical-table-head">
+          <span>รายการ</span>
+          {hasQuantityColumn ? <span>จำนวน</span> : null}
+          <span>ยอด</span>
+        </div>
+        {items.length ? (
+          items.map((item, index) => {
+            const description =
+              getText(item, "descriptionTh") ??
+              getText(item, "serviceTh") ??
+              getText(item, "description") ??
+              getText(item, "service") ??
+              getText(item, "item") ??
+              getText(item, "name") ??
+              "-";
+            const quantity = getFinancialQuantity(item);
+            const amount =
+              getText(item, "amount") ??
+              getText(item, "lineTotal") ??
+              getText(item, "total") ??
+              getText(item, "estimatedAmount") ??
+              getText(item, "approvedAmount") ??
+              getText(item, "patientResponsibility");
+            return (
+              <div className="medical-table-row" key={`${getText(item, "code") ?? description ?? index}`}>
+                <strong>{description}</strong>
+                {hasQuantityColumn ? <span>{quantity ?? "-"}</span> : null}
+                <span>{formatMoney(amount, getText(item, "currency") ?? currency)}</span>
+              </div>
+            );
+          })
+        ) : (
+          <div className="medical-table-row">
+            <strong>ยังไม่มีรายการค่าใช้จ่าย</strong>
+            {hasQuantityColumn ? <span>-</span> : null}
+            <span>{formatMoney(total, currency)}</span>
           </div>
-        ))}
+        )}
       </div>
       <div className="finance-total"><span>ยอดรวม</span><strong>{formatMoney(total, currency)}</strong></div>
     </section>
   );
+}
+
+function getFinancialQuantity(item: ListItem): string | undefined {
+  return getText(item, "quantity") ?? getText(item, "qty") ?? getText(item, "units");
+}
+
+function financialContextFields(payload: Record<string, unknown>, type: "claim_package" | "claim_receipt" | "quotation"): Field[] {
+  if (type === "claim_receipt") {
+    return [
+      { label: "Claim ID", value: getText(payload, "claimId") ?? getText(payload, "claimRef") },
+      { label: "ผู้จ่าย (Ref)", value: getText(payload, "payerRef") ?? displayName(getObject(payload, "payer")) },
+      { label: "เลขที่ใบเสร็จ", value: getText(payload, "receiptNo") },
+      { label: "เลขที่ใบแจ้งหนี้", value: getText(payload, "invoiceNo") },
+      { label: "ผลการพิจารณา", value: getText(payload, "adjudicationOutcome") ?? getText(payload, "status") ?? getText(payload, "paymentStatus") },
+      { label: "วิธีชำระ", value: getText(payload, "paymentMethod") },
+    ];
+  }
+  if (type === "quotation") {
+    return [
+      { label: "เลขที่ใบเสนอราคา", value: getText(payload, "quotationNo") ?? getText(payload, "documentNo") },
+      { label: "แพ็กเกจ", value: getText(payload, "packageName") },
+      { label: "ใบเสนอราคามีผล", value: getText(payload, "validForDays") ? `${getText(payload, "validForDays")} วัน` : undefined },
+      { label: "เงื่อนไขชำระเงิน", value: getText(payload, "paymentTerms") },
+      { label: "ข้อยกเว้น", value: getNested(payload, ["exclusions"]) },
+      { label: "ระบบต้นทาง", value: getText(payload, "sourceSystem") },
+    ];
+  }
+  return [
+    { label: "เลขที่เคลม", value: getText(payload, "claimNo") ?? getText(payload, "claimRef") ?? getText(payload, "packageNo") },
+    { label: "ประเภทเคลม", value: getText(payload, "claimType") },
+    { label: "ผู้จ่าย", value: displayName(getObject(payload, "payer")) ?? getText(payload, "payerRef") },
+    { label: "สถานะ", value: getText(payload, "status") ?? getText(payload, "claimStatus") },
+    { label: "เลขที่อ้างอิง", value: getText(payload, "documentNo") },
+    { label: "ระบบต้นทาง", value: getText(payload, "sourceSystem") },
+  ];
+}
+
+function normalizeMedicationItem(item: ListItem): ListItem {
+  const name = firstText(
+    getText(item, "nameTh"),
+    getText(item, "medicationName"),
+    getText(item, "drugName"),
+    getText(item, "drugNameTh"),
+    getText(item, "name"),
+    getText(item, "display"),
+    getText(item, "label"),
+    getText(item, "code"),
+  );
+  const dose = firstText(getText(item, "dose"), getText(item, "dosage"), getText(item, "strength"));
+  const frequency = firstText(getText(item, "frequency"), getText(item, "timing"));
+  const route = firstText(getText(item, "route"), getText(item, "method"));
+  const instructions = firstText(
+    getText(item, "dosageInstruction"),
+    getText(item, "dosageInstructions"),
+    getText(item, "instructions"),
+    getText(item, "instruction"),
+    [dose, frequency, route].filter(Boolean).join(" · "),
+  );
+  const quantity = firstText(
+    getText(item, "quantity"),
+    getText(item, "dispensedQuantity"),
+    getText(item, "quantityDispensed"),
+    getText(item, "daysSupply"),
+    getText(item, "durationDays"),
+  );
+  return {
+    ...item,
+    name,
+    medicationName: name,
+    dose,
+    frequency,
+    route,
+    dosageInstruction: instructions,
+    instructions,
+    quantity,
+  };
+}
+
+function medicationName(item: ListItem): string {
+  return firstText(
+    getText(item, "nameTh"),
+    getText(item, "medicationName"),
+    getText(item, "name"),
+    getText(item, "display"),
+    getText(item, "code"),
+    getText(item, "drugName"),
+  ) ?? "-";
+}
+
+function medicationInstruction(item: ListItem): string {
+  return [
+    firstText(getText(item, "strength"), getText(item, "dose")),
+    firstText(getText(item, "dosageInstruction"), getText(item, "instructions"), getText(item, "instruction")),
+    firstText(getText(item, "frequency"), getText(item, "route")),
+  ].filter(Boolean).join(" · ") || "-";
+}
+
+function medicationQuantity(item: ListItem): string {
+  return formatValue(
+    firstText(
+      getText(item, "quantity"),
+      getText(item, "dispensedQuantity"),
+      getText(item, "quantityDispensed"),
+      getText(item, "daysSupply"),
+      getText(item, "durationDays"),
+    ) ?? "-",
+  );
+}
+
+function isAbnormalObservation(item: ListItem): boolean {
+  const flag = firstText(getText(item, "flag"), getText(item, "interpretation"), getText(item, "status"));
+  return !!flag && !["N", "normal", "final", "registered"].includes(flag.toLowerCase());
 }
 
 function VisaSupportLetterSection({ letter }: { letter?: Record<string, unknown> }) {
@@ -732,84 +931,470 @@ function InfoList({ title, items, primaryKey, secondaryKey, suffixKey }: { title
   );
 }
 
+function documentIdentifier(card: WalletCard, subject: Record<string, unknown>, patient: Record<string, unknown>, document: Record<string, unknown>): string {
+  const documentNo = firstText(
+    getText(subject, "documentNo"),
+    getText(document, "documentNo"),
+    getText(document, "no"),
+    getText(subject, "certificateNo"),
+    getText(subject, "referralNo"),
+    getText(subject, "quotationNo"),
+    getText(subject, "receiptNo"),
+    getText(subject, "invoiceNo"),
+    getText(subject, "claimRef"),
+    getText(subject, "claimId"),
+    getText(subject, "guaranteeRef"),
+    getText(subject, "letterNo"),
+    getText(subject, "consentId"),
+    getText(subject, "goldenRecordId"),
+    getText(subject, "syncId"),
+    getText(subject, "smartHealthLinkId"),
+    getText(subject, "bundleId"),
+    getText(subject, "policyNo"),
+    getText(subject, "memberId"),
+    getText(getObject(subject, "documentReference"), "id")
+  );
+  const personNo = firstText(
+    getText(patient, "carepassId"),
+    getText(patient, "hn"),
+    getText(patient, "id"),
+    getText(subject, "memberId"),
+    getText(subject, "passportNumber")
+  );
+  return (photoDocumentTypes.has(card.cardType) ? personNo ?? documentNo : documentNo ?? personNo) ?? String(card.credentialId);
+}
+
+function labReportPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const report = mergeDocumentPayload(subject, ["labReport", "laboratoryReport"]);
+  return {
+    ...report,
+    reportNo: firstText(getText(report, "reportNo"), getText(report, "documentNo")),
+    laboratory: firstText(getText(report, "laboratory"), displayName(getObject(report, "performedBy")), displayName(getObject(report, "organization"))),
+    specimenCollectedAt: firstText(getText(report, "specimenCollectedAt"), getText(getObject(report, "specimen"), "collectedAt"), getText(report, "reportedAt")),
+    reportedAt: firstText(getText(report, "reportedAt"), getText(report, "issuedAt")),
+    observations: firstNonEmptyItems(getNested(report, ["observations"]), getNested(getObject(report, "fhir"), ["observations"]))
+      .map((item) => ({
+        ...item,
+        display: firstText(getText(item, "display"), getText(item, "nameTh"), getText(item, "name"), getText(item, "loincCode")),
+        value: firstText(getText(item, "value"), getText(item, "interpretation")),
+        unit: firstText(getText(item, "unit"), getText(item, "referenceRange")),
+        flag: firstText(getText(item, "flag"), getText(item, "interpretation"))
+      }))
+  };
+}
+
+function diagnosticReportPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const report = mergeDocumentPayload(subject, ["diagnosticReport"]);
+  return {
+    ...report,
+    reportNo: firstText(getText(report, "reportNo"), getText(report, "documentNo")),
+    category: firstText(getText(report, "category"), getText(report, "reportType"), getText(report, "documentType")),
+    effectiveDateTime: firstText(getText(report, "effectiveDateTime"), getText(report, "reportedAt"), getText(report, "issuedAt")),
+    observations: firstNonEmptyItems(getNested(report, ["observations"]), getNested(getObject(report, "fhir"), ["observations"]))
+  };
+}
+
+function prescriptionItems(subject: Record<string, unknown>): ListItem[] {
+  return firstNonEmptyItems(
+    getNested(subject, ["prescription", "items"]),
+    getNested(subject, ["prescription", "medications"]),
+    getNested(subject, ["prescribedMedications"]),
+    getNested(subject, ["medicationsPrescribed"]),
+    getNested(subject, ["items"]),
+    getNested(subject, ["medications"]),
+    getNested(getObject(subject, "fhir"), ["medicationRequests"])
+  ).map(normalizeMedicationItem);
+}
+
+function medicationSummaryItems(subject: Record<string, unknown>): ListItem[] {
+  return firstNonEmptyItems(
+    getNested(subject, ["medicationSummary", "medications"]),
+    getNested(subject, ["medicationSummary", "items"]),
+    getNested(subject, ["currentMedications"]),
+    getNested(subject, ["medications"]),
+    getNested(subject, ["items"]),
+    getNested(getObject(subject, "fhir"), ["medicationRequests"])
+  ).map(normalizeMedicationItem);
+}
+
+function pharmacyDispenseItems(subject: Record<string, unknown>): ListItem[] {
+  return firstNonEmptyItems(
+    getNested(subject, ["pharmacyDispense", "items"]),
+    getNested(subject, ["dispensingRecord", "items"]),
+    getNested(subject, ["medicationDispense", "items"]),
+    getNested(subject, ["dispensedItems"]),
+    getNested(subject, ["items"])
+  ).map(normalizeMedicationItem);
+}
+
+function allergyItems(subject: Record<string, unknown>): ListItem[] {
+  return firstNonEmptyItems(
+    getNested(subject, ["allergyAlert", "items"]),
+    getNested(subject, ["allergyAlert", "allergies"]),
+    getNested(subject, ["allergyInformation", "items"]),
+    getNested(subject, ["allergyInformation", "allergies"]),
+    getNested(subject, ["allergyIntolerances"]),
+    getNested(subject, ["allergies"]),
+    getNested(getObject(subject, "critical"), ["allergies"])
+  ).map((item) => ({
+    ...item,
+    substance: firstText(getText(item, "substance"), getText(item, "agent"), getText(item, "display"), getText(item, "label")),
+    reaction: firstText(getText(item, "reactionTh"), getText(item, "reaction"), getText(item, "manifestation")),
+    severity: firstText(getText(item, "severity"), getText(item, "criticality"))
+  }));
+}
+
+function medicalCertificatePayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const certificate = mergeDocumentPayload(subject, ["medicalCertificate", "certificate", "certification"]);
+  return {
+    ...certificate,
+    certificateNo: firstText(getText(certificate, "certificateNo"), getText(certificate, "documentNo")),
+    type: firstText(getText(certificate, "type"), getText(certificate, "certificateType"), getText(certificate, "documentType")),
+    result: firstText(getText(certificate, "result"), getText(certificate, "diagnosisText")),
+    examinationDate: firstText(getText(certificate, "examinationDate"), getText(certificate, "issuedAt")),
+    restrictions: firstText(getText(certificate, "restrictions"), getText(certificate, "recommendations")),
+    practitioner: getObject(certificate, "practitioner"),
+  };
+}
+
+function clinicalSummaryPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const summary = mergeDocumentPayload(subject, ["patientSummary", "clinicalSummary", "summary", "clinical", "ips", "portablePatientSummary"]);
+  const critical = getObject(subject, "critical") ?? {};
+  return {
+    ...summary,
+    conditions: firstNonEmptyItems(getNested(summary, ["conditions"]), getNested(critical, ["conditions"]))
+      .map((item) => ({ ...item, display: firstText(getText(item, "display"), getText(item, "name"), getText(item, "label")) })),
+    medications: firstNonEmptyItems(getNested(summary, ["medications"]), getNested(critical, ["medications"]), getNested(subject, ["medications"]))
+      .map((item) => ({ ...item, name: firstText(getText(item, "nameTh"), getText(item, "name"), getText(item, "display"), getText(item, "label")), dose: firstText(getText(item, "dose"), getText(item, "frequency")) })),
+    allergies: firstNonEmptyItems(getNested(summary, ["allergies"]), getNested(critical, ["allergies"]))
+      .map((item) => ({ ...item, substance: firstText(getText(item, "substance"), getText(item, "display"), getText(item, "label")), severity: getText(item, "severity") })),
+    vitalSigns: firstNonEmptyItems(getNested(summary, ["vitalSigns"]), getNested(subject, ["vitalSigns"])),
+    carePlan: firstText(getText(summary, "carePlan"), getText(subject, "carePlan"))
+  };
+}
+
+function consentPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const consent = mergeDocumentPayload(subject, ["consentReceipt", "consent", "consentDetails"]);
+  return {
+    ...consent,
+    recipient: firstText(getText(consent, "recipient"), getText(consent, "grantedToOrganizationId"), getText(consent, "requesterId")),
+    scope: getNested(consent, ["scope"]) ?? getNested(consent, ["scopes"])
+  };
+}
+
+function mpiPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const mpi = mergeDocumentPayload(subject, ["mpiLinkCertificate", "mpiLink", "mpi", "linkCertificate"]);
+  return {
+    ...mpi,
+    confidence: firstText(getText(mpi, "confidence"), getText(mpi, "linkConfidence")),
+    matchingPolicy: firstText(getText(mpi, "matchingPolicy"), getText(mpi, "matchAlgorithm"), getText(mpi, "linkType")),
+    reviewedBy: firstText(getText(mpi, "reviewedBy"), getText(mpi, "linkedBy")),
+    linkedIdentifiers: firstNonEmptyItems(getNested(mpi, ["linkedIdentifiers"])).map((item) => ({
+      organization: firstText(getText(item, "organization"), getText(item, "system")),
+      hn: firstText(getText(item, "hn"), getText(item, "value")),
+      linkStatus: firstText(getText(item, "linkStatus"), getText(mpi, "linkStatus"), getText(item, "isPrimary") === "true" ? "primary" : undefined)
+    }))
+  };
+}
+
+function referralPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const referral = mergeDocumentPayload(subject, ["referral", "referralLetter", "patientReferral", "serviceRequest"]);
+  return {
+    ...referral,
+    referralNo: firstText(getText(referral, "referralNo"), getText(referral, "documentNo")),
+    fromHospital: firstText(getText(referral, "fromHospital"), displayName(getObject(referral, "organization")), getText(referral, "referringDepartment")),
+    toHospital: firstText(getText(referral, "toHospital"), getText(referral, "receivingFacility"), getText(referral, "receivingDepartment")),
+    requestedService: firstText(getText(referral, "requestedService"), formatValue(getNested(referral, ["requestedServices"])), getText(referral, "receivingDepartment")),
+    reason: firstText(getText(referral, "reason"), getText(referral, "reasonForReferralTh"), getText(referral, "reasonForReferral")),
+    clinicalNotes: firstText(getText(referral, "clinicalNotes"), getText(getObject(referral, "clinicalSummary"), "primaryConcern"), getText(referral, "reasonForReferralTh")),
+    authoredOn: firstText(getText(referral, "authoredOn"), getText(referral, "referralDate"), getText(referral, "issuedAt")),
+  };
+}
+
+function dischargeSummaryPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  return mergeDocumentPayload(subject, ["dischargeSummary"]);
+}
+
+function coveragePayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const coverage = mergeDocumentPayload(subject, ["insuranceEligibility", "coverageEligibility", "eligibility", "coverage", "benefits"]);
+  const benefits = getObject(coverage, "benefits") ?? {};
+  const benefitSummary = firstNonEmptyItems(getNested(coverage, ["benefitSummary"]));
+  return {
+    ...coverage,
+    benefitSummary: benefitSummary.length ? benefitSummary : benefitItems(benefits, coverage),
+    coveragePeriod: getObject(coverage, "coveragePeriod") ?? {
+      start: getText(coverage, "validFrom"),
+      end: getText(coverage, "validUntil")
+    },
+    lastCheckedAt: firstText(getText(coverage, "lastCheckedAt"), getText(coverage, "checkedAt")),
+    copay: firstText(getText(coverage, "copay"), getText(benefits, "copay")),
+    preAuthorizationRequired: getNested(coverage, ["preAuthorizationRequired"]) ?? getNested(benefits, ["preAuthorizationRequired"]),
+    directBilling: getNested(coverage, ["directBilling"]) ?? getNested(benefits, ["directBilling"]),
+  };
+}
+
+function claimPackagePayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const claimPackage = mergeDocumentPayload(subject, ["claimPackage", "claim", "claimBundle", "claimRequest"]);
+  return {
+    ...claimPackage,
+    items: firstNonEmptyItems(
+      getNested(claimPackage, ["items"]),
+      getNested(claimPackage, ["serviceItems"]),
+      getNested(claimPackage, ["serviceLines"]),
+      getNested(claimPackage, ["lineItems"]),
+      getNested(claimPackage, ["attachedEvidence"]),
+    ),
+    totalAmount: getNested(claimPackage, ["totalAmount"]) ?? getNested(claimPackage, ["estimatedTotal"]),
+    claimId: firstText(getText(claimPackage, "claimId"), getText(claimPackage, "claimNo"), getText(claimPackage, "claimRef")),
+  };
+}
+
+function claimReceiptPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const receipt = mergeDocumentPayload(subject, ["claimReceipt", "receipt", "invoice", "claim"]);
+  return {
+    ...receipt,
+    claimId: firstText(getText(receipt, "claimId"), getText(receipt, "claimRef"), getText(receipt, "claimNo")),
+    payerRef: firstText(getText(receipt, "payerRef"), getText(receipt, "payerReference"), getText(receipt, "payerId")),
+    receiptNo: firstText(getText(receipt, "receiptNo"), getText(receipt, "documentNo")),
+    invoiceNo: firstText(getText(receipt, "invoiceNo"), getText(receipt, "invoiceRef")),
+    adjudicationOutcome: firstText(getText(receipt, "adjudicationOutcome"), getText(receipt, "claimStatus"), getText(receipt, "status")),
+    items: firstNonEmptyItems(
+      getNested(receipt, ["items"]),
+      getNested(receipt, ["lineItems"]),
+      getNested(receipt, ["breakdown"]),
+      getNested(receipt, ["serviceItems"]),
+    ),
+    approvedAmount: getNested(receipt, ["approvedAmount"]) ?? getNested(receipt, ["netAmount"]),
+    totalAmount: getNested(receipt, ["totalAmount"]) ?? getNested(receipt, ["totalClaimed"]),
+  };
+}
+
+function quotationPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const quotation = mergeDocumentPayload(subject, ["treatmentQuotation", "quotation", "estimate", "costEstimate"]);
+  return {
+    ...quotation,
+    quotationNo: firstText(getText(quotation, "quotationNo"), getText(quotation, "documentNo")),
+    items: firstNonEmptyItems(
+      getNested(quotation, ["items"]),
+      getNested(quotation, ["lineItems"]),
+      getNested(quotation, ["costItems"]),
+      getNested(getObject(quotation, "packageDetails"), ["lineItems"]),
+    ),
+    estimatedTotal: getNested(quotation, ["estimatedTotal"]) ?? getNested(quotation, ["totalAmount"]),
+    packageName: firstText(getText(quotation, "packageNameTh"), getText(quotation, "packageName"), getText(quotation, "packageNameEn")),
+  };
+}
+
+function visaSupportLetterPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const letter = mergeDocumentPayload(subject, ["visaSupportLetter"]);
+  return {
+    ...letter,
+    letterNo: firstText(getText(letter, "letterNo"), getText(letter, "documentNo")),
+    proposedVisitPeriod: getObject(letter, "proposedVisitPeriod") ?? getObject(letter, "visitPeriod")
+  };
+}
+
+function guaranteeLetterPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const letter = mergeDocumentPayload(subject, ["guaranteeLetter"]);
+  return {
+    ...letter,
+    guaranteeNo: firstText(getText(letter, "guaranteeNo"), getText(letter, "guaranteeRef"), getText(letter, "documentNo")),
+    payer: getObject(letter, "payer") ?? getText(letter, "issuedByPayer"),
+    preAuthNo: firstText(getText(letter, "preAuthNo"), getText(letter, "preAuthorizationNo")),
+    guaranteeLimit: getObject(letter, "guaranteeLimit") ?? {
+      amount: getText(letter, "approvedLimit"),
+      currency: getText(letter, "currency")
+    }
+  };
+}
+
+function syncReceiptPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const receipt = mergeDocumentPayload(subject, ["syncReceipt"]);
+  return {
+    ...receipt,
+    syncId: firstText(getText(receipt, "syncId"), getText(receipt, "documentNo"), getText(receipt, "idempotencyKey")),
+    sourceSystem: firstText(getText(receipt, "sourceSystem"), getText(receipt, "targetId")),
+    completedAt: firstText(getText(receipt, "completedAt"), getText(receipt, "executedAt"), getText(getObject(receipt, "execution"), "completedAt"))
+  };
+}
+
+function manifestPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const manifest = mergeDocumentPayload(subject, ["shlManifest", "manifest"]);
+  const files = firstNonEmptyItems(getNested(manifest, ["files"]), getNested(manifest, ["documents"]));
+  return {
+    ...manifest,
+    shlId: firstText(getText(manifest, "shlId"), getText(manifest, "smartHealthLinkId"), getText(manifest, "bundleId")),
+    expiresAt: firstText(getText(manifest, "expiresAt"), getText(getObject(manifest, "accessControl"), "expiresAt")),
+    files: files.map((file) => ({
+      fileId: firstText(getText(file, "fileId"), getText(file, "id"), getText(file, "documentNo"), getText(file, "title")),
+      contentType: firstText(getText(file, "contentType"), getText(file, "type"), getText(file, "documentType")),
+      documentTypes: getNested(file, ["documentTypes"]) ?? getText(file, "documentType") ?? getText(file, "title")
+    }))
+  };
+}
+
+function appointmentPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  const appointment = mergeDocumentPayload(subject, ["appointment"]);
+  return {
+    ...appointment,
+    serviceType: firstText(getText(appointment, "serviceType"), getText(appointment, "appointmentType"), getText(appointment, "reasonForVisit")),
+    start: firstText(getText(appointment, "start"), joinDateTime(getText(appointment, "scheduledDate"), getText(appointment, "scheduledTime"))),
+    checkinInstruction: firstText(getText(appointment, "checkinInstruction"), getText(appointment, "preparationInstructions"), getText(appointment, "preparationInstructionsEn"))
+  };
+}
+
+function travelDocumentPayload(subject: Record<string, unknown>): Record<string, unknown> {
+  return mergeDocumentPayload(subject, ["travelDocument", "travel"]);
+}
+
 function fieldsForDocument(card: WalletCard, subject: Record<string, unknown>, patient: Record<string, unknown>): Field[] {
+  const coverage = coveragePayload(subject);
+  const certificate = medicalCertificatePayload(subject);
+  const referral = referralPayload(subject);
+  const discharge = dischargeSummaryPayload(subject);
+  const consent = consentPayload(subject);
+  const mpi = mpiPayload(subject);
+  const travel = travelDocumentPayload(subject);
+  const visa = visaSupportLetterPayload(subject);
+  const guarantee = guaranteeLetterPayload(subject);
+  const quotation = quotationPayload(subject);
+  const claimPackage = claimPackagePayload(subject);
+  const receipt = claimReceiptPayload(subject);
+  const syncReceipt = syncReceiptPayload(subject);
+  const appointment = appointmentPayload(subject);
+  const manifest = manifestPayload(subject);
   const fields: Record<string, Field[]> = {
     patient_identity: [
       { label: "HN", value: getText(patient, "hn") },
       { label: "CarePass ID", value: getText(patient, "carepassId") },
+      { label: "เลขบัตร", value: getText(subject, "idCardNo") },
       { label: "วันเกิด", value: formatDate(getText(patient, "birthDate")) },
-      { label: "สัญชาติ", value: getText(patient, "nationality") }
+      { label: "สัญชาติ", value: getText(patient, "nationality") ?? getText(subject, "nationality") },
+      { label: "กรุ๊ปเลือด", value: getText(subject, "bloodType") },
+      { label: "ผู้ติดต่อฉุกเฉิน", value: displayName(getObject(subject, "emergencyContact")) }
     ],
     staff_identity: [
-      { label: "รหัสเจ้าหน้าที่", value: getNested(subject, ["staff", "employeeId"]) ?? getText(patient, "carepassId") },
-      { label: "ตำแหน่ง", value: getNested(subject, ["staff", "role"]) },
-      { label: "หน่วยงาน", value: getNested(subject, ["staff", "department"]) },
-      { label: "อีเมล", value: getText(patient, "email") }
+      { label: "รหัสเจ้าหน้าที่", value: getText(subject, "staffId") ?? getNested(subject, ["staff", "employeeId"]) ?? getText(patient, "carepassId") },
+      { label: "ตำแหน่ง", value: getText(subject, "position") ?? getText(subject, "positionEn") ?? getNested(subject, ["staff", "role"]) },
+      { label: "หน่วยงาน", value: getText(subject, "department") ?? getNested(subject, ["staff", "department"]) ?? getText(subject, "hospitalNameTh") },
+      { label: "บทบาทระบบ", value: getText(subject, "systemRole") },
+      { label: "อีเมล", value: getText(subject, "email") ?? getText(patient, "email") },
+      { label: "โทรศัพท์", value: getText(subject, "phone") }
     ],
     insurance_eligibility: [
-      { label: "ผู้รับประกัน", value: getNested(subject, ["coverage", "payer", "nameEn"]) ?? getNested(subject, ["payer", "name"]) },
-      { label: "สถานะสิทธิ", value: getNested(subject, ["coverage", "status"]) ?? getNested(subject, ["payer", "status"]) },
-      { label: "เครือข่าย", value: getNested(subject, ["coverage", "network"]) },
-      { label: "ตรวจสอบล่าสุด", value: formatDateTime(getNested(subject, ["coverage", "lastCheckedAt"])) }
+      { label: "ผู้รับประกัน", value: displayName(getObject(coverage, "payer")) ?? getText(coverage, "payer") },
+      { label: "แผน", value: getText(coverage, "planName") },
+      { label: "สถานะสิทธิ", value: getText(coverage, "status") },
+      { label: "เครือข่าย", value: getText(coverage, "network") },
+      { label: "ต้อง pre-auth", value: getText(coverage, "preAuthorizationRequired") },
+      { label: "ตรวจสอบล่าสุด", value: formatDateTime(getText(coverage, "checkedAt") ?? getText(coverage, "lastCheckedAt")) }
     ],
     medical_certificate: [
-      { label: "เลขที่ใบรับรอง", value: getNested(subject, ["certificate", "certificateNo"]) },
-      { label: "ประเภท", value: getNested(subject, ["certificate", "type"]) },
-      { label: "วันที่ตรวจ", value: formatDate(getNested(subject, ["certificate", "examinationDate"])) },
-      { label: "ใช้ได้ถึง", value: formatDate(getNested(subject, ["certificate", "validUntil"])) },
-      { label: "ผลการตรวจ", value: getNested(subject, ["certificate", "result"]) ?? (getNested(subject, ["certificate", "fitForWork"]) === true ? "สามารถทำงานหรือเข้ารับบริการได้ตามแพทย์เห็นสมควร" : undefined) },
-      { label: "ข้อจำกัด", value: getNested(subject, ["certificate", "restrictions"]) }
+      { label: "เลขที่ใบรับรอง", value: getText(certificate, "certificateNo") ?? getText(certificate, "documentNo") },
+      { label: "ประเภท", value: getText(certificate, "type") ?? getText(certificate, "certificateType") },
+      { label: "วันที่ตรวจ", value: formatDate(firstText(getText(certificate, "examinationDate"), getText(certificate, "issuedAt"))) },
+      { label: "ใช้ได้ถึง", value: formatDate(getText(certificate, "validUntil")) },
+      { label: "ผลการตรวจ", value: getText(certificate, "result") ?? getText(certificate, "diagnosisText") ?? (getNested(certificate, ["fitnessForWork", "fit"]) === true ? "สามารถทำงานหรือเข้ารับบริการได้ตามแพทย์เห็นสมควร" : undefined) },
+      { label: "ข้อจำกัด", value: getText(certificate, "restrictions") ?? getText(certificate, "recommendations") }
     ],
     referral_vc: [
-      { label: "เลขที่ส่งต่อ", value: getNested(subject, ["referral", "referralNo"]) },
-      { label: "จาก", value: getNested(subject, ["referral", "fromHospital"]) ?? getNested(subject, ["referral", "from"]) },
-      { label: "ถึง", value: getNested(subject, ["referral", "toHospital"]) ?? getNested(subject, ["referral", "to"]) },
-      { label: "บริการที่ขอ", value: getNested(subject, ["referral", "requestedService"]) },
-      { label: "เหตุผล", value: getNested(subject, ["referral", "reason"]) }
+      { label: "เลขที่ส่งต่อ", value: getText(referral, "referralNo") ?? getText(referral, "documentNo") },
+      { label: "จาก", value: getText(referral, "fromHospital") ?? displayName(getObject(referral, "organization")) ?? getText(referral, "referringDepartment") },
+      { label: "ถึง", value: getText(referral, "toHospital") ?? getText(referral, "receivingFacility") ?? getText(referral, "receivingDepartment") },
+      { label: "บริการที่ขอ", value: getText(referral, "requestedService") ?? formatValue(getNested(referral, ["requestedServices"])) },
+      { label: "เหตุผล", value: getText(referral, "reason") ?? getText(referral, "reasonForReferralTh") ?? getText(referral, "reasonForReferral") },
+      { label: "ความเร่งด่วน", value: getText(referral, "priority") },
+      { label: "หมดอายุ", value: formatDate(getText(referral, "validUntil")) }
     ],
     discharge_summary: [
-      { label: "เลขที่ Admit", value: getNested(subject, ["dischargeSummary", "admissionNo"]) },
-      { label: "วันที่ Admit", value: formatDate(getNested(subject, ["dischargeSummary", "admissionDate"])) },
-      { label: "วันที่จำหน่าย", value: formatDate(getNested(subject, ["dischargeSummary", "dischargeDate"])) },
-      { label: "วินิจฉัยหลัก", value: getNested(subject, ["dischargeSummary", "principalDiagnosis", "display"]) },
-      { label: "แผนติดตาม", value: getNested(subject, ["dischargeSummary", "followUp"]) }
+      { label: "เลขที่ Admit", value: getText(discharge, "admissionNo") ?? getText(discharge, "encounterNo") },
+      { label: "วันที่ Admit", value: formatDate(getText(discharge, "admissionDate")) },
+      { label: "วันที่จำหน่าย", value: formatDate(getText(discharge, "dischargeDate")) },
+      { label: "วินิจฉัยหลัก", value: displayName(getObject(discharge, "principalDiagnosis")) ?? getText(discharge, "principalDiagnosis") },
+      { label: "แผนติดตาม", value: getText(discharge, "followUp") }
     ],
     consent_receipt: [
-      { label: "สถานะ", value: getNested(subject, ["consent", "status"]) },
-      { label: "วัตถุประสงค์", value: getNested(subject, ["consent", "purpose"]) },
-      { label: "ผู้รับข้อมูล", value: getNested(subject, ["consent", "recipient"]) },
-      { label: "หมดอายุ", value: formatDateTime(getNested(subject, ["consent", "expiresAt"])) }
+      { label: "Consent ID", value: getText(consent, "consentId") },
+      { label: "สถานะ", value: getText(consent, "status") },
+      { label: "วัตถุประสงค์", value: getText(consent, "purpose") },
+      { label: "ผู้รับข้อมูล", value: getText(consent, "recipient") ?? getText(consent, "grantedToOrganizationId") ?? getText(consent, "requesterId") },
+      { label: "ขอบเขต", value: getNested(consent, ["scope"]) ?? getNested(consent, ["scopes"]) },
+      { label: "หมดอายุ", value: formatDateTime(getText(consent, "expiresAt")) }
     ],
     mpi_link_certificate: [
-      { label: "Golden Record", value: getNested(subject, ["mpi", "goldenRecordId"]) },
-      { label: "ความเชื่อมั่น", value: getNested(subject, ["mpi", "confidence"]) },
-      { label: "นโยบายจับคู่", value: getNested(subject, ["mpi", "matchingPolicy"]) },
-      { label: "ตรวจทานโดย", value: getNested(subject, ["mpi", "reviewedBy"]) }
+      { label: "Golden Record", value: getText(mpi, "goldenRecordId") },
+      { label: "สถานะ", value: getText(mpi, "linkStatus") },
+      { label: "ความเชื่อมั่น", value: getText(mpi, "confidence") ?? getText(mpi, "linkConfidence") },
+      { label: "นโยบายจับคู่", value: getText(mpi, "matchingPolicy") ?? getText(mpi, "matchAlgorithm") },
+      { label: "ตรวจทานโดย", value: getText(mpi, "reviewedBy") ?? getText(mpi, "linkedBy") }
     ],
     travel_document_verification: [
-      { label: "Passport", value: getNested(subject, ["travelDocument", "passportNoMasked"]) ?? getNested(subject, ["travel", "passport"]) },
-      { label: "ประเทศออกเอกสาร", value: getNested(subject, ["travelDocument", "issuingCountry"]) },
-      { label: "ยืนยันจาก", value: getNested(subject, ["travelDocument", "verifiedAgainst"]) },
-      { label: "ช่วงเดินทาง", value: getNested(subject, ["travelDocument", "travelWindow"]) },
-      { label: "สัญชาติ", value: getNested(subject, ["travel", "nationality"]) }
+      { label: "Passport", value: getText(travel, "passportNoMasked") ?? getText(travel, "passportNumber") ?? getNested(travel, ["travel", "passport"]) },
+      { label: "ประเทศออกเอกสาร", value: getText(travel, "issuingCountry") },
+      { label: "สถานะตรวจสอบ", value: getText(travel, "verificationStatus") },
+      { label: "ประเภท Visa", value: getText(travel, "visaTypeTh") ?? getText(travel, "visaType") },
+      { label: "วันหมดอายุ Passport", value: formatDate(getText(travel, "expiryDate")) },
+      { label: "สัญชาติ", value: getText(travel, "nationality") }
     ],
     visa_support_letter: [
-      { label: "เลขที่จดหมาย", value: getNested(subject, ["visaSupportLetter", "letterNo"]) },
-      { label: "วัตถุประสงค์", value: getNested(subject, ["visaSupportLetter", "purpose"]) },
-      { label: "แผนกที่รับ", value: getNested(subject, ["visaSupportLetter", "receivingDepartment"]) },
-      { label: "ช่วงเข้ารับบริการ", value: getNested(subject, ["visaSupportLetter", "proposedVisitPeriod"]) }
+      { label: "เลขที่จดหมาย", value: getText(visa, "letterNo") ?? getText(visa, "documentNo") },
+      { label: "วัตถุประสงค์", value: getText(visa, "purposeTh") ?? getText(visa, "purpose") },
+      { label: "แผนกที่รับ", value: getText(visa, "receivingDepartment") },
+      { label: "แผนการรักษา", value: getText(visa, "treatmentPlan") },
+      { label: "ช่วงเข้ารับบริการ", value: formatPeriod(getObject(visa, "proposedVisitPeriod") ?? getObject(visa, "visitPeriod")) },
+      { label: "แพทย์ผู้รับผิดชอบ", value: displayName(getObject(visa, "responsiblePhysician")) }
     ],
     guarantee_letter: [
-      { label: "เลขที่ Guarantee", value: getNested(subject, ["guaranteeLetter", "guaranteeNo"]) },
-      { label: "Payer", value: getNested(subject, ["guaranteeLetter", "payer"]) },
-      { label: "Pre-auth", value: getNested(subject, ["guaranteeLetter", "preAuthNo"]) },
-      { label: "วงเงิน", value: getNested(subject, ["guaranteeLetter", "guaranteeLimit"]) }
+      { label: "เลขที่ Guarantee", value: getText(guarantee, "guaranteeNo") ?? getText(guarantee, "guaranteeRef") },
+      { label: "Payer", value: displayName(getObject(guarantee, "payer")) ?? getText(guarantee, "issuedByPayer") },
+      { label: "Pre-auth", value: getText(guarantee, "preAuthNo") ?? getText(guarantee, "preAuthorizationNo") },
+      { label: "วงเงิน", value: formatMoney(getNested(guarantee, ["guaranteeLimit", "amount"]) ?? getText(guarantee, "approvedLimit"), getNested(guarantee, ["guaranteeLimit", "currency"]) ?? getText(guarantee, "currency")) },
+      { label: "ใช้ได้ถึง", value: formatDate(getText(guarantee, "validUntil")) }
+    ],
+    quotation: [
+      { label: "เลขที่ใบเสนอราคา", value: getText(quotation, "quotationNo") ?? getText(quotation, "documentNo") },
+      { label: "แพ็กเกจ", value: getText(quotation, "packageName") ?? getText(quotation, "packageNameEn") },
+      { label: "ยอดประมาณการ", value: formatMoney(getNested(quotation, ["estimatedTotal"]), getNested(quotation, ["currency"])) },
+      { label: "ใช้ได้", value: getText(quotation, "validForDays") ? `${getText(quotation, "validForDays")} วัน` : undefined },
+      { label: "เงื่อนไขชำระเงิน", value: getText(quotation, "paymentTerms") },
+      { label: "ข้อยกเว้น", value: getNested(quotation, ["exclusions"]) }
+    ],
+    claim_package: [
+      { label: "เลขที่เคลม", value: getText(claimPackage, "claimNo") ?? getText(claimPackage, "claimRef") ?? getText(claimPackage, "packageNo") },
+      { label: "ประเภทเคลม", value: getText(claimPackage, "claimType") },
+      { label: "Payer", value: displayName(getObject(claimPackage, "payer")) ?? getText(claimPackage, "payerRef") },
+      { label: "ยอดรวม", value: formatMoney(getNested(claimPackage, ["totalAmount"]) ?? getNested(claimPackage, ["estimatedTotal"]), getNested(claimPackage, ["currency"])) },
+      { label: "สถานะ", value: getText(claimPackage, "status") ?? getText(claimPackage, "claimStatus") }
+    ],
+    claim_receipt: [
+      { label: "เลขที่ใบเสร็จ", value: getText(receipt, "receiptNo") ?? getText(receipt, "invoiceNo") },
+      { label: "เลขเคลม", value: getText(receipt, "claimRef") },
+      { label: "ยอดอนุมัติ", value: formatMoney(getNested(receipt, ["approvedAmount"]) ?? getNested(receipt, ["netAmount"]) ?? getNested(receipt, ["totalAmount"]), getNested(receipt, ["currency"]) ?? "THB") },
+      { label: "ผู้ป่วยรับผิดชอบ", value: formatMoney(getNested(receipt, ["patientResponsibility"]), getNested(receipt, ["currency"]) ?? "THB") },
+      { label: "วิธีชำระเงิน", value: getText(receipt, "paymentMethod") },
+      { label: "สถานะ", value: getText(receipt, "status") ?? getText(receipt, "paymentStatus") }
     ],
     sync_receipt: [
-      { label: "Sync ID", value: getNested(subject, ["syncReceipt", "syncId"]) },
-      { label: "ต้นทาง", value: getNested(subject, ["syncReceipt", "sourceSystem"]) },
-      { label: "ปลายทาง", value: getNested(subject, ["syncReceipt", "targetSystem"]) },
-      { label: "สถานะ", value: getNested(subject, ["syncReceipt", "status"]) }
+      { label: "Sync ID", value: getText(syncReceipt, "syncId") ?? getText(syncReceipt, "documentNo") },
+      { label: "Operation", value: getText(syncReceipt, "operation") },
+      { label: "ต้นทาง", value: getText(syncReceipt, "sourceSystem") ?? getText(syncReceipt, "targetId") },
+      { label: "ปลายทาง", value: getText(syncReceipt, "targetSystem") },
+      { label: "สถานะ", value: getText(syncReceipt, "status") }
+    ],
+    appointment: [
+      { label: "ประเภทนัด", value: getText(appointment, "serviceType") ?? getText(appointment, "appointmentType") },
+      { label: "แผนก", value: getText(appointment, "department") },
+      { label: "วันนัด", value: formatDate(getText(appointment, "scheduledDate") ?? getText(appointment, "start")) },
+      { label: "เวลา", value: getText(appointment, "scheduledTime") ?? formatDateTime(getText(appointment, "start")) },
+      { label: "สถานที่", value: getText(appointment, "location") },
+      { label: "เอกสารที่ต้องเตรียม", value: getNested(appointment, ["requiredDocuments"]) }
+    ],
+    shl_manifest: [
+      { label: "SHL ID", value: getText(manifest, "shlId") ?? getText(manifest, "smartHealthLinkId") ?? getText(manifest, "bundleId") },
+      { label: "วัตถุประสงค์", value: getText(manifest, "purpose") },
+      { label: "Manifest hash", value: getText(manifest, "manifestHash") },
+      { label: "หมดอายุ", value: formatDateTime(getText(manifest, "expiresAt") ?? getNested(manifest, ["accessControl", "expiresAt"])) },
+      { label: "ไฟล์", value: getNested(manifest, ["files"]) ?? getNested(manifest, ["documents"]) }
     ]
   };
 
@@ -1048,6 +1633,81 @@ function getArray(source: unknown, key: string): ListItem[] {
   return Array.isArray(value) ? value.filter(item => item && typeof item === "object").map(item => item as ListItem) : [];
 }
 
+function documentPayload(source: Record<string, unknown>, key: string): Record<string, unknown> {
+  return mergeDocumentPayload(source, [key]);
+}
+
+function mergeDocumentPayload(source: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+  return mergePortalRenderPayload(source, keys);
+}
+
+function firstText(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const text = getText(value);
+    if (text && text !== "-") return text;
+  }
+  return undefined;
+}
+
+function displayName(value: unknown): string | undefined {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return firstText(
+    getText(value, "nameTh"),
+    getText(value, "nameEn"),
+    getText(value, "name"),
+    getText(value, "display"),
+    getText(value, "text"),
+    getText(value, "reference"),
+    getText(value, "value"),
+    getText(value, "organization"),
+    getText(value, "hospitalNameTh")
+  );
+}
+
+function firstNonEmptyItems(...values: unknown[]): ListItem[] {
+  for (const value of values) {
+    const items = itemsFromUnknown(value);
+    if (items.length > 0) return items;
+  }
+  return [];
+}
+
+function itemsFromUnknown(value: unknown): ListItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    if (item && typeof item === "object" && !Array.isArray(item)) return item as ListItem;
+    const formatted = formatValue(item);
+    return { label: formatted, display: formatted, name: formatted, substance: formatted };
+  });
+}
+
+function benefitItems(benefits: Record<string, unknown>, coverage: Record<string, unknown>): ListItem[] {
+  const currency = getText(benefits, "annualLimitCurrency") ?? getText(coverage, "currency") ?? "THB";
+  const items: ListItem[] = [
+    {
+      benefit: "Annual coverage limit",
+      limit: formatMoney(getNested(benefits, ["annualLimit"]), currency),
+      remaining: formatMoney(getNested(benefits, ["remainingLimit"]), currency),
+    },
+    { benefit: "OPD", limit: formatValue(getNested(benefits, ["opd"])), remaining: "-" },
+    { benefit: "IPD", limit: formatValue(getNested(benefits, ["ipd"])), remaining: "-" },
+    { benefit: "Direct Billing", limit: getNested(benefits, ["directBilling"]) === true ? "supported" : "not supported", remaining: "-" },
+    { benefit: "Copay", limit: getText(coverage, "copay"), remaining: "-" },
+    { benefit: "Pre-authorization", limit: getNested(coverage, ["preAuthorizationRequired"]) === true ? "required" : "not required", remaining: "-" },
+  ];
+  return items.filter((item) => hasValue(item.limit) && item.limit !== "-");
+}
+
+function joinDateTime(date?: string, time?: string): string | undefined {
+  if (!date && !time) return undefined;
+  return [date, time].filter(Boolean).join(" ");
+}
+
+function firstNonEmptyArray(...values: ListItem[][]): ListItem[] {
+  return values.find(items => items.length > 0) ?? [];
+}
+
 function getStringArray(source: unknown, key: string): string[] {
   const value = getNested(source, [key]);
   return Array.isArray(value) ? value.filter(item => typeof item === "string").map(String) : [];
@@ -1055,6 +1715,16 @@ function getStringArray(source: unknown, key: string): string[] {
 
 function arrayToItems(value: unknown): ListItem[] {
   return Array.isArray(value) ? value.map(item => ({ label: formatValue(item) })) : [];
+}
+
+function clinicalSummaryItems(summary?: Record<string, unknown>): ListItem[] {
+  if (!summary) return [];
+  return [
+    { label: "อาการสำคัญ", value: getText(summary, "primaryConcern") },
+    { label: "ประวัติ", value: getText(summary, "history") },
+    { label: "การแพ้", value: getText(summary, "allergies") },
+    { label: "ยาปัจจุบัน", value: getText(summary, "medications") },
+  ].filter(item => hasValue(item.value));
 }
 
 function getNested(source: unknown, path: string[]): unknown {

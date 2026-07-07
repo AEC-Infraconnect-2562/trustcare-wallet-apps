@@ -23,6 +23,7 @@ export * from "./sorting";
 export * from "./selectiveDisclosure";
 export * from "./qr";
 export * from "./photoSources";
+export * from "./portalRenderContract";
 export * from "./portalCredentialImport";
 export * from "./portalSyncMerge";
 export * from "./portalWalletPush";

@@ -6,6 +6,8 @@ This document records the Wallet-side contract for the current Portal pull sync 
 
 The Wallet calls TrustCare Portal with a configured `portalOpenId`. Wallet-local user ids must not be used as a fallback login id. If a wallet user has no known Portal identity, Portal sync is disabled for that wallet.
 
+Synced VC/VP payloads that should render as medical documents must follow `docs/PORTAL_WALLET_RENDER_CONTRACT.md`. In particular, `credentialSubject.humanDocument.renderData` is the canonical renderer payload. Portal and Wallet should not derive display details from different legacy fields.
+
 Request body sent to `POST /api/wallet/sync` includes:
 
 - `includePresentations: true`

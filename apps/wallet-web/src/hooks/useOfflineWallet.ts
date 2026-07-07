@@ -118,20 +118,27 @@ async function putCachedQr(entry: QrCacheEntry) {
 
 export function useOfflineWallet() {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [meta, setMetaState] = useState<{
+    isLoaded: boolean;
+    lastSyncTime: string | null;
+  }>({
+    isLoaded: false,
+    lastSyncTime: null,
+  });
   const [offlineCards, setOfflineCards] = useState<WalletCard[]>([]);
-  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
-    void getAllCards()
-      .then(setOfflineCards)
-      .catch(() => undefined);
-    void getMeta("lastSyncTime")
-      .then(setLastSyncTime)
-      .catch(() => undefined);
+    void Promise.all([
+      getAllCards().catch(() => []),
+      getMeta("lastSyncTime").catch(() => null),
+    ]).then(([cards, syncTime]) => {
+      setOfflineCards(cards);
+      setMetaState({ isLoaded: true, lastSyncTime: syncTime });
+    });
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
@@ -143,7 +150,7 @@ export function useOfflineWallet() {
     await putCards(cards);
     await setMeta("lastSyncTime", now);
     setOfflineCards(cards);
-    setLastSyncTime(now);
+    setMetaState({ isLoaded: true, lastSyncTime: now });
   }, []);
 
   const cacheQr = useCallback(
@@ -176,9 +183,10 @@ export function useOfflineWallet() {
 
   return {
     isOnline,
+    isLoaded: meta.isLoaded,
     offlineCards,
     offlineCardCount: offlineCards.length,
-    lastSyncTime,
+    lastSyncTime: meta.lastSyncTime,
     syncCards,
     cacheQr,
     getOfflineQr,

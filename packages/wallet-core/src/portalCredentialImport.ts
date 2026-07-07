@@ -224,9 +224,9 @@ function portalDocumentType(
     ? credentialData.type.filter(item => typeof item === "string")
     : [];
   const rawType =
-    stringValue(portalCard.cardType) ??
-    stringValue(portalCard.credentialType) ??
     stringValue(subject.documentType) ??
+    stringValue(portalCard.credentialType) ??
+    stringValue(portalCard.cardType) ??
     credentialTypes.find(item => item.endsWith("Credential")) ??
     null;
   const normalized = normalizeDocumentType(rawType);
