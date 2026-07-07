@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canUsePortalDemoSync,
   getPortalWalletSyncStatus,
   resolveTrustCareDid,
   syncTrustCarePortalWallet,
@@ -119,6 +120,58 @@ describe("syncTrustCarePortalWallet", () => {
     );
   });
 
+  it("uses the canonical Portal openId while preserving the complete wallet owner scope", async () => {
+    const fetchImpl: typeof fetch = async (url, init) => {
+      const requestUrl = String(url);
+      if (requestUrl.endsWith("/api/auth/demo-login")) {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          openId: "demo-patient-001",
+        });
+        return jsonResponse({ success: true, token: "complete-token" });
+      }
+      if (requestUrl.endsWith("/api/wallet/sync")) {
+        const requestBody = JSON.parse(String(init?.body));
+        expect(requestBody).toMatchObject({
+          includePresentations: true,
+          knownCredentials: expect.any(Array),
+        });
+        return jsonResponse({
+          credentials: [
+            portalCard({
+              id: 1,
+              credentialId: 7001,
+              cardType: "patient_identity",
+              displayName: "บัตรประจำตัวผู้ป่วย",
+              displayNameEn: "Patient ID Card",
+              jwt: "ey.demo.complete.sd-jwt-vc",
+            }),
+          ],
+          presentations: [],
+          syncedAt: "2026-07-06T12:00:00.000Z",
+        });
+      }
+      if (requestUrl.endsWith("/api/wallet/sync/verify")) {
+        return jsonResponse({
+          verified: true,
+          trustLevel: "green",
+          status: "verified",
+        });
+      }
+      return jsonResponse({}, 404);
+    };
+
+    const result = await syncTrustCarePortalWallet({
+      url: "https://wallet.example/trpc",
+      fetchImpl,
+      userId: "demo-patient-complete-001",
+      portalOrigin: "https://trustcarehealth.live",
+    });
+
+    expect(result.report.ownerUserId).toBe("demo-patient-complete-001");
+    expect(result.report.portalOpenId).toBe("demo-patient-001");
+    expect(result.cards[0]?.ownerUserId).toBe("demo-patient-complete-001");
+  });
+
   it("maps Portal staff identity to staff_identity", async () => {
     const fetchImpl: typeof fetch = async (url, init) => {
       const requestUrl = String(url);
@@ -179,6 +232,22 @@ describe("syncTrustCarePortalWallet", () => {
         portalOrigin: "https://trustcarehealth.live",
       }),
     ).rejects.toThrow("TrustCare Portal demo-login failed");
+  });
+
+  it("does not expose Portal sync for wallet users without a configured Portal openId", async () => {
+    expect(canUsePortalDemoSync("demo-staff-complete-001")).toBe(false);
+    const fetchImpl: typeof fetch = async () => {
+      throw new Error("fetch should not be called");
+    };
+
+    await expect(
+      syncTrustCarePortalWallet({
+        url: "https://wallet.example/trpc",
+        fetchImpl,
+        userId: "demo-staff-complete-001",
+        portalOrigin: "https://trustcarehealth.live",
+      }),
+    ).rejects.toThrow("Portal sync is not configured");
   });
 
   it("supports status, DID resolve, and JWT verify endpoints", async () => {

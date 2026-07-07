@@ -87,6 +87,7 @@ import {
   parseShlLink,
   fetchShlManifest,
   getDisabledReason,
+  mergePortalSyncedCards,
   mergeWalletObjects,
   normalizeDocumentType,
   normalizePhotoUrl,
@@ -264,6 +265,7 @@ const isStaticStandaloneRuntime =
 const walletSessionKey = "trustcare-wallet-active-user";
 const defaultLoginUserId = "demo-patient-001";
 const scanHistoryStorageKey = "trustcare-wallet-scan-history";
+const storedExtrasStorageKey = "trustcare-wallet-store-extras";
 
 function emptyPortalInteropFixtures(user: WalletDemoUser) {
   return {
@@ -639,7 +641,7 @@ export default function App() {
   const [importJob, setImportJob] = useState<WalletImportJob | null>(null);
   const [storedExtrasByUser, setStoredExtrasByUser] = useState<
     Record<string, WalletStoredObject[]>
-  >({});
+  >(() => readStoredExtras());
   const [lastImportMessage, setLastImportMessage] = useState("");
   const [portalSyncMessage, setPortalSyncMessage] = useState("");
   const [portalSyncBusy, setPortalSyncBusy] = useState(false);
@@ -668,7 +670,7 @@ export default function App() {
     }),
     [selectedUserId],
   );
-  const canSyncPortalWallet = activeUser.source === "trustcare_portal";
+  const canSyncPortalWallet = portalSyncApi.canUsePortalDemoSync(selectedUserId);
   const interopFixtures = useMemo(() => {
     if (canSyncPortalWallet) return emptyPortalInteropFixtures(activeUser);
     return buildPortalInteroperabilityFixtures(
@@ -713,6 +715,10 @@ export default function App() {
       window.removeEventListener("popstate", syncPendingScanFromUrl);
     };
   }, []);
+
+  useEffect(() => {
+    writeStoredExtras(storedExtrasByUser);
+  }, [storedExtrasByUser]);
 
   useEffect(() => {
     let cancelled = false;
@@ -906,15 +912,17 @@ export default function App() {
   );
 
   const syncActiveWalletFromPortal = useCallback(async () => {
-    if (activeUser.source !== "trustcare_portal") {
+    if (!canSyncPortalWallet) {
       setPortalSyncMessage("Wallet นี้ไม่ได้ผูกกับ TrustCare Portal จึงไม่สามารถ Sync จาก Portal ได้");
       return;
     }
     setPortalSyncBusy(true);
     setPortalSyncMessage("กำลัง Sync VC/VP จาก TrustCare Portal...");
     try {
-      const result =
-        await portalSyncApi.syncTrustCarePortalWallet(portalSyncOptions);
+      const result = await portalSyncApi.syncTrustCarePortalWallet({
+        ...portalSyncOptions,
+        currentCards: allCards,
+      });
       if (result.report.ownerUserId !== selectedUserId) {
         throw new Error(
           `Portal sync owner mismatch: expected ${selectedUserId}, received ${result.report.ownerUserId}`,
@@ -924,15 +932,38 @@ export default function App() {
       if (syncedCards.some((card) => card.ownerUserId !== selectedUserId)) {
         throw new Error("Portal sync returned credentials for another wallet user");
       }
-      setGrouped(result.cardsByCategory);
+      const mergedSync = mergePortalSyncedCards({
+        existingCards: allCards,
+        incomingCards: syncedCards,
+        syncedAt: result.report.syncedAt,
+      });
+      setGrouped(mergedSync.cardsByCategory);
       setHistory(result.presentations);
       setShlPackages([]);
-      await offlineWallet.syncCards(syncedCards);
+      if (mergedSync.archivedObjects.length) {
+        setStoredExtrasByUser((previous) => ({
+          ...previous,
+          [selectedUserId]: mergeWalletObjects(
+            previous[selectedUserId] ?? [],
+            mergedSync.archivedObjects,
+          ),
+        }));
+      }
+      await offlineWallet.syncCards(mergedSync.cards);
       const warningText = result.report.warnings.length
         ? ` (${result.report.warnings.join(" / ")})`
         : "";
       setPortalSyncMessage(
-        `Sync จาก TrustCare Portal สำเร็จ: นำเข้า VC ${syncedCards.length} รายการ และ VP ${result.presentations.length} รายการ สำหรับ ${activeUser.nameTh}${warningText}`,
+        [
+          `Sync จาก TrustCare Portal สำเร็จ: ใช้งาน VC ${mergedSync.report.active} รายการ`,
+          `เพิ่ม ${mergedSync.report.added}`,
+          `อัปเดต ${mergedSync.report.updated}`,
+          `ซ้ำเดิม ${mergedSync.report.unchanged}`,
+          mergedSync.report.archived ? `เก็บเวอร์ชันเดิม ${mergedSync.report.archived}` : null,
+          `และ VP ${result.presentations.length} รายการ สำหรับ ${activeUser.nameTh}${warningText}`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
       );
     } catch (error) {
       const message = friendlyPortalSyncError(error);
@@ -940,7 +971,14 @@ export default function App() {
     } finally {
       setPortalSyncBusy(false);
     }
-  }, [activeUser, offlineWallet, portalSyncOptions, selectedUserId]);
+  }, [
+    activeUser,
+    allCards,
+    canSyncPortalWallet,
+    offlineWallet,
+    portalSyncOptions,
+    selectedUserId,
+  ]);
 
   const addScanHistory = useCallback((outcome: ScanOutcome) => {
     setScanHistoryByUser((previous) => {
@@ -6431,6 +6469,21 @@ function readScanHistory(): Record<string, ScanOutcome[]> {
 function writeScanHistory(value: Record<string, ScanOutcome[]>) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(scanHistoryStorageKey, JSON.stringify(value));
+}
+
+function readStoredExtras(): Record<string, WalletStoredObject[]> {
+  if (typeof window === "undefined") return {};
+  try {
+    const value = window.localStorage.getItem(storedExtrasStorageKey);
+    return value ? (JSON.parse(value) as Record<string, WalletStoredObject[]>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredExtras(value: Record<string, WalletStoredObject[]>) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(storedExtrasStorageKey, JSON.stringify(value));
 }
 
 function toneForObject(

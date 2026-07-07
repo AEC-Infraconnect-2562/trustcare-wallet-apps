@@ -16,6 +16,8 @@ export * from "./selectiveDisclosure";
 export * from "./qr";
 export * from "./photoSources";
 export * from "./portalCredentialImport";
+export * from "./portalSyncMerge";
+export * from "./portalWalletPush";
 export * from "./shl";
 export * from "./shlGateway";
 export * from "./readiness";

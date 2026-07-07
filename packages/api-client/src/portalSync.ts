@@ -1,8 +1,10 @@
 import {
   getDemoUser,
+  buildPortalKnownCredentials,
   normalizeTrustCarePortalWalletSync,
   TRUSTCARE_PORTAL_WEB_ORIGIN,
   type PortalWalletImportResult,
+  type PortalKnownCredential,
   type TrustCarePortalWalletCard,
   type TrustCarePortalWalletPresentation,
   type WalletCard,
@@ -16,6 +18,8 @@ export type PortalSyncMode = "disabled" | "live_demo";
 export type PortalWalletSyncOptions = TrustCareClientOptions & {
   userId?: string | number;
   portalOrigin?: string;
+  knownCredentials?: PortalKnownCredential[];
+  currentCards?: WalletCard[];
 };
 
 type DemoLoginResponse = {
@@ -73,7 +77,16 @@ export type PortalDidResolveResponse = {
 
 export function canUsePortalDemoSync(userId?: string | number): boolean {
   const user = getDemoUser(userId);
-  return user.source === "trustcare_portal";
+  return user.source === "trustcare_portal" && Boolean(user.portalOpenId);
+}
+
+function portalOpenIdForSync(user: ReturnType<typeof getDemoUser>): string {
+  if (!user.portalOpenId) {
+    throw new TrustCareApiError(
+      `Portal sync is not configured for wallet user ${user.id}`,
+    );
+  }
+  return user.portalOpenId;
 }
 
 export async function syncTrustCarePortalWallet(
@@ -90,12 +103,13 @@ export async function syncTrustCarePortalWallet(
     );
   }
 
-  const openId = user.portalOpenId ?? user.id;
+  const openId = portalOpenIdForSync(user);
   const token = await getPortalDemoToken(fetcher, portalOrigin, openId);
   const syncPayload = await postPortalWalletSync(
     fetcher,
     portalOrigin,
     token,
+    options.knownCredentials ?? buildPortalKnownCredentials(options.currentCards ?? []),
   );
   const imported = normalizeTrustCarePortalWalletSync({
     owner: user,
@@ -134,7 +148,7 @@ export async function getPortalWalletSyncStatus(
       `Portal sync is not configured for wallet user ${user.id}`,
     );
   }
-  const token = await getPortalDemoToken(fetcher, portalOrigin, user.portalOpenId ?? user.id);
+  const token = await getPortalDemoToken(fetcher, portalOrigin, portalOpenIdForSync(user));
   const response = await fetcher(`${portalOrigin}/api/wallet/sync/status`, {
     headers: { authorization: `Bearer ${token}` },
   });
@@ -236,6 +250,7 @@ async function postPortalWalletSync(
   fetcher: typeof fetch,
   portalOrigin: string,
   token: string,
+  knownCredentials: PortalKnownCredential[] = [],
 ): Promise<PortalWalletSyncResponse> {
   const response = await fetcher(`${portalOrigin}/api/wallet/sync`, {
     method: "POST",
@@ -243,7 +258,11 @@ async function postPortalWalletSync(
       "content-type": "application/json",
       authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ includePresentations: true, limit: 1000 }),
+    body: JSON.stringify({
+      includePresentations: true,
+      limit: 1000,
+      knownCredentials,
+    }),
   });
   const payload = (await response.json().catch(() => null)) as
     | PortalWalletSyncResponse

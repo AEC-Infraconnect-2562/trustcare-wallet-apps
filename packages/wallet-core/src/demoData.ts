@@ -259,7 +259,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
   {
     id: "demo-patient-complete-001",
     patientId: 9900700100017,
-    portalOpenId: "demo-patient-complete-001",
+    portalOpenId: "demo-patient-001",
     source: "trustcare_portal",
     sourceLabel: "ข้อมูลครบชุดจาก TrustCare Portal",
     role: "patient",
@@ -290,7 +290,6 @@ export const walletDemoUsers: WalletDemoUser[] = [
   {
     id: "demo-staff-complete-001",
     patientId: 9900700200017,
-    portalOpenId: "demo-staff-complete-001",
     source: "trustcare_portal",
     sourceLabel: "ข้อมูลครบชุดจาก TrustCare Portal",
     role: "staff",
