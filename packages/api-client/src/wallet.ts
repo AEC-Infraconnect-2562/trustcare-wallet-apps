@@ -88,7 +88,10 @@ export type WalletShlImportInput = {
   passcode?: string;
 };
 
-export type WalletCreateSharePackageInput = Omit<SharePackageBuildInput, "cards">;
+export type WalletCreateSharePackageInput = Omit<
+  SharePackageBuildInput,
+  "cards"
+>;
 
 export type WalletShlImportResult = {
   classification: ReturnType<typeof classifyQrPayload>;
@@ -155,7 +158,9 @@ export async function importFromMhd(
 ): Promise<WalletDocumentRecord> {
   const validation = validateDocumentReference(input.documentReference);
   if (!validation.ok) {
-    throw new Error(`MHD DocumentReference import failed: ${validation.errors.join("; ")}`);
+    throw new Error(
+      `MHD DocumentReference import failed: ${validation.errors.join("; ")}`,
+    );
   }
   if (options.demoMode ?? true) {
     const user = getDemoUser(options.userId);
@@ -169,7 +174,7 @@ export async function importFromMhd(
       title: input.title,
       titleEn: input.titleEn,
       repositoryEndpoint: input.repositoryEndpoint,
-      importedAt: new Date().toISOString()
+      importedAt: new Date().toISOString(),
     });
   }
   return callTrpcProcedure<WalletDocumentRecord>(
@@ -196,7 +201,11 @@ export async function importFromShl(
       importedAt: new Date().toISOString(),
     };
   }
-  return callTrpcProcedure<WalletShlImportResult>(options, "wallet.importFromShl", input);
+  return callTrpcProcedure<WalletShlImportResult>(
+    options,
+    "wallet.importFromShl",
+    input,
+  );
 }
 
 export async function createSharePackage(
@@ -214,8 +223,13 @@ export async function createSharePackage(
       ...input,
       cards,
       origin: input.origin ?? options.demoOrigin,
-      gatewayBaseUrl: input.gatewayBaseUrl ?? (vpMode ? options.shareGatewayUrl ?? defaultShareGatewayUrl : options.shlGatewayUrl),
-      viewerBaseUrl: input.viewerBaseUrl ?? options.shlViewerUrl ?? options.demoOrigin
+      gatewayBaseUrl:
+        input.gatewayBaseUrl ??
+        (vpMode
+          ? (options.shareGatewayUrl ?? defaultShareGatewayUrl)
+          : options.shlGatewayUrl),
+      viewerBaseUrl:
+        input.viewerBaseUrl ?? options.shlViewerUrl ?? options.demoOrigin,
     });
   }
   return callTrpcProcedure<BuiltSharePackage>(
@@ -232,16 +246,21 @@ export async function resolveSharePackage(
   if (options.demoMode ?? true) {
     const classification = classifyQrPayload(input.qrPayload);
     const shl =
-      classification.kind === "standard_shl" || classification.kind === "certified_shl"
+      classification.kind === "standard_shl" ||
+      classification.kind === "certified_shl"
         ? await fetchShlManifest(input.qrPayload)
         : null;
     return {
       classification,
       shl,
-      resolvedAt: new Date().toISOString()
+      resolvedAt: new Date().toISOString(),
     };
   }
-  return callTrpcProcedure<WalletSharePackageResolution>(options, "wallet.resolveSharePackage", input);
+  return callTrpcProcedure<WalletSharePackageResolution>(
+    options,
+    "wallet.resolveSharePackage",
+    input,
+  );
 }
 
 export async function verifySharePackage(

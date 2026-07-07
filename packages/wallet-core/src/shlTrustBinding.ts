@@ -24,12 +24,17 @@ export type ShlTrustVerificationResult = {
   errors: string[];
 };
 
-export function verifyShlManifestTrust(manifest: unknown, now = new Date()): ShlTrustVerificationResult {
+export function verifyShlManifestTrust(
+  manifest: unknown,
+  now = new Date(),
+): ShlTrustVerificationResult {
   const object = objectValue(manifest);
   if (!object) {
     return invalid("SHL manifest is missing or not a JSON object.");
   }
-  const files = arrayValue(object.files).map(objectValue).filter(Boolean) as Array<Record<string, unknown>>;
+  const files = arrayValue(object.files)
+    .map(objectValue)
+    .filter(Boolean) as Array<Record<string, unknown>>;
   const access = objectValue(object.access) ?? {};
   const trustcare = objectValue(object.trustcare) ?? {};
   const standardChecks: ShlTrustChecklistItem[] = [
@@ -37,22 +42,24 @@ export function verifyShlManifestTrust(manifest: unknown, now = new Date()): Shl
       key: "manifest",
       label: "ดึง manifest ได้",
       ok: true,
-      detail: String(object.resourceType ?? "manifest")
+      detail: String(object.resourceType ?? "manifest"),
     },
     {
       key: "standard_files",
       label: "manifest มี files[].location หรือ files[].embedded",
       ok: files.length > 0 && files.every(fileHasStandardLocation),
-      detail: String(files.length)
+      detail: String(files.length),
     },
     {
       key: "expiry",
       label: "ยังไม่หมดอายุ",
-      ok: !access.expiresAt || new Date(String(access.expiresAt)).getTime() > now.getTime(),
-      detail: String(access.expiresAt ?? object.expiresAt ?? "-")
-    }
+      ok:
+        !access.expiresAt ||
+        new Date(String(access.expiresAt)).getTime() > now.getTime(),
+      detail: String(access.expiresAt ?? object.expiresAt ?? "-"),
+    },
   ];
-  const standardOk = standardChecks.every(item => item.ok);
+  const standardOk = standardChecks.every((item) => item.ok);
   const trustLayerStatus = String(trustcare.trustLayerStatus ?? "standard_shl");
   if (!standardOk) {
     return {
@@ -62,14 +69,20 @@ export function verifyShlManifestTrust(manifest: unknown, now = new Date()): Shl
       fileCount: files.length,
       checklist: standardChecks,
       warnings: [],
-      errors: standardChecks.filter(item => !item.ok).map(item => item.label)
+      errors: standardChecks
+        .filter((item) => !item.ok)
+        .map((item) => item.label),
     };
   }
   if (trustLayerStatus !== "certified_manifest_vp") {
     return {
-      status: trustLayerStatus === "pending_manifest_vp" ? "trustcare_pending" : "transport_valid",
+      status:
+        trustLayerStatus === "pending_manifest_vp"
+          ? "trustcare_pending"
+          : "transport_valid",
       verified: false,
-      trustLevel: trustLayerStatus === "pending_manifest_vp" ? "yellow" : "blue",
+      trustLevel:
+        trustLayerStatus === "pending_manifest_vp" ? "yellow" : "blue",
       fileCount: files.length,
       checklist: [
         ...standardChecks,
@@ -77,70 +90,88 @@ export function verifyShlManifestTrust(manifest: unknown, now = new Date()): Shl
           key: "trustcare_certified",
           label: "ผ่าน TrustCare Manifest VP",
           ok: false,
-          detail: trustLayerStatus
-        }
+          detail: trustLayerStatus,
+        },
       ],
       warnings: [
         trustLayerStatus === "pending_manifest_vp"
           ? "SHL นี้กำลังรอ TrustCare Maker/Checker และยังไม่เป็น TrustCare-certified."
-          : "SHL นี้เป็น Standard SMART Health Link ที่อ่านได้ แต่ยังไม่เป็น TrustCare-certified."
+          : "SHL นี้เป็น Standard SMART Health Link ที่อ่านได้ แต่ยังไม่เป็น TrustCare-certified.",
       ],
-      errors: []
+      errors: [],
     };
   }
 
   const manifestCredential = objectValue(trustcare.manifestCredential);
-  const holderAuthorizationCredential = objectValue(trustcare.holderAuthorizationCredential);
+  const holderAuthorizationCredential = objectValue(
+    trustcare.holderAuthorizationCredential,
+  );
   const manifestVp = objectValue(trustcare.manifestVp);
   const expectedManifestHash = hashJson({
     files,
-    documents: arrayValue(objectValue(object.documentBundle)?.documents)
+    documents: arrayValue(objectValue(object.documentBundle)?.documents),
   });
-  const manifestCredentialSubject = objectValue(manifestCredential?.credentialSubject) ?? {};
-  const manifestVpHashOk = Boolean(manifestVp && trustcare.manifestVpHash === hashJson(manifestVp));
-  const manifestHashOk = manifestCredentialSubject.manifestHash === expectedManifestHash;
+  const manifestCredentialSubject =
+    objectValue(manifestCredential?.credentialSubject) ?? {};
+  const manifestVpHashOk = Boolean(
+    manifestVp && trustcare.manifestVpHash === hashJson(manifestVp),
+  );
+  const manifestHashOk =
+    manifestCredentialSubject.manifestHash === expectedManifestHash;
   const holderDid = String(manifestVp?.holder ?? "");
-  const holderSubject = String(objectValue(holderAuthorizationCredential?.credentialSubject)?.id ?? "");
+  const holderSubject = String(
+    objectValue(holderAuthorizationCredential?.credentialSubject)?.id ?? "",
+  );
   const certifiedChecks: ShlTrustChecklistItem[] = [
     ...standardChecks,
     {
       key: "manifest_vc",
       label: "มี Manifest Credential",
-      ok: hasType(manifestCredential, "TrustCareManifestCredential") && manifestHashOk,
-      detail: String(manifestCredential?.id ?? "-")
+      ok:
+        hasType(manifestCredential, "TrustCareManifestCredential") &&
+        manifestHashOk,
+      detail: String(manifestCredential?.id ?? "-"),
     },
     {
       key: "holder_vc",
       label: "มี Holder Authorization Credential",
-      ok: hasType(holderAuthorizationCredential, "HolderAuthorizationCredential") && Boolean(holderSubject),
-      detail: String(holderAuthorizationCredential?.id ?? "-")
+      ok:
+        hasType(
+          holderAuthorizationCredential,
+          "HolderAuthorizationCredential",
+        ) && Boolean(holderSubject),
+      detail: String(holderAuthorizationCredential?.id ?? "-"),
     },
     {
       key: "manifest_vp",
       label: "มี Manifest VP",
       ok: hasType(manifestVp, "TrustCareManifestVP") && manifestVpHashOk,
-      detail: String(trustcare.manifestVpHash ?? "-")
+      detail: String(trustcare.manifestVpHash ?? "-"),
     },
     {
       key: "holder_binding",
       label: "Holder binding ตรงกัน",
       ok: Boolean(holderDid && holderSubject && holderDid === holderSubject),
-      detail: holderDid || "-"
+      detail: holderDid || "-",
     },
     {
       key: "maker_checker",
       label: "ผ่าน Maker/Checker ของ TrustCare",
       ok: trustcare.makerCheckerStatus === "approved",
-      detail: String(trustcare.makerCheckerStatus ?? "-")
+      detail: String(trustcare.makerCheckerStatus ?? "-"),
     },
     {
       key: "access_policy",
       label: "Access policy ตรวจสอบได้",
-      ok: Boolean(access.expiresAt && typeof access.maxAccessCount === "number"),
-      detail: `${access.maxAccessCount ?? "-"} / ${access.expiresAt ?? "-"}`
-    }
+      ok: Boolean(
+        access.expiresAt && typeof access.maxAccessCount === "number",
+      ),
+      detail: `${access.maxAccessCount ?? "-"} / ${access.expiresAt ?? "-"}`,
+    },
   ];
-  const certifiedOk = certifiedChecks.every(item => item.ok) && !JSON.stringify(trustcare).includes("pending:trustcare");
+  const certifiedOk =
+    certifiedChecks.every((item) => item.ok) &&
+    !JSON.stringify(trustcare).includes("pending:trustcare");
   return {
     status: certifiedOk ? "trustcare_certified" : "trustcare_pending",
     verified: certifiedOk,
@@ -150,9 +181,11 @@ export function verifyShlManifestTrust(manifest: unknown, now = new Date()): Shl
     warnings: certifiedOk
       ? []
       : [
-          "พบ TrustCare SHL extension แต่ยังตรวจ binding/hash/Holder/Maker-Checker ไม่ครบ จึงยังไม่ให้ green badge."
+          "พบ TrustCare SHL extension แต่ยังตรวจ binding/hash/Holder/Maker-Checker ไม่ครบ จึงยังไม่ให้ green badge.",
         ],
-    errors: certifiedChecks.filter(item => !item.ok).map(item => item.label)
+    errors: certifiedChecks
+      .filter((item) => !item.ok)
+      .map((item) => item.label),
   };
 }
 
@@ -164,23 +197,34 @@ function invalid(error: string): ShlTrustVerificationResult {
     fileCount: 0,
     checklist: [],
     warnings: [],
-    errors: [error]
+    errors: [error],
   };
 }
 
 function fileHasStandardLocation(file: Record<string, unknown>): boolean {
-  return typeof file.location === "string" || Boolean(objectValue(file.embedded));
+  return (
+    typeof file.location === "string" || Boolean(objectValue(file.embedded))
+  );
 }
 
-function hasType(value: Record<string, unknown> | null, expected: string): boolean {
+function hasType(
+  value: Record<string, unknown> | null,
+  expected: string,
+): boolean {
   if (!value) return false;
   const type = value.type;
-  const values = Array.isArray(type) ? type.map(String) : typeof type === "string" ? [type] : [];
+  const values = Array.isArray(type)
+    ? type.map(String)
+    : typeof type === "string"
+      ? [type]
+      : [];
   return values.includes(expected);
 }
 
 function objectValue(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function arrayValue(value: unknown): unknown[] {

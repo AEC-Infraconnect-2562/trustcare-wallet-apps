@@ -564,9 +564,14 @@ function sharePackageModeForUi(
     : "PurposeVP";
 }
 
-function shareTrustStatusLabel(value: string): { label: string; tone: "green" | "yellow" | "blue" } {
-  if (value === "issuer_signed") return { label: "Issuer ลงนามแล้ว", tone: "green" };
-  if (value === "trust_artifact") return { label: "Trust artifact", tone: "blue" };
+function shareTrustStatusLabel(value: string): {
+  label: string;
+  tone: "green" | "yellow" | "blue";
+} {
+  if (value === "issuer_signed")
+    return { label: "Issuer ลงนามแล้ว", tone: "green" };
+  if (value === "trust_artifact")
+    return { label: "Trust artifact", tone: "blue" };
   if (value === "patient_provided_unverified") {
     return { label: "ผู้ใช้นำเข้า รอตรวจ", tone: "yellow" };
   }
@@ -676,7 +681,8 @@ export default function App() {
     }),
     [selectedUserId],
   );
-  const canSyncPortalWallet = portalSyncApi.canUsePortalDemoSync(selectedUserId);
+  const canSyncPortalWallet =
+    portalSyncApi.canUsePortalDemoSync(selectedUserId);
   const interopFixtures = useMemo(() => {
     if (canSyncPortalWallet) return emptyPortalInteropFixtures(activeUser);
     return buildPortalInteroperabilityFixtures(
@@ -919,7 +925,9 @@ export default function App() {
 
   const syncActiveWalletFromPortal = useCallback(async () => {
     if (!canSyncPortalWallet) {
-      setPortalSyncMessage("Wallet นี้ไม่ได้ผูกกับ TrustCare Portal จึงไม่สามารถ Sync จาก Portal ได้");
+      setPortalSyncMessage(
+        "Wallet นี้ไม่ได้ผูกกับ TrustCare Portal จึงไม่สามารถ Sync จาก Portal ได้",
+      );
       return;
     }
     setPortalSyncBusy(true);
@@ -936,7 +944,9 @@ export default function App() {
       }
       const syncedCards = flattenCardsByCategory(result.cardsByCategory);
       if (syncedCards.some((card) => card.ownerUserId !== selectedUserId)) {
-        throw new Error("Portal sync returned credentials for another wallet user");
+        throw new Error(
+          "Portal sync returned credentials for another wallet user",
+        );
       }
       const mergedSync = mergePortalSyncedCards({
         existingCards: allCards,
@@ -965,7 +975,9 @@ export default function App() {
           `เพิ่ม ${mergedSync.report.added}`,
           `อัปเดต ${mergedSync.report.updated}`,
           `ซ้ำเดิม ${mergedSync.report.unchanged}`,
-          mergedSync.report.archived ? `เก็บเวอร์ชันเดิม ${mergedSync.report.archived}` : null,
+          mergedSync.report.archived
+            ? `เก็บเวอร์ชันเดิม ${mergedSync.report.archived}`
+            : null,
           `และ VP ${result.presentations.length} รายการ สำหรับ ${activeUser.nameTh}${warningText}`,
         ]
           .filter(Boolean)
@@ -1164,7 +1176,8 @@ export default function App() {
   const submitDocumentFlow = useCallback(
     async (draft: DocumentRequestDraft, mode: DocumentFlowMode) => {
       if (mode === "import") {
-        const documentType = draft.requestedDocumentTypes[0] ?? "patient_summary";
+        const documentType =
+          draft.requestedDocumentTypes[0] ?? "patient_summary";
         const result = await walletApi.importForService(apiOptions, {
           context: draft.context,
           patientId: activeUser.patientId,
@@ -1748,7 +1761,9 @@ export default function App() {
           context={readinessContext}
           requirements={documentFlow.requirements}
           onClose={() => setDocumentFlow(null)}
-          onSubmit={(draft) => void submitDocumentFlow(draft, documentFlow.mode)}
+          onSubmit={(draft) =>
+            void submitDocumentFlow(draft, documentFlow.mode)
+          }
         />
       )}
 
@@ -3154,8 +3169,7 @@ function ShareView({
       setSharePublication({
         state: "blocked",
         message:
-          shareValidation.blockers[0]?.message ??
-          "ยังสร้างชุดแชร์เอกสารไม่ได้",
+          shareValidation.blockers[0]?.message ?? "ยังสร้างชุดแชร์เอกสารไม่ได้",
         warnings: shareValidation.blockers.map((issue) => issue.fix),
       });
       return;
@@ -3390,9 +3404,7 @@ function ShareView({
             </p>
           </div>
           <Badge tone={shareValidation.publishEnabled ? "green" : "yellow"}>
-            {shareValidation.publishEnabled
-              ? "พร้อมตรวจทาน"
-              : "ยังต้องแก้ไข"}
+            {shareValidation.publishEnabled ? "พร้อมตรวจทาน" : "ยังต้องแก้ไข"}
           </Badge>
         </div>
         <div className="share-workspace premium-share-workspace">
@@ -3452,23 +3464,24 @@ function ShareView({
                       mode,
                       selectedCards.length,
                     );
-                    const itemDisabled = item === "hybrid" && !shareGatewayReady;
+                    const itemDisabled =
+                      item === "hybrid" && !shareGatewayReady;
                     return (
-                    <button
-                      key={item}
-                      type="button"
-                      className={packageProtocol === item ? "active" : ""}
-                      disabled={itemDisabled}
-                      onClick={() => setPackageProtocol(item)}
-                      title={
-                        itemDisabled
-                          ? "ต้องมี Share Gateway และ TrustCare manifest service ก่อนสร้าง Certified SHL"
-                          : protocolProfiles[item].description
-                      }
-                    >
-                      <strong>{shareModePatientLabel(itemMode)}</strong>
-                      <small>{protocolProfiles[item].description}</small>
-                    </button>
+                      <button
+                        key={item}
+                        type="button"
+                        className={packageProtocol === item ? "active" : ""}
+                        disabled={itemDisabled}
+                        onClick={() => setPackageProtocol(item)}
+                        title={
+                          itemDisabled
+                            ? "ต้องมี Share Gateway และ TrustCare manifest service ก่อนสร้าง Certified SHL"
+                            : protocolProfiles[item].description
+                        }
+                      >
+                        <strong>{shareModePatientLabel(itemMode)}</strong>
+                        <small>{protocolProfiles[item].description}</small>
+                      </button>
                     );
                   },
                 )}
@@ -3507,7 +3520,9 @@ function ShareView({
                       <input
                         type="checkbox"
                         checked={Boolean(document.selected)}
-                        disabled={document.locked || document.status === "unsupported"}
+                        disabled={
+                          document.locked || document.status === "unsupported"
+                        }
                         onChange={() => toggleSelectedCard(card.id)}
                       />
                       <span>
@@ -3521,7 +3536,8 @@ function ShareView({
                             ? "กำหนดโดยคำขอ verifier"
                             : document.status === "unsupported"
                               ? "รูปแบบนี้ยังไม่รองรับใน flow นี้"
-                              : card.issuerHospitalName ?? categoryLabel(card.documentCategory)}
+                              : (card.issuerHospitalName ??
+                                categoryLabel(card.documentCategory))}
                         </small>
                       </span>
                       <Badge tone={trust.tone}>{trust.label}</Badge>
@@ -3761,7 +3777,8 @@ function ShareView({
               >
                 {shareValidation.publishEnabled
                   ? "พร้อมตรวจทานและสร้าง QR"
-                  : shareValidation.blockers[0]?.message ?? "ยังไม่พร้อมสร้าง QR"}
+                  : (shareValidation.blockers[0]?.message ??
+                    "ยังไม่พร้อมสร้าง QR")}
               </div>
               {sharePublication.state !== "idle" && (
                 <div className={`publication-status ${sharePublication.state}`}>
@@ -3905,152 +3922,154 @@ function ShareView({
 
         <div className="verifier-grid">
           <Surface className="portal-section">
-          <div className="portal-card-header">
-            <div className="portal-card-title">
-              <Shield size={22} />
-              <span>ตรวจสอบด้วย Credential ID</span>
-            </div>
-          </div>
-          <div className="credential-id-panel">
-            <label>Credential ID</label>
-            <input
-              value={credentialInput}
-              onChange={(event) => setCredentialInput(event.target.value)}
-              placeholder="vc-studentid-6501001001... หรือ VP URL/JWT/JSON"
-            />
-            <div className="button-row">
-              <Button
-                disabled={!credentialInput.trim()}
-                onClick={() => onVerifyText(credentialInput.trim())}
-              >
-                <ShieldCheck size={18} /> ตรวจสอบ
-              </Button>
-              <Button className="secondary" onClick={onOpenScanner}>
-                <Camera size={18} /> สแกน QR
-              </Button>
-            </div>
-            <p>
-              {mode === "full"
-                ? "ตรวจสอบเอกสารเต็มฉบับ"
-                : mode === "sd"
-                  ? "เตรียมตรวจแบบ selective disclosure"
-                  : "เตรียมตรวจแบบ proof-only"}
-            </p>
-          </div>
-        </Surface>
-
-        <Surface className="portal-section">
-          <div className="portal-card-header">
-            <div className="portal-card-title">
-              <QrCode size={22} />
-              <span>สร้าง QR Verification Request</span>
-            </div>
-          </div>
-          <div className="credential-id-panel">
-            <label>ประเภท VC ที่ต้องการตรวจ</label>
-            <select
-              value={requestType}
-              onChange={(event) => setRequestType(event.target.value)}
-            >
-              <option value="PatientSummaryCredential">Patient Summary</option>
-              <option value="PatientIdentityCredential">
-                Patient Identity
-              </option>
-              <option value="PrescriptionCredential">Prescription</option>
-            </select>
-            <Button className="purple" onClick={() => void createRequest()}>
-              <QrCode size={18} /> สร้าง QR Request
-            </Button>
-            {requestQrDataUrl && (
-              <div className="request-preview">
-                <div className="qr-inline">
-                  <img src={requestQrDataUrl} alt="OID4VP request QR" />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void copyText(requestPayload)}
-                  className="link-button"
-                >
-                  คัดลอก OID4VP request
-                </button>
+            <div className="portal-card-header">
+              <div className="portal-card-title">
+                <Shield size={22} />
+                <span>ตรวจสอบด้วย Credential ID</span>
               </div>
-            )}
-          </div>
-        </Surface>
-      </div>
-
-      {verifierResult && (
-        <Surface className="verification-result">
-          <div className="result-heading">
-            <Badge tone={verifierBadgeTone(verifierResult)}>
-              {verifierBadgeLabel(verifierResult)}
-            </Badge>
-            {verifierResult.protocol && (
-              <Badge tone="blue">{verifierResult.protocol}</Badge>
-            )}
-          </div>
-          <h3>{verifierResult.issuer}</h3>
-          <p>{verifierResult.requestSummary ?? verifierResult.holderDid}</p>
-          {!!verifierResult.matchedCredentialIds?.length && (
-            <p className="mono">
-              Matched: {verifierResult.matchedCredentialIds.join(", ")}
-            </p>
-          )}
-          {verifierResult.warnings?.map((item) => (
-            <small key={item}>{item}</small>
-          ))}
-          {verifierResult.errors?.map((item) => (
-            <small className="error" key={item}>
-              {item}
-            </small>
-          ))}
-          {Array.isArray(verifierResult.verificationChecklist) && (
-            <TrustChecklist
-              title="ผลตรวจความน่าเชื่อถือ"
-              items={verifierResult.verificationChecklist}
-            />
-          )}
-        </Surface>
-      )}
-      <section className="shl-grid">
-        {shlPackages.map((shl) => {
-          const stored = walletObjectsFromShl([shl])[0];
-          return (
-            <Surface key={shl.id} className="shl-card">
-              <Badge tone={shl.status === "active" ? "green" : "yellow"}>
-                {statusLabel(shl.status)}
-              </Badge>
-              <h3>{shl.label}</h3>
-              <p>
-                {shl.purpose} / {shl.context}
-              </p>
-              <ul>
-                {shlAccessSummary(shl).map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-              <dl className="details-grid compact">
-                <div>
-                  <dt>Manifest VC</dt>
-                  <dd className="mono">{shl.manifestCredentialId ?? "-"}</dd>
-                </div>
-                <div>
-                  <dt>Holder VP</dt>
-                  <dd className="mono">{shl.presentationId ?? "-"}</dd>
-                </div>
-              </dl>
-              {stored && (
+            </div>
+            <div className="credential-id-panel">
+              <label>Credential ID</label>
+              <input
+                value={credentialInput}
+                onChange={(event) => setCredentialInput(event.target.value)}
+                placeholder="vc-studentid-6501001001... หรือ VP URL/JWT/JSON"
+              />
+              <div className="button-row">
                 <Button
-                  className="secondary"
-                  onClick={() => onExport(exportWalletObject(stored))}
+                  disabled={!credentialInput.trim()}
+                  onClick={() => onVerifyText(credentialInput.trim())}
                 >
-                  <Download size={18} /> ส่งออก SHL
+                  <ShieldCheck size={18} /> ตรวจสอบ
                 </Button>
+                <Button className="secondary" onClick={onOpenScanner}>
+                  <Camera size={18} /> สแกน QR
+                </Button>
+              </div>
+              <p>
+                {mode === "full"
+                  ? "ตรวจสอบเอกสารเต็มฉบับ"
+                  : mode === "sd"
+                    ? "เตรียมตรวจแบบ selective disclosure"
+                    : "เตรียมตรวจแบบ proof-only"}
+              </p>
+            </div>
+          </Surface>
+
+          <Surface className="portal-section">
+            <div className="portal-card-header">
+              <div className="portal-card-title">
+                <QrCode size={22} />
+                <span>สร้าง QR Verification Request</span>
+              </div>
+            </div>
+            <div className="credential-id-panel">
+              <label>ประเภท VC ที่ต้องการตรวจ</label>
+              <select
+                value={requestType}
+                onChange={(event) => setRequestType(event.target.value)}
+              >
+                <option value="PatientSummaryCredential">
+                  Patient Summary
+                </option>
+                <option value="PatientIdentityCredential">
+                  Patient Identity
+                </option>
+                <option value="PrescriptionCredential">Prescription</option>
+              </select>
+              <Button className="purple" onClick={() => void createRequest()}>
+                <QrCode size={18} /> สร้าง QR Request
+              </Button>
+              {requestQrDataUrl && (
+                <div className="request-preview">
+                  <div className="qr-inline">
+                    <img src={requestQrDataUrl} alt="OID4VP request QR" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void copyText(requestPayload)}
+                    className="link-button"
+                  >
+                    คัดลอก OID4VP request
+                  </button>
+                </div>
               )}
-            </Surface>
-          );
-        })}
-      </section>
+            </div>
+          </Surface>
+        </div>
+
+        {verifierResult && (
+          <Surface className="verification-result">
+            <div className="result-heading">
+              <Badge tone={verifierBadgeTone(verifierResult)}>
+                {verifierBadgeLabel(verifierResult)}
+              </Badge>
+              {verifierResult.protocol && (
+                <Badge tone="blue">{verifierResult.protocol}</Badge>
+              )}
+            </div>
+            <h3>{verifierResult.issuer}</h3>
+            <p>{verifierResult.requestSummary ?? verifierResult.holderDid}</p>
+            {!!verifierResult.matchedCredentialIds?.length && (
+              <p className="mono">
+                Matched: {verifierResult.matchedCredentialIds.join(", ")}
+              </p>
+            )}
+            {verifierResult.warnings?.map((item) => (
+              <small key={item}>{item}</small>
+            ))}
+            {verifierResult.errors?.map((item) => (
+              <small className="error" key={item}>
+                {item}
+              </small>
+            ))}
+            {Array.isArray(verifierResult.verificationChecklist) && (
+              <TrustChecklist
+                title="ผลตรวจความน่าเชื่อถือ"
+                items={verifierResult.verificationChecklist}
+              />
+            )}
+          </Surface>
+        )}
+        <section className="shl-grid">
+          {shlPackages.map((shl) => {
+            const stored = walletObjectsFromShl([shl])[0];
+            return (
+              <Surface key={shl.id} className="shl-card">
+                <Badge tone={shl.status === "active" ? "green" : "yellow"}>
+                  {statusLabel(shl.status)}
+                </Badge>
+                <h3>{shl.label}</h3>
+                <p>
+                  {shl.purpose} / {shl.context}
+                </p>
+                <ul>
+                  {shlAccessSummary(shl).map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+                <dl className="details-grid compact">
+                  <div>
+                    <dt>Manifest VC</dt>
+                    <dd className="mono">{shl.manifestCredentialId ?? "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Holder VP</dt>
+                    <dd className="mono">{shl.presentationId ?? "-"}</dd>
+                  </div>
+                </dl>
+                {stored && (
+                  <Button
+                    className="secondary"
+                    onClick={() => onExport(exportWalletObject(stored))}
+                  >
+                    <Download size={18} /> ส่งออก SHL
+                  </Button>
+                )}
+              </Surface>
+            );
+          })}
+        </section>
       </details>
     </div>
   );
@@ -4080,8 +4099,9 @@ function DocumentFlowDialog({
       ? "document_bundle"
       : "single_document",
   );
-  const [returnChannel, setReturnChannel] =
-    useState<DocumentRequestReturnChannel | undefined>();
+  const [returnChannel, setReturnChannel] = useState<
+    DocumentRequestReturnChannel | undefined
+  >();
   const [passcodeRequired, setPasscodeRequired] = useState(false);
   const [expiryHours, setExpiryHours] = useState(24);
   const [maxAccessCount, setMaxAccessCount] = useState(5);
@@ -4242,8 +4262,8 @@ function DocumentFlowControls({
         <div className="document-flow-control-panel">
           <strong>Selective Disclosure</strong>
           <p>
-            เลือก claim ที่จำเป็นต่อวัตถุประสงค์นี้เท่านั้น
-            ไม่รวม technical properties เช่น watermark, payload hash หรือ UI state
+            เลือก claim ที่จำเป็นต่อวัตถุประสงค์นี้เท่านั้น ไม่รวม technical
+            properties เช่น watermark, payload hash หรือ UI state
           </p>
           <div className="field-chip-grid">
             {[
@@ -4269,8 +4289,8 @@ function DocumentFlowControls({
         <div className="document-flow-control-panel">
           <strong>SHL Access Policy</strong>
           <p>
-            PIN/Passcode ต้องส่งแยกจาก QR ตามแนวทาง SHL
-            และใช้ควบคุมการเปิด manifest หรือไฟล์ที่เข้ารหัสไว้
+            PIN/Passcode ต้องส่งแยกจาก QR ตามแนวทาง SHL และใช้ควบคุมการเปิด
+            manifest หรือไฟล์ที่เข้ารหัสไว้
           </p>
           <label className="inline-check">
             <input
@@ -4324,8 +4344,8 @@ function DocumentFlowControls({
         <div className="document-flow-control-panel">
           <strong>TrustCare Certification</strong>
           <p>
-            ต้องผ่าน Maker/Checker จาก TrustCare Portal ก่อน SHL
-            จึงจะกลายเป็น Certified SHL+Manifest VP
+            ต้องผ่าน Maker/Checker จาก TrustCare Portal ก่อน SHL จึงจะกลายเป็น
+            Certified SHL+Manifest VP
           </p>
         </div>
       )}
@@ -4417,11 +4437,7 @@ function PrepareView({
     [readinessResult],
   );
   const missingDocumentCards = useMemo(
-    () =>
-      buildMissingDocumentCards(
-        context,
-        missing as ReadinessRequirement[],
-      ),
+    () => buildMissingDocumentCards(context, missing as ReadinessRequirement[]),
     [context, missing],
   );
   const primaryAction = () => {
@@ -4623,7 +4639,9 @@ function PrepareView({
           </div>
           <div className="prep-doc-actions">
             <Button
-              onClick={() => onRequestMissing(missing as ReadinessRequirement[])}
+              onClick={() =>
+                onRequestMissing(missing as ReadinessRequirement[])
+              }
               disabled={!missing.length}
             >
               <FilePlus2 size={18} /> ขอเอกสารที่ขาด
@@ -6567,7 +6585,9 @@ function readStoredExtras(): Record<string, WalletStoredObject[]> {
   if (typeof window === "undefined") return {};
   try {
     const value = window.localStorage.getItem(storedExtrasStorageKey);
-    return value ? (JSON.parse(value) as Record<string, WalletStoredObject[]>) : {};
+    return value
+      ? (JSON.parse(value) as Record<string, WalletStoredObject[]>)
+      : {};
   } catch {
     return {};
   }

@@ -16,7 +16,9 @@ describe("wallet API document facade", () => {
 
     expect(documents.length).toBeGreaterThan(0);
     expect(documents[0]?.documentType).toBe("patient_summary");
-    expect(documents[0]?.documentReference.resourceType).toBe("DocumentReference");
+    expect(documents[0]?.documentReference.resourceType).toBe(
+      "DocumentReference",
+    );
     expect(documents[0]?.fhirDocumentBundle?.type).toBe("document");
   });
 
@@ -50,7 +52,9 @@ describe("wallet API document facade", () => {
 
   it("creates resolver-backed VP and certified SHL packages from the same canonical documents", async () => {
     const documents = await walletApi.listDocuments(options);
-    const selectedCardIds = documents.slice(0, 3).map((document) => Number(document.walletCard?.id));
+    const selectedCardIds = documents
+      .slice(0, 3)
+      .map((document) => Number(document.walletCard?.id));
 
     const vp = await walletApi.createSharePackage(options, {
       mode: "PurposeVP",
@@ -60,7 +64,9 @@ describe("wallet API document facade", () => {
     });
     expect(vp.mode).toBe("PurposeVP");
     if ("presentation" in vp) {
-      expect(vp.presentation.qrData).toContain("/api/share-gateway/presentations/");
+      expect(vp.presentation.qrData).toContain(
+        "/api/share-gateway/presentations/",
+      );
     }
 
     const certifiedShl = await walletApi.createSharePackage(options, {

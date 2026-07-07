@@ -176,20 +176,23 @@ export async function verifyQr(
     const passcodeMissing = shl.passcodeRequired && !fetched.ok;
     return {
       verified: Boolean(trustResult?.verified),
-      trustLevel: trustResult?.trustLevel ?? (passcodeMissing ? "yellow" : "red"),
+      trustLevel:
+        trustResult?.trustLevel ?? (passcodeMissing ? "yellow" : "red"),
       protocol: "shl",
-      issuer: trustResult?.status === "trustcare_certified"
-        ? "TrustCare Certified SHL"
-        : fetched.ok
-          ? "SMART Health Links transport"
-          : "SMART Health Links parser",
+      issuer:
+        trustResult?.status === "trustcare_certified"
+          ? "TrustCare Certified SHL"
+          : fetched.ok
+            ? "SMART Health Links transport"
+            : "SMART Health Links parser",
       holderDid:
         typeof manifestVp?.holder === "string" ? manifestVp.holder : undefined,
-      requestSummary: trustResult?.status === "trustcare_certified"
-        ? `Certified SHL + Manifest VP / เอกสาร ${fetched.fileCount} รายการ`
-        : fetched.ok
-          ? `Standard SHL transport-valid / เอกสาร ${fetched.fileCount} รายการ`
-          : "อ่าน SHL ได้ แต่ยังดึง manifest ไม่สำเร็จ",
+      requestSummary:
+        trustResult?.status === "trustcare_certified"
+          ? `Certified SHL + Manifest VP / เอกสาร ${fetched.fileCount} รายการ`
+          : fetched.ok
+            ? `Standard SHL transport-valid / เอกสาร ${fetched.fileCount} รายการ`
+            : "อ่าน SHL ได้ แต่ยังดึง manifest ไม่สำเร็จ",
       credentials: fetched.manifest ? [fetched.manifest] : [],
       verificationChecklist: trustResult?.checklist ?? [
         {
@@ -519,7 +522,12 @@ async function verifyDirectJwtQr(
   const decodedPayload = parseJwtPayload(jwt) ?? {};
   const directVp = unwrapVpPayload(decodedPayload);
   if (directVp) {
-    const verification = await verifyJwtArtifact(jwt, "vp", fetcher, "inline-jwt");
+    const verification = await verifyJwtArtifact(
+      jwt,
+      "vp",
+      fetcher,
+      "inline-jwt",
+    );
     const vp = unwrapVpPayload(verification.payload) ?? directVp;
     const nestedCredentialResults = await verifyNestedCredentialJwts(
       vp,
@@ -542,7 +550,12 @@ async function verifyDirectJwtQr(
 
   const directVc = unwrapVcPayload(decodedPayload);
   if (!directVc) return null;
-  const verification = await verifyJwtArtifact(jwt, "vc", fetcher, "inline-jwt");
+  const verification = await verifyJwtArtifact(
+    jwt,
+    "vc",
+    fetcher,
+    "inline-jwt",
+  );
   const vc = unwrapVcPayload(verification.payload) ?? directVc;
   const portalStatus = await verifyPortalStatusIfTrustCare(
     options,
@@ -605,10 +618,12 @@ function buildDirectVcVerifierResult(
       : "yellow";
   const portalError =
     portalStatus && !portalOk
-      ? portalStatus.message ?? portalStatus.error ?? portalStatus.status
+      ? (portalStatus.message ?? portalStatus.error ?? portalStatus.status)
       : undefined;
   const credentialType =
-    lastCredentialType(vc) ?? verification.credentialType ?? "VerifiableCredential";
+    lastCredentialType(vc) ??
+    verification.credentialType ??
+    "VerifiableCredential";
   const issuer = issuerName(vc) ?? verification.issuer ?? "Signed credential";
   const subject = objectValue(vc.credentialSubject);
   const subjectName =
@@ -622,11 +637,11 @@ function buildDirectVcVerifierResult(
     trustLevel,
     protocol: "trustcare-vc",
     issuer,
-    holderDid:
-      stringOrUndefined(subject?.id) ??
-      verification.subject,
+    holderDid: stringOrUndefined(subject?.id) ?? verification.subject,
     requestSummary: `${credentialType} / ${verification.credentialId ?? vc.id ?? "signed credential"}`,
-    matchedCredentialIds: [String(verification.credentialId ?? vc.id ?? "")].filter(Boolean),
+    matchedCredentialIds: [
+      String(verification.credentialId ?? vc.id ?? ""),
+    ].filter(Boolean),
     credentials: [vc],
     verificationChecklist: [
       {
@@ -674,7 +689,10 @@ function buildDirectVcVerifierResult(
       ...verification.warnings,
       ...verification.errors,
       ...(portalStatus?.message ? [portalStatus.message] : []),
-      ...(!portalChecked && /trustcare/i.test(`${verification.issuer ?? ""} ${verification.kid ?? ""}`)
+      ...(!portalChecked &&
+      /trustcare/i.test(
+        `${verification.issuer ?? ""} ${verification.kid ?? ""}`,
+      )
         ? [
             "ตรวจลายเซ็นได้แล้ว แต่ยังไม่ได้รับผล DB cross-check จาก TrustCare Portal.",
           ]
@@ -1157,10 +1175,10 @@ function keyMatchesKid(key: JWK, kid: string): boolean {
   const requestedFragment = kid.split("#").at(-1);
   return Boolean(
     keyFragment &&
-      requestedFragment &&
-      (keyFragment === requestedFragment ||
-        keyKid.endsWith(`#${requestedFragment}`) ||
-        kid.endsWith(`#${keyFragment}`)),
+    requestedFragment &&
+    (keyFragment === requestedFragment ||
+      keyKid.endsWith(`#${requestedFragment}`) ||
+      kid.endsWith(`#${keyFragment}`)),
   );
 }
 
