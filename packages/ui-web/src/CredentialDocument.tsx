@@ -37,15 +37,13 @@ type ListItem = Record<string, unknown>;
 const photoDocumentTypes = new Set(["patient_identity", "staff_identity", "travel_document_verification"]);
 
 export function CredentialDocument({ card, qrDataUrl, compact = false }: { card: WalletCard; qrDataUrl?: string; compact?: boolean }) {
-  const credential = card.credentialData ?? {};
-  const subject = getObject(credential, "credentialSubject") ?? credential;
-  const patient = getObject(subject, "patient") ?? getObject(subject, "student") ?? getObject(subject, "staff") ?? {};
-  const issuer = getObject(credential, "issuer");
-  const issuerNameTh = getText(issuer, "nameTh") ?? card.issuerHospitalName ?? "TrustCare Network";
-  const issuerNameEn = getText(issuer, "nameEn") ?? getText(issuer, "name") ?? "TRUSTCARE NETWORK";
+  const renderData = extractDocumentRenderData(card);
+  const { credential, subject, patient, hospital, document, issuer } = renderData;
+  const issuerNameTh = getText(hospital, "nameTh") ?? getText(issuer, "nameTh") ?? card.issuerHospitalName ?? "TrustCare Network";
+  const issuerNameEn = getText(hospital, "nameEn") ?? getText(issuer, "nameEn") ?? getText(issuer, "name") ?? "TRUSTCARE NETWORK";
   const displayNameTh = getText(patient, "fullNameTh") ?? getText(patient, "nameTh") ?? getText(patient, "name") ?? "ผู้ใช้ TrustCare";
   const displayNameEn = getText(patient, "fullNameEn") ?? getText(patient, "nameEn") ?? getText(patient, "name") ?? displayNameTh;
-  const patientId = getText(patient, "carepassId") ?? getText(patient, "hn") ?? getText(patient, "id") ?? String(card.credentialId);
+  const patientId = getText(patient, "carepassId") ?? getText(patient, "hn") ?? getText(patient, "id") ?? getText(document, "no") ?? String(card.credentialId);
   const photoCandidates = photoDocumentTypes.has(card.cardType) ? photoCandidatesForCard(card) : [];
   const accent = documentAccent(card.cardType);
   const documentFields = fieldsForDocument(card, subject, patient);
@@ -197,6 +195,38 @@ function CredentialHolderPhoto({ candidates, alt, initials }: { candidates: Phot
   );
 }
 
+function extractDocumentRenderData(card: WalletCard): {
+  credential: Record<string, unknown>;
+  subject: Record<string, unknown>;
+  patient: Record<string, unknown>;
+  hospital: Record<string, unknown>;
+  document: Record<string, unknown>;
+  issuer: Record<string, unknown>;
+} {
+  const credential = card.credentialData ?? {};
+  const subject = getObject(credential, "credentialSubject") ?? credential;
+  const humanDocument = getObject(subject, "humanDocument");
+  const renderData = getObject(humanDocument, "renderData") ?? humanDocument ?? {};
+  const hospital =
+    getObject(renderData, "hospital") ??
+    getObject(renderData, "issuer") ??
+    getObject(subject, "organization") ??
+    getObject(subject, "issuer") ??
+    getObject(credential, "issuer") ??
+    {};
+  const patient =
+    getObject(renderData, "patient") ??
+    getObject(subject, "patient") ??
+    getObject(subject, "student") ??
+    getObject(subject, "staff") ??
+    getObject(subject, "holder") ??
+    {};
+  const document = getObject(renderData, "document") ?? {};
+  const issuer = getObject(renderData, "issuer") ?? getObject(credential, "issuer") ?? hospital;
+
+  return { credential, subject, patient, hospital, document, issuer };
+}
+
 function renderDocumentBody(card: WalletCard, subject: Record<string, unknown>, fields: Field[]): ReactElement {
   switch (card.cardType) {
     case "lab_result":
@@ -283,7 +313,8 @@ function DocumentNarrativePanel({ narrative }: { narrative: { title: string; bod
 
 function DocumentSignoff({ card, subject }: { card: WalletCard; subject: Record<string, unknown> }) {
   const humanDocument = getObject(subject, "humanDocument");
-  const issuer = getObject(humanDocument, "issuer");
+  const renderData = getObject(humanDocument, "renderData") ?? humanDocument;
+  const issuer = getObject(renderData, "issuer") ?? getObject(renderData, "hospital") ?? getObject(humanDocument, "issuer");
   const practitioner =
     getObject(getObject(subject, "certificate"), "certifyingPractitioner") ??
     getObject(getObject(subject, "diagnosticReport"), "reportingPractitioner") ??
@@ -792,8 +823,9 @@ function fieldsForDocument(card: WalletCard, subject: Record<string, unknown>, p
 
 function documentNarrative(card: WalletCard, subject: Record<string, unknown>, patient: Record<string, unknown>): { title: string; body: string; sections: string[]; sourceSystem?: string } {
   const humanDocument = getObject(subject, "humanDocument");
+  const renderData = getObject(humanDocument, "renderData") ?? humanDocument;
   const patientName = getText(patient, "fullNameTh") ?? getText(patient, "nameTh") ?? getText(patient, "name") ?? "ผู้ถือเอกสาร";
-  const sourceSystem = getText(humanDocument, "sourceSystem") ?? getText(getObject(card.credentialData, "trustcare"), "sourceSystem");
+  const sourceSystem = getText(renderData, "sourceSystem") ?? getText(humanDocument, "sourceSystem") ?? getText(getObject(card.credentialData, "trustcare"), "sourceSystem");
   const sections = getStringArray(humanDocument, "sections");
   const map: Record<string, { title: string; body: string }> = {
     patient_identity: {

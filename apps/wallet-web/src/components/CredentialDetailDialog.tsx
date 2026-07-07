@@ -1,7 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Clipboard, Download, Eye, FileJson, History, QrCode, ShieldCheck, X } from "lucide-react";
+import type { ReactElement } from "react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Clipboard,
+  Download,
+  Eye,
+  FileJson,
+  History,
+  QrCode,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldX,
+  UserRound,
+  X
+} from "lucide-react";
 import { Badge, Button, CredentialDocument, IconButton } from "@trustcare/ui-web";
-import type { PresentationHistoryItem, WalletCard, WalletPresentationResponse } from "@trustcare/wallet-core";
+import type { PresentationHistoryItem, TrustLayerChecklistItem, WalletCard, WalletPresentationResponse } from "@trustcare/wallet-core";
 
 type DetailTab = "preview" | "details" | "trust" | "payload" | "history";
 
@@ -154,17 +169,13 @@ export function CredentialDetailDialog({
                   <CredentialDocument card={card} qrDataUrl={qrDataUrl} />
                 </div>
                 {presentation && (
-                  <section className="vp-summary">
-                    <div className="vp-qr-box">
-                      {qrDataUrl ? <img src={qrDataUrl} alt="VP QR" /> : <QrCode size={72} />}
-                    </div>
-                    <div>
-                      <h3>Verifiable Presentation</h3>
-                      <p className="mono">{presentation.presentationId}</p>
-                      <p>หมดอายุ {new Date(presentation.expiresAt).toLocaleString("th-TH")}</p>
-                      <p>{presentation.mode} / {presentation.credentialCount} credential / {presentation.selectedFields.length || "Full"} fields</p>
-                    </div>
-                  </section>
+                  <VpRendererPanel
+                    card={card}
+                    presentation={presentation}
+                    qrDataUrl={qrDataUrl}
+                    evidenceCount={evidence.length}
+                    contextCount={contexts.length}
+                  />
                 )}
               </>
             )}
@@ -301,15 +312,302 @@ function statusLabel(status?: string | null): string {
 }
 
 function issuerNameTh(card: WalletCard): string {
-  const credential = card.credentialData ?? {};
-  const issuer = credential && typeof credential === "object" && !Array.isArray(credential)
-    ? (credential as Record<string, unknown>).issuer
-    : undefined;
-  if (issuer && typeof issuer === "object" && !Array.isArray(issuer)) {
-    const value = (issuer as Record<string, unknown>).nameTh;
-    if (typeof value === "string" && value.trim()) return value;
-  }
+  const data = extractCredentialRenderData(card);
+  const value =
+    textValue(data.hospital.nameTh) ??
+    textValue(data.issuer.nameTh) ??
+    textValue(data.issuer.name);
+  if (value) return value;
   return card.issuerHospitalName ?? "TrustCare Issuer";
+}
+
+function VpRendererPanel({
+  card,
+  presentation,
+  qrDataUrl,
+  evidenceCount,
+  contextCount
+}: {
+  card: WalletCard;
+  presentation: WalletPresentationResponse;
+  qrDataUrl: string;
+  evidenceCount: number;
+  contextCount: number;
+}) {
+  const data = extractCredentialRenderData(card);
+  const checklist = normalizeChecklist(presentation.verificationChecklist);
+  const trust = resolveTrustTone(card, checklist);
+  const clinicalCards = credentialContextCards(card, data.subject);
+  const selectedFieldLabel = presentation.selectedFields.length
+    ? `${presentation.selectedFields.length} fields`
+    : "Full disclosure";
+
+  return (
+    <section className="vp-renderer-panel" aria-label="VP renderer preview">
+      <div className={`vp-trust-banner vp-trust-${trust.tone}`}>
+        <div className="vp-trust-icon">{trust.icon}</div>
+        <div>
+          <p className="eyebrow">VERIFIABLE PRESENTATION</p>
+          <h3>{trust.title}</h3>
+          <span>{trust.description}</span>
+        </div>
+        <Badge tone={trust.badgeTone}>{trust.badge}</Badge>
+      </div>
+
+      <div className="vp-renderer-grid">
+        <section className="vp-result-card">
+          <h4><ShieldCheck size={17} /> Trust layer decision</h4>
+          <VpDecisionRow label="Presentation type" detail={presentation.mode || "direct_vp"} status="present" />
+          <VpDecisionRow label="Issuer trusted" detail={data.issuerName || card.issuerHospitalName || "Issuer DID available for resolver"} status={card.issuerDid ? "present" : "pending"} />
+          <VpDecisionRow label="Holder binding" detail={card.holderDid ?? "Holder DID is not available"} status={card.holderDid ? "present" : "pending"} />
+          <VpDecisionRow label="Schema and claims" detail={`${card.displayNameEn ?? card.cardType} / ${selectedFieldLabel}`} status="present" />
+          <VpDecisionRow label="Status and expiry" detail={`หมดอายุ ${new Date(presentation.expiresAt).toLocaleString("th-TH")}`} status={card.credentialStatus === "active" ? "present" : "warning"} />
+          {checklist.map(item => (
+            <VpDecisionRow
+              key={item.key}
+              label={item.label}
+              detail={item.detail || (item.ok ? "passed" : "not passed")}
+              status={item.ok ? "present" : "warning"}
+            />
+          ))}
+        </section>
+
+        <section className="vp-result-card">
+          <h4><UserRound size={17} /> Subject</h4>
+          <dl className="vp-subject-list">
+            <div><dt>Name</dt><dd>{data.subjectName}</dd></div>
+            <div><dt>Holder DID</dt><dd className="mono">{card.holderDid ?? "-"}</dd></div>
+            <div><dt>Issuer</dt><dd>{data.issuerName || card.issuerHospitalName || "-"}</dd></div>
+            <div><dt>Credentials</dt><dd>{presentation.credentialCount}</dd></div>
+          </dl>
+        </section>
+
+        <section className="vp-result-card vp-context-result">
+          <h4><FileJson size={17} /> Context ที่เปิดเผย</h4>
+          {clinicalCards.length ? (
+            <div className="vp-context-list">
+              {clinicalCards.map(item => (
+                <div key={item.label} className={`vp-context-chip ${item.tone ?? ""}`}>
+                  <strong>{item.label}</strong>
+                  <span>{item.value}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">VP นี้เปิดเผยเฉพาะข้อมูลตัวตนและ metadata ที่จำเป็นตามวัตถุประสงค์</p>
+          )}
+        </section>
+
+        <section className="vp-result-card vp-payload-result">
+          <h4><QrCode size={17} /> QR / Payload</h4>
+          <div className="vp-payload-qr">
+            {qrDataUrl ? <img src={qrDataUrl} alt="VP QR" /> : <QrCode size={64} />}
+          </div>
+          <dl className="vp-subject-list">
+            <div><dt>VP ID</dt><dd className="mono">{presentation.presentationId}</dd></div>
+            <div><dt>Format</dt><dd>{presentation.format}</dd></div>
+            <div><dt>Evidence</dt><dd>{evidenceCount ? `${evidenceCount} DocumentReference` : "ไม่พบ"}</dd></div>
+            <div><dt>VC Context</dt><dd>{contextCount ? `${contextCount} context` : "ไม่พบ"}</dd></div>
+          </dl>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function VpDecisionRow({ label, detail, status }: { label: string; detail: string; status: "present" | "pending" | "warning" }) {
+  const tone = status === "present" ? "blue" : status === "warning" ? "yellow" : "neutral";
+  const text = status === "present" ? "present" : status === "warning" ? "review" : "pending";
+  return (
+    <div className="vp-decision-row">
+      <span>
+        <strong>{label}</strong>
+        <small>{detail}</small>
+      </span>
+      <Badge tone={tone}>{text}</Badge>
+    </div>
+  );
+}
+
+function normalizeChecklist(value: unknown): TrustLayerChecklistItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((item, index) => ({
+    key: textValue(item.key) ?? textValue(item.label) ?? `check-${index + 1}`,
+    label: textValue(item.label) ?? textValue(item.key) ?? `Check ${index + 1}`,
+    ok: item.ok === true,
+    detail: textValue(item.detail) ?? undefined
+  }));
+}
+
+function resolveTrustTone(card: WalletCard, checklist: TrustLayerChecklistItem[]): {
+  tone: "green" | "yellow" | "red";
+  title: string;
+  description: string;
+  badge: string;
+  badgeTone: "green" | "yellow" | "red";
+  icon: ReactElement;
+} {
+  const checksFailed = checklist.some(item => !item.ok);
+  if (card.credentialStatus !== "active") {
+    return {
+      tone: "red",
+      title: "ต้องตรวจสอบสถานะเอกสาร",
+      description: "Credential นี้ไม่ได้อยู่ในสถานะ active ผู้ตรวจควรตรวจ signature, status และ registry ก่อนใช้งาน",
+      badge: "red",
+      badgeTone: "red",
+      icon: <ShieldX size={22} />
+    };
+  }
+  if (checksFailed || !card.issuerDid || !card.holderDid) {
+    return {
+      tone: "yellow",
+      title: "พร้อมส่งตรวจ แต่ยังมีเงื่อนไขต้องยืนยัน",
+      description: "Wallet สร้าง VP ได้แล้ว แต่ verifier ต้องตรวจ trust registry, holder binding หรือ checklist เพิ่มเติม",
+      badge: "yellow",
+      badgeTone: "yellow",
+      icon: <ShieldAlert size={22} />
+    };
+  }
+  return {
+    tone: "green",
+    title: "พร้อมตรวจสอบแบบ green path",
+    description: "Signature, issuer, holder binding, status และ schema พร้อมให้ verifier ตรวจตาม trust layer",
+    badge: "green",
+    badgeTone: "green",
+    icon: <CheckCircle2 size={22} />
+  };
+}
+
+function extractCredentialRenderData(card: WalletCard): {
+  subject: Record<string, unknown>;
+  hospital: Record<string, unknown>;
+  issuer: Record<string, unknown>;
+  patient: Record<string, unknown>;
+  issuerName: string;
+  subjectName: string;
+} {
+  const credential = isRecord(card.credentialData) ? card.credentialData : {};
+  const subject = isRecord(credential.credentialSubject) ? credential.credentialSubject : credential;
+  const humanDocument = isRecord(subject.humanDocument) ? subject.humanDocument : {};
+  const renderData = isRecord(humanDocument.renderData) ? humanDocument.renderData : humanDocument;
+  const hospital =
+    pickRecord(renderData.hospital) ??
+    pickRecord(renderData.issuer) ??
+    pickRecord(subject.organization) ??
+    pickRecord(subject.issuer) ??
+    pickRecord(credential.issuer) ??
+    {};
+  const issuer = pickRecord(renderData.issuer) ?? pickRecord(credential.issuer) ?? hospital;
+  const patient =
+    pickRecord(renderData.patient) ??
+    pickRecord(subject.patient) ??
+    pickRecord(subject.staff) ??
+    pickRecord(subject.holder) ??
+    pickRecord(subject.person) ??
+    {};
+  const issuerName =
+    textValue(hospital.nameTh) ??
+    textValue(issuer.nameTh) ??
+    textValue(hospital.nameEn) ??
+    textValue(issuer.nameEn) ??
+    textValue(issuer.name) ??
+    "";
+  const subjectName =
+    textValue(patient.fullNameTh) ??
+    textValue(patient.nameTh) ??
+    textValue(patient.name) ??
+    textValue(patient.fullNameEn) ??
+    textValue(patient.nameEn) ??
+    "Wallet holder";
+
+  return { subject, hospital, issuer, patient, issuerName, subjectName };
+}
+
+function credentialContextCards(card: WalletCard, subject: Record<string, unknown>): Array<{ label: string; value: string; tone?: "critical" }> {
+  const summary = pickRecord(subject.summary) ?? pickRecord(subject.clinical) ?? {};
+  const coverage = pickRecord(subject.coverage) ?? pickRecord(subject.payer) ?? {};
+  const referral = pickRecord(subject.referral) ?? {};
+  const labReport = pickRecord(subject.labReport) ?? {};
+  const contextMap: Record<string, Array<{ label: string; value: unknown; tone?: "critical" }>> = {
+    patient_summary: [
+      { label: "Allergies", value: summarizeList(summary.allergies) || summarizeList(subject.allergies), tone: "critical" },
+      { label: "Medications", value: summarizeList(summary.medications) },
+      { label: "Conditions", value: summarizeList(summary.conditions) }
+    ],
+    allergy_alert: [
+      { label: "Allergies", value: summarizeList(subject.allergyIntolerances) || summarizeList(subject.allergies), tone: "critical" },
+      { label: "Emergency instruction", value: subject.emergencyInstruction }
+    ],
+    medication_summary: [
+      { label: "Medications", value: summarizeList(pickRecord(subject.medicationSummary)?.medications) }
+    ],
+    prescription: [
+      { label: "Prescription items", value: summarizeList(pickRecord(subject.prescription)?.items) }
+    ],
+    lab_result: [
+      { label: "Laboratory", value: labReport.laboratory },
+      { label: "Observations", value: summarizeList(labReport.observations) }
+    ],
+    referral_vc: [
+      { label: "From", value: referral.fromHospital ?? referral.from },
+      { label: "To", value: referral.toHospital ?? referral.to },
+      { label: "Reason", value: referral.reason }
+    ],
+    insurance_eligibility: [
+      { label: "Payer", value: pickRecord(coverage.payer)?.nameEn ?? pickRecord(coverage.payer)?.name ?? coverage.payer },
+      { label: "Status", value: coverage.status },
+      { label: "Network", value: coverage.network }
+    ]
+  };
+
+  return (contextMap[card.cardType] ?? [
+    { label: "Document type", value: card.displayName },
+    { label: "Credential status", value: card.credentialStatus }
+  ])
+    .map(item => ({ label: item.label, value: formatContextValue(item.value), tone: item.tone }))
+    .filter(item => item.value && item.value !== "-");
+}
+
+function summarizeList(value: unknown): string | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  return value.slice(0, 3).map(item => {
+    if (!isRecord(item)) return String(item);
+    return textValue(item.display) ??
+      textValue(item.name) ??
+      textValue(item.substance) ??
+      textValue(item.medicationName) ??
+      textValue(item.value) ??
+      textValue(item.code) ??
+      "record";
+  }).join(", ");
+}
+
+function formatContextValue(value: unknown): string {
+  if (value == null || value === "") return "-";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return summarizeList(value) ?? "-";
+  if (isRecord(value)) {
+    return textValue(value.nameTh) ??
+      textValue(value.nameEn) ??
+      textValue(value.name) ??
+      textValue(value.display) ??
+      Object.entries(value).slice(0, 3).map(([key, item]) => `${key}: ${formatContextValue(item)}`).join(" · ");
+  }
+  return String(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function pickRecord(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
+function textValue(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return null;
 }
 
 function escapeHtml(value: string): string {
