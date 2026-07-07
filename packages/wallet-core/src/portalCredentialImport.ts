@@ -5,6 +5,7 @@ import {
 } from "./canonicalDocuments";
 import type { PresentationHistoryItem, WalletCard, WalletCardsByCategory } from "./models";
 import type { WalletDemoUser } from "./demoData";
+import { normalizePhotoUrl } from "./photoSources";
 import { TRUSTCARE_PORTAL_WEB_ORIGIN } from "./portalSyncData";
 
 export type TrustCarePortalCredentialProof = {
@@ -487,12 +488,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function extractSubjectPhotoUrl(subject: Record<string, unknown>): string | null {
-  for (const key of ["patient", "staff", "holder"]) {
+  for (const key of ["patient", "staff", "holder", "person", "subject", "profile", "identity"]) {
     const value = subject[key];
     if (!isRecord(value)) continue;
-    const photoUrl = stringValue(value.photoUrl ?? value.avatarUrl);
+    const demographics = isRecord(value.demographics) ? value.demographics : {};
+    const photo = isRecord(value.photo) ? value.photo : {};
+    const avatar = isRecord(value.avatar) ? value.avatar : {};
+    const photoUrl = stringValue(
+      value.photoUrl ??
+        value.avatarUrl ??
+        value.imageUrl ??
+        value.profileImageUrl ??
+        value.portraitUrl ??
+        demographics.photoUrl ??
+        demographics.avatarUrl ??
+        photo.url ??
+        avatar.url
+    );
     if (photoUrl) return photoUrl;
   }
+  const directPhotoUrl = stringValue(subject.photoUrl ?? subject.avatarUrl);
+  if (directPhotoUrl) return directPhotoUrl;
   const humanDocument = subject.humanDocument;
   if (isRecord(humanDocument)) {
     const renderData = humanDocument.renderData;
@@ -509,6 +525,9 @@ function extractSubjectPhotoUrl(subject: Record<string, unknown>): string | null
 
 function absolutePortalAssetUrl(value: string | null, portalOrigin: string): string | null {
   if (!value) return null;
+  if (portalOrigin.replace(/\/$/, "") === TRUSTCARE_PORTAL_WEB_ORIGIN) {
+    return normalizePhotoUrl(value);
+  }
   const base = portalOrigin.replace(/\/$/, "");
   if (/^https?:\/\//i.test(value)) {
     try {

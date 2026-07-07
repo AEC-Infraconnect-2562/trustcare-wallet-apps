@@ -20,8 +20,9 @@ import {
   Syringe,
   UserRound
 } from "lucide-react";
+import { useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
-import type { WalletCard } from "@trustcare/wallet-core";
+import type { PhotoCandidate, WalletCard } from "@trustcare/wallet-core";
 import { initialsFromName, photoCandidatesForCard } from "@trustcare/wallet-core";
 import { Badge } from "./primitives";
 
@@ -45,7 +46,7 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
   const displayNameTh = getText(patient, "fullNameTh") ?? getText(patient, "nameTh") ?? getText(patient, "name") ?? "ผู้ใช้ TrustCare";
   const displayNameEn = getText(patient, "fullNameEn") ?? getText(patient, "nameEn") ?? getText(patient, "name") ?? displayNameTh;
   const patientId = getText(patient, "carepassId") ?? getText(patient, "hn") ?? getText(patient, "id") ?? String(card.credentialId);
-  const photoUrl = photoDocumentTypes.has(card.cardType) ? photoCandidatesForCard(card)[0]?.url : undefined;
+  const photoCandidates = photoDocumentTypes.has(card.cardType) ? photoCandidatesForCard(card) : [];
   const accent = documentAccent(card.cardType);
   const documentFields = fieldsForDocument(card, subject, patient);
   const isIdentityDocument = photoDocumentTypes.has(card.cardType);
@@ -131,11 +132,9 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
         </div>
       </div>
 
-      <div className={photoUrl ? "document-person-row with-photo" : "document-person-row"}>
-        {photoUrl ? (
-          <div className="credential-photo" aria-label="รูปผู้ถือเอกสาร">
-            <img src={photoUrl} alt={displayNameEn} />
-          </div>
+      <div className={photoCandidates.length ? "document-person-row with-photo" : "document-person-row"}>
+        {photoCandidates.length ? (
+          <CredentialHolderPhoto candidates={photoCandidates} alt={displayNameEn} initials={initialsFromName(displayNameTh)} />
         ) : (
           <div className="document-type-mark" aria-hidden="true">{iconForDocument(card.cardType)}</div>
         )}
@@ -171,6 +170,30 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
       </div>
       <footer>VC: {String(card.credentialId)}</footer>
     </article>
+  );
+}
+
+function CredentialHolderPhoto({ candidates, alt, initials }: { candidates: PhotoCandidate[]; alt: string; initials: string }) {
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const candidate = candidates[candidateIndex];
+
+  if (!candidate) {
+    return (
+      <div className="credential-photo credential-photo-fallback" aria-label="รูปผู้ถือเอกสาร">
+        {initials || "TC"}
+      </div>
+    );
+  }
+
+  return (
+    <div className="credential-photo" aria-label="รูปผู้ถือเอกสาร">
+      <img
+        key={candidate.url}
+        src={candidate.url}
+        alt={alt}
+        onError={() => setCandidateIndex((index) => index + 1)}
+      />
+    </div>
   );
 }
 

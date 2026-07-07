@@ -5,6 +5,10 @@ export type PhotoCandidate = {
   url: string;
 };
 
+const TRUSTCARE_PORTAL_ORIGIN = "https://trustcarehealth.live";
+const STORAGE_PROXY_PATH = "/api/storage-proxy/";
+const MANUS_STORAGE_PATH = "/manus-storage/";
+
 export function getValueAtPath(source: unknown, path: string): unknown {
   return path.split(".").reduce<unknown>((acc, key) => {
     if (!acc || typeof acc !== "object") return undefined;
@@ -14,54 +18,114 @@ export function getValueAtPath(source: unknown, path: string): unknown {
 
 export function photoCandidatesForCard(card: WalletCard): PhotoCandidate[] {
   const candidates: PhotoCandidate[] = [];
-  if (card.patientAvatarUrl) {
-    candidates.push({
-      label: "wallet_cards.patientAvatarUrl",
-      url: normalizePhotoUrl(card.patientAvatarUrl),
-    });
-  }
+  addPhotoCandidates(candidates, "wallet_cards.patientAvatarUrl", card.patientAvatarUrl);
   const data = card.credentialData;
   const embeddedPaths = [
     "credentialSubject.patient.photoUrl",
     "credentialSubject.patient.avatarUrl",
+    "credentialSubject.patient.imageUrl",
+    "credentialSubject.patient.profileImageUrl",
+    "credentialSubject.patient.portraitUrl",
+    "credentialSubject.patient.photo.url",
+    "credentialSubject.patient.avatar.url",
+    "credentialSubject.patient.demographics.photoUrl",
+    "credentialSubject.patient.demographics.avatarUrl",
+    "credentialSubject.staff.photoUrl",
+    "credentialSubject.staff.avatarUrl",
+    "credentialSubject.holder.photoUrl",
+    "credentialSubject.holder.avatarUrl",
+    "credentialSubject.person.photoUrl",
+    "credentialSubject.person.avatarUrl",
+    "credentialSubject.subject.photoUrl",
+    "credentialSubject.subject.avatarUrl",
+    "credentialSubject.profile.photoUrl",
+    "credentialSubject.profile.avatarUrl",
+    "credentialSubject.identity.photoUrl",
+    "credentialSubject.identity.avatarUrl",
     "credentialSubject.photoUrl",
+    "credentialSubject.avatarUrl",
+    "credentialSubject.photo.url",
+    "credentialSubject.avatar.url",
+    "credentialSubject.humanDocument.renderData.patient.photoUrl",
+    "credentialSubject.humanDocument.renderData.patient.avatarUrl",
     "patient.photoUrl",
-    "photoUrl"
+    "patient.avatarUrl",
+    "photoUrl",
+    "avatarUrl"
   ];
   for (const path of embeddedPaths) {
-    const value = getValueAtPath(data, path);
-    if (typeof value === "string" && value) {
-      candidates.push({ label: path, url: normalizePhotoUrl(value) });
-    }
+    addPhotoCandidates(candidates, path, getValueAtPath(data, path));
   }
-  return candidates;
+  return dedupePhotoCandidates(candidates);
 }
 
 export function normalizePhotoUrl(value: string): string {
+  return normalizePhotoUrlCandidates(value)[0] ?? value.trim();
+}
+
+export function normalizePhotoUrlCandidates(value: string): string[] {
   const trimmed = value.trim();
-  if (!trimmed) return trimmed;
-  const portalOrigin = "https://trustcarehealth.live";
-  const storageProxyPath = "/api/storage-proxy/";
+  if (!trimmed) return [trimmed];
+  if (/^data:/i.test(trimmed)) return [trimmed];
+
+  const candidates: string[] = [];
+  const add = (url: string | null | undefined) => {
+    if (!url) return;
+    const normalized = url.trim();
+    if (normalized && !candidates.includes(normalized)) candidates.push(normalized);
+  };
+
+  const addTrustCareStorageVariants = (rawPath: string, origin = TRUSTCARE_PORTAL_ORIGIN) => {
+    const path = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
+    if (path.startsWith(MANUS_STORAGE_PATH)) {
+      const fileName = path.slice(MANUS_STORAGE_PATH.length);
+      add(`${origin}${MANUS_STORAGE_PATH}${fileName}`);
+      add(`${origin}${STORAGE_PROXY_PATH}${fileName}`);
+      return;
+    }
+    if (path.startsWith(STORAGE_PROXY_PATH)) {
+      const proxyValue = path.slice(STORAGE_PROXY_PATH.length).replace(/^\/+/, "");
+      const fileName = proxyValue.startsWith("manus-storage/")
+        ? proxyValue.slice("manus-storage/".length)
+        : proxyValue;
+      add(`${origin}${MANUS_STORAGE_PATH}${fileName}`);
+      add(`${origin}${STORAGE_PROXY_PATH}${fileName}`);
+      return;
+    }
+    add(`${origin}${path}`);
+  };
 
   if (/^https?:\/\//i.test(trimmed)) {
     try {
       const parsed = new URL(trimmed);
-      if (parsed.pathname.startsWith(storageProxyPath)) {
-        return `${parsed.origin}/manus-storage/${parsed.pathname.slice(storageProxyPath.length)}`;
+      if (parsed.pathname.startsWith(STORAGE_PROXY_PATH) || parsed.pathname.startsWith(MANUS_STORAGE_PATH)) {
+        addTrustCareStorageVariants(parsed.pathname, parsed.origin);
+        if (parsed.search) {
+          add(`${parsed.origin}${parsed.pathname}${parsed.search}`);
+        }
+        add(trimmed);
+        return candidates;
       }
+      add(trimmed);
+      return candidates;
     } catch {
-      return trimmed;
+      add(trimmed);
+      return candidates;
     }
-    return trimmed;
   }
 
-  if (trimmed.startsWith(storageProxyPath)) {
-    return `${portalOrigin}/manus-storage/${trimmed.slice(storageProxyPath.length)}`;
+  if (trimmed.startsWith(STORAGE_PROXY_PATH) || trimmed.startsWith(MANUS_STORAGE_PATH)) {
+    addTrustCareStorageVariants(trimmed);
+    return candidates;
   }
-  if (trimmed.startsWith("/manus-storage/")) {
-    return `${portalOrigin}${trimmed}`;
+
+  if (/^[\w.-]+\.(?:avif|gif|jpe?g|png|webp)$/i.test(trimmed)) {
+    add(`${TRUSTCARE_PORTAL_ORIGIN}${MANUS_STORAGE_PATH}${trimmed.replace(/^\/+/, "")}`);
+    add(`${TRUSTCARE_PORTAL_ORIGIN}${STORAGE_PROXY_PATH}${trimmed.replace(/^\/+/, "")}`);
   }
-  return trimmed;
+
+  add(trimmed);
+  return candidates;
 }
 
 export function initialsFromName(name: string): string {
@@ -70,4 +134,20 @@ export function initialsFromName(name: string): string {
   const parts = trimmed.split(/\s+/);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
+
+function addPhotoCandidates(candidates: PhotoCandidate[], label: string, value: unknown): void {
+  if (typeof value !== "string" || !value.trim()) return;
+  for (const [index, url] of normalizePhotoUrlCandidates(value).entries()) {
+    candidates.push({ label: index === 0 ? label : `${label}:candidate:${index + 1}`, url });
+  }
+}
+
+function dedupePhotoCandidates(candidates: PhotoCandidate[]): PhotoCandidate[] {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    if (seen.has(candidate.url)) return false;
+    seen.add(candidate.url);
+    return true;
+  });
 }
