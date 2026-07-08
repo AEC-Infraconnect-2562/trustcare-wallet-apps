@@ -19,6 +19,7 @@ import {
 } from "./portalRenderContract";
 import type { TrustCareShlGatewayPublication } from "./shlGateway";
 import { canPresentCredential } from "./statusTone";
+import { walletCardHasCryptographicProof } from "./credentialProof";
 
 export type PortablePresentationKind =
   | "credential"
@@ -656,15 +657,15 @@ export function classifyPortableTrustStatus(input: unknown): PortableTrustStatus
     if (
       card.portalVerification?.verified &&
       String(card.portalVerification.trustLevel ?? "").toLowerCase() === "green" &&
-      hasCryptographicProof(card) &&
+      walletCardHasCryptographicProof(card) &&
       card.issuerDid &&
       card.holderDid
     ) {
       return "trustcare_certified";
     }
-    if (hasCryptographicProof(card) && card.issuerDid && card.holderDid)
+    if (walletCardHasCryptographicProof(card) && card.issuerDid && card.holderDid)
       return "issuer_signed";
-    if (hasCryptographicProof(card) && (!card.issuerDid || !card.holderDid))
+    if (walletCardHasCryptographicProof(card) && (!card.issuerDid || !card.holderDid))
       return "proof_missing";
     if (card.sourceSystem === "partner_wallet") return "patient_provided_unverified";
     return "proof_missing";
@@ -832,7 +833,7 @@ function buildCredentialChecklist(
     checklistItem(
       "proof",
       "Cryptographic proof",
-      hasCryptographicProof(card),
+      walletCardHasCryptographicProof(card),
       card.credentialProof?.format ?? (card.credentialJwt ? "vc+jwt" : undefined),
     ),
     checklistItem(
@@ -917,7 +918,7 @@ function classifyWalletObjectClass(
   if (documentType === "consent_receipt") return "consent_access_grant";
   if (isTrustArtifactDocumentType(documentType)) return "trust_artifact";
   if (record.trustStatus === "patient_provided_unverified") return "snapshot";
-  if (hasCryptographicProof(card)) return "credential";
+  if (walletCardHasCryptographicProof(card)) return "credential";
   return "snapshot";
 }
 
@@ -1145,14 +1146,6 @@ function identifier(
 ): { system: string; value: string } | undefined {
   const text = stringOrUndefined(value);
   return text ? { system, value: text } : undefined;
-}
-
-function hasCryptographicProof(card: WalletCard): boolean {
-  return Boolean(
-    card.credentialProof?.jwt ||
-      card.credentialJwt ||
-      portalRecord(card.credentialData).proof,
-  );
 }
 
 function isWalletCard(value: unknown): value is WalletCard {

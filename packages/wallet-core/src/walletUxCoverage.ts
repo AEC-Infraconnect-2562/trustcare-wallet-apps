@@ -62,6 +62,14 @@ export const walletUxCoverage: WalletUxCoverageItem[] = [
     mobileSurface: "wallet-core MicroIpsPlusPack",
     guardrail: "Micro-IPS+ must not declare itself as a system of record.",
   },
+  {
+    id: "standards.proof-shared",
+    requirement: "Claims, proof, JWT, VC/VP unwrap, and JWKS key matching use a shared standards layer.",
+    status: "implemented",
+    webSurface: "packages/wallet-core/src/credentialProof.ts",
+    mobileSurface: "packages/wallet-core/src/credentialProof.ts",
+    guardrail: "Gateway and verifier code should orchestrate network/result flow, not redefine proof or claim validation primitives.",
+  },
 ];
 
 export function requiredWalletUxCoverage(ids: string[]): WalletUxCoverageItem[] {

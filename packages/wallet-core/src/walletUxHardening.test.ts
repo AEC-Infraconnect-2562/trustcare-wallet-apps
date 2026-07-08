@@ -120,9 +120,10 @@ describe("wallet UX status and policy hardening", () => {
       "mobile.home-state",
       "shl.policy",
       "micro-ips.scope",
+      "standards.proof-shared",
     ]);
 
-    expect(items).toHaveLength(7);
+    expect(items).toHaveLength(8);
   });
 });
 

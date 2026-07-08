@@ -1,4 +1,5 @@
 import { SignJWT, calculateJwkThumbprint, exportJWK, generateKeyPair, importJWK } from "jose";
+import { extractCredentialJwt } from "./credentialProof";
 
 export type JsonRecord = Record<string, unknown>;
 
@@ -290,16 +291,6 @@ async function buildDisclosureDigests(claims: JsonRecord | null): Promise<Record
     digests[key] = await sha256Hex(value);
   }
   return digests;
-}
-
-function extractCredentialJwt(value: unknown): string | null {
-  if (typeof value === "string" && value.split(".").length === 3) return value;
-  if (!isRecord(value)) return null;
-  for (const key of ["jwt", "sdJwtVc", "vcJwt"]) {
-    const candidate = value[key];
-    if (typeof candidate === "string" && candidate.split(".").length === 3) return candidate;
-  }
-  return null;
 }
 
 function sanitizePublicJwk(jwk: JsonRecord): JsonRecord {

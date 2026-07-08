@@ -1,10 +1,32 @@
 import {
+  audienceSummary,
+  buildTrustCareJwksCandidates,
+  credentialIssuerName as issuerName,
+  documentTypesFromCredentials,
+  extractCredentialJwt,
+  extractPresentationJwt as extractJwtFromJson,
+  firstCredentialIssuer as firstIssuer,
+  hasVerifiableProof,
+  jsonRecord as objectValue,
+  jwksToKeys,
+  keyMatchesKid,
+  lastCredentialType,
+  looksLikeJwt,
+  parseJsonObject as parseJson,
+  parseJwtPayload,
   parseOid4vcCredentialOffer,
   parseOid4vpRequest,
   parseShlLink,
+  parseUrl,
   parseTrustCareQr,
+  proofSummary,
   fetchShlManifest,
   resolveDemoResolverPayload,
+  splitJwtToken,
+  stringOrUndefined,
+  stringValue,
+  unwrapVcPayload,
+  unwrapVpPayload,
   validateOid4vpBinding,
   verifyShlManifestTrust,
   type VerifierResult,
@@ -867,50 +889,6 @@ function looksLikeVpResolverUrl(url: URL): boolean {
   );
 }
 
-function unwrapVpPayload(value: unknown): Record<string, any> | null {
-  const object = objectValue(value);
-  if (!object) return null;
-  if (isVerifiablePresentation(object)) return object;
-
-  const nestedKeys = [
-    "payload",
-    "presentation",
-    "vp",
-    "verifiablePresentation",
-    "data",
-    "json",
-  ];
-  for (const key of nestedKeys) {
-    const nested = object[key];
-    if (typeof nested === "string") {
-      const json = parseJson(nested);
-      const fromJson = unwrapVpPayload(json);
-      if (fromJson) return fromJson;
-      const fromJwt = parseJwtPayload(nested);
-      const vpFromJwt = unwrapVpPayload(fromJwt);
-      if (vpFromJwt) return vpFromJwt;
-      continue;
-    }
-    const vp = unwrapVpPayload(nested);
-    if (vp) return vp;
-  }
-
-  const result = object.result;
-  if (result && typeof result === "object") {
-    const data = (result as Record<string, unknown>).data;
-    const vp = unwrapVpPayload(data);
-    if (vp) return vp;
-  }
-  return null;
-}
-
-function isVerifiablePresentation(value: Record<string, any>): boolean {
-  const type = value.type;
-  return Array.isArray(type)
-    ? type.map(String).includes("VerifiablePresentation")
-    : type === "VerifiablePresentation";
-}
-
 async function verifyNestedCredentialJwts(
   vp: Record<string, any>,
   fetcher: typeof fetch,
@@ -975,7 +953,7 @@ async function verifyJwtArtifact(
   }
   if (!kid) errors.push("JWT header has no kid.");
 
-  const jwksCandidates = buildJwksCandidates({
+  const jwksCandidates = buildTrustCareJwksCandidates({
     header,
     payload: decodedPayload,
     sourceUrl,
@@ -1059,29 +1037,6 @@ async function verifyJwtArtifact(
   };
 }
 
-function buildJwksCandidates(input: {
-  header: Record<string, any>;
-  payload: Record<string, any>;
-  sourceUrl: string;
-}): string[] {
-  const candidates = new Set<string>();
-  const jku = stringOrUndefined(input.header.jku);
-  if (jku) candidates.add(jku);
-  const source = parseUrl(input.sourceUrl);
-  if (source) {
-    candidates.add(`${source.origin}/api/share-gateway/.well-known/jwks.json`);
-    candidates.add(`${source.origin}/.well-known/jwks.json`);
-  }
-  for (const url of didWebJwksCandidates(
-    stringOrUndefined(input.payload.iss),
-  )) {
-    candidates.add(url);
-  }
-  candidates.add("https://trustcarehealth.live/.well-known/jwks.json");
-  candidates.add("https://www.trustcarehealth.live/.well-known/jwks.json");
-  return Array.from(candidates);
-}
-
 async function fetchMatchingJwk(
   jwksUrl: string,
   kid: string | undefined,
@@ -1110,268 +1065,6 @@ async function fetchMatchingJwk(
   }
 }
 
-function didWebJwksCandidates(issuer: string | undefined): string[] {
-  if (!issuer?.startsWith("did:web:")) return [];
-  const parts = issuer
-    .slice("did:web:".length)
-    .split(":")
-    .map(decodeURIComponent);
-  const host = parts[0];
-  if (!host) return [];
-  const pathParts = parts.slice(1).filter(Boolean);
-  const candidates = new Set<string>();
-  candidates.add(`https://${host}/.well-known/jwks.json`);
-  if (pathParts.length) {
-    const didPath = pathParts.join("/");
-    candidates.add(`https://${host}/${didPath}/did/jwks.json`);
-    candidates.add(`https://${host}/${didPath}/jwks.json`);
-    candidates.add(`https://${host}/${didPath}/did.json`);
-  }
-  const hospitalIndex = pathParts.findIndex(
-    (part) => part.toLowerCase() === "hospital",
-  );
-  const hospitalCode =
-    hospitalIndex >= 0 ? pathParts[hospitalIndex + 1] : undefined;
-  if (hospitalCode) {
-    const code = encodeURIComponent(hospitalCode.toLowerCase());
-    for (const portalHost of [
-      "trustcarehealth.live",
-      "www.trustcarehealth.live",
-    ]) {
-      candidates.add(`https://${portalHost}/hospital/${code}/did/jwks.json`);
-      candidates.add(`https://${portalHost}/hospital/${code}/did.json`);
-    }
-  }
-  return Array.from(candidates);
-}
-
-function jwksToKeys(payload: Record<string, any>): JWK[] {
-  if (Array.isArray(payload.keys)) return payload.keys as JWK[];
-  if (payload.kty) return [payload as JWK];
-  const methods = Array.isArray(payload.verificationMethod)
-    ? payload.verificationMethod
-    : [];
-  return methods
-    .map((method) => {
-      const object = objectValue(method);
-      const jwk = objectValue(object?.publicKeyJwk);
-      if (!jwk) return null;
-      return {
-        ...jwk,
-        kid:
-          stringOrUndefined(jwk.kid) ??
-          stringOrUndefined(object?.id) ??
-          stringOrUndefined(payload.id),
-      } as JWK;
-    })
-    .filter((value): value is JWK => Boolean(value));
-}
-
-function keyMatchesKid(key: JWK, kid: string): boolean {
-  const keyKid = stringOrUndefined(key.kid);
-  if (!keyKid) return false;
-  if (keyKid === kid) return true;
-  const keyFragment = keyKid.split("#").at(-1);
-  const requestedFragment = kid.split("#").at(-1);
-  return Boolean(
-    keyFragment &&
-    requestedFragment &&
-    (keyFragment === requestedFragment ||
-      keyKid.endsWith(`#${requestedFragment}`) ||
-      kid.endsWith(`#${keyFragment}`)),
-  );
-}
-
-function hasVerifiableProof(value: Record<string, any>): boolean {
-  const proof = value.proof;
-  if (proofLooksUsable(proof)) return true;
-  return false;
-}
-
-function proofLooksUsable(proof: unknown): boolean {
-  if (!proof) return false;
-  const proofs = Array.isArray(proof) ? proof : [proof];
-  return proofs.some((entry) => {
-    const object = objectValue(entry);
-    if (!object) return false;
-    const type = String(object.type ?? object.proofPurpose ?? "").toLowerCase();
-    const value = String(
-      object.proofValue ?? object.jws ?? object.signature ?? "",
-    ).toLowerCase();
-    if (!type && !value) return false;
-    const joined = `${type} ${value}`;
-    return (
-      !joined.includes("placeholder") &&
-      !joined.includes("test_proof_value_only")
-    );
-  });
-}
-
-function proofSummary(value: Record<string, any>): string {
-  const proof = Array.isArray(value.proof) ? value.proof[0] : value.proof;
-  const proofObject = objectValue(proof);
-  const trustcare = objectValue(value.trustcare);
-  return String(
-    proofObject?.type ??
-      trustcare?.signatureStatus ??
-      trustcare?.signingStatus ??
-      "proof present",
-  );
-}
-
-function extractJwtFromJson(value: Record<string, any> | null): string | null {
-  if (!value) return null;
-  for (const key of ["jwt", "vpJwt", "presentationJwt", "token"]) {
-    const candidate = value[key];
-    if (typeof candidate === "string" && looksLikeJwt(candidate))
-      return candidate;
-  }
-  const nested =
-    objectValue(value.payload) ??
-    objectValue(value.result) ??
-    objectValue(value.data);
-  return nested ? extractJwtFromJson(nested) : null;
-}
-
-function extractCredentialJwt(value: unknown): string | null {
-  if (typeof value === "string" && looksLikeJwt(value)) return value;
-  const object = objectValue(value);
-  if (!object) return null;
-  for (const key of ["jwt", "vcJwt", "sdJwtVc"]) {
-    const candidate = object[key];
-    if (typeof candidate === "string" && looksLikeJwt(candidate))
-      return candidate;
-  }
-  return null;
-}
-
-function unwrapVcPayload(value: unknown): Record<string, any> | null {
-  const object = objectValue(value);
-  if (!object) return null;
-  const vc = object.vc;
-  return objectValue(vc) ?? (isVerifiableCredential(object) ? object : null);
-}
-
-function isVerifiableCredential(value: Record<string, any>): boolean {
-  const type = value.type;
-  return Array.isArray(type)
-    ? type.map(String).includes("VerifiableCredential")
-    : type === "VerifiableCredential";
-}
-
-function firstIssuer(credentials: unknown[]): string | undefined {
-  for (const credential of credentials) {
-    const object = objectValue(credential);
-    const vc = unwrapVcPayload(object) ?? object;
-    const issuer = issuerName(vc);
-    if (issuer) return issuer;
-  }
-  return undefined;
-}
-
-function issuerName(value: Record<string, any> | null): string | undefined {
-  if (!value) return undefined;
-  const issuer = value.issuer;
-  if (typeof issuer === "string") return issuer;
-  const issuerObject = objectValue(issuer);
-  return (
-    stringOrUndefined(issuerObject?.name) ?? stringOrUndefined(issuerObject?.id)
-  );
-}
-
-function documentTypesFromCredentials(credentials: unknown[]): string[] {
-  const values = credentials
-    .map((credential) =>
-      lastCredentialType(
-        unwrapVcPayload(credential) ?? objectValue(credential),
-      ),
-    )
-    .filter((value): value is string => Boolean(value));
-  return Array.from(new Set(values));
-}
-
-function lastCredentialType(
-  credential: Record<string, any> | null,
-): string | undefined {
-  if (!credential) return undefined;
-  const type = credential.type;
-  if (Array.isArray(type)) {
-    const values = type
-      .map(String)
-      .filter(
-        (item) =>
-          item !== "VerifiableCredential" && item !== "VerifiablePresentation",
-      );
-    return values[values.length - 1];
-  }
-  return typeof type === "string" ? type : undefined;
-}
-
-function audienceSummary(value: unknown): string | undefined {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value.map(String).join(", ");
-  return undefined;
-}
-
-function stringOrUndefined(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function looksLikeJwt(value: string): boolean {
-  return Boolean(splitJwtToken(value));
-}
-
-function parseJwtPayload(value: string): Record<string, any> | null {
-  const token = splitJwtToken(value);
-  if (!token) return null;
-  try {
-    return parseJson(base64UrlDecode(token.issuerJwt.split(".")[1]));
-  } catch {
-    return null;
-  }
-}
-
-function splitJwtToken(value: string): {
-  issuerJwt: string;
-  disclosures: string[];
-} | null {
-  const trimmed = value.trim();
-  if (!trimmed.startsWith("eyJ")) return null;
-  const [issuerJwt, ...disclosures] = trimmed.split("~");
-  const parts = issuerJwt.split(".");
-  if (parts.length !== 3 || !parts[0].startsWith("eyJ")) return null;
-  return {
-    issuerJwt,
-    disclosures: disclosures.filter(Boolean),
-  };
-}
-
-function base64UrlDecode(value: string): string {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-  const binary = atob(padded);
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
-}
-
-function parseUrl(value: string): URL | null {
-  try {
-    return new URL(value);
-  } catch {
-    return null;
-  }
-}
-
-function objectValue(value: unknown): Record<string, any> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, any>)
-    : null;
-}
-
-function stringValue(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.length > 0 ? value : fallback;
-}
-
 function manifestFilesAreStandard(
   manifest: Record<string, unknown> | undefined,
 ): boolean {
@@ -1386,17 +1079,6 @@ function manifestFilesAreStandard(
       Boolean(object.embedded && typeof object.embedded === "object")
     );
   });
-}
-
-function parseJson(value: string): Record<string, any> | null {
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 export async function verify(

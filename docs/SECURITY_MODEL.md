@@ -28,6 +28,12 @@ Local development uses the Vite share gateway as a backend-shaped simulator: it 
 
 Green verification requires verifier-side signature validation against JWKS plus nested VC verification. Payload metadata such as `signingStatus: verified` is never sufficient proof.
 
+## Shared Standards Layer
+
+Claims, proof, JWT parsing, VC/VP payload unwrapping, proof usability, issuer/type extraction, DID Web JWKS discovery, and `kid` matching live in `packages/wallet-core/src/credentialProof.ts`.
+
+Gateway and API-client verifier code may fetch artifacts, call Portal endpoints, and compose user-facing verification results, but must not redefine proof/claim/JWKS validation primitives locally.
+
 ## Local Cache Rules
 
 - Offline data is a convenience cache, not clinical source of truth.

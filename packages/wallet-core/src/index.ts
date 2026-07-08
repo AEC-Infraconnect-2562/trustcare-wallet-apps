@@ -19,6 +19,7 @@ export * from "./demoResolvers";
 export * from "./shareGateway";
 export * from "./sharePackages";
 export * from "./trustcareJwt";
+export * from "./credentialProof";
 export * from "./sorting";
 export * from "./statusTone";
 export * from "./selectiveDisclosure";
