@@ -116,6 +116,211 @@ const TECHNICAL_FIELD_NAMES = new Set([
   "watermark",
 ]);
 
+type BusinessPayloadRenderConfig = {
+  pathRoot: string;
+  priority: string[];
+  labels?: Record<string, string>;
+  discloseByDefault?: string[];
+  moneyKeys?: string[];
+  dateKeys?: string[];
+  dateTimeKeys?: string[];
+  hiddenKeys?: string[];
+};
+
+const renderMetadataKeys = [
+  "audience",
+  "credentialStatus",
+  "document",
+  "expiresAt",
+  "fhirResources",
+  "holder",
+  "hospital",
+  "humanDocument",
+  "id",
+  "issuedAt",
+  "issuer",
+  "layout",
+  "noPortrait",
+  "organization",
+  "patient",
+  "renderData",
+  "rendererVersion",
+  "sections",
+  "source",
+  "sourceSystem",
+  "titleEn",
+  "titleTh",
+  "trustcare",
+  "visualHints",
+];
+
+const claimPackageRenderConfig: BusinessPayloadRenderConfig = {
+  pathRoot: "credentialSubject.claimPackage",
+  priority: [
+    "claimNo",
+    "claimRef",
+    "packageNo",
+    "claimId",
+    "claimType",
+    "policyNo",
+    "memberId",
+    "encounterId",
+    "visitId",
+    "diagnosisCodes",
+    "diagnoses",
+    "serviceLines",
+    "serviceItems",
+    "lineItems",
+    "items",
+    "payer",
+    "payerRef",
+    "totalAmount",
+    "estimatedTotal",
+    "currency",
+    "attachments",
+    "attachedEvidence",
+    "evidence",
+    "status",
+    "claimStatus",
+  ],
+  labels: {
+    claimNo: "เลขที่เคลม",
+    claimRef: "เลขเคลม",
+    packageNo: "เลขชุดเคลม",
+    claimId: "Claim ID",
+    claimType: "ประเภทเคลม",
+    policyNo: "Policy No",
+    memberId: "Member ID",
+    encounterId: "Encounter ID",
+    visitId: "Visit ID",
+    diagnosisCodes: "Diagnosis codes",
+    diagnoses: "Diagnosis",
+    serviceLines: "Service lines",
+    serviceItems: "Service items",
+    lineItems: "Line items",
+    items: "รายการในชุดเคลม",
+    payer: "Payer",
+    payerRef: "Payer ref",
+    totalAmount: "ยอดรวม",
+    estimatedTotal: "ยอดประเมิน",
+    currency: "Currency",
+    attachments: "เอกสารแนบ",
+    attachedEvidence: "Evidence",
+    evidence: "Evidence",
+    status: "สถานะ",
+    claimStatus: "สถานะเคลม",
+  },
+  discloseByDefault: [
+    "claimNo",
+    "claimRef",
+    "claimId",
+    "claimType",
+    "policyNo",
+    "encounterId",
+    "diagnosisCodes",
+    "diagnoses",
+    "payer",
+    "payerRef",
+    "status",
+    "claimStatus",
+  ],
+  moneyKeys: ["totalAmount", "estimatedTotal"],
+  hiddenKeys: [
+    ...renderMetadataKeys,
+    "claim",
+    "claimBundle",
+    "claimPackage",
+    "claimRequest",
+  ],
+};
+
+const claimReceiptRenderConfig: BusinessPayloadRenderConfig = {
+  pathRoot: "credentialSubject.claimReceipt",
+  priority: [
+    "receiptNo",
+    "invoiceNo",
+    "claimRef",
+    "claimId",
+    "paidAt",
+    "cashier",
+    "items",
+    "lineItems",
+    "breakdown",
+    "serviceItems",
+    "grossAmount",
+    "discount",
+    "netAmount",
+    "approvedAmount",
+    "totalAmount",
+    "totalClaimed",
+    "insurerResponsibility",
+    "payerResponsibility",
+    "patientResponsibility",
+    "currency",
+    "paymentMethod",
+    "adjudicationOutcome",
+    "status",
+    "paymentStatus",
+  ],
+  labels: {
+    receiptNo: "เลขที่ใบเสร็จ",
+    invoiceNo: "เลขที่ใบแจ้งหนี้",
+    claimRef: "เลขเคลม",
+    claimId: "Claim ID",
+    paidAt: "ชำระเมื่อ",
+    cashier: "Cashier",
+    items: "รายการค่าใช้จ่าย",
+    lineItems: "Line items",
+    breakdown: "Breakdown",
+    serviceItems: "Service items",
+    grossAmount: "ยอดเรียกเก็บ",
+    discount: "ส่วนลด",
+    netAmount: "ยอดสุทธิ",
+    approvedAmount: "ยอดอนุมัติ",
+    totalAmount: "ยอดรวม",
+    totalClaimed: "ยอดเคลม",
+    insurerResponsibility: "ผู้รับประกันรับผิดชอบ",
+    payerResponsibility: "ผู้จ่ายรับผิดชอบ",
+    patientResponsibility: "ผู้ป่วยรับผิดชอบ",
+    currency: "Currency",
+    paymentMethod: "วิธีชำระเงิน",
+    adjudicationOutcome: "ผลการพิจารณา",
+    status: "สถานะ",
+    paymentStatus: "สถานะชำระเงิน",
+  },
+  discloseByDefault: [
+    "receiptNo",
+    "invoiceNo",
+    "claimRef",
+    "claimId",
+    "paidAt",
+    "approvedAmount",
+    "netAmount",
+    "paymentMethod",
+    "status",
+    "paymentStatus",
+  ],
+  moneyKeys: [
+    "grossAmount",
+    "discount",
+    "netAmount",
+    "approvedAmount",
+    "totalAmount",
+    "totalClaimed",
+    "insurerResponsibility",
+    "payerResponsibility",
+    "patientResponsibility",
+  ],
+  dateTimeKeys: ["paidAt"],
+  hiddenKeys: [
+    ...renderMetadataKeys,
+    "claim",
+    "claimReceipt",
+    "invoice",
+    "receipt",
+  ],
+};
+
 export function credentialRenderModelFromCard(
   card: WalletCard,
 ): CredentialRenderModel {
@@ -1005,91 +1210,11 @@ function fieldsForCredentialType(
         false,
       ),
     ],
-    claim_package: [
-      field(
-        "เลขที่เคลม",
-        getText(claimPackage, "claimNo") ??
-          getText(claimPackage, "claimRef") ??
-          getText(claimPackage, "packageNo"),
-        "credentialSubject.claimPackage.claimNo",
-        true,
-      ),
-      field(
-        "ประเภทเคลม",
-        getText(claimPackage, "claimType"),
-        "credentialSubject.claimPackage.claimType",
-        true,
-      ),
-      field(
-        "Payer",
-        displayName(getObject(claimPackage, "payer")) ??
-          getText(claimPackage, "payerRef"),
-        "credentialSubject.claimPackage.payer",
-        true,
-      ),
-      field(
-        "ยอดรวม",
-        formatMoney(
-          getNested(claimPackage, ["totalAmount"]) ??
-            getNested(claimPackage, ["estimatedTotal"]),
-          getNested(claimPackage, ["currency"]),
-        ),
-        "credentialSubject.claimPackage.totalAmount",
-        false,
-      ),
-      field(
-        "สถานะ",
-        getText(claimPackage, "status") ?? getText(claimPackage, "claimStatus"),
-        "credentialSubject.claimPackage.status",
-        true,
-      ),
-    ],
-    claim_receipt: [
-      field(
-        "เลขที่ใบเสร็จ",
-        getText(receipt, "receiptNo") ?? getText(receipt, "invoiceNo"),
-        "credentialSubject.claimReceipt.receiptNo",
-        true,
-      ),
-      field(
-        "เลขเคลม",
-        getText(receipt, "claimRef"),
-        "credentialSubject.claimReceipt.claimRef",
-        true,
-      ),
-      field(
-        "ยอดอนุมัติ",
-        formatMoney(
-          getNested(receipt, ["approvedAmount"]) ??
-            getNested(receipt, ["netAmount"]) ??
-            getNested(receipt, ["totalAmount"]),
-          getNested(receipt, ["currency"]) ?? "THB",
-        ),
-        "credentialSubject.claimReceipt.approvedAmount",
-        false,
-      ),
-      field(
-        "ผู้ป่วยรับผิดชอบ",
-        formatMoney(
-          getNested(receipt, ["patientResponsibility"]),
-          getNested(receipt, ["currency"]) ?? "THB",
-        ),
-        "credentialSubject.claimReceipt.patientResponsibility",
-        false,
-      ),
-      field(
-        "วิธีชำระเงิน",
-        getText(receipt, "paymentMethod"),
-        "credentialSubject.claimReceipt.paymentMethod",
-        false,
-      ),
-      field(
-        "สถานะ",
-        getText(receipt, "status") ?? getText(receipt, "paymentStatus"),
-        "credentialSubject.claimReceipt.status",
-        true,
-      ),
-    ],
+    claim_package: businessPayloadFields(
+      claimPackage,
+      claimPackageRenderConfig,
+    ),
+    claim_receipt: businessPayloadFields(receipt, claimReceiptRenderConfig),
     sync_receipt: [
       field(
         "Sync ID",
@@ -1922,6 +2047,67 @@ function field(
   return { label, value, path, discloseByDefault };
 }
 
+function businessPayloadFields(
+  payload: CredentialRenderItem,
+  config: BusinessPayloadRenderConfig,
+): CredentialRenderField[] {
+  const hiddenKeys = new Set(config.hiddenKeys ?? []);
+  const priorityIndex = new Map(
+    config.priority.map((key, index) => [key, index]),
+  );
+  const entries = Object.entries(payload)
+    .filter(([key, value]) => {
+      if (hiddenKeys.has(key)) return false;
+      if (TECHNICAL_FIELD_NAMES.has(key.toLowerCase())) return false;
+      return hasValue(value);
+    })
+    .sort(([left], [right]) => {
+      const leftIndex = priorityIndex.get(left) ?? Number.MAX_SAFE_INTEGER;
+      const rightIndex = priorityIndex.get(right) ?? Number.MAX_SAFE_INTEGER;
+      if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+      return left.localeCompare(right);
+    });
+  const fields: CredentialRenderField[] = [];
+
+  for (const [key, rawValue] of entries) {
+    const value = formatBusinessPayloadValue(key, rawValue, payload, config);
+    if (!hasValue(value) || value === "-") continue;
+    fields.push(
+      field(
+        config.labels?.[key] ?? humanizeKey(key),
+        value,
+        `${config.pathRoot}.${key}`,
+        config.discloseByDefault?.includes(key) ?? false,
+      ),
+    );
+  }
+
+  return fields;
+}
+
+function formatBusinessPayloadValue(
+  key: string,
+  value: unknown,
+  payload: CredentialRenderItem,
+  config: BusinessPayloadRenderConfig,
+): unknown {
+  if (config.moneyKeys?.includes(key))
+    return formatMoney(value, getNested(payload, ["currency"]));
+  if (config.dateTimeKeys?.includes(key)) return formatDateTime(value);
+  if (config.dateKeys?.includes(key)) return formatDate(value);
+  if (key === "payer") return displayName(value) ?? value;
+  return value;
+}
+
+function humanizeKey(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (char) => char.toUpperCase());
+}
+
 function sectionKindForType(documentType: string): CredentialRenderSectionKind {
   if (
     documentType === "claim_package" ||
@@ -2087,6 +2273,14 @@ function benefitItems(
 }
 
 function isFieldWithValue(value: CredentialRenderField): boolean {
+  if (Array.isArray(value.value)) return value.value.length > 0;
+  if (
+    value.value &&
+    typeof value.value === "object" &&
+    !Array.isArray(value.value) &&
+    Object.keys(value.value as Record<string, unknown>).length === 0
+  )
+    return false;
   return (
     value.value !== undefined &&
     value.value !== null &&

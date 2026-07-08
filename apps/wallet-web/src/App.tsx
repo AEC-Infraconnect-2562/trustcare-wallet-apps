@@ -1551,10 +1551,7 @@ export default function App() {
           </div>
           <div className="topbar-actions">
             <div className="top-user-session" aria-label="ผู้ใช้ที่เข้าสู่ระบบ">
-              <img
-                src={resolveAvatarUrl(activeUser.avatarUrl)}
-                alt={activeUser.nameEn}
-              />
+              <UserAvatarImage user={activeUser} />
               <span>
                 <strong>{activeUser.nameTh}</strong>
                 <small>
@@ -1565,6 +1562,16 @@ export default function App() {
                 </small>
               </span>
             </div>
+            <button
+              type="button"
+              className="shell-scan-button"
+              title="สแกน QR"
+              aria-label="สแกน QR"
+              onClick={() => setScannerOpen(true)}
+            >
+              <Camera size={18} />
+              <span>สแกน QR</span>
+            </button>
             <button className="round-action" aria-label="notification">
               <Bell size={22} />
             </button>
@@ -1942,7 +1949,7 @@ function LoginView({
               }
               onClick={() => onSelect(user.id)}
             >
-              <img src={resolveAvatarUrl(user.avatarUrl)} alt={user.nameEn} />
+              <UserAvatarImage user={user} />
               <span>
                 <strong>{user.nameTh}</strong>
                 <small>
@@ -2011,10 +2018,7 @@ function UserScopePanel({
   return (
     <section className="user-scope-panel">
       <div className="user-scope-card">
-        <img
-          src={resolveAvatarUrl(activeUser.avatarUrl)}
-          alt={activeUser.nameEn}
-        />
+        <UserAvatarImage user={activeUser} />
         <div>
           <strong>{activeUser.nameTh}</strong>
           <small>{activeUser.sourceLabel}</small>
@@ -6054,7 +6058,8 @@ function describeScannablePayload(value: string): ScanPayloadDescriptor {
   let transport: ScanPayloadDescriptor["transport"] = "raw_payload";
   try {
     const url = new URL(raw);
-    if (url.searchParams.has("scan")) transport = "wallet_scan_url";
+    if (url.searchParams.has("scan") || scanPayloadFromHash(url.hash))
+      transport = "wallet_scan_url";
   } catch {
     // Raw payload.
   }
@@ -6091,23 +6096,18 @@ function createScannableWebUrl(payload: string): string {
   const shl = parseShlLink(raw);
   if (shl) {
     if (/^https?:\/\//.test(raw)) return raw;
-    return createShlViewerUrl(currentAppBaseUrl(), shl.raw);
+    return createShlViewerUrl(currentAppShareRootUrl(), shl.raw);
   }
   try {
     const url = new URL(raw);
-    if (
-      url.searchParams.has("scan") ||
-      url.searchParams.has("vp") ||
-      url.searchParams.has("presentationId") ||
-      url.pathname.includes("/presentations/")
-    ) {
+    if (url.searchParams.has("scan") || scanPayloadFromHash(url.hash)) {
       return raw;
     }
   } catch {
-    // Raw VC/VP/SHL payloads are wrapped below so another device can open this web app.
+    // Raw VC/VP payloads are wrapped below so another device can open this web app.
   }
   const encoded = encodeURIComponent(payload);
-  return `${currentAppBaseUrl()}?scan=${encoded}`;
+  return `${currentAppShareRootUrl()}#scan=${encoded}`;
 }
 
 function getObjectScanPayload(object: WalletStoredObject): string {
@@ -6368,6 +6368,8 @@ function extractScannablePayload(value: string): string {
   try {
     const url = new URL(raw);
     const hashPayload = decodeURIComponent(url.hash.replace(/^#/, ""));
+    const hashScanPayload = scanPayloadFromHash(url.hash);
+    if (hashScanPayload) return extractScannablePayload(hashScanPayload);
     const hashShl = parseShlLink(hashPayload);
     if (hashShl) return hashShl.raw;
     const scanPayload = url.searchParams.get("scan");
@@ -6382,10 +6384,22 @@ function readScanPayloadFromLocation(): string {
   if (typeof window === "undefined") return "";
   const url = new URL(window.location.href);
   const hashPayload = decodeURIComponent(url.hash.replace(/^#/, ""));
+  const hashScanPayload = scanPayloadFromHash(url.hash);
+  if (hashScanPayload) return extractScannablePayload(hashScanPayload);
   const hashShl = parseShlLink(hashPayload);
   if (hashShl) return hashShl.raw;
   const payload = url.searchParams.get("scan");
   return payload ? extractScannablePayload(payload) : "";
+}
+
+function scanPayloadFromHash(hash: string): string {
+  const value = decodeURIComponent(hash.replace(/^#/, ""));
+  if (!value) return "";
+  if (value.startsWith("scan=") || value.startsWith("?scan=")) {
+    const normalized = value.startsWith("?") ? value.slice(1) : value;
+    return new URLSearchParams(normalized).get("scan") ?? "";
+  }
+  return "";
 }
 
 function clearScanPayloadFromLocation() {
@@ -6393,7 +6407,7 @@ function clearScanPayloadFromLocation() {
   const url = new URL(window.location.href);
   url.searchParams.delete("scan");
   const hashPayload = decodeURIComponent(url.hash.replace(/^#/, ""));
-  if (parseShlLink(hashPayload)) url.hash = "";
+  if (parseShlLink(hashPayload) || scanPayloadFromHash(url.hash)) url.hash = "";
   window.history.replaceState(
     {},
     "",
@@ -6609,6 +6623,14 @@ function currentAppBaseUrl(): string {
   );
 }
 
+function currentAppShareRootUrl(): string {
+  if (typeof window === "undefined")
+    return `${baseApiOptions.demoOrigin.replace(/\/$/, "")}/`;
+  return new URL(import.meta.env.BASE_URL || "/", window.location.origin)
+    .toString()
+    .replace(/#.*$/, "");
+}
+
 function readScanHistory(): Record<string, ScanOutcome[]> {
   if (typeof window === "undefined") return {};
   try {
@@ -6697,6 +6719,33 @@ function friendlyPortalSyncError(error: unknown): string {
     ].join(" · ");
   }
   return message;
+}
+
+function UserAvatarImage({ user }: { user: WalletDemoUser }) {
+  const [fallback, setFallback] = useState(false);
+  const source = fallback
+    ? resolveAvatarFallbackUrl(user)
+    : resolveAvatarUrl(user.avatarUrl);
+
+  return (
+    <img
+      src={source}
+      alt={user.nameEn || user.nameTh}
+      onError={() => {
+        if (!fallback) setFallback(true);
+      }}
+    />
+  );
+}
+
+function resolveAvatarFallbackUrl(user: WalletDemoUser): string {
+  if (user.avatarSource !== "trustcare_portal")
+    return resolveAvatarUrl(user.avatarUrl);
+  const fallback =
+    user.gender === "male"
+      ? "assets/users/wallet-native-01.png"
+      : "assets/users/wallet-native-02.png";
+  return resolveAvatarUrl(fallback);
 }
 
 function resolveAvatarUrl(url: string): string {

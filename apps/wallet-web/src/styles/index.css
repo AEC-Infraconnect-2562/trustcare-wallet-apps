@@ -2123,6 +2123,28 @@ button:disabled {
   background: var(--card);
 }
 
+.shell-scan-button {
+  min-height: 36px;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--primary) 45%, var(--border));
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 13px;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.shell-scan-button svg {
+  width: 18px;
+  height: 18px;
+}
+
 .round-action.avatar {
   background: #4f67f2;
   color: #fff;
@@ -8389,6 +8411,17 @@ b {
     max-width: 92px;
   }
 
+  .shell-scan-button {
+    width: 36px;
+    min-height: 36px;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  .shell-scan-button span {
+    display: none;
+  }
+
   .topbar-title-block {
     display: flex;
     flex-direction: column;
@@ -8399,7 +8432,7 @@ b {
   .breadcrumb-row {
     gap: 6px;
     min-height: 34px;
-    padding-right: 180px;
+    padding-right: 228px;
   }
 
   .topbar-title-block h1,

@@ -359,9 +359,7 @@ function renderDocumentBody(
       const claimPackage = payloads.claimPackage;
       return (
         <>
-          <FieldGridSection
-            fields={financialContextFields(claimPackage, "claim_package")}
-          />
+          <FieldGridSection fields={fields} />
           <FinancialSection
             title="รายการค่าใช้จ่ายสำหรับเคลม"
             items={firstNonEmptyArray(
@@ -383,9 +381,7 @@ function renderDocumentBody(
       const receipt = payloads.claimReceipt;
       return (
         <>
-          <FieldGridSection
-            fields={financialContextFields(receipt, "claim_receipt")}
-          />
+          <FieldGridSection fields={fields} />
           <FinancialSection
             title="รายการค่าใช้จ่าย / ใบเสร็จ"
             items={firstNonEmptyArray(
@@ -408,9 +404,7 @@ function renderDocumentBody(
       const quotation = payloads.quotation;
       return (
         <>
-          <FieldGridSection
-            fields={financialContextFields(quotation, "quotation")}
-          />
+          <FieldGridSection fields={fields} />
           <FinancialSection
             title="ใบเสนอราคา"
             items={firstNonEmptyArray(
@@ -1235,77 +1229,6 @@ function getFinancialQuantity(item: ListItem): string | undefined {
   return (
     getText(item, "quantity") ?? getText(item, "qty") ?? getText(item, "units")
   );
-}
-
-function financialContextFields(
-  payload: Record<string, unknown>,
-  type: "claim_package" | "claim_receipt" | "quotation",
-): Field[] {
-  if (type === "claim_receipt") {
-    return [
-      {
-        label: "Claim ID",
-        value: getText(payload, "claimId") ?? getText(payload, "claimRef"),
-      },
-      {
-        label: "ผู้จ่าย (Ref)",
-        value:
-          getText(payload, "payerRef") ??
-          displayName(getObject(payload, "payer")),
-      },
-      { label: "เลขที่ใบเสร็จ", value: getText(payload, "receiptNo") },
-      { label: "เลขที่ใบแจ้งหนี้", value: getText(payload, "invoiceNo") },
-      {
-        label: "ผลการพิจารณา",
-        value:
-          getText(payload, "adjudicationOutcome") ??
-          getText(payload, "status") ??
-          getText(payload, "paymentStatus"),
-      },
-      { label: "วิธีชำระ", value: getText(payload, "paymentMethod") },
-    ];
-  }
-  if (type === "quotation") {
-    return [
-      {
-        label: "เลขที่ใบเสนอราคา",
-        value:
-          getText(payload, "quotationNo") ?? getText(payload, "documentNo"),
-      },
-      { label: "แพ็กเกจ", value: getText(payload, "packageName") },
-      {
-        label: "ใบเสนอราคามีผล",
-        value: getText(payload, "validForDays")
-          ? `${getText(payload, "validForDays")} วัน`
-          : undefined,
-      },
-      { label: "เงื่อนไขชำระเงิน", value: getText(payload, "paymentTerms") },
-      { label: "ข้อยกเว้น", value: getNested(payload, ["exclusions"]) },
-      { label: "ระบบต้นทาง", value: getText(payload, "sourceSystem") },
-    ];
-  }
-  return [
-    {
-      label: "เลขที่เคลม",
-      value:
-        getText(payload, "claimNo") ??
-        getText(payload, "claimRef") ??
-        getText(payload, "packageNo"),
-    },
-    { label: "ประเภทเคลม", value: getText(payload, "claimType") },
-    {
-      label: "ผู้จ่าย",
-      value:
-        displayName(getObject(payload, "payer")) ??
-        getText(payload, "payerRef"),
-    },
-    {
-      label: "สถานะ",
-      value: getText(payload, "status") ?? getText(payload, "claimStatus"),
-    },
-    { label: "เลขที่อ้างอิง", value: getText(payload, "documentNo") },
-    { label: "ระบบต้นทาง", value: getText(payload, "sourceSystem") },
-  ];
 }
 
 function normalizeMedicationItem(item: ListItem): ListItem {
