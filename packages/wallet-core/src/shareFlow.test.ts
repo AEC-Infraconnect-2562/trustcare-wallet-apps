@@ -391,6 +391,41 @@ describe("premium share flow policy and validation", () => {
       context: "opd_visit",
     });
   });
+
+  it("does not fabricate a holder DID for verifier-ready VP packages", () => {
+    const cards = [withoutHolderDid(card(1, "patient_identity"))];
+
+    expect(() =>
+      buildSharePackage({
+        mode: "PurposeVP",
+        context: "opd_visit",
+        cards,
+        selectedCardIds: cards.map((item) => item.id),
+        selectedFields: ["identity"],
+        gatewayBaseUrl: "https://wallet.example/api/share-gateway",
+      }),
+    ).toThrow("Holder DID is required");
+  });
+
+  it("does not fabricate a holder DID for Certified SHL Manifest VP packages", () => {
+    const cards = [withoutHolderDid(card(1, "patient_identity"))];
+
+    expect(() =>
+      buildSharePackage({
+        mode: "CertifiedSHLManifestPackage",
+        context: "referral",
+        cards,
+        selectedCardIds: cards.map((item) => item.id),
+        gatewayBaseUrl: "https://wallet.example/api/share-gateway",
+        shlPolicy: {
+          passcodeRequired: true,
+          passcodeHint: "****",
+          maxAccessCount: 3,
+          accessCodeDelivery: "separate_channel",
+        },
+      }),
+    ).toThrow("Holder DID is required");
+  });
 });
 
 function cardsFor(context: ReadinessContext): WalletCard[] {
@@ -445,5 +480,21 @@ function card(id: number, cardType: string): WalletCard {
     createdAt: "2026-07-01T00:00:00.000Z",
     issuedAt: "2026-07-01T00:00:00.000Z",
     expiresAt: "2027-07-01T00:00:00.000Z",
+  };
+}
+
+function withoutHolderDid(source: WalletCard): WalletCard {
+  const credentialData = source.credentialData as Record<string, unknown>;
+  const credentialSubject = {
+    ...((credentialData.credentialSubject as Record<string, unknown>) ?? {}),
+  };
+  delete credentialSubject.id;
+  return {
+    ...source,
+    holderDid: undefined,
+    credentialData: {
+      ...credentialData,
+      credentialSubject,
+    },
   };
 }

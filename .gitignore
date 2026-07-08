@@ -9,4 +9,7 @@ build/
 *.log
 coverage/
 _reference/
-
+portal-ref/
+.agents/
+.codex/
+.pnpm-store/

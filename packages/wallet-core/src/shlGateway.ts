@@ -587,9 +587,14 @@ function buildTrustCareManifestCertification(input: {
   selectedCards: WalletCard[];
   gatewayBaseUrl: string;
 }) {
-  const holderDid =
-    input.selectedCards.find((card) => card.holderDid)?.holderDid ??
-    `did:key:holder:${input.publicationId}`;
+  const holderDid = input.selectedCards.find(
+    (card) => card.holderDid,
+  )?.holderDid;
+  if (!holderDid) {
+    throw new Error(
+      "Holder DID is required to create a Certified SHL Manifest VP.",
+    );
+  }
   const issuerDid =
     input.selectedCards.find((card) => card.issuerDid)?.issuerDid ??
     "did:web:trustcare.network:contract-hub";

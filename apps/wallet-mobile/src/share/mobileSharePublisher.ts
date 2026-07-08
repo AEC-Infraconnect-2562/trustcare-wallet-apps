@@ -97,11 +97,17 @@ export async function publishMobileSharePackage(input: {
   const purposeLabel = readinessContextLabels[context]?.th ?? context;
   const selectedHolderDid =
     selected.find((card) => card.holderDid)?.holderDid ?? undefined;
+  const holderDid = input.holderDid || selectedHolderDid;
+  if (!holderDid) {
+    throw new Error(
+      "ยังไม่มี Holder DID สำหรับลงนาม VP/SHL ให้ verifier ตรวจได้",
+    );
+  }
   const result = await walletApi.createSharePackage(input.apiOptions, {
     mode: input.mode,
     context,
     selectedCardIds: selected.map((card) => card.id),
-    holderDid: input.holderDid || selectedHolderDid,
+    holderDid,
     recipient,
     purpose: purposeLabel,
     selectedFields: input.selectedFields ?? [],
@@ -118,10 +124,6 @@ export async function publishMobileSharePackage(input: {
           }
         : undefined,
   });
-  const holderDid =
-    input.holderDid ||
-    selectedHolderDid ||
-    "did:key:holder";
   const publication =
     "presentation" in result
       ? await shareGatewayApi.publishVpSharePackage({

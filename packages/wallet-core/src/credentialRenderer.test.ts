@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  completeWalletSeedCards,
   credentialRenderModelFromCard,
   getDemoWalletCards,
   presentationEnvelopeFromWalletCard,
@@ -62,6 +63,23 @@ describe("shared credential renderer", () => {
 
       expect(documentSection?.fields.length, card.cardType).toBeGreaterThan(0);
       expect(model.narrative.title, card.cardType).toBeTruthy();
+    }
+  });
+
+  it("keeps every canonical credential envelope aligned with the central type renderer", () => {
+    for (const card of completeWalletSeedCards) {
+      const model = credentialRenderModelFromCard(card);
+      const envelope = presentationEnvelopeFromWalletCard(card);
+      const modelDocumentFields = model.sections.find(
+        (section) => section.key === "document",
+      )?.fields;
+      const envelopeDocumentFields = envelope.sections.find(
+        (section) => section.key === "document",
+      )?.fields;
+
+      expect(envelopeDocumentFields, card.cardType).toEqual(
+        modelDocumentFields,
+      );
     }
   });
 

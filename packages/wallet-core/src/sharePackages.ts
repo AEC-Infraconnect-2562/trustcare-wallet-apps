@@ -141,8 +141,12 @@ export function buildSharePackage(
   const holderDid =
     input.holderDid ??
     selectedCards.find((card) => card.holderDid)?.holderDid ??
-    records[0]?.holderDid ??
-    "did:key:wallet-holder";
+    records[0]?.holderDid;
+  if (!holderDid) {
+    throw new Error(
+      "Holder DID is required to create a verifier-ready VP package.",
+    );
+  }
   const directCredentialJwt =
     selectedCards.length === 1
       ? (selectedCards[0]?.credentialProof?.jwt ??
