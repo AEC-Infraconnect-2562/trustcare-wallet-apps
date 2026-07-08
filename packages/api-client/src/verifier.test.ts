@@ -3,6 +3,8 @@ import { Buffer } from "node:buffer";
 import {
   createDemoResolverUrl,
   createEphemeralEs256SigningKey,
+  extractCredentialJwt,
+  parseJwtPayload,
   publicJwksForSigningKey,
   signTrustCareCredentialJwt,
   signTrustCarePresentationJwt,
@@ -26,15 +28,15 @@ const unsignedVp = {
 };
 
 describe("verifyQr VP resolver behavior", () => {
-  it("resolves deterministic demo VP references across devices", async () => {
+  it("resolves deterministic demo VP references without promoting them to verified trust", async () => {
     const result = await verifyQr(
       { url: "https://trustcare.example.com/trpc" },
       "https://wallet.example/?tc_resolver=vp&tc_id=vp_demo_1008_abc&tc_ref=1",
     );
 
     expect(result.protocol).toBe("trustcare-vp");
-    expect(result.verified).toBe(true);
-    expect(result.trustLevel).toBe("green");
+    expect(result.verified).toBe(false);
+    expect(result.trustLevel).toBe("yellow");
     expect(result.credentials?.length).toBe(1);
     expect(JSON.stringify(result.credentials)).toContain(
       "InsuranceEligibilityCredential",
@@ -59,7 +61,7 @@ describe("verifyQr VP resolver behavior", () => {
     expect(result.warnings?.join(" ")).toContain("ES256");
   });
 
-  it("returns green only when a usable VP proof is present", async () => {
+  it("does not return green for an unverified Data Integrity proof shape", async () => {
     const signedVp = {
       ...unsignedVp,
       proof: {
@@ -80,8 +82,10 @@ describe("verifyQr VP resolver behavior", () => {
       "http://127.0.0.1:5175/api/share-gateway/presentations/vp-test-001.json",
     );
 
-    expect(result.verified).toBe(true);
-    expect(result.trustLevel).toBe("green");
+    expect(result.verified).toBe(false);
+    expect(result.trustLevel).toBe("yellow");
+    expect(result.warnings?.join(" ")).toContain("Data Integrity proof");
+    expect(result.warnings?.join(" ")).toContain("cryptosuite");
   });
 
   it("keeps legacy embedded demo VP URLs out of green trust", async () => {
@@ -105,7 +109,7 @@ describe("verifyQr VP resolver behavior", () => {
       legacyUrl,
     );
 
-    expect(result.verified).toBe(true);
+    expect(result.verified).toBe(false);
     expect(result.trustLevel).toBe("yellow");
     expect(result.warnings?.join(" ")).toContain("legacy");
     expect(result.warnings?.join(" ")).toContain("tc_payload");
@@ -123,6 +127,20 @@ describe("verifyQr VP resolver behavior", () => {
       signingKey,
       signUnsignedCredentials: true,
     });
+    const signedPayload = parseJwtPayload(signed.jwt) ?? {};
+    const nestedCredential = Array.isArray(signedPayload.verifiableCredential)
+      ? signedPayload.verifiableCredential[0]
+      : undefined;
+    const nestedCredentialJwt = extractCredentialJwt(nestedCredential);
+    expect(signedPayload.vp).toBeUndefined();
+    expect(signedPayload.type).toEqual(
+      expect.arrayContaining(["VerifiablePresentation"]),
+    );
+    expect(nestedCredential).toMatchObject({
+      type: ["VerifiableCredential", "EnvelopedVerifiableCredential"],
+    });
+    expect(nestedCredentialJwt).toEqual(expect.stringMatching(/^eyJ/));
+    expect(parseJwtPayload(String(nestedCredentialJwt))?.vc).toBeUndefined();
     const presentationUrl =
       "https://wallet.example/api/share-gateway/presentations/vp-test-001.jwt";
     const result = await verifyQr(
@@ -223,10 +241,7 @@ describe("verifyQr VP resolver behavior", () => {
     });
     const tamperedJwt = tamperJwtPayload(signed.jwt, (payload) => ({
       ...payload,
-      vp: {
-        ...(payload.vp as Record<string, unknown>),
-        holder: "did:key:attacker",
-      },
+      holder: "did:key:attacker",
     }));
     const presentationUrl =
       "https://wallet.example/api/share-gateway/presentations/vp-test-001.jwt";
@@ -287,6 +302,10 @@ describe("verifyQr VP resolver behavior", () => {
       signingKey,
       credentialType: "PatientIdentityCredential",
     });
+    expect(parseJwtPayload(signed.jwt)?.vc).toBeUndefined();
+    expect(parseJwtPayload(signed.jwt)?.type).toEqual(
+      expect.arrayContaining(["VerifiableCredential"]),
+    );
     const hospitalJwksUrl =
       "https://trustcarehealth.live/hospital/tcc/did/jwks.json";
     const result = await verifyQr(

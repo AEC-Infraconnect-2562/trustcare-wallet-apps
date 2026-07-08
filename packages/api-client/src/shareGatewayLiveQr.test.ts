@@ -33,6 +33,8 @@ runLiveGatewayTest("live share gateway QR resolution", () => {
       selectedCardIds: cards.slice(0, 2).map((card) => card.id),
       recipient: "TrustCare live QR verifier",
       purpose: "เตรียมเข้ารับบริการ OPD",
+      gatewayBaseUrl,
+      viewerBaseUrl: appOrigin,
       origin: appOrigin,
     });
     const vpPackage = expectVpPackage(vp);

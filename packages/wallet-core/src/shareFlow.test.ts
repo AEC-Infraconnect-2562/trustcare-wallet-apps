@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Buffer } from "node:buffer";
 import {
   assessLocalReadiness,
   buildSharePackage,
@@ -6,6 +7,7 @@ import {
   createShareDraftFromPrepare,
   createSharePolicy,
   createShareResult,
+  extractCredentialJwt,
   recommendPolicyForDraft,
   validateShareDraft,
   type ReadinessContext,
@@ -350,13 +352,19 @@ describe("premium share flow policy and validation", () => {
   });
 
   it("keeps signed Portal credential JWTs inside Purpose VP packages", () => {
+    const signedPortalJwt = makeJwt({
+      id: "vc-signed-portal-001",
+      type: ["VerifiableCredential", "PatientIdentityCredential"],
+      issuer: "did:web:trustcare.network:hospital:tcc",
+      credentialSubject: { id: "did:key:holder001" },
+    });
     const cards = [
       {
         ...card(1, "patient_identity"),
-        credentialJwt: "old.jwt.value",
+        credentialJwt: signedPortalJwt,
         credentialProof: {
           type: "jwt",
-          jwt: "signed.portal.sd.jwt",
+          jwt: signedPortalJwt,
           alg: "ES256",
           kid: "did:web:trustcare.network:hospital:tcc#vc-signing-key",
         },
@@ -380,12 +388,17 @@ describe("premium share flow policy and validation", () => {
     expect(sharePackage.presentation.qrData).toMatch(
       /^https:\/\/wallet\.example\/api\/share-gateway\/presentations\/vp_.*\.jwt$/,
     );
-    expect(sharePackage.payload.verifiableCredential).toEqual([
-      "signed.portal.sd.jwt",
+    const credentials = sharePackage.payload.verifiableCredential as unknown[];
+    expect(credentials).toEqual([
+      expect.objectContaining({
+        id: expect.stringMatching(/^data:application\/vc\+jwt,/),
+        type: ["VerifiableCredential", "EnvelopedVerifiableCredential"],
+      }),
       expect.objectContaining({
         type: ["VerifiableCredential"],
       }),
     ]);
+    expect(extractCredentialJwt(credentials[0])).toBe(signedPortalJwt);
     expect(sharePackage.payload.trustcare).toMatchObject({
       credentialJwtCount: 1,
       context: "opd_visit",
@@ -497,4 +510,13 @@ function withoutHolderDid(source: WalletCard): WalletCard {
       credentialSubject,
     },
   };
+}
+
+function makeJwt(payload: Record<string, unknown>): string {
+  const header = { alg: "ES256", kid: "did:web:issuer.example#key-1" };
+  return [
+    Buffer.from(JSON.stringify(header)).toString("base64url"),
+    Buffer.from(JSON.stringify(payload)).toString("base64url"),
+    "signature",
+  ].join(".");
 }

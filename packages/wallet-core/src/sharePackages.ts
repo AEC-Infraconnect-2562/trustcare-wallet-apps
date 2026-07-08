@@ -10,6 +10,10 @@ import {
   walletDocumentRecordFromCard,
 } from "./canonicalDocuments";
 import { hashJson } from "./demoResolvers";
+import {
+  envelopedVerifiableCredentialFromJwt,
+  looksLikeJwt,
+} from "./credentialProof";
 import { assertPrimaryVerifierQrPayload } from "./qrContracts";
 import { shareGatewayArtifactUrl } from "./shareGateway";
 import { createTrustCareShlGatewayPublication } from "./shlGateway";
@@ -120,15 +124,13 @@ export function buildSharePackage(
 
   const records = selectedCards.map(walletDocumentRecordFromCard);
   const credentialPayloads = selectedCards
-    .map(
-      (card, index) =>
-        card.credentialProof?.jwt ??
-        card.credentialJwt ??
-        records[index]?.credentialData,
-    )
-    .filter((value): value is string | Record<string, unknown> =>
-      Boolean(value),
-    );
+    .map((card, index) => {
+      const jwt = card.credentialProof?.jwt ?? card.credentialJwt;
+      if (jwt && looksLikeJwt(jwt))
+        return envelopedVerifiableCredentialFromJwt(jwt);
+      return records[index]?.credentialData;
+    })
+    .filter((value): value is Record<string, unknown> => Boolean(value));
   const presentationId = `vp_${stableId({
     mode: input.mode,
     context: input.context,
@@ -149,9 +151,10 @@ export function buildSharePackage(
   }
   const directCredentialJwt =
     selectedCards.length === 1
-      ? (selectedCards[0]?.credentialProof?.jwt ??
-        selectedCards[0]?.credentialJwt ??
-        null)
+      ? validJwtOrNull(
+          selectedCards[0]?.credentialProof?.jwt ??
+            selectedCards[0]?.credentialJwt,
+        )
       : null;
   const payload = {
     "@context": [
@@ -171,9 +174,8 @@ export function buildSharePackage(
       context: input.context,
       documentTypes: records.map((record) => record.documentType),
       documentReferences: records.map((record) => record.documentReference),
-      credentialJwtCount: credentialPayloads.filter(
-        (value) => typeof value === "string",
-      ).length,
+      credentialJwtCount: credentialPayloads.filter(isEnvelopedCredentialJwt)
+        .length,
       payloadHash: hashJson(records.map((record) => record.credentialId)),
     },
   };
@@ -240,4 +242,15 @@ function stableId(value: unknown): string {
   return hashJson(value)
     .replace(/^sha256:/, "")
     .slice(0, 16);
+}
+
+function validJwtOrNull(value: string | null | undefined): string | null {
+  return value && looksLikeJwt(value) ? value : null;
+}
+
+function isEnvelopedCredentialJwt(value: Record<string, unknown>): boolean {
+  return (
+    typeof value.id === "string" &&
+    value.id.startsWith("data:application/vc+jwt,")
+  );
 }

@@ -9,10 +9,22 @@ export type TrustCareJwtToken = {
   disclosures: string[];
 };
 
+export type DataIntegrityProofStatus = {
+  present: boolean;
+  verified: boolean;
+  summary: string;
+  warnings: string[];
+};
+
 export const TRUSTCARE_STANDARD_JWKS_ORIGINS = [
   "https://trustcarehealth.live",
   "https://www.trustcarehealth.live",
 ];
+
+export const W3C_VC_JWT_MEDIA_TYPE = "application/vc+jwt";
+export const W3C_VP_JWT_MEDIA_TYPE = "application/vp+jwt";
+
+type JwtArtifactKind = "vc" | "vp";
 
 export type TrustCareJwksCandidateResult = {
   candidates: string[];
@@ -57,6 +69,58 @@ export function looksLikeJwt(value: string): boolean {
   return Boolean(splitJwtToken(value));
 }
 
+export function securedJwtDataUrl(jwt: string, kind: JwtArtifactKind): string {
+  const mediaType =
+    kind === "vc" ? W3C_VC_JWT_MEDIA_TYPE : W3C_VP_JWT_MEDIA_TYPE;
+  return `data:${mediaType},${encodeURIComponent(jwt)}`;
+}
+
+export function envelopedVerifiableCredentialFromJwt(jwt: string): JsonRecord {
+  return {
+    "@context": ["https://www.w3.org/ns/credentials/v2"],
+    id: securedJwtDataUrl(jwt, "vc"),
+    type: ["VerifiableCredential", "EnvelopedVerifiableCredential"],
+  };
+}
+
+export function envelopedVerifiablePresentationFromJwt(
+  jwt: string,
+): JsonRecord {
+  return {
+    "@context": ["https://www.w3.org/ns/credentials/v2"],
+    id: securedJwtDataUrl(jwt, "vp"),
+    type: ["VerifiablePresentation", "EnvelopedVerifiablePresentation"],
+  };
+}
+
+export function jwtFromSecuredDataUrl(
+  value: string,
+  kind?: JwtArtifactKind,
+): string | null {
+  const trimmed = value.trim();
+  if (!trimmed.toLowerCase().startsWith("data:")) return null;
+  const commaIndex = trimmed.indexOf(",");
+  if (commaIndex < 0) return null;
+  const metadata = trimmed.slice("data:".length, commaIndex).toLowerCase();
+  const encoded = trimmed.slice(commaIndex + 1);
+  const [mediaType, ...parameters] = metadata.split(";");
+  const allowed =
+    kind === "vc"
+      ? [W3C_VC_JWT_MEDIA_TYPE]
+      : kind === "vp"
+        ? [W3C_VP_JWT_MEDIA_TYPE]
+        : [W3C_VC_JWT_MEDIA_TYPE, W3C_VP_JWT_MEDIA_TYPE, "application/jwt"];
+  if (!allowed.includes(mediaType)) return null;
+  try {
+    const jwt = parameters.includes("base64")
+      ? atob(encoded)
+      : decodeURIComponent(encoded);
+    return looksLikeJwt(jwt) ? jwt : null;
+  } catch {
+    return null;
+  }
+}
+
 function decodeBase64Url(value: string): string {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
@@ -74,7 +138,7 @@ export function parseJsonObject(value: string): JsonRecord | null {
 }
 
 export function parseJwtPayload(value: string): JsonRecord | null {
-  const token = splitJwtToken(value);
+  const token = splitJwtToken(jwtFromSecuredDataUrl(value) ?? value);
   if (!token) return null;
   try {
     return parseJsonObject(decodeBase64Url(token.issuerJwt.split(".")[1]));
@@ -86,43 +150,63 @@ export function parseJwtPayload(value: string): JsonRecord | null {
 export function extractJwtFromJson(
   value: JsonRecord | null,
   keys: string[],
+  kind?: JwtArtifactKind,
 ): string | null {
   if (!value) return null;
+  const idJwt =
+    typeof value.id === "string" ? jwtFromSecuredDataUrl(value.id, kind) : null;
+  if (idJwt) return idJwt;
   for (const key of keys) {
     const candidate = value[key];
-    if (typeof candidate === "string" && looksLikeJwt(candidate))
-      return candidate;
+    if (typeof candidate !== "string") continue;
+    const securedJwt = jwtFromSecuredDataUrl(candidate, kind);
+    if (securedJwt) return securedJwt;
+    if (looksLikeJwt(candidate)) return candidate;
   }
   const nested =
     jsonRecord(value.payload) ??
     jsonRecord(value.result) ??
     jsonRecord(value.data);
-  return nested ? extractJwtFromJson(nested, keys) : null;
+  return nested ? extractJwtFromJson(nested, keys, kind) : null;
 }
 
 export function extractPresentationJwt(
   value: JsonRecord | null,
 ): string | null {
-  return extractJwtFromJson(value, [
-    "jwt",
-    "vpJwt",
-    "presentationJwt",
-    "token",
-  ]);
+  return extractJwtFromJson(
+    value,
+    ["jwt", "vpJwt", "presentationJwt", "token"],
+    "vp",
+  );
 }
 
 export function extractCredentialJwt(value: unknown): string | null {
-  if (typeof value === "string" && looksLikeJwt(value)) return value;
+  if (typeof value === "string") {
+    return (
+      jwtFromSecuredDataUrl(value, "vc") ?? (looksLikeJwt(value) ? value : null)
+    );
+  }
   const object = jsonRecord(value);
   if (!object) return null;
-  return extractJwtFromJson(object, ["jwt", "vcJwt", "sdJwtVc"]);
+  return extractJwtFromJson(object, ["jwt", "vcJwt", "sdJwtVc"], "vc");
 }
 
 export function unwrapVcPayload(value: unknown): JsonRecord | null {
+  if (typeof value === "string") {
+    const payload = parseJwtPayload(value);
+    return payload ? unwrapVcPayload(payload) : null;
+  }
   const object = jsonRecord(value);
   if (!object) return null;
-  const vc = object.vc;
-  return jsonRecord(vc) ?? (isVerifiableCredential(object) ? object : null);
+  const securedJwt =
+    typeof object.id === "string"
+      ? jwtFromSecuredDataUrl(object.id, "vc")
+      : null;
+  if (securedJwt) {
+    const payload = parseJwtPayload(securedJwt);
+    return payload ? unwrapVcPayload(payload) : null;
+  }
+  return isVerifiableCredential(object) ? object : null;
 }
 
 export function unwrapVpPayload(value: unknown): JsonRecord | null {
@@ -133,16 +217,30 @@ function unwrapVpPayloadInner(
   value: unknown,
   seen: Set<unknown>,
 ): JsonRecord | null {
+  if (typeof value === "string") {
+    return (
+      unwrapVpPayloadInner(parseJsonObject(value), seen) ??
+      unwrapVpPayloadInner(parseJwtPayload(value), seen)
+    );
+  }
   const object = jsonRecord(value);
   if (!object) return null;
   if (seen.has(object)) return null;
   seen.add(object);
+  const securedJwt =
+    typeof object.id === "string"
+      ? jwtFromSecuredDataUrl(object.id, "vp")
+      : null;
+  if (securedJwt) {
+    const payload = parseJwtPayload(securedJwt);
+    const vp = unwrapVpPayloadInner(payload, seen);
+    if (vp) return vp;
+  }
   if (isVerifiablePresentation(object)) return object;
 
   const nestedKeys = [
     "payload",
     "presentation",
-    "vp",
     "verifiablePresentation",
     "data",
     "json",
@@ -186,8 +284,7 @@ export function firstCredentialIssuer(
   credentials: unknown[],
 ): string | undefined {
   for (const credential of credentials) {
-    const object = jsonRecord(credential);
-    const vc = unwrapVcPayload(object) ?? object;
+    const vc = unwrapVcPayload(credential) ?? jsonRecord(credential);
     const issuer = credentialIssuerName(vc);
     if (issuer) return issuer;
   }
@@ -261,6 +358,22 @@ export function hasVerifiableProof(value: JsonRecord): boolean {
   return proofLooksUsable(value.proof);
 }
 
+export function assessDataIntegrityProof(
+  value: JsonRecord,
+): DataIntegrityProofStatus {
+  const present = proofLooksUsable(value.proof);
+  return {
+    present,
+    verified: false,
+    summary: present ? proofSummary(value) : "not present",
+    warnings: present
+      ? [
+          "Data Integrity proof is present, but TrustCare has not performed cryptosuite/key-material verification for this artifact.",
+        ]
+      : [],
+  };
+}
+
 export function proofSummary(value: JsonRecord): string {
   const proof = Array.isArray(value.proof) ? value.proof[0] : value.proof;
   const proofObject = jsonRecord(proof);
@@ -283,7 +396,9 @@ export function walletCardHasCryptographicProof(
   return Boolean(
     card.credentialProof?.jwt ??
     card.credentialJwt ??
-    (credentialData ? hasVerifiableProof(credentialData) : false),
+    (credentialData
+      ? assessDataIntegrityProof(credentialData).verified
+      : false),
   );
 }
 
@@ -441,9 +556,7 @@ function trustCareJkuDecision(input: {
   jku: string;
   allowedOrigins: Set<string>;
   allowPrivateJwks: boolean;
-}):
-  | { ok: true; url: string }
-  | { ok: false; reason: string } {
+}): { ok: true; url: string } | { ok: false; reason: string } {
   const parsed = parseUrl(input.jku);
   if (!parsed) return { ok: false, reason: "not an absolute URL" };
   const origin = normalizeOrigin(parsed.origin);
@@ -462,7 +575,8 @@ function trustCareJkuDecision(input: {
   if (!input.allowedOrigins.has(origin)) {
     return {
       ok: false,
-      reason: "origin is not the VP source, issuer DID, or trusted TrustCare origin",
+      reason:
+        "origin is not the VP source, issuer DID, or trusted TrustCare origin",
     };
   }
   return { ok: true, url: parsed.href };

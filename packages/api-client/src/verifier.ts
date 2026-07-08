@@ -1,13 +1,13 @@
 import { assertVerifierResult } from "@trustcare/contracts";
 import {
   audienceSummary,
+  assessDataIntegrityProof,
   buildTrustCareJwksCandidateResult,
   credentialIssuerName as issuerName,
   documentTypesFromCredentials,
   extractCredentialJwt,
   extractPresentationJwt as extractJwtFromJson,
   firstCredentialIssuer as firstIssuer,
-  hasVerifiableProof,
   jsonRecord as objectValue,
   jwksToKeys,
   keyMatchesKid,
@@ -20,7 +20,6 @@ import {
   parseShlLink,
   parseUrl,
   parseTrustCareQr,
-  proofSummary,
   fetchShlManifest,
   resolveDemoResolverPayload,
   resolveDemoVpReferencePayload,
@@ -147,9 +146,9 @@ async function verifyQrUnsafe(
     const credentialCount = Array.isArray(payload.verifiableCredential)
       ? payload.verifiableCredential.length
       : 0;
-    const hasProof = hasVerifiableProof(payload);
+    const dataIntegrity = assessDataIntegrityProof(payload);
     return {
-      verified: credentialCount > 0 && hasProof,
+      verified: false,
       trustLevel: credentialCount > 0 ? "yellow" : "red",
       protocol: "trustcare-vp",
       issuer: "TrustCare Wallet legacy demo resolver",
@@ -187,14 +186,22 @@ async function verifyQrUnsafe(
         {
           key: "proof",
           label: "มี proof/signature ที่ตรวจสอบได้",
-          ok: hasProof,
-          detail: hasProof ? "proof present" : "missing",
+          ok: false,
+          detail: dataIntegrity.present
+            ? `${dataIntegrity.summary} present but not cryptographically verified`
+            : "missing",
         },
       ],
       warnings: [
         "QR รูปแบบ legacy ที่ฝัง payload ใน URL ใช้ได้เฉพาะ backward compatibility เท่านั้น.",
         "ไม่ให้ green badge เพราะ legacy tc_payload ไม่ใช่ resolver-backed artifact ตาม production trust model.",
-        ...(!hasProof
+        ...dataIntegrity.warnings,
+        ...(dataIntegrity.present
+          ? [
+              "พบ Data Integrity proof แต่ยังไม่ได้ verify cryptosuite/key material จริง จึงยังไม่ถือว่า verified.",
+            ]
+          : []),
+        ...(!dataIntegrity.present
           ? [
               "ไม่ให้ green badge เพราะ VP ยังไม่มี proof/signature แบบ ES256/EdDSA/Data Integrity ที่ตรวจสอบได้.",
             ]
@@ -782,19 +789,22 @@ function verifyResolvedVpPayload(resolved: ResolvedVpPayload): VerifierResult {
   const nestedCredentialVerified =
     nestedResults.length > 0 &&
     nestedResults.every((result) => result.verified);
-  const hasProof = jwtVerified || hasVerifiableProof(payload);
+  const dataIntegrity = assessDataIntegrityProof(payload);
+  const hasVerifiedProof = jwtVerified;
   const notExpired =
     !payload.validUntil ||
     new Date(String(payload.validUntil)).getTime() >= Date.now();
   const verified =
     credentialCount > 0 &&
-    hasProof &&
+    hasVerifiedProof &&
     (!resolved.jwt || nestedCredentialVerified) &&
     notExpired;
   const issuer =
     firstIssuer(credentials) ??
     resolved.jwtVerification?.issuer ??
-    (hasProof ? "TrustCare signed VP resolver" : "TrustCare VP resolver");
+    (hasVerifiedProof
+      ? "TrustCare signed VP resolver"
+      : "TrustCare VP resolver");
   return {
     verified,
     trustLevel: verified ? "green" : credentialCount > 0 ? "yellow" : "red",
@@ -813,12 +823,20 @@ function verifyResolvedVpPayload(resolved: ResolvedVpPayload): VerifierResult {
       {
         key: "signature",
         label: "Signature status",
-        ok: jwtVerified || hasVerifiableProof(payload),
+        ok: jwtVerified,
         detail: jwtVerified
           ? `ES256 / ${resolved.jwtVerification?.kid ?? "-"}`
-          : hasProof
-            ? proofSummary(payload)
+          : dataIntegrity.present
+            ? `${dataIntegrity.summary} present but not cryptographically verified`
             : "missing",
+      },
+      {
+        key: "data_integrity",
+        label: "Data Integrity proof",
+        ok: dataIntegrity.verified,
+        detail: dataIntegrity.present
+          ? "present; cryptosuite verification required"
+          : "not present",
       },
       {
         key: "issuer_key",
@@ -885,7 +903,13 @@ function verifyResolvedVpPayload(resolved: ResolvedVpPayload): VerifierResult {
             `Nested VC ${result.credentialId ?? result.kid ?? ""}: ${error}`,
         ),
       ),
-      ...(!hasProof
+      ...dataIntegrity.warnings,
+      ...(dataIntegrity.present && !jwtVerified
+        ? [
+            "พบ Data Integrity proof แต่ระบบยังไม่ถือว่า verified จนกว่าจะ verify cryptosuite/key material ตาม W3C Data Integrity ได้จริง.",
+          ]
+        : []),
+      ...(!hasVerifiedProof
         ? [
             "VP resolver ดึง payload ได้แล้ว แต่ยังไม่มี ES256/EdDSA/Data Integrity proof ที่ตรวจสอบได้ จึงยังไม่ให้ green badge.",
           ]

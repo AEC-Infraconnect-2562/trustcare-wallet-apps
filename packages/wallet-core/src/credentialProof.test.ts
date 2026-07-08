@@ -1,13 +1,17 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 import {
+  assessDataIntegrityProof,
   buildTrustCareJwksCandidateResult,
   buildTrustCareJwksCandidates,
   credentialIssuerName,
   documentTypesFromCredentials,
+  envelopedVerifiableCredentialFromJwt,
+  envelopedVerifiablePresentationFromJwt,
   extractCredentialJwt,
   extractPresentationJwt,
   hasVerifiableProof,
+  jwtFromSecuredDataUrl,
   keyMatchesKid,
   parseJwtPayload,
   proofSummary,
@@ -18,26 +22,36 @@ import {
 import type { WalletCard } from "./models";
 
 describe("credential proof standards layer", () => {
-  it("parses JWT and unwraps nested VP payloads through shared helpers", () => {
+  it("parses W3C direct JWT payloads and secured data URL envelopes", () => {
+    const vcJwt = makeJwt({
+      "@context": ["https://www.w3.org/ns/credentials/v2"],
+      id: "vc-shared-001",
+      type: ["VerifiableCredential", "PatientIdentityCredential"],
+      issuer: "did:web:issuer.example",
+      credentialSubject: { id: "did:key:patient" },
+    });
     const vp = {
+      "@context": ["https://www.w3.org/ns/credentials/v2"],
       id: "vp-shared-001",
       type: ["VerifiablePresentation", "PurposeVP"],
       holder: "did:key:patient",
+      verifiableCredential: [envelopedVerifiableCredentialFromJwt(vcJwt)],
     };
     const jwt = makeJwt({
+      ...vp,
       iss: "did:web:wallet.example",
       aud: "https://trustcare.network/verifier",
-      vp,
     });
+    const envelopedVp = envelopedVerifiablePresentationFromJwt(jwt);
 
     expect(splitJwtToken(`${jwt}~disclosure`)?.disclosures).toEqual([
       "disclosure",
     ]);
     expect(parseJwtPayload(jwt)?.iss).toBe("did:web:wallet.example");
     expect(unwrapVpPayload({ payload: jwt })?.id).toBe("vp-shared-001");
-    expect(
-      extractPresentationJwt({ result: { data: { presentationJwt: jwt } } }),
-    ).toBe(jwt);
+    expect(extractPresentationJwt(envelopedVp)).toBe(jwt);
+    expect(extractCredentialJwt(vp.verifiableCredential[0])).toBe(vcJwt);
+    expect(jwtFromSecuredDataUrl(String(envelopedVp.id), "vp")).toBe(jwt);
   });
 
   it("keeps proof usability checks out of verifier and gateway code", () => {
@@ -61,29 +75,34 @@ describe("credential proof standards layer", () => {
     expect(proofSummary({ trustcare: { signingStatus: "jwt_signed" } })).toBe(
       "jwt_signed",
     );
+    expect(
+      assessDataIntegrityProof({
+        proof: {
+          type: "DataIntegrityProof",
+          proofValue: "zRealisticProofValue",
+        },
+      }),
+    ).toMatchObject({
+      present: true,
+      verified: false,
+    });
   });
 
   it("normalizes credential claims and issuer metadata", () => {
     const vcJwt = makeJwt({
-      vc: {
-        id: "vc-001",
-        type: ["VerifiableCredential", "PatientSummaryCredential"],
-      },
+      id: "vc-001",
+      type: ["VerifiableCredential", "PatientSummaryCredential"],
+      issuer: { id: "did:web:tcc.example", name: "TrustCare Central" },
+      credentialSubject: { id: "did:key:patient" },
     });
-    const credentials = [
-      {
-        jwt: vcJwt,
-        vc: {
-          type: ["VerifiableCredential", "PatientIdentityCredential"],
-          issuer: { id: "did:web:tcc.example", name: "TrustCare Central" },
-        },
-      },
-    ];
+    const credentials = [envelopedVerifiableCredentialFromJwt(vcJwt)];
 
     expect(extractCredentialJwt(credentials[0])).toBe(vcJwt);
-    expect(credentialIssuerName(credentials[0].vc)).toBe("TrustCare Central");
+    expect(credentialIssuerName(parseJwtPayload(vcJwt))).toBe(
+      "TrustCare Central",
+    );
     expect(documentTypesFromCredentials(credentials)).toEqual([
-      "PatientIdentityCredential",
+      "PatientSummaryCredential",
     ]);
   });
 
@@ -95,7 +114,9 @@ describe("credential proof standards layer", () => {
         "https://wallet.example/api/share-gateway/presentations/vp.jwt",
     });
 
-    expect(candidates).toContain("https://wallet.example/.well-known/jwks.json");
+    expect(candidates).toContain(
+      "https://wallet.example/.well-known/jwks.json",
+    );
     expect(candidates).toContain(
       "https://wallet.example/api/share-gateway/.well-known/jwks.json",
     );
@@ -153,8 +174,7 @@ describe("credential proof standards layer", () => {
     const localDevResult = buildTrustCareJwksCandidateResult({
       header: { jku: "http://127.0.0.1:5175/.well-known/jwks.json" },
       payload: { iss: "did:web:localhost%3A5175" },
-      sourceUrl:
-        "http://127.0.0.1:5175/api/share-gateway/presentations/vp.jwt",
+      sourceUrl: "http://127.0.0.1:5175/api/share-gateway/presentations/vp.jwt",
     });
 
     expect(productionResult.candidates).not.toContain(
@@ -168,7 +188,7 @@ describe("credential proof standards layer", () => {
     );
   });
 
-  it("uses the same cryptographic proof predicate for wallet cards and envelopes", () => {
+  it("does not treat unverified Data Integrity shape as cryptographic proof", () => {
     const card: WalletCard = {
       id: 1,
       cardType: "patient_summary",
@@ -185,7 +205,16 @@ describe("credential proof standards layer", () => {
       createdAt: "2026-07-08T00:00:00.000Z",
     };
 
-    expect(walletCardHasCryptographicProof(card)).toBe(true);
+    expect(walletCardHasCryptographicProof(card)).toBe(false);
+    expect(
+      walletCardHasCryptographicProof({
+        ...card,
+        credentialJwt: makeJwt({
+          id: "vc-001",
+          type: ["VerifiableCredential"],
+        }),
+      }),
+    ).toBe(true);
   });
 });
 

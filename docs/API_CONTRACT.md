@@ -48,7 +48,7 @@ GET  /api/share-gateway/presentations/<presentationId>.jwt
 GET  /api/share-gateway/.well-known/jwks.json
 ```
 
-Production should point `VITE_TRUSTCARE_SHARE_GATEWAY_URL` to TrustCare Portal Backend. The gateway signs VP artifacts as `vp+JWT` with ES256 or EdDSA and exposes a JWKS endpoint that verifiers can resolve. The verifier may parse and fetch VP payloads locally, but a green trust badge requires a verified JWT signature or W3C Data Integrity proof plus nested credential verification. Resolver-only, metadata-only, or legacy `tc_payload` flows must stay yellow/red, never green.
+Production should point `VITE_TRUSTCARE_SHARE_GATEWAY_URL` to TrustCare Portal Backend. The gateway signs VP artifacts as `vp+jwt` with ES256 or EdDSA and exposes a JWKS endpoint that verifiers can resolve. The verifier may parse and fetch VP payloads locally, but a green trust badge requires a verified JWT signature or a cryptographically verified W3C Data Integrity proof plus nested credential verification. Resolver-only, metadata-only, unverified Data Integrity proof shapes, or legacy `tc_payload` flows must stay yellow/red, never green.
 
 The browser wallet must not own production private keys. Local development uses an in-memory Vite gateway to simulate the backend signer; production should use Portal Backend/KMS/S3-backed persistence.
 

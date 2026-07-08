@@ -5,7 +5,10 @@ import {
   generateKeyPair,
   importJWK,
 } from "jose";
-import { extractCredentialJwt } from "./credentialProof";
+import {
+  envelopedVerifiableCredentialFromJwt,
+  extractCredentialJwt,
+} from "./credentialProof";
 
 export type JsonRecord = Record<string, unknown>;
 
@@ -125,17 +128,23 @@ export async function signTrustCareCredentialJwt(input: {
   const disclosureDigests = await buildDisclosureDigests(
     objectValue(credential.credentialSubject),
   );
+  const jwtCredential = stripUndefined<JsonRecord>({
+    ...credential,
+    id: credentialId,
+    trustcare: {
+      ...objectValue(credential.trustcare),
+      jwtProfile: "w3c-vc-jose-cose",
+      credentialType,
+      claimDigest: digest,
+      disclosureDigests,
+    },
+  });
   const key = await importJWK(signingKey.privateJwk, signingKey.alg);
-  const jwt = await new SignJWT({
-    vc: credential,
-    vct: credentialType,
-    trustcare_claim_digest: digest,
-    trustcare_disclosure_digests: disclosureDigests,
-  })
+  const jwt = await new SignJWT(jwtCredential)
     .setProtectedHeader(
       stripUndefined({
         alg: signingKey.alg,
-        typ: "vc+JWT",
+        typ: "vc+jwt",
         kid: signingKey.kid,
         jku: signingKey.jku,
       }),
@@ -148,7 +157,7 @@ export async function signTrustCareCredentialJwt(input: {
     .setExpirationTime(Math.floor(new Date(expiresAt).getTime() / 1000))
     .sign(key);
   return {
-    credential,
+    credential: jwtCredential,
     credentialId,
     credentialType,
     jwt,
@@ -210,6 +219,12 @@ export async function signTrustCarePresentationJwt(input: {
     );
   }
 
+  const credentialJwtDigests = await Promise.all(
+    credentialJwts.map((jwtValue) => sha256Hex(jwtValue)),
+  );
+  const envelopedCredentials = credentialJwts.map((jwtValue) =>
+    envelopedVerifiableCredentialFromJwt(jwtValue),
+  );
   const vp = stripUndefined<JsonRecord>({
     ...input.vp,
     type: ensureArray(input.vp.type, "VerifiablePresentation"),
@@ -219,14 +234,16 @@ export async function signTrustCarePresentationJwt(input: {
     ),
     purpose: input.purpose ?? input.vp.purpose,
     validUntil: expiresAt,
-    verifiableCredential: credentialJwts,
+    verifiableCredential: envelopedCredentials,
     trustcare: {
       ...objectValue(input.vp.trustcare),
+      jwtProfile: "w3c-vc-jose-cose",
       signingStatus: "jwt_signed",
       signingAlgorithm: signingKey.alg,
       signingKid: signingKey.kid,
       signingJwksUrl: signingKey.jku,
       credentialJwtCount: credentialJwts.length,
+      credentialJwtDigests,
     },
   });
   const presentationHash = await sha256Hex({
@@ -238,20 +255,16 @@ export async function signTrustCarePresentationJwt(input: {
     vp.id,
     `vp_${presentationHash.slice(0, 16)}`,
   );
+  const jwtPresentation = stripUndefined<JsonRecord>({
+    ...vp,
+    id: presentationId,
+  });
   const key = await importJWK(signingKey.privateJwk, signingKey.alg);
-  const jwt = await new SignJWT({
-    vp: {
-      ...vp,
-      id: presentationId,
-    },
-    trustcare_credential_ids: credentialJwts
-      .map((jwtValue) => jwtValue.split(".")[1] ?? "")
-      .filter(Boolean),
-  })
+  const jwt = await new SignJWT(jwtPresentation)
     .setProtectedHeader(
       stripUndefined({
         alg: signingKey.alg,
-        typ: "vp+JWT",
+        typ: "vp+jwt",
         kid: signingKey.kid,
         jku: signingKey.jku,
       }),
@@ -265,10 +278,7 @@ export async function signTrustCarePresentationJwt(input: {
     .sign(key);
 
   return {
-    vp: {
-      ...vp,
-      id: presentationId,
-    },
+    vp: jwtPresentation,
     jwt,
     credentialJwts,
     warnings,

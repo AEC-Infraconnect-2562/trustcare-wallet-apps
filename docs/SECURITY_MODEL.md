@@ -24,7 +24,7 @@
 
 The browser wallet must not hold production signing private keys. When Wallet creates a share package, it publishes the VP request to a Share Gateway. The gateway signs the VP as `vp+JWT` with ES256 or EdDSA, persists the artifact, and returns a resolver URL for QR display.
 
-Local development uses the Vite share gateway as a backend-shaped simulator: it generates an ephemeral ES256 key in Node, exposes `/api/share-gateway/.well-known/jwks.json`, signs VP JWTs, and stores artifacts in memory. This is suitable for demo verification but not for production trust or revocation.
+Local development and the Railway demo use a backend-shaped share gateway simulator: it generates an ephemeral ES256 key in Node, exposes `/api/share-gateway/.well-known/jwks.json`, signs W3C `vp+jwt` artifacts with enveloped nested `vc+jwt` credentials, and stores artifacts in memory. This is suitable for demo verification and cross-device QR testing but not for production persistence, revocation, or KMS-backed trust.
 
 Green verification requires verifier-side signature validation against JWKS plus nested VC verification. Payload metadata such as `signingStatus: verified` is never sufficient proof.
 
