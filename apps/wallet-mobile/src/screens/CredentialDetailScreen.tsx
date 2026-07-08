@@ -4,7 +4,13 @@ import { useLocalSearchParams, router } from "expo-router";
 import { Download, Eye, QrCode, Shield, ArrowLeft } from "lucide-react-native";
 import * as ScreenCapture from "expo-screen-capture";
 import { walletApi } from "@trustcare/api-client";
-import { flattenCardsByCategory, getDemoCardsByCategory, type WalletPresentationResponse } from "@trustcare/wallet-core";
+import {
+  flattenCardsByCategory,
+  getDemoCardsByCategory,
+  presentationEnvelopeFromPresentation,
+  presentationEnvelopeFromWalletCard,
+  type WalletPresentationResponse,
+} from "@trustcare/wallet-core";
 import { CredentialDocumentNative } from "../components/CredentialDocumentNative";
 import { useActiveWalletUser } from "../hooks/useActiveWalletUser";
 import { useBiometricGate } from "../hooks/useBiometricGate";
@@ -21,6 +27,12 @@ export function CredentialDetailScreen() {
   const biometric = useBiometricGate();
   const apiOptions = useMemo(() => ({ url: env.apiUrl, demoMode: env.demoMode, demoOrigin: "https://trustcare.example.com", userId: user.id }), [user.id]);
   const card = useMemo(() => flattenCardsByCategory(getDemoCardsByCategory(user.id)).find(item => String(item.id) === String(id)), [id, user.id]);
+  const envelope = useMemo(() => {
+    if (!card) return null;
+    return presentation
+      ? presentationEnvelopeFromPresentation(card, presentation)
+      : presentationEnvelopeFromWalletCard(card);
+  }, [card, presentation]);
 
   useEffect(() => {
     if (!env.screenCaptureProtection) return undefined;
@@ -46,7 +58,7 @@ export function CredentialDetailScreen() {
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <Pressable style={styles.back} onPress={() => router.back()}><ArrowLeft color="#4f67f2" /><Text style={styles.backText}>กลับ</Text></Pressable>
-      <CredentialDocumentNative card={card} qrValue={presentation?.qrData} />
+      {envelope ? <CredentialDocumentNative card={card} envelope={envelope} qrValue={presentation?.qrData} /> : null}
       <View style={styles.actions}>
         <Pressable style={styles.actionPrimary} onPress={() => void generateQr()}><QrCode color="#fff" /><Text style={styles.actionPrimaryText}>QR Code</Text></Pressable>
         <Pressable style={styles.actionPurple} onPress={() => void generateQr(["credentialSubject.patient.fullNameTh"])}><Eye color="#7c3aed" /><Text style={styles.actionPurpleText}>SD (ZKP)</Text></Pressable>
@@ -72,16 +84,26 @@ export function CredentialDetailScreen() {
       <View style={styles.detailBox}>
         {tab === "details" && (
           <>
-            <Row label="ประเภท" value={card.displayName} />
+            <Row label="ประเภท" value={envelope?.display.title ?? card.displayName} />
             <Row label="Credential ID" value={String(card.credentialId)} mono />
-            <Row label="Issuer DID" value={card.issuerDid ?? "-"} mono />
-            <Row label="สถานะ" value="ใช้งานได้" />
+            <Row label="Issuer DID" value={envelope?.issuer?.did ?? card.issuerDid ?? "-"} mono />
+            <Row label="Trust" value={envelope?.trust.status ?? "proof_missing"} />
             <Row label="วันที่ออก" value={card.issuedAt ? new Date(card.issuedAt).toLocaleDateString("th-TH") : "-"} />
-            <Row label="วันหมดอายุ" value={card.expiresAt ? new Date(card.expiresAt).toLocaleDateString("th-TH") : "-"} />
+            <Row label="วันหมดอายุ" value={envelope?.policy.expiresAt ? new Date(envelope.policy.expiresAt).toLocaleDateString("th-TH") : "-"} />
           </>
         )}
         {tab === "trust" && (
-          <View style={styles.trustRow}><Shield color="#0b6b42" /><Text style={styles.value}>Issuer, holder, status, consent, and expiry checklist are bound to the backend VP record.</Text></View>
+          <View style={styles.trustList}>
+            {envelope?.trust.checklist.map((item) => (
+              <View key={item.key} style={styles.trustRow}>
+                <Shield color={item.ok ? "#0b6b42" : "#b45309"} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.value}>{item.label}</Text>
+                  <Text style={styles.muted}>{item.detail ?? item.status ?? "-"}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
         )}
         {tab === "payload" && <Text style={styles.mono}>{JSON.stringify(card.credentialData, null, 2)}</Text>}
       </View>
@@ -119,6 +141,7 @@ const styles = StyleSheet.create({
   tabText: { color: "#62718a", fontWeight: "700" },
   activeTabText: { color: "#4f67f2" },
   detailBox: { borderRadius: 8, backgroundColor: "#fff", padding: 18, gap: 14 },
+  trustList: { gap: 12 },
   row: { flexDirection: "row", justifyContent: "space-between", gap: 16 },
   label: { color: "#62718a", fontSize: 13.5 },
   value: { flex: 1, textAlign: "right", color: "#111827", fontSize: 13.5, fontWeight: "700" },

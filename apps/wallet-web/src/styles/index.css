@@ -3150,6 +3150,160 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.portable-envelope {
+  max-width: 800px;
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 16px;
+  box-shadow: var(--shadow-xs);
+}
+
+.portable-envelope-compact {
+  margin-top: 14px;
+  background: color-mix(in srgb, var(--muted) 34%, var(--card));
+}
+
+.portable-envelope-header {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.portable-envelope-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, var(--card));
+}
+
+.portable-envelope-header small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.portable-envelope-header h3 {
+  margin: 2px 0 0;
+  color: var(--foreground);
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.portable-envelope-header p {
+  margin: 2px 0 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.portable-envelope-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.portable-envelope-info,
+.portable-envelope-section {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--muted) 38%, var(--card));
+}
+
+.portable-envelope-info {
+  padding: 11px 12px;
+}
+
+.portable-envelope-info span,
+.portable-envelope-section dt {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.portable-envelope-info strong,
+.portable-envelope-section dd {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.portable-envelope-info strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.portable-envelope-section {
+  padding: 14px;
+}
+
+.portable-envelope-section h4 {
+  margin: 0 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.portable-envelope-section dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.portable-envelope-section dd {
+  margin: 4px 0 0;
+}
+
+.portable-trust-list {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  list-style: none;
+}
+
+.portable-trust-list li {
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--card);
+  padding: 9px 10px;
+}
+
+.portable-trust-list span,
+.portable-trust-list strong {
+  min-width: 0;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.portable-trust-list strong {
+  color: #0b6b42;
+}
+
+.portable-trust-list li[data-ok="false"] strong {
+  color: #b45309;
+}
+
 .detail-tabs {
   max-width: 800px;
   margin: 0 auto;
@@ -9001,7 +9155,7 @@ b {
 
 .qr-popup-header h3 {
   margin-top: 4px;
-  color: var(--text);
+  color: var(--foreground);
   font-size: 18px;
   line-height: 1.28;
   font-weight: 720;
@@ -9010,7 +9164,7 @@ b {
 .qr-popup-header span {
   display: block;
   margin-top: 3px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12px;
 }
 
@@ -9032,7 +9186,7 @@ b {
 
 .qr-popup-help {
   margin: 12px 2px 0;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12.5px;
   line-height: 1.55;
   text-align: center;
@@ -9053,7 +9207,7 @@ b {
 }
 
 .qr-popup-meta dt {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 10.5px;
   font-weight: 650;
 }
@@ -9061,7 +9215,7 @@ b {
 .qr-popup-meta dd {
   margin: 2px 0 0;
   overflow-wrap: anywhere;
-  color: var(--text);
+  color: var(--foreground);
   font-size: 12px;
   font-weight: 650;
 }
@@ -9074,6 +9228,40 @@ b {
 }
 
 @media (max-width: 700px) {
+  .portable-envelope {
+    border-radius: 10px;
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .portable-envelope-header {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .portable-envelope-header .tc-badge {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .portable-envelope-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+
+  .portable-envelope-header h3 {
+    font-size: 15px;
+  }
+
+  .portable-envelope-grid,
+  .portable-envelope-section dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .portable-trust-list li {
+    flex-direction: column;
+  }
+
   .credential-dialog-header {
     align-items: flex-start;
   }

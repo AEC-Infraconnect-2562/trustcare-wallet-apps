@@ -175,8 +175,13 @@ export function buildSharePackage(
   };
   const qrData = input.gatewayBaseUrl
     ? shareGatewayArtifactUrl(input.gatewayBaseUrl, "vp", presentationId)
-    : (directCredentialJwt ?? "");
-  if (qrData) assertPrimaryVerifierQrPayload(qrData);
+    : directCredentialJwt;
+  if (!qrData) {
+    throw new Error(
+      "Share gateway base URL is required to create a resolver-backed VP QR for multi-credential or unsigned presentation packages.",
+    );
+  }
+  assertPrimaryVerifierQrPayload(qrData);
   return {
     mode: input.mode,
     payload,

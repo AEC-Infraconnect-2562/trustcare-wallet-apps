@@ -343,9 +343,15 @@ describe("premium share flow policy and validation", () => {
       selectedCardIds: cards.map((item) => item.id),
       holderDid: "did:key:holder001",
       selectedFields: ["identity", "allergy"],
+      gatewayBaseUrl: "https://wallet.example/api/share-gateway",
     });
 
-    expect(sharePackage.mode).toBe("PurposeVP");
+    if (sharePackage.mode !== "PurposeVP") {
+      throw new Error(`Expected PurposeVP package, got ${sharePackage.mode}`);
+    }
+    expect(sharePackage.presentation.qrData).toMatch(
+      /^https:\/\/wallet\.example\/api\/share-gateway\/presentations\/vp_.*\.jwt$/,
+    );
     expect(sharePackage.payload.verifiableCredential).toEqual([
       "signed.portal.sd.jwt",
       expect.objectContaining({

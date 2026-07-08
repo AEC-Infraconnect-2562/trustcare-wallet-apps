@@ -27,6 +27,8 @@ export * from "./portalRenderContract";
 export * from "./portalCredentialImport";
 export * from "./portalSyncMerge";
 export * from "./portalWalletPush";
+export * from "./presentationEnvelope";
+export * from "./microIpsPlus";
 export * from "./shl";
 export * from "./shlGateway";
 export * from "./readiness";
