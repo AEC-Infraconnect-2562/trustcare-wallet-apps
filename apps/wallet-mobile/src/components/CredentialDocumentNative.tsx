@@ -1,9 +1,11 @@
 import { StyleSheet, Text, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import type {
+  CredentialRenderSection,
   PortablePresentationEnvelope,
   WalletCard,
 } from "@trustcare/wallet-core";
+import { credentialRenderModelFromCard } from "@trustcare/wallet-core";
 
 export function CredentialDocumentNative({
   card,
@@ -14,10 +16,11 @@ export function CredentialDocumentNative({
   envelope: PortablePresentationEnvelope;
   qrValue?: string;
 }) {
-  const identitySection = envelope.sections.find(
+  const renderModel = credentialRenderModelFromCard(card);
+  const identitySection = renderModel.sections.find(
     (section) => section.kind === "identity",
   );
-  const bodySections = envelope.sections
+  const bodySections = renderModel.sections
     .filter(
       (section) =>
         section.kind !== "technical" && section.key !== identitySection?.key,
@@ -90,11 +93,7 @@ export function CredentialDocumentNative({
   );
 }
 
-function FieldGrid({
-  fields,
-}: {
-  fields: PortablePresentationEnvelope["sections"][number]["fields"];
-}) {
+function FieldGrid({ fields }: { fields: CredentialRenderSection["fields"] }) {
   if (!fields.length) return null;
   return (
     <View style={styles.fieldGrid}>

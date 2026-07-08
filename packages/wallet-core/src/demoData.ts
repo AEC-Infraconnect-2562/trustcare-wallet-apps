@@ -829,6 +829,11 @@ function identityCard(user: WalletDemoUser): WalletCard {
 }
 
 function patientSummaryCard(user: WalletDemoUser): WalletCard {
+  const medications = user.conditions.map((code) => ({
+    name: medicationForCondition(code),
+    dose: "ตามแผนการรักษาล่าสุด",
+    indication: diagnosisText(code),
+  }));
   return baseCard(user, {
     offset: 2,
     cardType: "patient_summary",
@@ -844,10 +849,22 @@ function patientSummaryCard(user: WalletDemoUser): WalletCard {
           code,
           display: diagnosisText(code),
         })),
-        allergies: user.allergies,
-        medications: user.conditions.map((code) => ({
-          name: medicationForCondition(code),
+        allergies: user.allergies.map((agent) => ({
+          substance: agent,
+          severity: agent.toLowerCase().includes("severe")
+            ? "high"
+            : "moderate",
         })),
+        medications,
+        vitalSigns: [
+          { display: "Blood pressure", value: "128/78", unit: "mmHg" },
+          {
+            display: user.conditions.includes("E11") ? "HbA1c" : "SpO2",
+            value: user.conditions.includes("E11") ? "7.4" : "98",
+            unit: user.conditions.includes("E11") ? "%" : "%",
+          },
+        ],
+        carePlan: "ติดตาม OPD ตามนัดและพกข้อมูล wallet เมื่อรับบริการข้ามหน่วย",
       },
     },
   });
@@ -873,6 +890,7 @@ function allergyCard(user: WalletDemoUser): WalletCard {
 }
 
 function prescriptionCard(user: WalletDemoUser): WalletCard {
+  const medicationName = medicationForCondition(user.conditions[0]);
   return baseCard(user, {
     offset: 4,
     cardType: "prescription",
@@ -888,10 +906,24 @@ function prescriptionCard(user: WalletDemoUser): WalletCard {
           user.hospitalCode === "TCP" ? "นพ.ภาณุ ทะเลใส" : "นพ.ธนวัฒน์ รักษาดี",
         licenseNo: `MD-${user.hospitalCode}-12345`,
       },
+      prescription: {
+        prescriptionNo: `${user.hospitalCode}-RX-${user.cardBase + 4}`,
+        status: "active",
+        authoredOn: "2026-07-01T09:20:00.000Z",
+        items: [
+          {
+            medicationName,
+            dosageInstruction:
+              "รับประทานครั้งละ 1 เม็ด วันละ 2 ครั้ง หลังอาหาร",
+            quantity: "30 tablets",
+            refills: 0,
+          },
+        ],
+      },
       fhir: {
         medicationRequests: [
           {
-            name: medicationForCondition(user.conditions[0]),
+            name: medicationName,
             instructions: "Take as directed by physician",
           },
         ],
@@ -901,6 +933,7 @@ function prescriptionCard(user: WalletDemoUser): WalletCard {
 }
 
 function labCard(user: WalletDemoUser): WalletCard {
+  const labValue = user.conditions.includes("E11") ? "7.4" : "5.6";
   return baseCard(user, {
     offset: 5,
     cardType: "lab_result",
@@ -911,12 +944,29 @@ function labCard(user: WalletDemoUser): WalletCard {
     expiresAt: "2027-07-02T09:30:00.000Z",
     subject: {
       patient: patientSubject(user),
+      labReport: {
+        reportNo: `${user.hospitalCode}-LAB-${user.cardBase + 5}`,
+        laboratory: `${user.hospitalNameTh} Laboratory`,
+        specimenCollectedAt: "2026-07-01T08:35:00.000Z",
+        reportedAt: "2026-07-01T10:05:00.000Z",
+        observations: [
+          {
+            code: "4548-4",
+            display: "HbA1c",
+            value: labValue,
+            unit: "%",
+            referenceRange: "4.0-5.6",
+            flag: user.conditions.includes("E11") ? "high" : "normal",
+          },
+        ],
+      },
       observations: [
         {
           code: "4548-4",
           display: "HbA1c",
-          value: user.conditions.includes("E11") ? "7.4" : "5.6",
+          value: labValue,
           unit: "%",
+          referenceRange: "4.0-5.6",
         },
       ],
     },
@@ -924,6 +974,17 @@ function labCard(user: WalletDemoUser): WalletCard {
 }
 
 function medicalCertificateCard(user: WalletDemoUser): WalletCard {
+  const practitioner = {
+    nameTh:
+      user.hospitalCode === "TCP" ? "นพ.ภาณุ ทะเลใส" : "นพ.ธนวัฒน์ รักษาดี",
+    name:
+      user.hospitalCode === "TCP"
+        ? "Dr. Panu Talaysai"
+        : "Dr. Thanawat Raksadee",
+    licenseNo: `MD-${user.hospitalCode}-12345`,
+    role: "Certifying physician",
+  };
+  const diagnosis = diagnosisText(user.conditions[0]);
   return baseCard(user, {
     offset: 6,
     cardType: "medical_certificate",
@@ -934,12 +995,34 @@ function medicalCertificateCard(user: WalletDemoUser): WalletCard {
     expiresAt: "2027-01-01T09:30:00.000Z",
     subject: {
       patient: patientSubject(user),
-      certificate: { fitForWork: true, issuedFor: "service readiness demo" },
+      certificate: {
+        certificateNo: `${user.hospitalCode}-MC-${user.cardBase + 6}`,
+        type: "ใบรับรองแพทย์สำหรับใช้ประกอบการรับบริการ",
+        issuedFor: "service readiness demo",
+        examinationDate: "2026-07-01T09:30:00.000Z",
+        issuedAt: "2026-07-01T09:45:00.000Z",
+        validUntil: "2027-01-01T09:30:00.000Z",
+        diagnosis,
+        diagnosisText: diagnosis,
+        result:
+          "แพทย์ผู้ตรวจรับรองผลตามข้อมูลการตรวจในระบบโรงพยาบาล และสามารถใช้ประกอบการรับบริการได้",
+        restrictions: "หลีกเลี่ยงงานหนักหากมีอาการผิดปกติและติดตามตามแพทย์นัด",
+        recommendations:
+          "นำเอกสารนี้พร้อม Credential ID ให้หน่วยบริการตรวจสอบแหล่งที่มา",
+        fitForWork: true,
+        fitnessForWork: {
+          fit: true,
+          note: "ปฏิบัติงานหรือรับบริการได้ตามแพทย์เห็นสมควร",
+        },
+        practitioner,
+        certifyingPractitioner: practitioner,
+      },
     },
   });
 }
 
 function referralCard(user: WalletDemoUser): WalletCard {
+  const reason = diagnosisText(user.conditions[0]);
   return baseCard(user, {
     offset: 7,
     cardType: "referral_vc",
@@ -951,15 +1034,84 @@ function referralCard(user: WalletDemoUser): WalletCard {
     subject: {
       patient: patientSubject(user),
       referral: {
+        referralNo: `${user.hospitalCode}-REF-${user.cardBase + 7}`,
         from: user.hospitalName,
+        fromHospital: user.hospitalNameTh,
         to: "TrustCare compatible hospital",
-        reason: diagnosisText(user.conditions[0]),
+        toHospital: "TrustCare compatible hospital",
+        requestedService: "OPD follow-up and medication reconciliation",
+        requestedServices: [
+          "OPD follow-up",
+          "Medication reconciliation",
+          "Insurance eligibility check",
+        ],
+        priority: "routine",
+        reason,
+        clinicalNotes: `ส่งต่อเพื่อดูแลต่อเนื่องเรื่อง ${reason} และตรวจสอบรายการยาเดิมจาก wallet`,
+        authoredOn: "2026-07-01T09:35:00.000Z",
+        validUntil: "2026-10-01T09:30:00.000Z",
+        attachments: [
+          "patient_summary",
+          "prescription",
+          "insurance_eligibility",
+        ],
+        clinicalSummary: {
+          primaryConcern: reason,
+          medications: medicationForCondition(user.conditions[0]),
+          allergies: user.allergies.join(", "),
+        },
       },
     },
   });
 }
 
 function insuranceCard(user: WalletDemoUser): WalletCard {
+  const payer = {
+    name:
+      user.source === "trustcare_portal"
+        ? "NHSO Demo"
+        : "Partner International Plan",
+    nameEn:
+      user.source === "trustcare_portal"
+        ? "NHSO Demo"
+        : "Partner International Plan",
+    policyNo: `POL-${user.hospitalCode}-${user.cardBase + 8}`,
+    status: "eligible",
+  };
+  const coverage = {
+    payer,
+    status: "eligible",
+    planName:
+      user.source === "trustcare_portal"
+        ? "Universal Coverage Demo"
+        : "International Partner Plan",
+    memberId: user.carepassId,
+    policyNo: payer.policyNo,
+    network: "TrustCare Demo Network",
+    coveragePeriod: {
+      start: "2026-01-01T00:00:00.000Z",
+      end: "2026-12-31T23:59:59.000Z",
+    },
+    lastCheckedAt: "2026-07-01T09:40:00.000Z",
+    copay: "0%",
+    directBilling: true,
+    preAuthorizationRequired: false,
+    benefits: {
+      annualLimit: 80000,
+      remainingLimit: 73500,
+      annualLimitCurrency: "THB",
+      opd: "covered",
+      ipd: "covered",
+      directBilling: true,
+      preAuthorizationRequired: false,
+      copay: "0%",
+    },
+    benefitSummary: [
+      { benefit: "Direct Billing", limit: "supported", remaining: "-" },
+      { benefit: "OPD", limit: "covered", remaining: "73,500 THB" },
+      { benefit: "Pre-authorization", limit: "not required", remaining: "-" },
+    ],
+  };
   return baseCard(user, {
     offset: 8,
     cardType: "insurance_eligibility",
@@ -970,18 +1122,14 @@ function insuranceCard(user: WalletDemoUser): WalletCard {
     expiresAt: "2027-07-01T09:30:00.000Z",
     subject: {
       patient: patientSubject(user),
-      payer: {
-        name:
-          user.source === "trustcare_portal"
-            ? "NHSO Demo"
-            : "Partner International Plan",
-        status: "eligible",
-      },
+      payer,
+      coverage,
     },
   });
 }
 
 function travelCard(user: WalletDemoUser): WalletCard {
+  const passport = user.passport ?? "PX-PASSPORT-DEMO";
   return baseCard(user, {
     offset: 9,
     cardType: "travel_document_verification",
@@ -993,7 +1141,13 @@ function travelCard(user: WalletDemoUser): WalletCard {
     subject: {
       patient: patientSubject(user),
       travel: {
-        passport: user.passport ?? "PX-PASSPORT-DEMO",
+        passport,
+        passportNumber: passport,
+        passportNoMasked: passport.replace(/^(.{2}).+(.{2})$/, "$1****$2"),
+        issuingCountry: user.passport ? "GBR" : "THA",
+        verificationStatus: "verified",
+        visaType: user.passport ? "Medical tourist" : "Domestic patient",
+        expiryDate: "2030-12-31T00:00:00.000Z",
         nationality: user.passport ? "international" : "THA",
       },
     },

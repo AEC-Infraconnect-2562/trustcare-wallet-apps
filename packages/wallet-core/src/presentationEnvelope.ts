@@ -17,6 +17,10 @@ import {
   portalRecord,
   type PortalRenderRecord,
 } from "./portalRenderContract";
+import {
+  credentialRenderModelFromCard,
+  isCredentialDisclosurePath,
+} from "./credentialRenderer";
 import type { TrustCareShlGatewayPublication } from "./shlGateway";
 import { canPresentCredential } from "./statusTone";
 import { walletCardHasCryptographicProof } from "./credentialProof";
@@ -261,6 +265,7 @@ const TECHNICAL_FIELD_NAMES = new Set([
 export function presentationEnvelopeFromWalletCard(
   card: WalletCard,
 ): PortablePresentationEnvelope {
+  const renderModel = credentialRenderModelFromCard(card);
   const record = walletDocumentRecordFromCard(card);
   const credential = portalRecord(card.credentialData);
   const rawSubject = portalRecord(credential.credentialSubject ?? credential);
@@ -287,14 +292,7 @@ export function presentationEnvelopeFromWalletCard(
     record,
     credential,
   );
-  const sections = buildCardSections({
-    record,
-    subject,
-    renderData,
-    patient,
-    document,
-    documentType,
-  });
+  const sections = renderModel.sections;
   const displayName = displayString(
     patient.fullNameTh,
     patient.nameTh,
@@ -794,7 +792,7 @@ export function selectableDisclosureFieldsFromEnvelope(
       (section) => section.kind !== "technical" && section.kind !== "trust",
     )
     .flatMap((section) => section.fields)
-    .filter((field) => isSelectableDisclosurePath(field.path ?? field.label));
+    .filter((field) => isCredentialDisclosurePath(field.path ?? field.label));
 }
 
 function buildCardSections(input: {

@@ -29,6 +29,7 @@ export * from "./portalRenderContract";
 export * from "./portalCredentialImport";
 export * from "./portalSyncMerge";
 export * from "./portalWalletPush";
+export * from "./credentialRenderer";
 export * from "./presentationEnvelope";
 export * from "./microIpsPlus";
 export * from "./walletUxCoverage";
