@@ -614,6 +614,13 @@ export default function App() {
       if (!offlineWallet.isOnline && !fields.length) {
         const cached = await offlineWallet.getOfflineQr(selectedCard.id);
         if (cached) {
+          const cachedPayload = createPresentationQrPayload({
+            origin: currentAppBaseUrl(),
+            presentationId: cached.presentationId,
+            qrData: cached.qrData,
+            expiresAt: cached.expiresAt,
+          });
+          const scannableCachedQr = createScannableWebUrl(cachedPayload);
           setPresentation({
             presentationId: cached.presentationId,
             format: "jwt-vp",
@@ -621,9 +628,17 @@ export default function App() {
             credentialCount: 1,
             selectedFields: [],
             expiresAt: cached.expiresAt ?? new Date().toISOString(),
-            qrData: cached.qrData,
+            qrData: scannableCachedQr,
           });
-          setQrDataUrl(cached.qrDataUrl);
+          setQrDataUrl(
+            await toQrDataUrl(scannableCachedQr, { margin: 1, width: 260 }),
+          );
+          await offlineWallet.cacheQr(
+            selectedCard.id,
+            scannableCachedQr,
+            cached.presentationId,
+            cached.expiresAt,
+          );
           return;
         }
       }
@@ -638,6 +653,8 @@ export default function App() {
         origin: currentAppBaseUrl(),
         presentationId: result.presentationId,
         qrData: result.qrData,
+        expiresAt: result.expiresAt,
+        selectedFields: result.selectedFields,
       });
       const scannableQr = createScannableWebUrl(qrPayload);
       const presentationWithWebQr = { ...result, qrData: scannableQr };

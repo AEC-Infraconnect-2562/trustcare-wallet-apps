@@ -70,4 +70,51 @@ describe("presentation QR payloads", () => {
       verifierResolvable: true,
     });
   });
+
+  it("normalizes legacy demo verifier URLs to deterministic resolver references", () => {
+    const payload = createPresentationQrPayload({
+      origin: "https://wallet.example",
+      presentationId: "vp_demo_1008_abc",
+      qrData: "https://wallet.example/verifier?vp=vp_demo_1008_abc",
+      expiresAt: "2026-07-08T10:00:00.000Z",
+      selectedFields: ["credentialSubject.coverage.status"],
+    });
+
+    expect(payload).toContain("tc_resolver=vp");
+    expect(payload).toContain("tc_id=vp_demo_1008_abc");
+    expect(payload).toContain("tc_ref=1");
+    expect(payload).toContain("tc_exp=2026-07-08T10%3A00%3A00.000Z");
+    expect(payload).toContain("tc_fields=credentialSubject.coverage.status");
+    expect(payload).not.toContain("/verifier?vp=");
+    expect(parseTrustCareQr(payload)).toMatchObject({
+      kind: "vp-url",
+      presentationId: "vp_demo_1008_abc",
+    });
+  });
+
+  it("normalizes legacy demo verifier URLs wrapped inside web scan links", () => {
+    const legacyPayload =
+      "https://wallet.example/verifier?vp=vp_demo_1008_abc";
+    const payload = createPresentationQrPayload({
+      origin: "https://wallet.example",
+      presentationId: "vp_demo_1008_abc",
+      qrData: `https://wallet.example/#scan=${encodeURIComponent(legacyPayload)}`,
+    });
+
+    expect(payload).toContain("tc_resolver=vp");
+    expect(payload).toContain("tc_id=vp_demo_1008_abc");
+    expect(payload).not.toContain("#scan=");
+    expect(payload).not.toContain("/verifier?vp=");
+  });
+
+  it("keeps non-demo presentation resolver URLs unchanged", () => {
+    const resolver = "https://wallet.example/verifier?vp=vp_prod_123";
+    expect(
+      createPresentationQrPayload({
+        origin: "https://wallet.example",
+        presentationId: "vp_prod_123",
+        qrData: resolver,
+      }),
+    ).toBe(resolver);
+  });
 });

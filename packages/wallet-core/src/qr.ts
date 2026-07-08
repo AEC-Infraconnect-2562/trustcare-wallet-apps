@@ -1,3 +1,5 @@
+import { createDemoResolverReferenceUrl } from "./demoResolvers";
+
 export function isExpired(isoDate?: string | null, now = new Date()): boolean {
   if (!isoDate) return false;
   return new Date(isoDate).getTime() <= now.getTime();
@@ -9,10 +11,14 @@ export function createPresentationQrPayload(input: {
   origin: string;
   presentationId: string;
   qrData: string;
+  expiresAt?: string;
   maxInlineLength?: number;
+  selectedFields?: string[];
 }): string {
   const raw = input.qrData.trim();
   if (!raw) return raw;
+  const normalizedDemoResolver = normalizeDemoPresentationResolverUrl(input);
+  if (normalizedDemoResolver) return normalizedDemoResolver;
   if (isPresentationResolverUrl(raw)) return raw;
   const maxInlineLength =
     input.maxInlineLength ?? presentationQrInlineMaxLength;
@@ -93,5 +99,77 @@ function isPresentationResolverUrl(raw: string): boolean {
     );
   } catch {
     return false;
+  }
+}
+
+function normalizeDemoPresentationResolverUrl(input: {
+  origin: string;
+  presentationId: string;
+  qrData: string;
+  expiresAt?: string;
+  selectedFields?: string[];
+}): string | null {
+  const raw = input.qrData.trim();
+  const unwrappedPayload = unwrapScannablePayload(raw);
+  if (unwrappedPayload && unwrappedPayload !== raw) {
+    return normalizeDemoPresentationResolverUrl({
+      ...input,
+      qrData: unwrappedPayload,
+    });
+  }
+
+  const parsed = parseUrl(raw);
+  if (!parsed) return null;
+  const currentResolver = parsed.searchParams.get("tc_resolver");
+  const currentId = parsed.searchParams.get("tc_id");
+  if (currentResolver === "vp" && currentId?.startsWith("vp_demo_")) {
+    return raw;
+  }
+
+  const legacyId =
+    parsed.searchParams.get("vp") ??
+    parsed.searchParams.get("presentationId") ??
+    input.presentationId;
+  if (!legacyId.startsWith("vp_demo_")) return null;
+  if (
+    !parsed.searchParams.has("vp") &&
+    !parsed.searchParams.has("presentationId")
+  ) {
+    return null;
+  }
+
+  const resolver = new URL(
+    createDemoResolverReferenceUrl(input.origin, "vp", legacyId),
+  );
+  if (input.expiresAt) resolver.searchParams.set("tc_exp", input.expiresAt);
+  const selectedFields = (input.selectedFields ?? [])
+    .map((field) => field.trim())
+    .filter(Boolean);
+  if (selectedFields.length) {
+    resolver.searchParams.set("tc_fields", selectedFields.join(","));
+  }
+  return resolver.toString();
+}
+
+function unwrapScannablePayload(value: string): string | null {
+  const parsed = parseUrl(value);
+  if (!parsed) return null;
+  const scanParam = parsed.searchParams.get("scan");
+  if (scanParam) return scanParam;
+  const hash = parsed.hash.replace(/^#/, "");
+  if (!hash) return null;
+  try {
+    const params = new URLSearchParams(hash.replace(/^\?/, ""));
+    return params.get("scan");
+  } catch {
+    return null;
+  }
+}
+
+function parseUrl(value: string): URL | null {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
   }
 }
