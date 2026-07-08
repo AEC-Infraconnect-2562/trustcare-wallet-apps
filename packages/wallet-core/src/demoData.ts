@@ -11,7 +11,10 @@ import {
   getCompleteWalletCardsByCategory,
   getCompleteWalletSeed,
 } from "./completeSeedData";
-import { demoPresentationUrl } from "./qr";
+import {
+  createDemoResolverReferenceUrl,
+  type DemoResolvedPayload,
+} from "./demoResolvers";
 import { createTrustCareShlGatewayPublication } from "./shlGateway";
 import {
   TRUSTCARE_PORTAL_WEB_ORIGIN,
@@ -714,16 +717,24 @@ export function createDemoPresentation(
   card: WalletCard,
   selectedFields: string[] = [],
   origin = "https://trustcare.example.com",
+  validMinutes = 10,
 ): WalletPresentationResponse {
   const presentationId = `vp_demo_${card.id}_${Date.now().toString(36)}`;
+  const expiresAt = new Date(Date.now() + validMinutes * 60_000).toISOString();
+  const qrUrl = new URL(
+    createDemoResolverReferenceUrl(origin, "vp", presentationId),
+  );
+  qrUrl.searchParams.set("tc_exp", expiresAt);
+  if (selectedFields.length)
+    qrUrl.searchParams.set("tc_fields", selectedFields.join(","));
   return {
     presentationId,
     format: "jwt-vp",
     mode: selectedFields.length ? "selective_disclosure" : "direct_vp",
     credentialCount: 1,
     selectedFields,
-    expiresAt: isoOffset(1),
-    qrData: demoPresentationUrl(origin, presentationId),
+    expiresAt,
+    qrData: qrUrl.toString(),
     transportDecision: {
       mode: "direct_vp",
       label: "Single-document VP",
@@ -759,6 +770,99 @@ export function createDemoPresentation(
       },
       { key: "consent", label: "Purpose-bound sharing", ok: true },
     ],
+  };
+}
+
+export function resolveDemoVpReferencePayload(
+  value: string,
+): DemoResolvedPayload | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return null;
+  }
+  if (
+    parsed.searchParams.get("tc_resolver") !== "vp" ||
+    !parsed.searchParams.get("tc_ref")
+  ) {
+    return null;
+  }
+  const id = parsed.searchParams.get("tc_id");
+  if (!id) return null;
+  const card = findDemoCardForPresentationId(id);
+  if (!card) return null;
+  const selectedFields = (parsed.searchParams.get("tc_fields") ?? "")
+    .split(",")
+    .map((field) => field.trim())
+    .filter(Boolean);
+  const validUntil =
+    parsed.searchParams.get("tc_exp") ??
+    new Date(Date.now() + 10 * 60_000).toISOString();
+  return {
+    kind: "vp",
+    id,
+    payload: buildDemoPresentationPayload(card, id, selectedFields, validUntil),
+  };
+}
+
+function findDemoCardForPresentationId(
+  presentationId: string,
+): WalletCard | null {
+  const match = /^vp_demo_(\d+)_/.exec(presentationId);
+  const cardId = match ? Number(match[1]) : NaN;
+  if (!Number.isFinite(cardId)) return null;
+  for (const user of walletDemoUsers) {
+    const card = getDemoWalletCards(user.id).find((item) => item.id === cardId);
+    if (card) return card;
+  }
+  return null;
+}
+
+function buildDemoPresentationPayload(
+  card: WalletCard,
+  presentationId: string,
+  selectedFields: string[],
+  validUntil: string,
+): Record<string, unknown> {
+  const credential =
+    card.credentialData ??
+    ({
+      "@context": ["https://www.w3.org/ns/credentials/v2"],
+      id: card.credentialId,
+      type: ["VerifiableCredential", card.credentialType ?? card.cardType],
+      issuer: card.issuerDid ?? card.issuerHospitalName ?? "TrustCare Demo",
+      validFrom: card.issuedAt,
+      validUntil: card.expiresAt,
+      credentialSubject: {
+        id: card.holderDid ?? card.ownerUserId ?? String(card.patientId ?? ""),
+        credentialId: card.credentialId,
+      },
+    } satisfies Record<string, unknown>);
+  return {
+    "@context": ["https://www.w3.org/ns/credentials/v2"],
+    id: presentationId,
+    type: ["VerifiablePresentation", "PurposeVP", "TrustCareDemoPresentation"],
+    holder: card.holderDid,
+    validUntil,
+    purpose: "TrustCare credential verifier",
+    recipient: "TrustCare credential verifier",
+    verifiableCredential: [credential],
+    trustcare: {
+      source: "trustcare_wallet_demo_resolver",
+      credentialId: card.credentialId,
+      cardType: card.cardType,
+      selectedFields,
+      minimumNecessary: selectedFields.length > 0,
+    },
+    proof: {
+      type: "DataIntegrityProof",
+      cryptosuite: "ecdsa-rdfc-2019",
+      proofPurpose: "authentication",
+      verificationMethod: `${card.holderDid ?? "did:key:trustcare-demo"}#demo-key`,
+      created: now.toISOString(),
+      proofValue: `zTrustCareDemoResolverProof${presentationId.replace(/[^a-zA-Z0-9]/g, "")}`,
+    },
   };
 }
 

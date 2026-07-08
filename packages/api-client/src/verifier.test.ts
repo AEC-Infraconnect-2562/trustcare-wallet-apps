@@ -26,6 +26,21 @@ const unsignedVp = {
 };
 
 describe("verifyQr VP resolver behavior", () => {
+  it("resolves deterministic demo VP references across devices", async () => {
+    const result = await verifyQr(
+      { url: "https://trustcare.example.com/trpc" },
+      "https://wallet.example/?tc_resolver=vp&tc_id=vp_demo_1008_abc&tc_ref=1",
+    );
+
+    expect(result.protocol).toBe("trustcare-vp");
+    expect(result.verified).toBe(true);
+    expect(result.trustLevel).toBe("green");
+    expect(result.credentials?.length).toBe(1);
+    expect(JSON.stringify(result.credentials)).toContain(
+      "InsuranceEligibilityCredential",
+    );
+  });
+
   it("resolves VP URLs but does not return green without proof", async () => {
     const result = await verifyQr(
       {

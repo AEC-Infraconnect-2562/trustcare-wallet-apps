@@ -41,6 +41,16 @@ export function parseTrustCareQr(raw: string): {
       const scanPayload = url.searchParams.get("scan");
       if (scanPayload?.startsWith("shlink:/"))
         return { raw: value, kind: "shlink", token: scanPayload };
+      const demoResolverKind = url.searchParams.get("tc_resolver");
+      const demoResolverId = url.searchParams.get("tc_id");
+      if (demoResolverKind === "vp" && demoResolverId) {
+        return {
+          raw: value,
+          kind: "vp-url",
+          presentationId: demoResolverId,
+          token: value,
+        };
+      }
       const presentationId =
         url.searchParams.get("vp") ??
         url.searchParams.get("presentationId") ??
@@ -76,6 +86,7 @@ function isPresentationResolverUrl(raw: string): boolean {
   try {
     const url = new URL(raw);
     return Boolean(
+      url.searchParams.get("tc_resolver") === "vp" ||
       url.searchParams.get("vp") ||
       url.searchParams.get("presentationId") ||
       url.pathname.includes("/presentations/"),

@@ -1,10 +1,13 @@
 import QRCode from "qrcode";
 import { describe, expect, it } from "vitest";
+import { createDemoResolverReferenceUrl } from "./demoResolvers";
 import {
   createPresentationQrPayload,
   demoPresentationUrl,
+  parseTrustCareQr,
   presentationQrInlineMaxLength,
 } from "./qr";
+import { classifyQrPayload } from "./qrContracts";
 
 describe("presentation QR payloads", () => {
   it("keeps short direct payloads inline", () => {
@@ -42,5 +45,29 @@ describe("presentation QR payloads", () => {
         qrData: resolver,
       }),
     ).toBe(resolver);
+  });
+
+  it("keeps deterministic demo VP resolver references as scannable resolver URLs", () => {
+    const resolver = createDemoResolverReferenceUrl(
+      "https://wallet.example",
+      "vp",
+      "vp_demo_1008_abc",
+    );
+
+    expect(
+      createPresentationQrPayload({
+        origin: "https://wallet.example",
+        presentationId: "vp_demo_1008_abc",
+        qrData: resolver,
+      }),
+    ).toBe(resolver);
+    expect(parseTrustCareQr(resolver)).toMatchObject({
+      kind: "vp-url",
+      presentationId: "vp_demo_1008_abc",
+    });
+    expect(classifyQrPayload(resolver)).toMatchObject({
+      kind: "vp_resolver",
+      verifierResolvable: true,
+    });
   });
 });

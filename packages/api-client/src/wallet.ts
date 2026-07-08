@@ -356,6 +356,7 @@ export async function present(
       card,
       input.selectedFields,
       options.demoOrigin,
+      input.validMinutes,
     );
   }
   return callTrpcProcedure<WalletPresentationResponse>(

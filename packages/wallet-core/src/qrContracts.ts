@@ -87,6 +87,17 @@ export function classifyQrPayload(raw: string): QrPayloadClassification {
   const url = parseUrl(value);
   if (url) {
     if (
+      url.searchParams.get("tc_resolver") === "vp" &&
+      url.searchParams.get("tc_id")
+    ) {
+      return result(
+        "vp_resolver",
+        true,
+        false,
+        "TrustCare demo VP resolver URL",
+      );
+    }
+    if (
       url.searchParams.get("vp") ||
       url.searchParams.get("presentationId") ||
       url.pathname.includes("/presentations/")

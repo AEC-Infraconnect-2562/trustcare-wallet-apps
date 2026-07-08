@@ -23,6 +23,7 @@ import {
   proofSummary,
   fetchShlManifest,
   resolveDemoResolverPayload,
+  resolveDemoVpReferencePayload,
   splitJwtToken,
   stringOrUndefined,
   stringValue,
@@ -128,6 +129,17 @@ async function verifyQrUnsafe(
   );
   if (resolvedVp) {
     return verifyResolvedVpPayload(resolvedVp);
+  }
+  const demoReferencePayload = resolveDemoVpReferencePayload(qrData);
+  if (demoReferencePayload?.kind === "vp") {
+    return verifyResolvedVpPayload({
+      id: demoReferencePayload.id,
+      payload: demoReferencePayload.payload,
+      sourceUrl: qrData,
+      warnings: [
+        "Resolved deterministic TrustCare demo VP reference from the wallet seed dataset.",
+      ],
+    });
   }
   const demoPayload = resolveDemoResolverPayload(qrData);
   if (demoPayload?.kind === "vp") {
