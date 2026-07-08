@@ -4,6 +4,9 @@
   "private": true,
   "description": "Standalone TrustCare Wallet web and mobile applications.",
   "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev:web": "pnpm --filter wallet-web dev",
     "dev:mobile": "pnpm --filter wallet-mobile start",
