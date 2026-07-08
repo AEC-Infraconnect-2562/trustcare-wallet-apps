@@ -5,4 +5,5 @@ export * as walletApi from "./wallet";
 export * as shlApi from "./shl";
 export * as verifierApi from "./verifier";
 export * as portalSyncApi from "./portalSync";
+export * as shareGatewayApi from "./shareGatewayClient";
 export * from "./queryKeys";

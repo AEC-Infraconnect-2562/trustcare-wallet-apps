@@ -85,6 +85,22 @@
   line-height: 1.55;
 }
 
+.login-scan-button {
+  min-height: 44px;
+  border: 1px solid color-mix(in srgb, var(--primary) 50%, var(--border));
+  border-radius: 8px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 15px;
+  font-size: 14px;
+  font-weight: 900;
+  margin-top: 12px;
+}
+
 .login-user-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));

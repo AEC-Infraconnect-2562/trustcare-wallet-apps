@@ -1,4 +1,8 @@
 import {
+  assertWalletSyncResponse,
+  type WalletSyncResponseContract,
+} from "@trustcare/contracts";
+import {
   getDemoUser,
   buildPortalKnownCredentials,
   normalizeTrustCarePortalWalletSync,
@@ -41,20 +45,9 @@ export type PortalWalletSyncStatus = {
   lastPresentationAt?: string | null;
 };
 
-type PortalWalletSyncResponse = {
-  credentials?: TrustCarePortalWalletCard[];
+type PortalWalletSyncResponse = WalletSyncResponseContract & {
+  credentials: TrustCarePortalWalletCard[];
   presentations?: TrustCarePortalWalletPresentation[];
-  syncedAt?: string;
-  total?: number;
-  hasMore?: boolean;
-  nextSince?: string | null;
-  error?:
-    | {
-        message?: string;
-        code?: string;
-      }
-    | string;
-  message?: string;
 };
 
 export type PortalCredentialVerifyResponse = {
@@ -274,23 +267,17 @@ async function postPortalWalletSync(
       knownCredentials,
     }),
   });
-  const payload = (await response
-    .json()
-    .catch(() => null)) as PortalWalletSyncResponse | null;
-  if (!response.ok || payload?.error) {
+  const payload = await response.json().catch(() => null);
+  const syncPayload = payload ? assertWalletSyncResponse(payload) : null;
+  if (!response.ok || syncPayload?.error) {
     throw new TrustCareApiError(
-      errorMessage(payload) ?? "TrustCare Portal wallet sync failed",
+      errorMessage(syncPayload) ?? "TrustCare Portal wallet sync failed",
       {
         status: response.status,
       },
     );
   }
-  if (!Array.isArray(payload?.credentials)) {
-    throw new TrustCareApiError(
-      "TrustCare Portal returned an invalid wallet sync payload",
-    );
-  }
-  return payload;
+  return syncPayload as PortalWalletSyncResponse;
 }
 
 async function attachPortalJwtVerification(

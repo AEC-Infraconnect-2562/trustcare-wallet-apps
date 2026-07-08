@@ -1,56 +1,20 @@
+import {
+  assertShareGatewayPublicationRequest,
+  type ShareGatewayAccessPolicyContract,
+  type ShareGatewayArtifactKind as ShareGatewayArtifactKindContract,
+  type ShareGatewayMode as ShareGatewayModeContract,
+  type ShareGatewayPublicationRequestContract,
+  type ShareGatewayPublicationResponseContract,
+} from "@trustcare/contracts";
 import type { ReadinessContext } from "./models";
 
-export type ShareGatewayMode = "portal_backend" | "local_dev_gateway";
-
-export type ShareGatewayArtifactKind =
-  | "vp"
-  | "standard_shl_manifest"
-  | "certified_shl_manifest"
-  | "manifest_vp"
-  | "manifest_credential"
-  | "holder_authorization"
-  | "shl_file";
-
-export type ShareGatewayAccessPolicy = {
-  expiresAt?: string;
-  passcodeRequired?: boolean;
-  passcodeHint?: string | null;
-  maxAccessCount?: number;
-  accessCodeDelivery?:
-    | "separate_channel"
-    | "not_required"
-    | "sms"
-    | "in_person"
-    | "secure_message"
-    | string;
-};
-
-export type ShareGatewayPublicationRequest = {
-  artifactId: string;
-  kind: ShareGatewayArtifactKind;
-  contentType: string;
-  payload: unknown;
-  ownerUserId?: string | number;
-  holderDid?: string;
-  context?: ReadinessContext;
-  purpose?: string;
-  recipient?: string;
-  expiresAt?: string;
-  accessPolicy?: ShareGatewayAccessPolicy;
-  trustcare?: Record<string, unknown>;
-};
-
-export type ShareGatewayPublicationResponse = {
-  ok: boolean;
-  mode: ShareGatewayMode;
-  artifactId: string;
-  kind: ShareGatewayArtifactKind;
-  publicUrl?: string;
-  qrPayload?: string;
-  manifestUrl?: string;
-  warnings: string[];
-  errors: string[];
-};
+export type ShareGatewayMode = ShareGatewayModeContract;
+export type ShareGatewayArtifactKind = ShareGatewayArtifactKindContract;
+export type ShareGatewayAccessPolicy = ShareGatewayAccessPolicyContract;
+export type ShareGatewayPublicationRequest =
+  ShareGatewayPublicationRequestContract & { context?: ReadinessContext };
+export type ShareGatewayPublicationResponse =
+  ShareGatewayPublicationResponseContract;
 
 export function normalizeShareGatewayBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, "");
@@ -100,7 +64,7 @@ export function createShareGatewayPublicationRequest(input: {
   accessPolicy?: ShareGatewayAccessPolicy;
   trustcare?: Record<string, unknown>;
 }): ShareGatewayPublicationRequest {
-  return {
+  return assertShareGatewayPublicationRequest({
     artifactId: input.artifactId,
     kind: input.kind,
     contentType: input.contentType,
@@ -113,5 +77,5 @@ export function createShareGatewayPublicationRequest(input: {
     expiresAt: input.expiresAt,
     accessPolicy: input.accessPolicy,
     trustcare: input.trustcare,
-  };
+  }) as ShareGatewayPublicationRequest;
 }

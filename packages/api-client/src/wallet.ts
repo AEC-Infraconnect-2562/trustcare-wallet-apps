@@ -32,9 +32,12 @@ import {
   validateDocumentReference,
   verifyShlManifestTrust,
   walletDocumentRecordFromCard,
+  issueDemoOid4vciCredential,
+  parseOid4vcCredentialOffer,
   type BuiltSharePackage,
   type CanonicalDocumentCategory,
   type CanonicalDocumentType,
+  type DemoOid4vciIssuedCredential,
   type FhirDocumentReferenceLike,
   type SharePackageBuildInput,
   type WalletDocumentRecord,
@@ -93,6 +96,13 @@ export type WalletCreateSharePackageInput = Omit<
   SharePackageBuildInput,
   "cards"
 >;
+
+export type WalletAcceptCredentialOfferInput = {
+  offerPayload: string;
+  sourceCardId?: number | string;
+};
+
+export type WalletCredentialOfferAcceptance = DemoOid4vciIssuedCredential;
 
 export type WalletShlImportResult = {
   classification: ReturnType<typeof classifyQrPayload>;
@@ -260,6 +270,36 @@ export async function resolveSharePackage(
   return callTrpcProcedure<WalletSharePackageResolution>(
     options,
     "wallet.resolveSharePackage",
+    input,
+  );
+}
+
+export async function acceptCredentialOffer(
+  options: WalletApiOptions,
+  input: WalletAcceptCredentialOfferInput,
+): Promise<WalletCredentialOfferAcceptance> {
+  const parsed = parseOid4vcCredentialOffer(input.offerPayload);
+  if (!parsed) throw new Error("OID4VCI credential offer ไม่ถูกต้อง");
+  if (options.demoMode ?? true) {
+    const user = getDemoUser(options.userId);
+    const cards = await demoWalletCards({ ...options, userId: user.id });
+    const sourceCard =
+      cards.find((card) => String(card.id) === String(input.sourceCardId)) ??
+      cards[0];
+    if (!sourceCard) {
+      throw new Error("Wallet ไม่มี credential ต้นทางสำหรับ demo issuer");
+    }
+    return issueDemoOid4vciCredential({
+      sourceCard,
+      offer: parsed,
+      holderDid: user.holderDid,
+      userId: user.id,
+      issuerOrigin: parsed.issuer ?? options.demoOrigin,
+    });
+  }
+  return callTrpcProcedure<WalletCredentialOfferAcceptance>(
+    options,
+    "wallet.acceptCredentialOffer",
     input,
   );
 }

@@ -1,3 +1,4 @@
+import { assertCredentialProofEnvelope } from "@trustcare/contracts";
 import {
   CANONICAL_DOCUMENT_CATEGORIES,
   normalizeDocumentType,
@@ -441,7 +442,7 @@ function credentialProofFromPortalCard(
   const proofJwt = jwtFromProofRecord(sourceProof);
   const jwt = proofJwt ?? credentialJwtFromPortalCard(portalCard);
   if (!jwt && !sourceProof) return null;
-  return {
+  const proof = {
     type: stringValue(sourceProof?.type) ?? (jwt ? "jwt" : null),
     format:
       stringValue(sourceProof?.format) ?? stringValue(sourceProof?.proofFormat),
@@ -457,6 +458,8 @@ function credentialProofFromPortalCard(
       ? "trustcare_portal_sync_proof"
       : "trustcare_portal_legacy_envelope",
   };
+  assertCredentialProofEnvelope(proof);
+  return proof;
 }
 
 function firstPortalProofRecord(

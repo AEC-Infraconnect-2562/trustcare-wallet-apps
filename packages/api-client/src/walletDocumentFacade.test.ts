@@ -89,4 +89,16 @@ describe("wallet API document facade", () => {
       expect(imported.trust?.status).toBe("trustcare_certified");
     }
   });
+
+  it("accepts a demo OID4VCI pre-authorized offer as an issued SD-JWT VC", async () => {
+    const fixtures = await walletApi.interoperabilityFixtures(options);
+    const issued = await walletApi.acceptCredentialOffer(options, {
+      offerPayload: fixtures.credentialOfferUrl,
+    });
+
+    expect(issued.credential.credentialStatus).toBe("active");
+    expect(issued.credential.credentialProof?.format).toBe("sd-jwt-vc");
+    expect(issued.holderProof.jwt).toBeTruthy();
+    expect(issued.storedObject.protocol).toBe("oid4vci");
+  });
 });

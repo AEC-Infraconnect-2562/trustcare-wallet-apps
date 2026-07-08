@@ -1,6 +1,7 @@
+import { assertVerifierResult } from "@trustcare/contracts";
 import {
   audienceSummary,
-  buildTrustCareJwksCandidates,
+  buildTrustCareJwksCandidateResult,
   credentialIssuerName as issuerName,
   documentTypesFromCredentials,
   extractCredentialJwt,
@@ -79,6 +80,15 @@ type JwtVerificationResult = {
 };
 
 export async function verifyQr(
+  options: VerifierApiOptions,
+  qrData: string,
+): Promise<VerifierResult> {
+  return assertVerifierResult(
+    await verifyQrUnsafe(options, qrData),
+  ) as VerifierResult;
+}
+
+async function verifyQrUnsafe(
   options: VerifierApiOptions,
   qrData: string,
 ): Promise<VerifierResult> {
@@ -953,11 +963,13 @@ async function verifyJwtArtifact(
   }
   if (!kid) errors.push("JWT header has no kid.");
 
-  const jwksCandidates = buildTrustCareJwksCandidates({
+  const jwksCandidateResult = buildTrustCareJwksCandidateResult({
     header,
     payload: decodedPayload,
     sourceUrl,
   });
+  warnings.push(...jwksCandidateResult.warnings);
+  const jwksCandidates = jwksCandidateResult.candidates;
   for (const jwksUrl of jwksCandidates) {
     const jwk = await fetchMatchingJwk(jwksUrl, kid, fetcher);
     if (!jwk) continue;

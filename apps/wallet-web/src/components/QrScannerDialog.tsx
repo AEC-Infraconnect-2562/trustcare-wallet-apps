@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { ArrowLeft, Camera, ClipboardPaste, X } from "lucide-react";
 import { Button, IconButton } from "@trustcare/ui-web";
+
+let zxingReaderPromise: Promise<typeof import("zxing-wasm/reader")> | null =
+  null;
 
 export function QrScannerDialog({
   open,
@@ -12,6 +15,7 @@ export function QrScannerDialog({
   onScan: (value: string) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [manual, setManual] = useState("");
   const [status, setStatus] = useState("กำลังเตรียมกล้อง...");
@@ -20,6 +24,7 @@ export function QrScannerDialog({
     if (!open) return undefined;
     let active = true;
     let frame = 0;
+    let lastFallbackScan = 0;
     const detector =
       "BarcodeDetector" in window
         ? new BarcodeDetector({ formats: ["qr_code"] })
@@ -38,14 +43,25 @@ export function QrScannerDialog({
         setStatus(
           detector
             ? "หันกล้องไปที่ QR Code"
-            : "กล้องพร้อมแล้ว หากเบราว์เซอร์ไม่รองรับ QR detection ให้วาง payload ด้านล่าง",
+            : "กล้องพร้อมแล้ว กำลังใช้ตัวอ่าน QR สำหรับ iOS Safari",
         );
         const scan = async () => {
-          if (!active || !videoRef.current || !detector) return;
+          if (!active || !videoRef.current) return;
           try {
-            const results = await detector.detect(videoRef.current);
-            if (results[0]?.rawValue) {
-              onScan(results[0].rawValue);
+            const detected = detector
+              ? await scanWithBarcodeDetector(detector, videoRef.current)
+              : "";
+            let fallbackDetected = "";
+            if (!detected && Date.now() - lastFallbackScan >= 250) {
+              lastFallbackScan = Date.now();
+              fallbackDetected = await scanWithZxingFallback(
+                videoRef.current,
+                canvasRef,
+              );
+            }
+            const value = detected || fallbackDetected;
+            if (value) {
+              onScan(value);
               onClose();
               return;
             }
@@ -100,6 +116,7 @@ export function QrScannerDialog({
         </header>
         <div className="scanner-stage">
           <video ref={videoRef} muted playsInline />
+          <canvas ref={canvasRef} aria-hidden="true" hidden />
           <div className="scanner-frame" />
         </div>
         <p className="scanner-help">{status}</p>
@@ -128,4 +145,37 @@ export function QrScannerDialog({
       </div>
     </div>
   );
+}
+
+async function scanWithBarcodeDetector(
+  detector: BarcodeDetector,
+  video: HTMLVideoElement,
+): Promise<string> {
+  const results = await detector.detect(video);
+  return results[0]?.rawValue?.trim() ?? "";
+}
+
+async function scanWithZxingFallback(
+  video: HTMLVideoElement,
+  canvasRef: RefObject<HTMLCanvasElement | null>,
+): Promise<string> {
+  if (!video.videoWidth || !video.videoHeight) return "";
+  const canvas = canvasRef.current;
+  if (!canvas) return "";
+  const maxWidth = 640;
+  const scale = Math.min(1, maxWidth / video.videoWidth);
+  canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+  canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return "";
+  context.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  zxingReaderPromise ??= import("zxing-wasm/reader");
+  const { readBarcodes } = await zxingReaderPromise;
+  const results = await readBarcodes(imageData, {
+    formats: ["QRCode"],
+    maxNumberOfSymbols: 1,
+    tryHarder: true,
+  });
+  return results[0]?.text?.trim() ?? "";
 }

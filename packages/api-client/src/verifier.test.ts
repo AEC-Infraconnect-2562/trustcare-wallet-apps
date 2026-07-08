@@ -142,6 +142,58 @@ describe("verifyQr VP resolver behavior", () => {
     );
   });
 
+  it("does not fetch untrusted cross-origin jku from a VP JWT header", async () => {
+    const evilJwksUrl = "https://evil.example/jwks.json";
+    const trustedJwksUrl = "https://wallet.example/.well-known/jwks.json";
+    const signingKey = await createEphemeralEs256SigningKey({
+      issuerDid: "did:web:wallet.example",
+      kidPrefix: "did:web:wallet.example",
+      jku: evilJwksUrl,
+    });
+    const signed = await signTrustCarePresentationJwt({
+      vp: unsignedVp,
+      signingKey,
+      signUnsignedCredentials: true,
+    });
+    const presentationUrl =
+      "https://wallet.example/api/share-gateway/presentations/vp-test-001.jwt";
+    const fetchedUrls: string[] = [];
+    const result = await verifyQr(
+      {
+        url: "https://trustcare.example.com/trpc",
+        fetchImpl: async (input) => {
+          const url = String(input);
+          fetchedUrls.push(url);
+          if (url === presentationUrl) {
+            return new Response(signed.jwt, {
+              headers: { "content-type": "application/vp+jwt" },
+            });
+          }
+          if (url === evilJwksUrl) {
+            throw new Error("Verifier must not fetch an untrusted jku.");
+          }
+          if (url === trustedJwksUrl) {
+            return new Response(
+              JSON.stringify(publicJwksForSigningKey(signingKey)),
+              {
+                headers: { "content-type": "application/json" },
+              },
+            );
+          }
+          return new Response("not found", { status: 404 });
+        },
+      },
+      presentationUrl,
+    );
+
+    expect(result.protocol).toBe("trustcare-vp");
+    expect(result.verified).toBe(true);
+    expect(result.trustLevel).toBe("green");
+    expect(fetchedUrls).not.toContain(evilJwksUrl);
+    expect(result.warnings?.join(" ")).toContain("jku");
+    expect(result.warnings?.join(" ")).toContain("rejected");
+  });
+
   it("rejects a tampered ES256 vp+jwt even when JWKS resolves", async () => {
     const jwksUrl = "https://wallet.example/.well-known/jwks.json";
     const signingKey = await createEphemeralEs256SigningKey({

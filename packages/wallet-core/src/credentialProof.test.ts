@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 import {
+  buildTrustCareJwksCandidateResult,
   buildTrustCareJwksCandidates,
   credentialIssuerName,
   documentTypesFromCredentials,
@@ -88,13 +89,13 @@ describe("credential proof standards layer", () => {
 
   it("centralizes TrustCare DID/JWKS candidate and kid matching rules", () => {
     const candidates = buildTrustCareJwksCandidates({
-      header: { jku: "https://issuer.example/jwks.json" },
+      header: { jku: "https://wallet.example/.well-known/jwks.json" },
       payload: { iss: "did:web:trustcare.network:hospital:TCC" },
       sourceUrl:
         "https://wallet.example/api/share-gateway/presentations/vp.jwt",
     });
 
-    expect(candidates).toContain("https://issuer.example/jwks.json");
+    expect(candidates).toContain("https://wallet.example/.well-known/jwks.json");
     expect(candidates).toContain(
       "https://wallet.example/api/share-gateway/.well-known/jwks.json",
     );
@@ -104,6 +105,67 @@ describe("credential proof standards layer", () => {
     expect(
       keyMatchesKid({ kid: "did:web:issuer.example#key-1" }, "key-1"),
     ).toBe(true);
+  });
+
+  it("rejects untrusted cross-origin jku before verifier fetches JWKS", () => {
+    const result = buildTrustCareJwksCandidateResult({
+      header: { jku: "https://evil.example/jwks.json" },
+      payload: { iss: "did:web:wallet.example" },
+      sourceUrl:
+        "https://wallet.example/api/share-gateway/presentations/vp.jwt",
+    });
+
+    expect(result.candidates).not.toContain("https://evil.example/jwks.json");
+    expect(result.warnings.join(" ")).toContain("jku");
+    expect(result.warnings.join(" ")).toContain("rejected");
+  });
+
+  it("accepts jku from the issuer DID origin and configured TrustCare origins", () => {
+    const issuerResult = buildTrustCareJwksCandidateResult({
+      header: { jku: "https://issuer.example/did/jwks.json" },
+      payload: { iss: "did:web:issuer.example:hospital:tcc" },
+      sourceUrl:
+        "https://wallet.example/api/share-gateway/presentations/vp.jwt",
+    });
+    const trustedOriginResult = buildTrustCareJwksCandidateResult({
+      header: { jku: "https://portal.example/.well-known/jwks.json" },
+      payload: { iss: "did:web:issuer.example:hospital:tcc" },
+      sourceUrl:
+        "https://wallet.example/api/share-gateway/presentations/vp.jwt",
+      trustcareOrigins: ["https://portal.example"],
+    });
+
+    expect(issuerResult.candidates).toContain(
+      "https://issuer.example/did/jwks.json",
+    );
+    expect(trustedOriginResult.candidates).toContain(
+      "https://portal.example/.well-known/jwks.json",
+    );
+  });
+
+  it("blocks private and loopback jku in production but allows same-origin local dev", () => {
+    const productionResult = buildTrustCareJwksCandidateResult({
+      header: { jku: "http://127.0.0.1:8787/jwks.json" },
+      payload: { iss: "did:web:wallet.example" },
+      sourceUrl:
+        "https://wallet.example/api/share-gateway/presentations/vp.jwt",
+    });
+    const localDevResult = buildTrustCareJwksCandidateResult({
+      header: { jku: "http://127.0.0.1:5175/.well-known/jwks.json" },
+      payload: { iss: "did:web:localhost%3A5175" },
+      sourceUrl:
+        "http://127.0.0.1:5175/api/share-gateway/presentations/vp.jwt",
+    });
+
+    expect(productionResult.candidates).not.toContain(
+      "http://127.0.0.1:8787/jwks.json",
+    );
+    expect(productionResult.warnings.join(" ")).toContain(
+      "private or loopback",
+    );
+    expect(localDevResult.candidates).toContain(
+      "http://127.0.0.1:5175/.well-known/jwks.json",
+    );
   });
 
   it("uses the same cryptographic proof predicate for wallet cards and envelopes", () => {

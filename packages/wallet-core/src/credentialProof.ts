@@ -14,6 +14,11 @@ export const TRUSTCARE_STANDARD_JWKS_ORIGINS = [
   "https://www.trustcarehealth.live",
 ];
 
+export type TrustCareJwksCandidateResult = {
+  candidates: string[];
+  warnings: string[];
+};
+
 export function jsonRecord(value: unknown): JsonRecord | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonRecord)
@@ -288,25 +293,60 @@ export function buildTrustCareJwksCandidates(input: {
   sourceUrl: string;
   trustcareOrigins?: string[];
 }): string[] {
+  return buildTrustCareJwksCandidateResult(input).candidates;
+}
+
+export function buildTrustCareJwksCandidateResult(input: {
+  header: JsonRecord;
+  payload: JsonRecord;
+  sourceUrl: string;
+  trustcareOrigins?: string[];
+}): TrustCareJwksCandidateResult {
   const candidates = new Set<string>();
-  const jku = stringOrUndefined(input.header.jku);
-  if (jku) candidates.add(jku);
+  const warnings: string[] = [];
+  const trustcareOrigins =
+    input.trustcareOrigins ?? TRUSTCARE_STANDARD_JWKS_ORIGINS;
+  const trustedOrigins = trustcareOrigins.map(normalizeOrigin);
   const source = parseUrl(input.sourceUrl);
+  const sourceOrigin = source?.origin;
+  const issuerOrigin = didWebIssuerOrigin(stringOrUndefined(input.payload.iss));
+  const allowedJkuOrigins = new Set(
+    [sourceOrigin, issuerOrigin, ...trustedOrigins].filter(
+      (origin): origin is string => Boolean(origin),
+    ),
+  );
+  const allowPrivateJwks =
+    source !== null && isPrivateOrLoopbackHost(source.hostname);
+  const jku = stringOrUndefined(input.header.jku);
+  if (jku) {
+    const decision = trustCareJkuDecision({
+      jku,
+      allowedOrigins: allowedJkuOrigins,
+      allowPrivateJwks,
+    });
+    if (decision.ok) {
+      candidates.add(decision.url);
+    } else {
+      warnings.push(`JWT header jku ${jku} was rejected: ${decision.reason}.`);
+    }
+  }
   if (source) {
     candidates.add(`${source.origin}/api/share-gateway/.well-known/jwks.json`);
     candidates.add(`${source.origin}/.well-known/jwks.json`);
   }
   for (const url of didWebJwksCandidates(
     stringOrUndefined(input.payload.iss),
-    input.trustcareOrigins,
+    trustcareOrigins,
   )) {
     candidates.add(url);
   }
-  for (const origin of input.trustcareOrigins ??
-    TRUSTCARE_STANDARD_JWKS_ORIGINS) {
+  for (const origin of trustcareOrigins) {
     candidates.add(`${normalizeOrigin(origin)}/.well-known/jwks.json`);
   }
-  return Array.from(candidates);
+  return {
+    candidates: Array.from(candidates),
+    warnings,
+  };
 }
 
 export function didWebJwksCandidates(
@@ -384,4 +424,61 @@ export function keyMatchesKid(key: JWK, kid: string): boolean {
 
 function normalizeOrigin(origin: string): string {
   return origin.replace(/\/+$/, "");
+}
+
+function didWebIssuerOrigin(issuer: string | undefined): string | undefined {
+  if (!issuer?.startsWith("did:web:")) return undefined;
+  const host = issuer
+    .slice("did:web:".length)
+    .split(":")
+    .map(decodeURIComponent)[0];
+  if (!host) return undefined;
+  const parsed = parseUrl(`https://${host}`);
+  return parsed?.origin;
+}
+
+function trustCareJkuDecision(input: {
+  jku: string;
+  allowedOrigins: Set<string>;
+  allowPrivateJwks: boolean;
+}):
+  | { ok: true; url: string }
+  | { ok: false; reason: string } {
+  const parsed = parseUrl(input.jku);
+  if (!parsed) return { ok: false, reason: "not an absolute URL" };
+  const origin = normalizeOrigin(parsed.origin);
+  const privateOrLoopback = isPrivateOrLoopbackHost(parsed.hostname);
+  if (privateOrLoopback && !input.allowPrivateJwks) {
+    return {
+      ok: false,
+      reason: "private or loopback JWKS origins are not allowed here",
+    };
+  }
+  if (parsed.protocol !== "https:") {
+    if (!(parsed.protocol === "http:" && privateOrLoopback)) {
+      return { ok: false, reason: "JWKS URLs must use HTTPS" };
+    }
+  }
+  if (!input.allowedOrigins.has(origin)) {
+    return {
+      ok: false,
+      reason: "origin is not the VP source, issuer DID, or trusted TrustCare origin",
+    };
+  }
+  return { ok: true, url: parsed.href };
+}
+
+function isPrivateOrLoopbackHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (normalized === "localhost" || normalized === "::1") return true;
+  const ipv4 = normalized.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!ipv4) return false;
+  const [first, second] = ipv4.slice(1, 3).map(Number);
+  return (
+    first === 10 ||
+    first === 127 ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168)
+  );
 }

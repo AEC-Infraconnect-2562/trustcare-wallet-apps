@@ -38,6 +38,7 @@ export * from "./shlGateway";
 export * from "./readiness";
 export * from "./prepareService";
 export * from "./oid4vc";
+export * from "./oid4vciIssuer";
 export * from "./store";
 export * from "./exchange";
 export * from "./demoData";

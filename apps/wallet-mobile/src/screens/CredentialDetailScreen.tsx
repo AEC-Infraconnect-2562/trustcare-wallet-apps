@@ -3,10 +3,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { Download, Eye, QrCode, Shield, ArrowLeft } from "lucide-react-native";
 import * as ScreenCapture from "expo-screen-capture";
-import { walletApi } from "@trustcare/api-client";
 import {
   canPresentCredential,
-  createPresentationQrPayload,
   credentialStatusLabel,
   extractSelectableFields,
   flattenCardsByCategory,
@@ -21,7 +19,8 @@ import { CredentialDocumentNative } from "../components/CredentialDocumentNative
 import { useActiveWalletUser } from "../hooks/useActiveWalletUser";
 import { useBiometricGate } from "../hooks/useBiometricGate";
 import { useMobileSecuritySettings } from "../hooks/useMobileSecuritySettings";
-import { cacheQr, loadCachedQr } from "../storage/offlineWallet";
+import { publishMobileVpShare } from "../share/mobileSharePublisher";
+import { cacheQr } from "../storage/offlineWallet";
 import { env } from "../env";
 
 type Tab = "details" | "trust" | "payload" | "history";
@@ -44,6 +43,7 @@ export function CredentialDetailScreen() {
       url: env.apiUrl,
       demoMode: env.demoMode,
       demoOrigin: "https://trustcare.example.com",
+      shareGatewayUrl: env.shareGatewayUrl,
       userId: user.id,
     }),
     [user.id],
@@ -103,57 +103,38 @@ export function CredentialDetailScreen() {
     }
     if (!(await biometric.authenticate())) return;
     try {
-      const result = await walletApi.present(apiOptions, {
-        cardId: activeCard.id,
-        cardSnapshot: activeCard,
+      const result = await publishMobileVpShare({
+        apiOptions,
+        card: activeCard,
+        userId: user.id,
+        holderDid: user.holderDid,
+        shareGatewayUrl: env.shareGatewayUrl,
         selectedFields,
-        audience: "TrustCare mobile verifier",
         validMinutes: 10,
       });
-      const qrPayload = createPresentationQrPayload({
-        origin: apiOptions.demoOrigin,
-        presentationId: result.presentationId,
-        qrData: result.qrData,
-      });
-      const presentationWithQr = { ...result, qrData: qrPayload };
-      setPresentation(presentationWithQr);
+      setPresentation(result.presentation);
       await cacheQr(
         activeCard.id,
-        qrPayload,
-        result.presentationId,
-        result.expiresAt,
+        result.qrPayload,
+        result.presentation.presentationId,
+        result.presentation.expiresAt,
         user.id,
       );
       setSelectiveOpen(false);
+      setMessage(
+        result.warnings.length
+          ? `สร้าง VP resolver QR สำเร็จ (${result.warnings.join(", ")})`
+          : "สร้าง VP resolver QR สำเร็จ",
+      );
       return;
     } catch (error) {
-      if (selectedFields.length) {
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : "สร้าง selective VP ไม่สำเร็จ",
-        );
-        return;
-      }
-      const cached = await loadCachedQr(activeCard.id, user.id);
-      if (!cached) {
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : "สร้าง QR ไม่สำเร็จและไม่มี cache ที่ยังไม่หมดอายุ",
-        );
-        return;
-      }
-      setPresentation({
-        presentationId: cached.presentationId,
-        format: "jwt-vp",
-        mode: "offline_cached",
-        credentialCount: 1,
-        selectedFields: [],
-        expiresAt: cached.expiresAt ?? new Date().toISOString(),
-        qrData: cached.qrData,
-      });
-      setMessage("ใช้ QR จาก cache ที่ยังไม่หมดอายุ");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : selectedFields.length
+            ? "สร้าง selective VP ไม่สำเร็จ"
+            : "สร้าง QR ไม่สำเร็จ",
+      );
     }
   }
 

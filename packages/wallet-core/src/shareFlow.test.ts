@@ -236,6 +236,30 @@ describe("premium share flow policy and validation", () => {
     );
   });
 
+  it("blocks revoked credentials from VP QR publishing", () => {
+    const cards = cardsFor("opd_visit").map((item) =>
+      item.cardType === "patient_identity"
+        ? { ...item, credentialStatus: "revoked" }
+        : item,
+    );
+    const draft = createShareDraft({
+      source: "manual",
+      context: "opd_visit",
+      cards,
+      selectedCardIds: cards.map((item) => item.id),
+    });
+    const validation = validateShareDraft(
+      draft,
+      createSharePolicy({ mode: "PurposeVP", selectedFields: ["identity"] }),
+      { shareGatewayReady: true },
+    );
+
+    expect(validation.ok).toBe(false);
+    expect(validation.blockers.map((issue) => issue.key)).toContain(
+      "vp_requires_active_vc",
+    );
+  });
+
   it("locks OID4VP request documents and claims", () => {
     const cards = cardsFor("opd_visit");
     const readiness = assessLocalReadiness(cards, "opd_visit");
