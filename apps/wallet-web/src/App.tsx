@@ -1129,7 +1129,11 @@ export default function App() {
             onClick={() => navigateTo("settings")}
           />
         </nav>
-        <UserScopePanel activeUser={activeUser} onLogout={logout} />
+        <UserScopePanel
+          activeUser={activeUser}
+          cards={allCards}
+          onLogout={logout}
+        />
       </aside>
 
       <section className="main-pane">
@@ -1162,7 +1166,7 @@ export default function App() {
           </div>
           <div className="topbar-actions">
             <div className="top-user-session" aria-label="ผู้ใช้ที่เข้าสู่ระบบ">
-              <UserAvatarImage user={activeUser} />
+              <UserAvatarImage user={activeUser} cards={allCards} />
               <span>
                 <strong>{activeUser.nameTh}</strong>
                 <small>

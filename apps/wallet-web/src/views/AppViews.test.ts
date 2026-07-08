@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { extractScannablePayload, scanPayloadFromHash } from "./AppViews";
+import { getDemoUser, getDemoWalletCards } from "@trustcare/wallet-core";
+import {
+  avatarUrlCandidatesForUser,
+  extractScannablePayload,
+  scanPayloadFromHash,
+} from "./AppViews";
 
 describe("scan URL payload parsing", () => {
   it("preserves nested resolver query params inside hash scan URLs", () => {
@@ -11,5 +16,21 @@ describe("scan URL payload parsing", () => {
     expect(extractScannablePayload(`https://wallet.example/${hash}`)).toBe(
       payload,
     );
+  });
+});
+
+describe("login user photos", () => {
+  it("uses credential photo candidates before the generic gender fallback", () => {
+    const user = getDemoUser("demo-patient-003");
+    const candidates = avatarUrlCandidatesForUser(
+      user,
+      getDemoWalletCards(user.id),
+    );
+
+    expect(candidates.slice(0, 2)).toEqual([
+      "https://trustcarehealth.live/manus-storage/patient_john_williams_b4e9e7f3.jpg",
+      "https://trustcarehealth.live/api/storage-proxy/patient_john_williams_b4e9e7f3.jpg",
+    ]);
+    expect(candidates).toContain("/assets/users/wallet-native-01.png");
   });
 });

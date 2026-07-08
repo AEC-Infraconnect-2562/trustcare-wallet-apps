@@ -76,8 +76,11 @@ import {
   exportWalletObjects,
   buildPortalInteroperabilityFixtures,
   getDemoUser,
+  getDemoWalletCards,
   normalizePhotoUrl,
+  normalizePhotoUrlCandidates,
   parseShlLink,
+  photoCandidatesForCard,
   readinessContextLabels,
   readinessContextValues,
   recommendPolicyForDraft,
@@ -179,6 +182,18 @@ export function LoginView({
   onOpenScanner: () => void;
 }) {
   const selectedUser = getDemoUser(selectedUserId);
+  const loginCardsByUser = useMemo(
+    () =>
+      new Map(
+        users.map((user) => [
+          user.id,
+          getDemoWalletCards(user.id).filter(
+            (card) => card.ownerUserId === user.id,
+          ),
+        ]),
+      ),
+    [users],
+  );
   return (
     <main className="login-shell">
       <section className="login-card">
@@ -222,7 +237,10 @@ export function LoginView({
               }
               onClick={() => onSelect(user.id)}
             >
-              <UserAvatarImage user={user} />
+              <UserAvatarImage
+                user={user}
+                cards={loginCardsByUser.get(user.id) ?? []}
+              />
               <span>
                 <strong>{user.nameTh}</strong>
                 <small>
@@ -283,15 +301,17 @@ export function NavButton({
 
 export function UserScopePanel({
   activeUser,
+  cards = [],
   onLogout,
 }: {
   activeUser: WalletDemoUser;
+  cards?: WalletCard[];
   onLogout: () => void;
 }) {
   return (
     <section className="user-scope-panel">
       <div className="user-scope-card">
-        <UserAvatarImage user={activeUser} />
+        <UserAvatarImage user={activeUser} cards={cards} />
         <div>
           <strong>{activeUser.nameTh}</strong>
           <small>{activeUser.sourceLabel}</small>
@@ -4803,21 +4823,68 @@ export function friendlyPortalSyncError(error: unknown): string {
   return message;
 }
 
-export function UserAvatarImage({ user }: { user: WalletDemoUser }) {
-  const [fallback, setFallback] = useState(false);
-  const source = fallback
-    ? resolveAvatarFallbackUrl(user)
-    : resolveAvatarUrl(user.avatarUrl);
+export function UserAvatarImage({
+  user,
+  cards = [],
+}: {
+  user: WalletDemoUser;
+  cards?: WalletCard[];
+}) {
+  const candidates = useMemo(
+    () => avatarUrlCandidatesForUser(user, cards),
+    [cards, user],
+  );
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const source = candidates[candidateIndex] ?? resolveAvatarFallbackUrl(user);
+
+  useEffect(() => {
+    setCandidateIndex(0);
+  }, [candidates]);
 
   return (
     <img
       src={source}
       alt={user.nameEn || user.nameTh}
       onError={() => {
-        if (!fallback) setFallback(true);
+        setCandidateIndex((index) => index + 1);
       }}
     />
   );
+}
+
+export function avatarUrlCandidatesForUser(
+  user: WalletDemoUser,
+  cards: WalletCard[] = [],
+): string[] {
+  const candidates: string[] = [];
+  const add = (url: string | null | undefined) => {
+    if (!url) return;
+    const resolved = resolveAvatarCandidateUrl(url);
+    if (resolved && !candidates.includes(resolved)) candidates.push(resolved);
+  };
+
+  for (const card of cards) {
+    if (card.ownerUserId && card.ownerUserId !== user.id) continue;
+    for (const candidate of photoCandidatesForCard(card)) {
+      add(candidate.url);
+    }
+  }
+  for (const candidate of normalizePhotoUrlCandidates(user.avatarUrl)) {
+    add(candidate);
+  }
+  add(resolveAvatarFallbackUrl(user));
+  return candidates;
+}
+
+function resolveAvatarCandidateUrl(url: string): string {
+  const trimmed = url.trim();
+  if (
+    /^https?:\/\//i.test(trimmed) ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("/assets/")
+  )
+    return trimmed;
+  return resolveAvatarUrl(trimmed);
 }
 
 export function resolveAvatarFallbackUrl(user: WalletDemoUser): string {
