@@ -48,10 +48,12 @@ type PortalWalletSyncResponse = {
   total?: number;
   hasMore?: boolean;
   nextSince?: string | null;
-  error?: {
-    message?: string;
-    code?: string;
-  } | string;
+  error?:
+    | {
+        message?: string;
+        code?: string;
+      }
+    | string;
   message?: string;
 };
 
@@ -109,7 +111,8 @@ export async function syncTrustCarePortalWallet(
     fetcher,
     portalOrigin,
     token,
-    options.knownCredentials ?? buildPortalKnownCredentials(options.currentCards ?? []),
+    options.knownCredentials ??
+      buildPortalKnownCredentials(options.currentCards ?? []),
   );
   const imported = normalizeTrustCarePortalWalletSync({
     owner: user,
@@ -148,14 +151,16 @@ export async function getPortalWalletSyncStatus(
       `Portal sync is not configured for wallet user ${user.id}`,
     );
   }
-  const token = await getPortalDemoToken(fetcher, portalOrigin, portalOpenIdForSync(user));
+  const token = await getPortalDemoToken(
+    fetcher,
+    portalOrigin,
+    portalOpenIdForSync(user),
+  );
   const response = await fetcher(`${portalOrigin}/api/wallet/sync/status`, {
     headers: { authorization: `Bearer ${token}` },
   });
   const payload = (await response.json().catch(() => null)) as
-    | PortalWalletSyncStatus
-    | { error?: string; message?: string }
-    | null;
+    PortalWalletSyncStatus | { error?: string; message?: string } | null;
   if (!response.ok) {
     throw new TrustCareApiError(
       errorMessage(payload) ?? "TrustCare Portal wallet sync status failed",
@@ -173,14 +178,17 @@ export async function resolveTrustCareDid(
     options.portalOrigin ?? TRUSTCARE_PORTAL_WEB_ORIGIN
   ).replace(/\/$/, "");
   const fetcher = options.fetchImpl ?? fetch;
-  const response = await fetcher(`${portalOrigin}/api/wallet/sync/did-resolve`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ did }),
-  });
-  const payload = (await response.json().catch(() => null)) as
-    | PortalDidResolveResponse
-    | null;
+  const response = await fetcher(
+    `${portalOrigin}/api/wallet/sync/did-resolve`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ did }),
+    },
+  );
+  const payload = (await response
+    .json()
+    .catch(() => null)) as PortalDidResolveResponse | null;
   if (!response.ok) {
     throw new TrustCareApiError(
       payload?.message ?? payload?.error ?? "TrustCare DID resolve failed",
@@ -209,12 +217,14 @@ export async function verifyPortalCredentialJwt(
     headers,
     body: JSON.stringify({ jwt: options.jwt }),
   });
-  const payload = (await response.json().catch(() => null)) as
-    | PortalCredentialVerifyResponse
-    | null;
+  const payload = (await response
+    .json()
+    .catch(() => null)) as PortalCredentialVerifyResponse | null;
   if (!response.ok) {
     throw new TrustCareApiError(
-      payload?.message ?? payload?.error ?? "TrustCare Portal credential verify failed",
+      payload?.message ??
+        payload?.error ??
+        "TrustCare Portal credential verify failed",
       { status: response.status },
     );
   }
@@ -264,9 +274,9 @@ async function postPortalWalletSync(
       knownCredentials,
     }),
   });
-  const payload = (await response.json().catch(() => null)) as
-    | PortalWalletSyncResponse
-    | null;
+  const payload = (await response
+    .json()
+    .catch(() => null)) as PortalWalletSyncResponse | null;
   if (!response.ok || payload?.error) {
     throw new TrustCareApiError(
       errorMessage(payload) ?? "TrustCare Portal wallet sync failed",
@@ -289,9 +299,14 @@ async function attachPortalJwtVerification(
   portalOrigin: string,
   token: string,
 ): Promise<PortalWalletImportResult> {
-  const cardsWithJwt = imported.cards.filter((card) => Boolean(card.credentialJwt));
+  const cardsWithJwt = imported.cards.filter((card) =>
+    Boolean(card.credentialJwt),
+  );
   const missingJwtCount = imported.cards.length - cardsWithJwt.length;
-  const verificationByCredentialId = new Map<string, PortalCredentialVerifyResponse>();
+  const verificationByCredentialId = new Map<
+    string,
+    PortalCredentialVerifyResponse
+  >();
   const warnings = [...imported.report.warnings];
 
   if (missingJwtCount > 0) {
@@ -326,7 +341,12 @@ async function attachPortalJwtVerification(
     }
   }
 
-  const cards = imported.cards.map((card) => attachVerification(card, verificationByCredentialId.get(String(card.credentialId))));
+  const cards = imported.cards.map((card) =>
+    attachVerification(
+      card,
+      verificationByCredentialId.get(String(card.credentialId)),
+    ),
+  );
   return {
     ...imported,
     cards,

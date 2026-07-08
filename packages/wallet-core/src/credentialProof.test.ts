@@ -29,10 +29,14 @@ describe("credential proof standards layer", () => {
       vp,
     });
 
-    expect(splitJwtToken(`${jwt}~disclosure`)?.disclosures).toEqual(["disclosure"]);
+    expect(splitJwtToken(`${jwt}~disclosure`)?.disclosures).toEqual([
+      "disclosure",
+    ]);
     expect(parseJwtPayload(jwt)?.iss).toBe("did:web:wallet.example");
     expect(unwrapVpPayload({ payload: jwt })?.id).toBe("vp-shared-001");
-    expect(extractPresentationJwt({ result: { data: { presentationJwt: jwt } } })).toBe(jwt);
+    expect(
+      extractPresentationJwt({ result: { data: { presentationJwt: jwt } } }),
+    ).toBe(jwt);
   });
 
   it("keeps proof usability checks out of verifier and gateway code", () => {
@@ -53,11 +57,18 @@ describe("credential proof standards layer", () => {
         },
       }),
     ).toBe(false);
-    expect(proofSummary({ trustcare: { signingStatus: "jwt_signed" } })).toBe("jwt_signed");
+    expect(proofSummary({ trustcare: { signingStatus: "jwt_signed" } })).toBe(
+      "jwt_signed",
+    );
   });
 
   it("normalizes credential claims and issuer metadata", () => {
-    const vcJwt = makeJwt({ vc: { id: "vc-001", type: ["VerifiableCredential", "PatientSummaryCredential"] } });
+    const vcJwt = makeJwt({
+      vc: {
+        id: "vc-001",
+        type: ["VerifiableCredential", "PatientSummaryCredential"],
+      },
+    });
     const credentials = [
       {
         jwt: vcJwt,
@@ -70,20 +81,29 @@ describe("credential proof standards layer", () => {
 
     expect(extractCredentialJwt(credentials[0])).toBe(vcJwt);
     expect(credentialIssuerName(credentials[0].vc)).toBe("TrustCare Central");
-    expect(documentTypesFromCredentials(credentials)).toEqual(["PatientIdentityCredential"]);
+    expect(documentTypesFromCredentials(credentials)).toEqual([
+      "PatientIdentityCredential",
+    ]);
   });
 
   it("centralizes TrustCare DID/JWKS candidate and kid matching rules", () => {
     const candidates = buildTrustCareJwksCandidates({
       header: { jku: "https://issuer.example/jwks.json" },
       payload: { iss: "did:web:trustcare.network:hospital:TCC" },
-      sourceUrl: "https://wallet.example/api/share-gateway/presentations/vp.jwt",
+      sourceUrl:
+        "https://wallet.example/api/share-gateway/presentations/vp.jwt",
     });
 
     expect(candidates).toContain("https://issuer.example/jwks.json");
-    expect(candidates).toContain("https://wallet.example/api/share-gateway/.well-known/jwks.json");
-    expect(candidates).toContain("https://trustcarehealth.live/hospital/tcc/did/jwks.json");
-    expect(keyMatchesKid({ kid: "did:web:issuer.example#key-1" }, "key-1")).toBe(true);
+    expect(candidates).toContain(
+      "https://wallet.example/api/share-gateway/.well-known/jwks.json",
+    );
+    expect(candidates).toContain(
+      "https://trustcarehealth.live/hospital/tcc/did/jwks.json",
+    );
+    expect(
+      keyMatchesKid({ kid: "did:web:issuer.example#key-1" }, "key-1"),
+    ).toBe(true);
   });
 
   it("uses the same cryptographic proof predicate for wallet cards and envelopes", () => {

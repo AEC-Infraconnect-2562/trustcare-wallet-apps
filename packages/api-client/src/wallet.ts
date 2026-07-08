@@ -298,9 +298,12 @@ export async function present(
   options: WalletApiOptions,
   input: WalletPresentationRequest,
 ): Promise<WalletPresentationResponse> {
+  const { cardSnapshot, ...requestInput } = input;
   if (options.demoMode ?? true) {
     const cards = await demoWalletCards(options);
-    const card = cards.find((item) => item.id === input.cardId);
+    const card =
+      cards.find((item) => item.id === input.cardId) ??
+      presentationCardSnapshot(options, cardSnapshot, input.cardId);
     if (!card) throw new Error("Wallet card not found");
     if (!canPresentCredential(card))
       throw new Error("This wallet card is not active");
@@ -318,7 +321,7 @@ export async function present(
   return callTrpcProcedure<WalletPresentationResponse>(
     options,
     "wallet.present",
-    input,
+    requestInput,
   );
 }
 
@@ -729,6 +732,22 @@ async function demoWalletCards(options: WalletApiOptions) {
     ).flat();
   }
   return getDemoWalletCards(options.userId);
+}
+
+function presentationCardSnapshot(
+  options: WalletApiOptions,
+  card: WalletPresentationRequest["cardSnapshot"],
+  cardId: number,
+) {
+  if (!card || card.id !== cardId) return null;
+  if (
+    options.userId &&
+    card.ownerUserId &&
+    String(card.ownerUserId) !== String(options.userId)
+  ) {
+    return null;
+  }
+  return card;
 }
 
 function createSignedCredentialPresentation(

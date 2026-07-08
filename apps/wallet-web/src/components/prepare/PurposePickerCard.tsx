@@ -15,7 +15,9 @@ export function PurposePickerCard({
   return (
     <button
       type="button"
-      className={card.selected ? "purpose-picker-card selected" : "purpose-picker-card"}
+      className={
+        card.selected ? "purpose-picker-card selected" : "purpose-picker-card"
+      }
       onClick={() => onSelect(card.context)}
       aria-label={card.ariaLabel}
       aria-pressed={card.selected}

@@ -78,11 +78,15 @@ export function parseJwtPayload(value: string): JsonRecord | null {
   }
 }
 
-export function extractJwtFromJson(value: JsonRecord | null, keys: string[]): string | null {
+export function extractJwtFromJson(
+  value: JsonRecord | null,
+  keys: string[],
+): string | null {
   if (!value) return null;
   for (const key of keys) {
     const candidate = value[key];
-    if (typeof candidate === "string" && looksLikeJwt(candidate)) return candidate;
+    if (typeof candidate === "string" && looksLikeJwt(candidate))
+      return candidate;
   }
   const nested =
     jsonRecord(value.payload) ??
@@ -91,8 +95,15 @@ export function extractJwtFromJson(value: JsonRecord | null, keys: string[]): st
   return nested ? extractJwtFromJson(nested, keys) : null;
 }
 
-export function extractPresentationJwt(value: JsonRecord | null): string | null {
-  return extractJwtFromJson(value, ["jwt", "vpJwt", "presentationJwt", "token"]);
+export function extractPresentationJwt(
+  value: JsonRecord | null,
+): string | null {
+  return extractJwtFromJson(value, [
+    "jwt",
+    "vpJwt",
+    "presentationJwt",
+    "token",
+  ]);
 }
 
 export function extractCredentialJwt(value: unknown): string | null {
@@ -113,7 +124,10 @@ export function unwrapVpPayload(value: unknown): JsonRecord | null {
   return unwrapVpPayloadInner(value, new Set<unknown>());
 }
 
-function unwrapVpPayloadInner(value: unknown, seen: Set<unknown>): JsonRecord | null {
+function unwrapVpPayloadInner(
+  value: unknown,
+  seen: Set<unknown>,
+): JsonRecord | null {
   const object = jsonRecord(value);
   if (!object) return null;
   if (seen.has(object)) return null;
@@ -163,7 +177,9 @@ export function isVerifiablePresentation(value: JsonRecord): boolean {
     : type === "VerifiablePresentation";
 }
 
-export function firstCredentialIssuer(credentials: unknown[]): string | undefined {
+export function firstCredentialIssuer(
+  credentials: unknown[],
+): string | undefined {
   for (const credential of credentials) {
     const object = jsonRecord(credential);
     const vc = unwrapVcPayload(object) ?? object;
@@ -173,28 +189,39 @@ export function firstCredentialIssuer(credentials: unknown[]): string | undefine
   return undefined;
 }
 
-export function credentialIssuerName(value: JsonRecord | null): string | undefined {
+export function credentialIssuerName(
+  value: JsonRecord | null,
+): string | undefined {
   if (!value) return undefined;
   const issuer = value.issuer;
   if (typeof issuer === "string") return issuer;
   const issuerObject = jsonRecord(issuer);
-  return stringOrUndefined(issuerObject?.name) ?? stringOrUndefined(issuerObject?.id);
+  return (
+    stringOrUndefined(issuerObject?.name) ?? stringOrUndefined(issuerObject?.id)
+  );
 }
 
 export function documentTypesFromCredentials(credentials: unknown[]): string[] {
   const values = credentials
-    .map((credential) => lastCredentialType(unwrapVcPayload(credential) ?? jsonRecord(credential)))
+    .map((credential) =>
+      lastCredentialType(unwrapVcPayload(credential) ?? jsonRecord(credential)),
+    )
     .filter((value): value is string => Boolean(value));
   return Array.from(new Set(values));
 }
 
-export function lastCredentialType(credential: JsonRecord | null): string | undefined {
+export function lastCredentialType(
+  credential: JsonRecord | null,
+): string | undefined {
   if (!credential) return undefined;
   const type = credential.type;
   if (Array.isArray(type)) {
     const values = type
       .map(String)
-      .filter((item) => item !== "VerifiableCredential" && item !== "VerifiablePresentation");
+      .filter(
+        (item) =>
+          item !== "VerifiableCredential" && item !== "VerifiablePresentation",
+      );
     return values[values.length - 1];
   }
   return typeof type === "string" ? type : undefined;
@@ -213,10 +240,15 @@ export function proofLooksUsable(proof: unknown): boolean {
     const object = jsonRecord(entry);
     if (!object) return false;
     const type = String(object.type ?? object.proofPurpose ?? "").toLowerCase();
-    const value = String(object.proofValue ?? object.jws ?? object.signature ?? "").toLowerCase();
+    const value = String(
+      object.proofValue ?? object.jws ?? object.signature ?? "",
+    ).toLowerCase();
     if (!type && !value) return false;
     const joined = `${type} ${value}`;
-    return !joined.includes("placeholder") && !joined.includes("test_proof_value_only");
+    return (
+      !joined.includes("placeholder") &&
+      !joined.includes("test_proof_value_only")
+    );
   });
 }
 
@@ -236,12 +268,17 @@ export function proofSummary(value: JsonRecord): string {
   );
 }
 
-export function walletCardHasCryptographicProof(card: Pick<WalletCard, "credentialProof" | "credentialJwt" | "credentialData">): boolean {
+export function walletCardHasCryptographicProof(
+  card: Pick<
+    WalletCard,
+    "credentialProof" | "credentialJwt" | "credentialData"
+  >,
+): boolean {
   const credentialData = jsonRecord(card.credentialData);
   return Boolean(
     card.credentialProof?.jwt ??
-      card.credentialJwt ??
-      (credentialData ? hasVerifiableProof(credentialData) : false),
+    card.credentialJwt ??
+    (credentialData ? hasVerifiableProof(credentialData) : false),
   );
 }
 
@@ -259,16 +296,23 @@ export function buildTrustCareJwksCandidates(input: {
     candidates.add(`${source.origin}/api/share-gateway/.well-known/jwks.json`);
     candidates.add(`${source.origin}/.well-known/jwks.json`);
   }
-  for (const url of didWebJwksCandidates(stringOrUndefined(input.payload.iss), input.trustcareOrigins)) {
+  for (const url of didWebJwksCandidates(
+    stringOrUndefined(input.payload.iss),
+    input.trustcareOrigins,
+  )) {
     candidates.add(url);
   }
-  for (const origin of input.trustcareOrigins ?? TRUSTCARE_STANDARD_JWKS_ORIGINS) {
+  for (const origin of input.trustcareOrigins ??
+    TRUSTCARE_STANDARD_JWKS_ORIGINS) {
     candidates.add(`${normalizeOrigin(origin)}/.well-known/jwks.json`);
   }
   return Array.from(candidates);
 }
 
-export function didWebJwksCandidates(issuer: string | undefined, trustcareOrigins = TRUSTCARE_STANDARD_JWKS_ORIGINS): string[] {
+export function didWebJwksCandidates(
+  issuer: string | undefined,
+  trustcareOrigins = TRUSTCARE_STANDARD_JWKS_ORIGINS,
+): string[] {
   if (!issuer?.startsWith("did:web:")) return [];
   const parts = issuer
     .slice("did:web:".length)
@@ -285,8 +329,11 @@ export function didWebJwksCandidates(issuer: string | undefined, trustcareOrigin
     candidates.add(`https://${host}/${didPath}/jwks.json`);
     candidates.add(`https://${host}/${didPath}/did.json`);
   }
-  const hospitalIndex = pathParts.findIndex((part) => part.toLowerCase() === "hospital");
-  const hospitalCode = hospitalIndex >= 0 ? pathParts[hospitalIndex + 1] : undefined;
+  const hospitalIndex = pathParts.findIndex(
+    (part) => part.toLowerCase() === "hospital",
+  );
+  const hospitalCode =
+    hospitalIndex >= 0 ? pathParts[hospitalIndex + 1] : undefined;
   if (hospitalCode) {
     const code = encodeURIComponent(hospitalCode.toLowerCase());
     for (const portalOrigin of trustcareOrigins) {
@@ -301,7 +348,9 @@ export function didWebJwksCandidates(issuer: string | undefined, trustcareOrigin
 export function jwksToKeys(payload: JsonRecord): JWK[] {
   if (Array.isArray(payload.keys)) return payload.keys as JWK[];
   if (payload.kty) return [payload as JWK];
-  const methods = Array.isArray(payload.verificationMethod) ? payload.verificationMethod : [];
+  const methods = Array.isArray(payload.verificationMethod)
+    ? payload.verificationMethod
+    : [];
   return methods
     .map((method) => {
       const object = jsonRecord(method);
@@ -309,7 +358,10 @@ export function jwksToKeys(payload: JsonRecord): JWK[] {
       if (!jwk) return null;
       return {
         ...jwk,
-        kid: stringOrUndefined(jwk.kid) ?? stringOrUndefined(object?.id) ?? stringOrUndefined(payload.id),
+        kid:
+          stringOrUndefined(jwk.kid) ??
+          stringOrUndefined(object?.id) ??
+          stringOrUndefined(payload.id),
       } as JWK;
     })
     .filter((value): value is JWK => Boolean(value));
@@ -323,10 +375,10 @@ export function keyMatchesKid(key: JWK, kid: string): boolean {
   const requestedFragment = kid.split("#").at(-1);
   return Boolean(
     keyFragment &&
-      requestedFragment &&
-      (keyFragment === requestedFragment ||
-        keyKid.endsWith(`#${requestedFragment}`) ||
-        kid.endsWith(`#${keyFragment}`)),
+    requestedFragment &&
+    (keyFragment === requestedFragment ||
+      keyKid.endsWith(`#${requestedFragment}`) ||
+      kid.endsWith(`#${keyFragment}`)),
   );
 }
 

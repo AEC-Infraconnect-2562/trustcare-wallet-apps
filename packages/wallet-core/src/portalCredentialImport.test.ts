@@ -12,16 +12,16 @@ describe("normalizeTrustCarePortalWalletCards", () => {
       issuer: {
         id: "did:web:trustcare.network:hospital:tcc",
         name: "TrustCare Central Hospital",
-        nameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล"
+        nameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
       },
       validFrom: "2026-07-01T02:00:00.000Z",
       validUntil: "2027-07-01T02:00:00.000Z",
       credentialSubject: {
         id: owner.holderDid,
         patient: {
-          photoUrl: "/manus-storage/patient_somsak_a2e00e97.jpg"
-        }
-      }
+          photoUrl: "/manus-storage/patient_somsak_a2e00e97.jpg",
+        },
+      },
     };
 
     const result = normalizeTrustCarePortalWalletCards({
@@ -45,9 +45,9 @@ describe("normalizeTrustCarePortalWalletCards", () => {
               type: "jwt",
               jwt: "ey.portal.patient.identity.sd-jwt-vc",
               alg: "ES256",
-              kid: "did:web:trustcare.network:hospital:tcc#vc-signing-key"
+              kid: "did:web:trustcare.network:hospital:tcc#vc-signing-key",
             },
-            credentialData
+            credentialData,
           },
           {
             id: 2,
@@ -58,25 +58,27 @@ describe("normalizeTrustCarePortalWalletCards", () => {
             displayNameEn: "Patient Summary",
             documentCategory: "clinical_summary",
             credentialStatus: "active",
-            credentialData: null
-          }
-        ]
+            credentialData: null,
+          },
+        ],
       },
-      syncedAt: "2026-07-06T10:00:00.000Z"
+      syncedAt: "2026-07-06T10:00:00.000Z",
     });
 
     expect(result.cards).toHaveLength(1);
     expect(result.cards[0]?.cardType).toBe("patient_identity");
     expect(result.cards[0]?.credentialData).toBe(credentialData);
-    expect(result.cards[0]?.credentialJwt).toBe("ey.portal.patient.identity.sd-jwt-vc");
+    expect(result.cards[0]?.credentialJwt).toBe(
+      "ey.portal.patient.identity.sd-jwt-vc",
+    );
     expect(result.cards[0]?.credentialProof).toMatchObject({
       type: "jwt",
       alg: "ES256",
       kid: "did:web:trustcare.network:hospital:tcc#vc-signing-key",
-      source: "trustcare_portal_sync_proof"
+      source: "trustcare_portal_sync_proof",
     });
     expect(result.cards[0]?.patientAvatarUrl).toBe(
-      "https://trustcarehealth.live/manus-storage/patient_somsak_a2e00e97.jpg"
+      "https://trustcarehealth.live/manus-storage/patient_somsak_a2e00e97.jpg",
     );
     expect(result.report.portalCardCount).toBe(2);
     expect(result.report.importedCredentialCount).toBe(1);
@@ -95,15 +97,15 @@ describe("normalizeTrustCarePortalWalletCards", () => {
             cardType: "claim",
             displayName: "ใบเสร็จรับเงิน",
             displayNameEn: "Claim Receipt",
-            documentType: "claim_receipt"
+            documentType: "claim_receipt",
           }),
           portalCard({
             id: 102,
             cardType: "claim",
             displayName: "ชุดเอกสารเคลม",
             displayNameEn: "Claim Package",
-            documentType: "claim_package"
-          })
+            documentType: "claim_package",
+          }),
         ],
         medical_tourism: [
           portalCard({
@@ -111,17 +113,17 @@ describe("normalizeTrustCarePortalWalletCards", () => {
             cardType: "travel_document",
             displayName: "ตรวจเอกสารผู้ป่วยต่างชาติ",
             displayNameEn: "Travel Document Verification",
-            documentType: "travel_document_verification"
-          })
-        ]
+            documentType: "travel_document_verification",
+          }),
+        ],
       },
-      syncedAt: "2026-07-06T10:00:00.000Z"
+      syncedAt: "2026-07-06T10:00:00.000Z",
     });
 
     expect(result.cards.map((card) => card.cardType).sort()).toEqual([
       "claim_package",
       "claim_receipt",
-      "travel_document_verification"
+      "travel_document_verification",
     ]);
   });
 });
@@ -151,7 +153,7 @@ function portalCard(input: {
       type: ["VerifiableCredential", "TrustCareHealthCredential"],
       issuer: {
         id: "did:web:trustcare.network:hospital:tcp",
-        name: "TrustCare Phuket International Hospital"
+        name: "TrustCare Phuket International Hospital",
       },
       validFrom: "2026-07-01T02:00:00.000Z",
       validUntil: "2027-07-01T02:00:00.000Z",
@@ -159,17 +161,17 @@ function portalCard(input: {
         id: "did:key:test-holder",
         documentType: input.documentType,
         patient: {
-          fullNameEn: "Mr. John Williams"
-        }
+          fullNameEn: "Mr. John Williams",
+        },
       },
       evidence: [
         {
           type: "DocumentReference",
           documentReference: {
-            id: `DocumentReference/${input.id}`
-          }
-        }
-      ]
-    }
+            id: `DocumentReference/${input.id}`,
+          },
+        },
+      ],
+    },
   };
 }

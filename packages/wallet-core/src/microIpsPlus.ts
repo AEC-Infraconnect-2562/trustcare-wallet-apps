@@ -108,7 +108,13 @@ export function selectMinimumNecessaryRecords(
     if (!documentType) continue;
     if (!allowedTypes.has(documentType)) continue;
     if (isTrustArtifactDocumentType(documentType)) continue;
-    if (!canPresentCredential({ credentialStatus: record.status, expiresAt: record.expiresAt })) continue;
+    if (
+      !canPresentCredential({
+        credentialStatus: record.status,
+        expiresAt: record.expiresAt,
+      })
+    )
+      continue;
     const current = selectedByType.get(documentType);
     if (!current || compareRecordFreshness(record, current) > 0) {
       selectedByType.set(documentType, record);
@@ -163,7 +169,7 @@ export function buildMicroIpsPlusPack(
           recordIds: sectionRecords.map((record) => record.id),
           required: requirement.required,
         };
-    }),
+      }),
     records,
     standards: {
       clinicalSummary: "HL7_IPS_R4",
@@ -183,7 +189,8 @@ export function buildMicroIpsPlusPack(
     provenance: {
       source: "trustcare-wallet",
       selectedBy: "minimum-necessary",
-      shareOnlyVia: records.length > 3 ? "CertifiedSHLManifestPackage" : "PurposeVP",
+      shareOnlyVia:
+        records.length > 3 ? "CertifiedSHLManifestPackage" : "PurposeVP",
       packageTime: generatedAt,
       recordTimeRange: recordTimeRange(records),
     },
@@ -209,14 +216,24 @@ export function validateMicroIpsPlusPack(
   if (!pack.provenance?.shareOnlyVia)
     errors.push("Micro-IPS+ must route sharing through VP or SHL packages.");
   if (pack.trust.unverifiedCount > 0)
-    warnings.push("Some records are patient-provided and not trusted issuer signed.");
-  if (pack.records.some((record) => isTrustArtifactDocumentType(record.documentType))) {
-    errors.push("Trust artifacts must not be included as clinical readiness records.");
+    warnings.push(
+      "Some records are patient-provided and not trusted issuer signed.",
+    );
+  if (
+    pack.records.some((record) =>
+      isTrustArtifactDocumentType(record.documentType),
+    )
+  ) {
+    errors.push(
+      "Trust artifacts must not be included as clinical readiness records.",
+    );
   }
   return { ok: errors.length === 0, errors, warnings };
 }
 
-function buildPackTrust(records: WalletDocumentRecord[]): MicroIpsPlusPack["trust"] {
+function buildPackTrust(
+  records: WalletDocumentRecord[],
+): MicroIpsPlusPack["trust"] {
   const issuerSignedCount = records.filter(
     (record) => record.trustStatus === "issuer_signed",
   ).length;
@@ -227,8 +244,10 @@ function buildPackTrust(records: WalletDocumentRecord[]): MicroIpsPlusPack["trus
     isTrustArtifactDocumentType(record.documentType),
   ).length;
   const warnings: string[] = [];
-  if (unverifiedCount) warnings.push("patient_provided_unverified_records_present");
-  if (trustArtifactCount) warnings.push("trust_artifacts_excluded_from_readiness");
+  if (unverifiedCount)
+    warnings.push("patient_provided_unverified_records_present");
+  if (trustArtifactCount)
+    warnings.push("trust_artifacts_excluded_from_readiness");
   return { issuerSignedCount, unverifiedCount, trustArtifactCount, warnings };
 }
 
@@ -236,18 +255,26 @@ function compareRecordFreshness(
   left: WalletDocumentRecord,
   right: WalletDocumentRecord,
 ): number {
-  return dateValue(recordTimelineDate(left)) - dateValue(recordTimelineDate(right));
+  return (
+    dateValue(recordTimelineDate(left)) - dateValue(recordTimelineDate(right))
+  );
 }
 
 function compareRecordTimeline(
   left: WalletDocumentRecord,
   right: WalletDocumentRecord,
 ): number {
-  return dateValue(recordTimelineDate(left)) - dateValue(recordTimelineDate(right));
+  return (
+    dateValue(recordTimelineDate(left)) - dateValue(recordTimelineDate(right))
+  );
 }
 
-function recordTimelineDate(record: WalletDocumentRecord): string | null | undefined {
-  return record.version.documentDate ?? record.issuedAt ?? record.source.importedAt;
+function recordTimelineDate(
+  record: WalletDocumentRecord,
+): string | null | undefined {
+  return (
+    record.version.documentDate ?? record.issuedAt ?? record.source.importedAt
+  );
 }
 
 function recordTimeRange(

@@ -5,7 +5,7 @@ import {
   completeWalletSeedCards,
   exportWalletCard,
   getCompleteWalletSeed,
-  readinessContextValues
+  readinessContextValues,
 } from "./index";
 import type { WalletCard } from "./models";
 
@@ -34,7 +34,7 @@ const canonicalCardTypes = [
   "guarantee_letter",
   "shl_manifest",
   "sync_receipt",
-  "appointment"
+  "appointment",
 ] as const;
 
 const canonicalCategories = new Set([
@@ -46,24 +46,32 @@ const canonicalCategories = new Set([
   "claims_and_finance",
   "medical_tourism",
   "sharing_and_sync",
-  "operations"
+  "operations",
 ]);
 
 describe("complete TrustCare wallet seed data", () => {
   it("covers every canonical cardType exactly once at seed definition level", () => {
-    const definitionTypes = new Set(completeSeedDocumentDefinitions.map(def => def.cardType));
-    const seedTypes = new Set(completeWalletSeedCards.map(card => card.cardType));
+    const definitionTypes = new Set(
+      completeSeedDocumentDefinitions.map((def) => def.cardType),
+    );
+    const seedTypes = new Set(
+      completeWalletSeedCards.map((card) => card.cardType),
+    );
 
-    expect([...canonicalCardTypes].filter(type => !definitionTypes.has(type))).toEqual([]);
-    expect([...canonicalCardTypes].filter(type => !seedTypes.has(type))).toEqual([]);
+    expect(
+      [...canonicalCardTypes].filter((type) => !definitionTypes.has(type)),
+    ).toEqual([]);
+    expect(
+      [...canonicalCardTypes].filter((type) => !seedTypes.has(type)),
+    ).toEqual([]);
     expect(completeWalletSeedCards).toHaveLength(canonicalCardTypes.length);
   });
 
   it("keeps document categories normalized to the canonical TrustCare taxonomy", () => {
     const unknownCategories = [
-      ...completeSeedDocumentDefinitions.map(def => def.documentCategory),
-      ...completeWalletSeedCards.map(card => card.documentCategory)
-    ].filter(category => !canonicalCategories.has(category));
+      ...completeSeedDocumentDefinitions.map((def) => def.documentCategory),
+      ...completeWalletSeedCards.map((card) => card.documentCategory),
+    ].filter((category) => !canonicalCategories.has(category));
 
     expect(unknownCategories).toEqual([]);
   });
@@ -71,36 +79,64 @@ describe("complete TrustCare wallet seed data", () => {
   it("scopes complete patient and staff wallets without leaking staff credentials into patient data", () => {
     const patientCards = getCompleteWalletSeed("demo-patient-complete-001");
     const staffCards = getCompleteWalletSeed("demo-staff-complete-001");
-    const patientRelevantTypes = canonicalCardTypes.filter(type => type !== "staff_identity");
+    const patientRelevantTypes = canonicalCardTypes.filter(
+      (type) => type !== "staff_identity",
+    );
 
-    expect(patientCards.map(card => card.cardType).sort()).toEqual([...patientRelevantTypes].sort());
-    expect(staffCards.map(card => card.cardType)).toEqual(["staff_identity"]);
-    expect(patientCards.every(card => card.ownerUserId === "demo-patient-complete-001")).toBe(true);
-    expect(staffCards.every(card => card.ownerUserId === "demo-staff-complete-001")).toBe(true);
+    expect(patientCards.map((card) => card.cardType).sort()).toEqual(
+      [...patientRelevantTypes].sort(),
+    );
+    expect(staffCards.map((card) => card.cardType)).toEqual(["staff_identity"]);
+    expect(
+      patientCards.every(
+        (card) => card.ownerUserId === "demo-patient-complete-001",
+      ),
+    ).toBe(true);
+    expect(
+      staffCards.every(
+        (card) => card.ownerUserId === "demo-staff-complete-001",
+      ),
+    ).toBe(true);
   });
 
   it("stores every complete seed card as a VC-like credential with DocumentReference evidence", () => {
     for (const card of completeWalletSeedCards) {
       const credential = credentialData(card);
-      const evidence = Array.isArray(credential.evidence) ? credential.evidence : [];
-      const documentEvidence = evidence.find(item =>
-        item &&
-        typeof item === "object" &&
-        String((item as Record<string, unknown>).type).includes("DocumentReference")
+      const evidence = Array.isArray(credential.evidence)
+        ? credential.evidence
+        : [];
+      const documentEvidence = evidence.find(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          String((item as Record<string, unknown>).type).includes(
+            "DocumentReference",
+          ),
       ) as Record<string, unknown> | undefined;
 
       expect(credential["@context"], card.cardType).toBeTruthy();
-      expect(credential.type, card.cardType).toEqual(expect.arrayContaining(["VerifiableCredential"]));
+      expect(credential.type, card.cardType).toEqual(
+        expect.arrayContaining(["VerifiableCredential"]),
+      );
       expect(credential.issuer, card.cardType).toBeTruthy();
       expect(credential.credentialSubject, card.cardType).toBeTruthy();
       expect(credential.credentialStatus, card.cardType).toBeTruthy();
       expect(documentEvidence, card.cardType).toBeTruthy();
-      expect(String(documentEvidence?.documentReferenceId), card.cardType).toContain("DocumentReference/");
-      expect((documentEvidence?.attachment as Record<string, unknown> | undefined)?.contentType, card.cardType).toBeTruthy();
+      expect(
+        String(documentEvidence?.documentReferenceId),
+        card.cardType,
+      ).toContain("DocumentReference/");
+      expect(
+        (documentEvidence?.attachment as Record<string, unknown> | undefined)
+          ?.contentType,
+        card.cardType,
+      ).toBeTruthy();
 
       const exported = exportWalletCard(card);
       expect(exported.ok, card.cardType).toBe(true);
-      expect(JSON.parse(exported.data).type, card.cardType).toEqual(expect.arrayContaining(["VerifiableCredential"]));
+      expect(JSON.parse(exported.data).type, card.cardType).toEqual(
+        expect.arrayContaining(["VerifiableCredential"]),
+      );
     }
   });
 

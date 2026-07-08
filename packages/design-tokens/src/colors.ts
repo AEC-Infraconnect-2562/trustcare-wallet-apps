@@ -30,7 +30,7 @@ export const lightColors = {
   sidebarAccent: "#d8eefc",
   sidebarAccentForeground: "#162330",
   sidebarBorder: "#d8dfe4",
-  sidebarRing: "#116bb5"
+  sidebarRing: "#116bb5",
 } as const;
 
 export const darkColors = {
@@ -65,21 +65,20 @@ export const darkColors = {
   sidebarAccent: "#101c28",
   sidebarAccentForeground: "#d8dfe4",
   sidebarBorder: "#1d252d",
-  sidebarRing: "#3093ec"
+  sidebarRing: "#3093ec",
 } as const;
 
 export const trustBadge = {
   green: {
     light: { bg: "#d1fae5", fg: "#065f46", border: "#6ee7b7" },
-    dark: { bg: "rgba(6, 95, 70, 0.30)", fg: "#6ee7b7", border: "#047857" }
+    dark: { bg: "rgba(6, 95, 70, 0.30)", fg: "#6ee7b7", border: "#047857" },
   },
   yellow: {
     light: { bg: "#fef3c7", fg: "#92400e", border: "#fcd34d" },
-    dark: { bg: "rgba(120, 53, 15, 0.30)", fg: "#fcd34d", border: "#b45309" }
+    dark: { bg: "rgba(120, 53, 15, 0.30)", fg: "#fcd34d", border: "#b45309" },
   },
   red: {
     light: { bg: "#fee2e2", fg: "#991b1b", border: "#fca5a5" },
-    dark: { bg: "rgba(127, 29, 29, 0.30)", fg: "#fca5a5", border: "#b91c1c" }
-  }
+    dark: { bg: "rgba(127, 29, 29, 0.30)", fg: "#fca5a5", border: "#b91c1c" },
+  },
 } as const;
-

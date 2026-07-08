@@ -1,9 +1,13 @@
 import {
   CANONICAL_DOCUMENT_CATEGORIES,
   normalizeDocumentType,
-  type CanonicalDocumentCategory
+  type CanonicalDocumentCategory,
 } from "./canonicalDocuments";
-import type { PresentationHistoryItem, WalletCard, WalletCardsByCategory } from "./models";
+import type {
+  PresentationHistoryItem,
+  WalletCard,
+  WalletCardsByCategory,
+} from "./models";
 import type { WalletDemoUser } from "./demoData";
 import { normalizePhotoUrl } from "./photoSources";
 import { TRUSTCARE_PORTAL_WEB_ORIGIN } from "./portalSyncData";
@@ -39,7 +43,8 @@ export type TrustCarePortalWalletCard = {
   credentialStatus?: string | null;
   expiresAt?: string | null;
   credentialData?: unknown;
-  proof?: TrustCarePortalCredentialProof | TrustCarePortalCredentialProof[] | unknown;
+  proof?:
+    TrustCarePortalCredentialProof | TrustCarePortalCredentialProof[] | unknown;
   jwt?: string | null;
   sdJwt?: string | null;
   sdJwtVc?: string | null;
@@ -133,12 +138,19 @@ export function normalizeTrustCarePortalWalletCards(input: {
       skipped.push(skip(portalCard, "invalid_credential_data"));
       continue;
     }
-    const documentType = portalDocumentType(portalCard, credentialData, input.owner);
+    const documentType = portalDocumentType(
+      portalCard,
+      credentialData,
+      input.owner,
+    );
     if (!documentType) {
       skipped.push(skip(portalCard, "unknown_document_type"));
       continue;
     }
-    if (input.includeTrustArtifacts === false && isPortalTrustArtifact(documentType)) {
+    if (
+      input.includeTrustArtifacts === false &&
+      isPortalTrustArtifact(documentType)
+    ) {
       skipped.push(skip(portalCard, "out_of_scope"));
       continue;
     }
@@ -150,20 +162,22 @@ export function normalizeTrustCarePortalWalletCards(input: {
     const credentialId = String(
       credentialData.id ??
         portalCard.credentialId ??
-        `${documentType}:${String(portalCard.id ?? cards.length + 1)}`
+        `${documentType}:${String(portalCard.id ?? cards.length + 1)}`,
     );
     if (seenCredentialIds.has(credentialId)) continue;
     seenCredentialIds.add(credentialId);
 
-    cards.push(portalCardToWalletCard({
-      owner: input.owner,
-      portalCard,
-      credentialData,
-      documentType,
-      cardIndex: cards.length + 1,
-      portalOrigin: input.portalOrigin ?? TRUSTCARE_PORTAL_WEB_ORIGIN,
-      syncedAt
-    }));
+    cards.push(
+      portalCardToWalletCard({
+        owner: input.owner,
+        portalCard,
+        credentialData,
+        documentType,
+        cardIndex: cards.length + 1,
+        portalOrigin: input.portalOrigin ?? TRUSTCARE_PORTAL_WEB_ORIGIN,
+        syncedAt,
+      }),
+    );
   }
 
   const cardsByCategory = cards.reduce<WalletCardsByCategory>((acc, card) => {
@@ -172,8 +186,13 @@ export function normalizeTrustCarePortalWalletCards(input: {
     return acc;
   }, {});
 
-  const metadataOnlyCount = skipped.filter(item => item.reason === "metadata_only").length;
-  const presentations = normalizePortalPresentations(input.presentations ?? [], syncedAt);
+  const metadataOnlyCount = skipped.filter(
+    (item) => item.reason === "metadata_only",
+  ).length;
+  const presentations = normalizePortalPresentations(
+    input.presentations ?? [],
+    syncedAt,
+  );
   const report: PortalWalletSyncReport = {
     ownerUserId: input.owner.id,
     portalOpenId: input.owner.portalOpenId ?? input.owner.id,
@@ -182,11 +201,14 @@ export function normalizeTrustCarePortalWalletCards(input: {
     metadataOnlyCount,
     skipped,
     source: input.source ?? "trustcare_portal_demo_login",
-    sourceUrl: input.sourceUrl ?? `${TRUSTCARE_PORTAL_WEB_ORIGIN}/api/wallet/sync`,
+    sourceUrl:
+      input.sourceUrl ?? `${TRUSTCARE_PORTAL_WEB_ORIGIN}/api/wallet/sync`,
     syncedAt,
     warnings: skipped.length
-      ? [`Portal ส่งการ์ด ${portalCards.length} รายการ และนำเข้า VC scope นี้ ${cards.length} รายการ; metadata-only ${metadataOnlyCount} รายการ; ข้าม ${skipped.filter(item => item.reason === "out_of_scope").length} trust artifacts`]
-      : []
+      ? [
+          `Portal ส่งการ์ด ${portalCards.length} รายการ และนำเข้า VC scope นี้ ${cards.length} รายการ; metadata-only ${metadataOnlyCount} รายการ; ข้าม ${skipped.filter((item) => item.reason === "out_of_scope").length} trust artifacts`,
+        ]
+      : [],
   };
 
   return { cards, cardsByCategory, presentations, report };
@@ -210,31 +232,34 @@ export function normalizeTrustCarePortalWalletSync(input: {
     sourceUrl: input.sourceUrl,
     syncedAt: input.syncedAt,
     portalOrigin: input.portalOrigin,
-    includeTrustArtifacts: input.includeTrustArtifacts
+    includeTrustArtifacts: input.includeTrustArtifacts,
   });
 }
 
 function portalDocumentType(
   portalCard: TrustCarePortalWalletCard,
   credentialData: Record<string, unknown>,
-  owner: WalletDemoUser
+  owner: WalletDemoUser,
 ): string | null {
-  const subject = isRecord(credentialData.credentialSubject) ? credentialData.credentialSubject : {};
+  const subject = isRecord(credentialData.credentialSubject)
+    ? credentialData.credentialSubject
+    : {};
   const credentialTypes = Array.isArray(credentialData.type)
-    ? credentialData.type.filter(item => typeof item === "string")
+    ? credentialData.type.filter((item) => typeof item === "string")
     : [];
   const rawType =
     stringValue(subject.documentType) ??
     stringValue(portalCard.credentialType) ??
     stringValue(portalCard.cardType) ??
-    credentialTypes.find(item => item.endsWith("Credential")) ??
+    credentialTypes.find((item) => item.endsWith("Credential")) ??
     null;
   const normalized = normalizeDocumentType(rawType);
   const looksLikeStaff =
     owner.role === "staff" ||
-    credentialTypes.some(item => /staff|hospitalstaff/i.test(item)) ||
+    credentialTypes.some((item) => /staff|hospitalstaff/i.test(item)) ||
     /staff|เจ้าหน้าที่/i.test(String(portalCard.displayName ?? ""));
-  if (normalized === "patient_identity" && looksLikeStaff) return "staff_identity";
+  if (normalized === "patient_identity" && looksLikeStaff)
+    return "staff_identity";
   return normalized;
 }
 
@@ -242,22 +267,27 @@ function isPortalTrustArtifact(documentType: string): boolean {
   return documentType === "shl_manifest" || documentType === "sync_receipt";
 }
 
-function isVcLikeCredentialData(credentialData: Record<string, unknown>): boolean {
+function isVcLikeCredentialData(
+  credentialData: Record<string, unknown>,
+): boolean {
   const types = Array.isArray(credentialData.type)
-    ? credentialData.type.filter(item => typeof item === "string")
+    ? credentialData.type.filter((item) => typeof item === "string")
     : [];
-  return types.includes("VerifiableCredential") || isRecord(credentialData.credentialSubject);
+  return (
+    types.includes("VerifiableCredential") ||
+    isRecord(credentialData.credentialSubject)
+  );
 }
 
 function normalizePortalPresentations(
   presentations: TrustCarePortalWalletPresentation[],
-  syncedAt: string
+  syncedAt: string,
 ): PresentationHistoryItem[] {
   return presentations.map((presentation, index) => {
     const payload = firstRecord(
       presentation.presentationData,
       presentation.vpData,
-      presentation.payload
+      presentation.payload,
     );
     const presentationId =
       stringValue(presentation.presentationId) ??
@@ -285,7 +315,7 @@ function normalizePortalPresentations(
         stringValue(presentation.issuedAt) ??
         syncedAt,
       createdAt: stringValue(presentation.createdAt) ?? syncedAt,
-      payload: payload ?? presentation
+      payload: payload ?? presentation,
     };
   });
 }
@@ -309,34 +339,60 @@ function portalCardToWalletCard(input: {
   const credentialSubject = isRecord(input.credentialData.credentialSubject)
     ? input.credentialData.credentialSubject
     : {};
-  const issuer = isRecord(input.credentialData.issuer) ? input.credentialData.issuer : {};
+  const issuer = isRecord(input.credentialData.issuer)
+    ? input.credentialData.issuer
+    : {};
   const credentialTypes = Array.isArray(input.credentialData.type)
-    ? input.credentialData.type.filter(item => typeof item === "string")
+    ? input.credentialData.type.filter((item) => typeof item === "string")
     : [];
-  const cardId = numericCardId(input.portalCard.id, input.owner.cardBase + input.cardIndex);
-  const issuedAt = stringValue(input.portalCard.issuedAt ?? input.credentialData.validFrom);
-  const expiresAt = stringValue(input.portalCard.expiresAt ?? input.credentialData.validUntil);
+  const cardId = numericCardId(
+    input.portalCard.id,
+    input.owner.cardBase + input.cardIndex,
+  );
+  const issuedAt = stringValue(
+    input.portalCard.issuedAt ?? input.credentialData.validFrom,
+  );
+  const expiresAt = stringValue(
+    input.portalCard.expiresAt ?? input.credentialData.validUntil,
+  );
   const credentialProof = credentialProofFromPortalCard(input.portalCard);
 
   return {
     id: cardId,
     cardType: input.documentType,
-    displayName: stringValue(input.portalCard.displayName) ?? labelFromCredential(input.documentType),
-    displayNameEn: stringValue(input.portalCard.displayNameEn) ?? englishLabelFromCredential(input.documentType),
-    documentCategory: normalizePortalCategory(input.portalCard.documentCategory, input.documentType),
-    credentialId: stringValue(input.credentialData.id ?? input.portalCard.credentialId) ?? String(cardId),
-    credentialStatus: stringValue(input.portalCard.credentialStatus) ?? statusFromCredentialData(input.credentialData),
-    credentialJwt: credentialProof?.jwt ?? credentialJwtFromPortalCard(input.portalCard),
+    displayName:
+      stringValue(input.portalCard.displayName) ??
+      labelFromCredential(input.documentType),
+    displayNameEn:
+      stringValue(input.portalCard.displayNameEn) ??
+      englishLabelFromCredential(input.documentType),
+    documentCategory: normalizePortalCategory(
+      input.portalCard.documentCategory,
+      input.documentType,
+    ),
+    credentialId:
+      stringValue(input.credentialData.id ?? input.portalCard.credentialId) ??
+      String(cardId),
+    credentialStatus:
+      stringValue(input.portalCard.credentialStatus) ??
+      statusFromCredentialData(input.credentialData),
+    credentialJwt:
+      credentialProof?.jwt ?? credentialJwtFromPortalCard(input.portalCard),
     credentialProof,
-    credentialType: stringValue(input.portalCard.credentialType) ?? credentialTypes.at(-1) ?? input.documentType,
-    issuerHospitalName: stringValue(input.portalCard.issuerHospitalName ?? issuer.nameTh ?? issuer.name),
+    credentialType:
+      stringValue(input.portalCard.credentialType) ??
+      credentialTypes.at(-1) ??
+      input.documentType,
+    issuerHospitalName: stringValue(
+      input.portalCard.issuerHospitalName ?? issuer.nameTh ?? issuer.name,
+    ),
     issuerDid: stringValue(issuer.id),
     holderDid: stringValue(credentialSubject.id) ?? input.owner.holderDid,
     patientAvatarUrl: absolutePortalAssetUrl(
       stringValue(input.portalCard.patientAvatarUrl) ??
         extractSubjectPhotoUrl(credentialSubject) ??
         input.owner.avatarUrl,
-      input.portalOrigin
+      input.portalOrigin,
     ),
     ownerUserId: input.owner.id,
     patientId: input.portalCard.patientId ?? input.owner.patientId,
@@ -344,14 +400,17 @@ function portalCardToWalletCard(input: {
     scopeLabel: "Sync จริงจาก TrustCare Portal test user",
     issuedAt,
     expiresAt,
-    createdAt: stringValue(input.portalCard.createdAt) ?? issuedAt ?? input.syncedAt,
+    createdAt:
+      stringValue(input.portalCard.createdAt) ?? issuedAt ?? input.syncedAt,
     lastPresentedAt: stringValue(input.portalCard.lastPresentedAt),
     pinned: Boolean(input.portalCard.isPinned),
-    credentialData: input.credentialData
+    credentialData: input.credentialData,
   };
 }
 
-function credentialJwtFromPortalCard(portalCard: TrustCarePortalWalletCard): string | null {
+function credentialJwtFromPortalCard(
+  portalCard: TrustCarePortalWalletCard,
+): string | null {
   const direct =
     stringValue(portalCard.jwt) ??
     stringValue(portalCard.sdJwt) ??
@@ -364,27 +423,28 @@ function credentialJwtFromPortalCard(portalCard: TrustCarePortalWalletCard): str
       portalCard.credentialEnvelope.jwt ??
         portalCard.credentialEnvelope.sdJwt ??
         portalCard.credentialEnvelope.sdJwtVc ??
-        portalCard.credentialEnvelope.signedCredential
+        portalCard.credentialEnvelope.signedCredential,
     );
   }
   return null;
 }
 
 function credentialProofFromPortalCard(
-  portalCard: TrustCarePortalWalletCard
+  portalCard: TrustCarePortalWalletCard,
 ): WalletCard["credentialProof"] {
   const proofRecord = firstPortalProofRecord(portalCard.proof);
-  const envelope = isRecord(portalCard.credentialEnvelope) ? portalCard.credentialEnvelope : null;
+  const envelope = isRecord(portalCard.credentialEnvelope)
+    ? portalCard.credentialEnvelope
+    : null;
   const envelopeProof = firstPortalProofRecord(envelope?.proof);
   const sourceProof = proofRecord ?? envelopeProof;
   const proofJwt = jwtFromProofRecord(sourceProof);
-  const jwt =
-    proofJwt ??
-    credentialJwtFromPortalCard(portalCard);
+  const jwt = proofJwt ?? credentialJwtFromPortalCard(portalCard);
   if (!jwt && !sourceProof) return null;
   return {
     type: stringValue(sourceProof?.type) ?? (jwt ? "jwt" : null),
-    format: stringValue(sourceProof?.format) ?? stringValue(sourceProof?.proofFormat),
+    format:
+      stringValue(sourceProof?.format) ?? stringValue(sourceProof?.proofFormat),
     jwt,
     alg: stringValue(sourceProof?.alg) ?? stringValue(sourceProof?.algorithm),
     kid: stringValue(sourceProof?.kid) ?? stringValue(sourceProof?.keyId),
@@ -393,11 +453,15 @@ function credentialProofFromPortalCard(
       sourceProof?.selectiveDisclosure ??
       sourceProof?.sdClaims ??
       sourceProof?.claims,
-    source: proofJwt ? "trustcare_portal_sync_proof" : "trustcare_portal_legacy_envelope"
+    source: proofJwt
+      ? "trustcare_portal_sync_proof"
+      : "trustcare_portal_legacy_envelope",
   };
 }
 
-function firstPortalProofRecord(value: unknown): Record<string, unknown> | null {
+function firstPortalProofRecord(
+  value: unknown,
+): Record<string, unknown> | null {
   if (isRecord(value)) return value;
   if (Array.isArray(value)) {
     return value.find(isRecord) ?? null;
@@ -405,36 +469,72 @@ function firstPortalProofRecord(value: unknown): Record<string, unknown> | null 
   return null;
 }
 
-function jwtFromProofRecord(proof: Record<string, unknown> | null): string | null {
+function jwtFromProofRecord(
+  proof: Record<string, unknown> | null,
+): string | null {
   if (!proof) return null;
   return stringValue(
     proof.jwt ??
       proof.sdJwt ??
       proof.sdJwtVc ??
       proof.token ??
-      proof.signedCredential
+      proof.signedCredential,
   );
 }
 
-function normalizePortalCategory(value: string | null | undefined, documentType: string): CanonicalDocumentCategory {
+function normalizePortalCategory(
+  value: string | null | undefined,
+  documentType: string,
+): CanonicalDocumentCategory {
   const normalized = value?.trim();
-  if (normalized && (CANONICAL_DOCUMENT_CATEGORIES as readonly string[]).includes(normalized)) {
+  if (
+    normalized &&
+    (CANONICAL_DOCUMENT_CATEGORIES as readonly string[]).includes(normalized)
+  ) {
     return normalized as CanonicalDocumentCategory;
   }
-  if (documentType === "shl_manifest" || documentType === "sync_receipt") return "sharing_and_sync";
-  if (documentType === "staff_identity" || documentType === "patient_identity" || documentType === "consent_receipt" || documentType === "mpi_link_certificate") return "identity_and_access";
-  if (documentType === "medication_summary" || documentType === "prescription" || documentType === "pharmacy_dispense") return "medication_and_pharmacy";
-  if (documentType === "lab_result" || documentType === "diagnostic_report") return "diagnostics_and_results";
-  if (documentType === "referral_vc" || documentType === "discharge_summary") return "care_transition";
-  if (documentType === "insurance_eligibility" || documentType === "claim_package" || documentType === "claim_receipt") return "claims_and_finance";
-  if (documentType === "travel_document_verification" || documentType === "visa_support_letter" || documentType === "quotation" || documentType === "guarantee_letter") return "medical_tourism";
+  if (documentType === "shl_manifest" || documentType === "sync_receipt")
+    return "sharing_and_sync";
+  if (
+    documentType === "staff_identity" ||
+    documentType === "patient_identity" ||
+    documentType === "consent_receipt" ||
+    documentType === "mpi_link_certificate"
+  )
+    return "identity_and_access";
+  if (
+    documentType === "medication_summary" ||
+    documentType === "prescription" ||
+    documentType === "pharmacy_dispense"
+  )
+    return "medication_and_pharmacy";
+  if (documentType === "lab_result" || documentType === "diagnostic_report")
+    return "diagnostics_and_results";
+  if (documentType === "referral_vc" || documentType === "discharge_summary")
+    return "care_transition";
+  if (
+    documentType === "insurance_eligibility" ||
+    documentType === "claim_package" ||
+    documentType === "claim_receipt"
+  )
+    return "claims_and_finance";
+  if (
+    documentType === "travel_document_verification" ||
+    documentType === "visa_support_letter" ||
+    documentType === "quotation" ||
+    documentType === "guarantee_letter"
+  )
+    return "medical_tourism";
   if (documentType === "appointment") return "operations";
   return "clinical_summary";
 }
 
-function statusFromCredentialData(credentialData: Record<string, unknown>): string {
+function statusFromCredentialData(
+  credentialData: Record<string, unknown>,
+): string {
   const status = credentialData.credentialStatus;
-  if (isRecord(status) && typeof status.status === "string") return status.status;
+  if (isRecord(status) && typeof status.status === "string")
+    return status.status;
   return "unknown";
 }
 
@@ -453,7 +553,7 @@ function labelFromCredential(documentType: string): string {
     referral_vc: "ใบส่งต่อการรักษา",
     insurance_eligibility: "สิทธิประกันสุขภาพ",
     shl_manifest: "เอกสารกำกับ Smart Health Link",
-    sync_receipt: "หลักฐาน Sync กลับ HIS"
+    sync_receipt: "หลักฐาน Sync กลับ HIS",
   };
   return labels[documentType] ?? documentType;
 }
@@ -461,17 +561,20 @@ function labelFromCredential(documentType: string): string {
 function englishLabelFromCredential(documentType: string): string {
   return documentType
     .split("_")
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 }
 
-function skip(portalCard: TrustCarePortalWalletCard, reason: PortalCredentialImportSkipReason): PortalCredentialImportSkippedCard {
+function skip(
+  portalCard: TrustCarePortalWalletCard,
+  reason: PortalCredentialImportSkipReason,
+): PortalCredentialImportSkippedCard {
   return {
     portalCardId: portalCard.id,
     credentialId: portalCard.credentialId,
     cardType: portalCard.cardType,
     displayName: portalCard.displayName,
-    reason
+    reason,
   };
 }
 
@@ -487,8 +590,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function extractSubjectPhotoUrl(subject: Record<string, unknown>): string | null {
-  for (const key of ["patient", "staff", "holder", "person", "subject", "profile", "identity"]) {
+function extractSubjectPhotoUrl(
+  subject: Record<string, unknown>,
+): string | null {
+  for (const key of [
+    "patient",
+    "staff",
+    "holder",
+    "person",
+    "subject",
+    "profile",
+    "identity",
+  ]) {
     const value = subject[key];
     if (!isRecord(value)) continue;
     const demographics = isRecord(value.demographics) ? value.demographics : {};
@@ -503,7 +616,7 @@ function extractSubjectPhotoUrl(subject: Record<string, unknown>): string | null
         demographics.photoUrl ??
         demographics.avatarUrl ??
         photo.url ??
-        avatar.url
+        avatar.url,
     );
     if (photoUrl) return photoUrl;
   }
@@ -523,7 +636,10 @@ function extractSubjectPhotoUrl(subject: Record<string, unknown>): string | null
   return null;
 }
 
-function absolutePortalAssetUrl(value: string | null, portalOrigin: string): string | null {
+function absolutePortalAssetUrl(
+  value: string | null,
+  portalOrigin: string,
+): string | null {
   if (!value) return null;
   if (portalOrigin.replace(/\/$/, "") === TRUSTCARE_PORTAL_WEB_ORIGIN) {
     return normalizePhotoUrl(value);

@@ -9,10 +9,10 @@ The existing backend primarily uses browser session/cookie auth. Native mobile p
 Suggested routes:
 
 ```ts
-auth.mobileStart
-auth.mobileExchange
-auth.mobileRefresh
-auth.mobileLogout
+auth.mobileStart;
+auth.mobileExchange;
+auth.mobileRefresh;
+auth.mobileLogout;
 ```
 
 ## API Contracts Package
@@ -35,4 +35,3 @@ Nearby current files used instead:
 - `docs/SHL_VC_VP_PACKET_TRUST_LAYER_HANDOFF.md`
 - `docs/TRUSTCARE_SYSTEM_REALIGNMENT_HANDOFF.md`
 - `docs/UX_FLOW_SYSTEM_AUDIT_2026-07-03.md`
-

@@ -24,24 +24,55 @@ describe("wallet UX status and policy hardening", () => {
   });
 
   it("blocks presentation when a credential is inactive or expired by date", () => {
-    const activeCard = card({ credentialStatus: "active", expiresAt: "2026-07-09T00:00:00.000Z" });
-    const expiredByDate = card({ credentialStatus: "active", expiresAt: "2026-07-01T00:00:00.000Z" });
-    const revokedCard = card({ credentialStatus: "revoked", expiresAt: "2026-07-09T00:00:00.000Z" });
+    const activeCard = card({
+      credentialStatus: "active",
+      expiresAt: "2026-07-09T00:00:00.000Z",
+    });
+    const expiredByDate = card({
+      credentialStatus: "active",
+      expiresAt: "2026-07-01T00:00:00.000Z",
+    });
+    const revokedCard = card({
+      credentialStatus: "revoked",
+      expiresAt: "2026-07-09T00:00:00.000Z",
+    });
 
-    expect(canPresentCredential(activeCard, new Date("2026-07-08T00:00:00.000Z"))).toBe(true);
-    expect(credentialPresentationPolicy(expiredByDate, new Date("2026-07-08T00:00:00.000Z")).presentable).toBe(false);
-    expect(credentialPresentationPolicy(revokedCard, new Date("2026-07-08T00:00:00.000Z")).presentable).toBe(false);
+    expect(
+      canPresentCredential(activeCard, new Date("2026-07-08T00:00:00.000Z")),
+    ).toBe(true);
+    expect(
+      credentialPresentationPolicy(
+        expiredByDate,
+        new Date("2026-07-08T00:00:00.000Z"),
+      ).presentable,
+    ).toBe(false);
+    expect(
+      credentialPresentationPolicy(
+        revokedCard,
+        new Date("2026-07-08T00:00:00.000Z"),
+      ).presentable,
+    ).toBe(false);
   });
 
   it("enforces SHL expiry, access count, and passcode policy decisions", () => {
     const expired = evaluateShlAccessPolicy(
-      { status: "active", expiresAt: "2026-07-01T00:00:00.000Z", currentAccessCount: 0, maxAccessCount: 5 },
+      {
+        status: "active",
+        expiresAt: "2026-07-01T00:00:00.000Z",
+        currentAccessCount: 0,
+        maxAccessCount: 5,
+      },
       new Date("2026-07-08T00:00:00.000Z"),
     );
     expect(expired.allowed).toBe(false);
 
     const exhausted = evaluateShlAccessPolicy(
-      { status: "active", expiresAt: "2026-07-09T00:00:00.000Z", currentAccessCount: 5, maxAccessCount: 5 },
+      {
+        status: "active",
+        expiresAt: "2026-07-09T00:00:00.000Z",
+        currentAccessCount: 5,
+        maxAccessCount: 5,
+      },
       new Date("2026-07-08T00:00:00.000Z"),
     );
     expect(exhausted.allowed).toBe(false);
@@ -108,7 +139,9 @@ describe("wallet UX status and policy hardening", () => {
     expect(validation.ok).toBe(true);
     expect(pack.standards.systemOfRecord).toBe(false);
     expect(pack.provenance.selectedBy).toBe("minimum-necessary");
-    expect(["PurposeVP", "CertifiedSHLManifestPackage"]).toContain(pack.provenance.shareOnlyVia);
+    expect(["PurposeVP", "CertifiedSHLManifestPackage"]).toContain(
+      pack.provenance.shareOnlyVia,
+    );
   });
 
   it("pins required wallet UX coverage items", () => {

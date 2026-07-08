@@ -12,7 +12,8 @@ export type WalletUxCoverageItem = {
 export const walletUxCoverage: WalletUxCoverageItem[] = [
   {
     id: "status-tone.shared",
-    requirement: "Credential and portable object status colors are mapped from lifecycle/trust state.",
+    requirement:
+      "Credential and portable object status colors are mapped from lifecycle/trust state.",
     status: "implemented",
     webSurface: "wallet-web detail/home/store plus ui-web document components",
     mobileSurface: "wallet-mobile detail/store/card components",
@@ -20,43 +21,52 @@ export const walletUxCoverage: WalletUxCoverageItem[] = [
   },
   {
     id: "mobile.selective-disclosure-picker",
-    requirement: "Mobile selective disclosure shows a field picker before VP generation.",
+    requirement:
+      "Mobile selective disclosure shows a field picker before VP generation.",
     status: "implemented",
     mobileSurface: "apps/wallet-mobile/src/screens/CredentialDetailScreen.tsx",
-    guardrail: "At least one selected field is required before generating an SD VP.",
+    guardrail:
+      "At least one selected field is required before generating an SD VP.",
   },
   {
     id: "mobile.scan-manual-paste",
     requirement: "Mobile QR scanner supports manual paste fallback.",
     status: "implemented",
     mobileSurface: "apps/wallet-mobile/src/screens/ScanScreen.tsx",
-    guardrail: "Manual paste must work even when camera permission is not granted.",
+    guardrail:
+      "Manual paste must work even when camera permission is not granted.",
   },
   {
     id: "mobile.detail-history",
-    requirement: "Mobile credential detail includes presentation/history context.",
+    requirement:
+      "Mobile credential detail includes presentation/history context.",
     status: "implemented",
     mobileSurface: "apps/wallet-mobile/src/screens/CredentialDetailScreen.tsx",
     guardrail: "History must remain reachable from credential detail.",
   },
   {
     id: "mobile.home-state",
-    requirement: "Mobile home shows active card count, online/offline, biometric state, and last sync.",
+    requirement:
+      "Mobile home shows active card count, online/offline, biometric state, and last sync.",
     status: "implemented",
     mobileSurface: "apps/wallet-mobile/src/screens/WalletScreen.tsx",
-    guardrail: "Home status must distinguish cache state from share/trust status.",
+    guardrail:
+      "Home status must distinguish cache state from share/trust status.",
   },
   {
     id: "shl.policy",
-    requirement: "SHL access honors passcode, expiry, access count, and audit decision boundaries.",
+    requirement:
+      "SHL access honors passcode, expiry, access count, and audit decision boundaries.",
     status: "implemented",
     webSurface: "wallet-core SHL resolver/gateway contracts",
     mobileSurface: "wallet-core SHL resolver/gateway contracts",
-    guardrail: "Wallet can display/enforce local policy hints, but production trust remains Portal Backend responsibility.",
+    guardrail:
+      "Wallet can display/enforce local policy hints, but production trust remains Portal Backend responsibility.",
   },
   {
     id: "micro-ips.scope",
-    requirement: "Micro-IPS+ stays a minimum-necessary patient-held sharing pack.",
+    requirement:
+      "Micro-IPS+ stays a minimum-necessary patient-held sharing pack.",
     status: "implemented",
     webSurface: "wallet-core MicroIpsPlusPack",
     mobileSurface: "wallet-core MicroIpsPlusPack",
@@ -64,15 +74,19 @@ export const walletUxCoverage: WalletUxCoverageItem[] = [
   },
   {
     id: "standards.proof-shared",
-    requirement: "Claims, proof, JWT, VC/VP unwrap, and JWKS key matching use a shared standards layer.",
+    requirement:
+      "Claims, proof, JWT, VC/VP unwrap, and JWKS key matching use a shared standards layer.",
     status: "implemented",
     webSurface: "packages/wallet-core/src/credentialProof.ts",
     mobileSurface: "packages/wallet-core/src/credentialProof.ts",
-    guardrail: "Gateway and verifier code should orchestrate network/result flow, not redefine proof or claim validation primitives.",
+    guardrail:
+      "Gateway and verifier code should orchestrate network/result flow, not redefine proof or claim validation primitives.",
   },
 ];
 
-export function requiredWalletUxCoverage(ids: string[]): WalletUxCoverageItem[] {
+export function requiredWalletUxCoverage(
+  ids: string[],
+): WalletUxCoverageItem[] {
   const byId = new Map(walletUxCoverage.map((item) => [item.id, item]));
   return ids.map((id) => {
     const item = byId.get(id);

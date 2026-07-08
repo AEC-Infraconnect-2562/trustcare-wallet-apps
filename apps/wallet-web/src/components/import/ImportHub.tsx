@@ -35,8 +35,8 @@ export function ImportHub({
             <span className="eyebrow">รับเอกสารเข้า Wallet</span>
             <h2>สแกน วาง อัปโหลด หรือ Sync จาก Portal</h2>
             <p>
-              ระบบจะแยกให้อัตโนมัติว่าเป็น VP, SHL, credential offer, FHIR หรือไฟล์นำเข้า
-              แล้วบอกสถานะความเชื่อถือก่อนบันทึกเข้ากระเป๋า
+              ระบบจะแยกให้อัตโนมัติว่าเป็น VP, SHL, credential offer, FHIR
+              หรือไฟล์นำเข้า แล้วบอกสถานะความเชื่อถือก่อนบันทึกเข้ากระเป๋า
             </p>
           </div>
         </div>
@@ -49,10 +49,18 @@ export function ImportHub({
             type="button"
             disabled={!canSyncPortal}
             onClick={onSyncPortal}
-            title={canSyncPortal ? undefined : "ใช้ได้กับผู้ใช้ที่ผูก TrustCare Portal"}
+            title={
+              canSyncPortal
+                ? undefined
+                : "ใช้ได้กับผู้ใช้ที่ผูก TrustCare Portal"
+            }
           >
             <Cloud size={18} />
-            {syncBusy ? "กำลัง Sync" : livePortalSync ? "Sync Portal" : "เชื่อม Portal"}
+            {syncBusy
+              ? "กำลัง Sync"
+              : livePortalSync
+                ? "Sync Portal"
+                : "เชื่อม Portal"}
           </button>
           <button type="button" disabled>
             <Upload size={18} />
@@ -67,7 +75,10 @@ export function ImportHub({
             placeholder="วาง SHL, VP link, VC/VP JSON/JWT, OID4VCI offer, FHIR DocumentReference หรือ Bundle"
           />
         </label>
-        <Button disabled={!payload.trim() || !detection.canImport} onClick={onImport}>
+        <Button
+          disabled={!payload.trim() || !detection.canImport}
+          onClick={onImport}
+        >
           <ClipboardPaste size={18} />
           นำเข้า Wallet
         </Button>

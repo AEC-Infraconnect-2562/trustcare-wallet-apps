@@ -23,18 +23,18 @@ export function createTrustCareTrpcClient(options: TrustCareClientOptions) {
           const fetcher = options.fetchImpl ?? fetch;
           return fetcher(url, {
             ...init,
-            credentials: options.credentials ?? "include"
+            credentials: options.credentials ?? "include",
           });
-        }
-      })
-    ]
+        },
+      }),
+    ],
   });
 }
 
 export async function callTrpcProcedure<TOutput>(
   options: TrustCareClientOptions,
   path: string,
-  input?: unknown
+  input?: unknown,
 ): Promise<TOutput> {
   const fetcher = options.fetchImpl ?? fetch;
   const token = await options.getAuthToken?.();
@@ -43,21 +43,29 @@ export async function callTrpcProcedure<TOutput>(
     credentials: options.credentials ?? "include",
     headers: {
       "content-type": "application/json",
-      ...(token ? { authorization: `Bearer ${token}` } : {})
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ json: input ?? null })
+    body: JSON.stringify({ json: input ?? null }),
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new TrustCareApiError(payload?.error?.message ?? response.statusText, {
-      status: response.status,
-      code: payload?.error?.code
-    });
+    throw new TrustCareApiError(
+      payload?.error?.message ?? response.statusText,
+      {
+        status: response.status,
+        code: payload?.error?.code,
+      },
+    );
   }
   if (payload?.error) {
-    throw new TrustCareApiError(payload.error.message ?? "TrustCare API error", {
-      code: payload.error.code
-    });
+    throw new TrustCareApiError(
+      payload.error.message ?? "TrustCare API error",
+      {
+        code: payload.error.code,
+      },
+    );
   }
-  return (payload?.result?.data?.json ?? payload?.result?.data ?? payload) as TOutput;
+  return (payload?.result?.data?.json ??
+    payload?.result?.data ??
+    payload) as TOutput;
 }

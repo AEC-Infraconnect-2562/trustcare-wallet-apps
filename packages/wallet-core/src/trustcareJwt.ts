@@ -1,4 +1,10 @@
-import { SignJWT, calculateJwkThumbprint, exportJWK, generateKeyPair, importJWK } from "jose";
+import {
+  SignJWT,
+  calculateJwkThumbprint,
+  exportJWK,
+  generateKeyPair,
+  importJWK,
+} from "jose";
 import { extractCredentialJwt } from "./credentialProof";
 
 export type JsonRecord = Record<string, unknown>;
@@ -29,16 +35,18 @@ export type SignedPresentationJwt = {
 
 export const TRUSTCARE_DEFAULT_AUDIENCE = "https://trustcare.network/verifier";
 
-export async function createEphemeralEs256SigningKey(input: {
-  issuerDid?: string;
-  kidPrefix?: string;
-  jku?: string;
-} = {}): Promise<TrustCareSigningKey> {
+export async function createEphemeralEs256SigningKey(
+  input: {
+    issuerDid?: string;
+    kidPrefix?: string;
+    jku?: string;
+  } = {},
+): Promise<TrustCareSigningKey> {
   const { publicKey, privateKey } = await generateKeyPair("ES256", {
     extractable: true,
   });
-  const publicJwk = await exportJWK(publicKey) as JsonRecord;
-  const privateJwk = await exportJWK(privateKey) as JsonRecord;
+  const publicJwk = (await exportJWK(publicKey)) as JsonRecord;
+  const privateJwk = (await exportJWK(privateKey)) as JsonRecord;
   const thumbprint = await calculateJwkThumbprint(publicJwk, "sha256");
   const issuerDid = input.issuerDid ?? "did:web:wallet.trustcare.local";
   const kid = `${input.kidPrefix ?? issuerDid}#vc-signing-key-${thumbprint.slice(0, 12)}`;
@@ -52,7 +60,9 @@ export async function createEphemeralEs256SigningKey(input: {
   });
 }
 
-export function normalizeSigningKey(input: TrustCareSigningKey): TrustCareSigningKey {
+export function normalizeSigningKey(
+  input: TrustCareSigningKey,
+): TrustCareSigningKey {
   const publicJwk = sanitizePublicJwk({
     ...input.publicJwk,
     alg: input.alg,
@@ -91,13 +101,30 @@ export async function signTrustCareCredentialJwt(input: {
 }): Promise<SignedCredentialJwt> {
   const signingKey = normalizeSigningKey(input.signingKey);
   const now = input.now ?? new Date();
-  const credential = sanitizeCredentialForJwt(input.credential, signingKey, input.expiresAt);
-  const credentialId = stringValue(credential.id, `urn:uuid:wallet-vc-${now.getTime().toString(36)}`);
-  const credentialType = input.credentialType ?? lastType(credential.type) ?? "WalletDocumentCredential";
-  const subject = input.subject ?? subjectFromCredential(credential) ?? credentialId;
-  const expiresAt = stringValue(credential.validUntil, input.expiresAt ?? new Date(now.getTime() + 365 * 24 * 60 * 60_000).toISOString());
+  const credential = sanitizeCredentialForJwt(
+    input.credential,
+    signingKey,
+    input.expiresAt,
+  );
+  const credentialId = stringValue(
+    credential.id,
+    `urn:uuid:wallet-vc-${now.getTime().toString(36)}`,
+  );
+  const credentialType =
+    input.credentialType ??
+    lastType(credential.type) ??
+    "WalletDocumentCredential";
+  const subject =
+    input.subject ?? subjectFromCredential(credential) ?? credentialId;
+  const expiresAt = stringValue(
+    credential.validUntil,
+    input.expiresAt ??
+      new Date(now.getTime() + 365 * 24 * 60 * 60_000).toISOString(),
+  );
   const digest = await sha256Hex(credential);
-  const disclosureDigests = await buildDisclosureDigests(objectValue(credential.credentialSubject));
+  const disclosureDigests = await buildDisclosureDigests(
+    objectValue(credential.credentialSubject),
+  );
   const key = await importJWK(signingKey.privateJwk, signingKey.alg);
   const jwt = await new SignJWT({
     vc: credential,
@@ -105,12 +132,14 @@ export async function signTrustCareCredentialJwt(input: {
     trustcare_claim_digest: digest,
     trustcare_disclosure_digests: disclosureDigests,
   })
-    .setProtectedHeader(stripUndefined({
-      alg: signingKey.alg,
-      typ: "vc+JWT",
-      kid: signingKey.kid,
-      jku: signingKey.jku,
-    }))
+    .setProtectedHeader(
+      stripUndefined({
+        alg: signingKey.alg,
+        typ: "vc+JWT",
+        kid: signingKey.kid,
+        jku: signingKey.jku,
+      }),
+    )
     .setIssuer(signingKey.issuerDid)
     .setSubject(subject)
     .setAudience(input.audience ?? TRUSTCARE_DEFAULT_AUDIENCE)
@@ -138,7 +167,12 @@ export async function signTrustCarePresentationJwt(input: {
 }): Promise<SignedPresentationJwt> {
   const signingKey = normalizeSigningKey(input.signingKey);
   const now = input.now ?? new Date();
-  const expiresAt = input.expiresAt ?? stringValue(input.vp.validUntil, new Date(now.getTime() + 10 * 60_000).toISOString());
+  const expiresAt =
+    input.expiresAt ??
+    stringValue(
+      input.vp.validUntil,
+      new Date(now.getTime() + 10 * 60_000).toISOString(),
+    );
   const rawCredentials = Array.isArray(input.vp.verifiableCredential)
     ? input.vp.verifiableCredential
     : [];
@@ -152,26 +186,37 @@ export async function signTrustCarePresentationJwt(input: {
       continue;
     }
     if (!input.signUnsignedCredentials || !isRecord(credential)) {
-      warnings.push("Skipped unsigned credential because no trusted issuer JWT was available.");
+      warnings.push(
+        "Skipped unsigned credential because no trusted issuer JWT was available.",
+      );
       continue;
     }
     const signed = await signTrustCareCredentialJwt({
-      credential: buildWalletIssuedCredentialAttestation(credential, signingKey),
+      credential: buildWalletIssuedCredentialAttestation(
+        credential,
+        signingKey,
+      ),
       signingKey,
-      credentialType: lastType((credential as JsonRecord).type) ?? "WalletDocumentCredential",
+      credentialType:
+        lastType((credential as JsonRecord).type) ?? "WalletDocumentCredential",
       subject: subjectFromCredential(credential),
       audience: input.audience,
       now,
       expiresAt: stringValue((credential as JsonRecord).validUntil, expiresAt),
     });
     credentialJwts.push(signed.jwt);
-    warnings.push("Unsigned wallet credential was converted to a Wallet-issued ES256 VC JWT attestation.");
+    warnings.push(
+      "Unsigned wallet credential was converted to a Wallet-issued ES256 VC JWT attestation.",
+    );
   }
 
   const vp = stripUndefined<JsonRecord>({
     ...input.vp,
     type: ensureArray(input.vp.type, "VerifiablePresentation"),
-    holder: stringValue(input.vp.holder, stringValue(input.vp.holderDid, signingKey.issuerDid)),
+    holder: stringValue(
+      input.vp.holder,
+      stringValue(input.vp.holderDid, signingKey.issuerDid),
+    ),
     purpose: input.purpose ?? input.vp.purpose,
     validUntil: expiresAt,
     verifiableCredential: credentialJwts,
@@ -184,22 +229,33 @@ export async function signTrustCarePresentationJwt(input: {
       credentialJwtCount: credentialJwts.length,
     },
   });
-  const presentationHash = await sha256Hex({ holder: vp.holder, credentialJwts, expiresAt });
-  const presentationId = stringValue(vp.id, `vp_${presentationHash.slice(0, 16)}`);
+  const presentationHash = await sha256Hex({
+    holder: vp.holder,
+    credentialJwts,
+    expiresAt,
+  });
+  const presentationId = stringValue(
+    vp.id,
+    `vp_${presentationHash.slice(0, 16)}`,
+  );
   const key = await importJWK(signingKey.privateJwk, signingKey.alg);
   const jwt = await new SignJWT({
     vp: {
       ...vp,
       id: presentationId,
     },
-    trustcare_credential_ids: credentialJwts.map((jwtValue) => jwtValue.split(".")[1] ?? "").filter(Boolean),
+    trustcare_credential_ids: credentialJwts
+      .map((jwtValue) => jwtValue.split(".")[1] ?? "")
+      .filter(Boolean),
   })
-    .setProtectedHeader(stripUndefined({
-      alg: signingKey.alg,
-      typ: "vp+JWT",
-      kid: signingKey.kid,
-      jku: signingKey.jku,
-    }))
+    .setProtectedHeader(
+      stripUndefined({
+        alg: signingKey.alg,
+        typ: "vp+JWT",
+        kid: signingKey.kid,
+        jku: signingKey.jku,
+      }),
+    )
     .setIssuer(signingKey.issuerDid)
     .setSubject(stringValue(vp.holder, signingKey.issuerDid))
     .setAudience(input.audience ?? TRUSTCARE_DEFAULT_AUDIENCE)
@@ -221,15 +277,21 @@ export async function signTrustCarePresentationJwt(input: {
 
 export async function sha256Hex(value: unknown): Promise<string> {
   if (!globalThis.crypto?.subtle) {
-    throw new Error("WebCrypto subtle digest is required for TrustCare JWT digests.");
+    throw new Error(
+      "WebCrypto subtle digest is required for TrustCare JWT digests.",
+    );
   }
-  const bytes = new TextEncoder().encode(typeof value === "string" ? value : stableStringify(value));
+  const bytes = new TextEncoder().encode(
+    typeof value === "string" ? value : stableStringify(value),
+  );
   const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export function stableStringify(value: unknown): string {
-  if (value === undefined) return "\"__undefined__\"";
+  if (value === undefined) return '"__undefined__"';
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   return `{${Object.entries(value as Record<string, unknown>)
@@ -238,7 +300,10 @@ export function stableStringify(value: unknown): string {
     .join(",")}}`;
 }
 
-function buildWalletIssuedCredentialAttestation(credential: JsonRecord, signingKey: TrustCareSigningKey): JsonRecord {
+function buildWalletIssuedCredentialAttestation(
+  credential: JsonRecord,
+  signingKey: TrustCareSigningKey,
+): JsonRecord {
   const originalIssuer = credential.issuer;
   const originalHashClaim = {
     type: "SourceCredentialHash",
@@ -252,10 +317,7 @@ function buildWalletIssuedCredentialAttestation(credential: JsonRecord, signingK
       trustDomain: "external-wallet",
       country: "TH",
     },
-    evidence: [
-      ...arrayValue(credential.evidence),
-      originalHashClaim,
-    ],
+    evidence: [...arrayValue(credential.evidence), originalHashClaim],
     trustcare: {
       ...objectValue(credential.trustcare),
       walletIssuedAttestation: true,
@@ -264,14 +326,25 @@ function buildWalletIssuedCredentialAttestation(credential: JsonRecord, signingK
   });
 }
 
-function sanitizeCredentialForJwt(credential: JsonRecord, signingKey: TrustCareSigningKey, expiresAt?: string): JsonRecord {
+function sanitizeCredentialForJwt(
+  credential: JsonRecord,
+  signingKey: TrustCareSigningKey,
+  expiresAt?: string,
+): JsonRecord {
   const cleaned = stripProofLikeFields(credential);
   return stripUndefined({
     ...cleaned,
-    "@context": cleaned["@context"] ?? ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/health/v1"],
+    "@context": cleaned["@context"] ?? [
+      "https://www.w3.org/ns/credentials/v2",
+      "https://trustcare.network/contexts/health/v1",
+    ],
     type: ensureArray(cleaned.type, "VerifiableCredential"),
-    issuer: cleaned.issuer ?? { id: signingKey.issuerDid, name: "TrustCare Wallet" },
-    validFrom: cleaned.validFrom ?? cleaned.issuedAt ?? new Date().toISOString(),
+    issuer: cleaned.issuer ?? {
+      id: signingKey.issuerDid,
+      name: "TrustCare Wallet",
+    },
+    validFrom:
+      cleaned.validFrom ?? cleaned.issuedAt ?? new Date().toISOString(),
     validUntil: cleaned.validUntil ?? expiresAt,
   });
 }
@@ -284,7 +357,9 @@ function stripProofLikeFields(value: JsonRecord): JsonRecord {
   return copy;
 }
 
-async function buildDisclosureDigests(claims: JsonRecord | null): Promise<Record<string, string>> {
+async function buildDisclosureDigests(
+  claims: JsonRecord | null,
+): Promise<Record<string, string>> {
   const digests: Record<string, string> = {};
   if (!claims) return digests;
   for (const [key, value] of Object.entries(claims)) {
@@ -295,31 +370,51 @@ async function buildDisclosureDigests(claims: JsonRecord | null): Promise<Record
 
 function sanitizePublicJwk(jwk: JsonRecord): JsonRecord {
   const publicJwk = { ...jwk };
-  for (const field of ["d", "p", "q", "dp", "dq", "qi", "oth", "k"]) delete publicJwk[field];
+  for (const field of ["d", "p", "q", "dp", "dq", "qi", "oth", "k"])
+    delete publicJwk[field];
   return publicJwk;
 }
 
 function subjectFromCredential(credential: unknown): string | undefined {
   if (!isRecord(credential)) return undefined;
   const subject = objectValue(credential.credentialSubject);
-  return stringValue(subject?.id, stringValue(subject?.trustcareSubjectId, stringValue(credential.id, ""))) || undefined;
+  return (
+    stringValue(
+      subject?.id,
+      stringValue(subject?.trustcareSubjectId, stringValue(credential.id, "")),
+    ) || undefined
+  );
 }
 
 function lastType(type: unknown): string | undefined {
   if (Array.isArray(type)) {
-    const values = type.map(String).filter((item) => item !== "VerifiableCredential" && item !== "VerifiablePresentation");
+    const values = type
+      .map(String)
+      .filter(
+        (item) =>
+          item !== "VerifiableCredential" && item !== "VerifiablePresentation",
+      );
     return values[values.length - 1];
   }
-  return typeof type === "string" && type !== "VerifiableCredential" && type !== "VerifiablePresentation" ? type : undefined;
+  return typeof type === "string" &&
+    type !== "VerifiableCredential" &&
+    type !== "VerifiablePresentation"
+    ? type
+    : undefined;
 }
 
 function ensureArray(value: unknown, requiredType: string): string[] {
-  const items = Array.isArray(value) ? value.map(String) : typeof value === "string" ? [value] : [];
+  const items = Array.isArray(value)
+    ? value.map(String)
+    : typeof value === "string"
+      ? [value]
+      : [];
   return Array.from(new Set([requiredType, ...items]));
 }
 
 function stripUndefined<T>(value: T): T {
-  if (Array.isArray(value)) return value.map(stripUndefined).filter((item) => item !== undefined) as T;
+  if (Array.isArray(value))
+    return value.map(stripUndefined).filter((item) => item !== undefined) as T;
   if (!value || typeof value !== "object") return value;
   const cleaned: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {

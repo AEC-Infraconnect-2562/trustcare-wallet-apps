@@ -80,22 +80,39 @@ export type Oid4vpBindingValidation = {
   responseMode?: string;
 };
 
-export function parseOid4vcCredentialOffer(raw: string): ParsedCredentialOffer | null {
+export function parseOid4vcCredentialOffer(
+  raw: string,
+): ParsedCredentialOffer | null {
   const value = raw.trim();
   if (!value) return null;
 
   const direct = parseJsonObject(value);
-  if (direct && ("credential_issuer" in direct || "credential_offer" in direct)) {
-    const offer = "credential_offer" in direct ? normalizeOffer((direct as any).credential_offer) : normalizeOffer(direct);
+  if (
+    direct &&
+    ("credential_issuer" in direct || "credential_offer" in direct)
+  ) {
+    const offer =
+      "credential_offer" in direct
+        ? normalizeOffer((direct as any).credential_offer)
+        : normalizeOffer(direct);
     return summarizeOffer(value, offer);
   }
 
-  if (value.startsWith("openid-credential-offer://") || value.startsWith("https://") || value.startsWith("http://")) {
+  if (
+    value.startsWith("openid-credential-offer://") ||
+    value.startsWith("https://") ||
+    value.startsWith("http://")
+  ) {
     try {
       const url = new URL(value);
       const offerParam = url.searchParams.get("credential_offer");
-      const offerUri = url.searchParams.get("credential_offer_uri") ?? undefined;
-      if (offerParam) return summarizeOffer(value, normalizeOffer(JSON.parse(decodeMaybe(offerParam))));
+      const offerUri =
+        url.searchParams.get("credential_offer_uri") ?? undefined;
+      if (offerParam)
+        return summarizeOffer(
+          value,
+          normalizeOffer(JSON.parse(decodeMaybe(offerParam))),
+        );
       if (offerUri || value.startsWith("openid-credential-offer://")) {
         return {
           kind: "oid4vci",
@@ -103,7 +120,7 @@ export function parseOid4vcCredentialOffer(raw: string): ParsedCredentialOffer |
           credentialOfferUri: offerUri,
           issuer: undefined,
           configurationIds: [],
-          grantTypes: []
+          grantTypes: [],
         };
       }
     } catch {
@@ -113,16 +130,29 @@ export function parseOid4vcCredentialOffer(raw: string): ParsedCredentialOffer |
   return null;
 }
 
-export function parseOid4vpRequest(raw: string): ParsedPresentationRequest | null {
+export function parseOid4vpRequest(
+  raw: string,
+): ParsedPresentationRequest | null {
   const value = raw.trim();
   if (!value) return null;
 
   const direct = parseJsonObject(value);
-  if (direct && ("presentation_definition" in direct || "dcql_query" in direct || "request_uri" in direct || direct.response_type === "vp_token")) {
+  if (
+    direct &&
+    ("presentation_definition" in direct ||
+      "dcql_query" in direct ||
+      "request_uri" in direct ||
+      direct.response_type === "vp_token")
+  ) {
     return summarizePresentationRequest(value, direct as Oid4vpRequest);
   }
 
-  if (value.startsWith("openid4vp://") || value.startsWith("haip://") || value.startsWith("https://") || value.startsWith("http://")) {
+  if (
+    value.startsWith("openid4vp://") ||
+    value.startsWith("haip://") ||
+    value.startsWith("https://") ||
+    value.startsWith("http://")
+  ) {
     try {
       const url = new URL(value);
       const requestParam = url.searchParams.get("request");
@@ -130,11 +160,22 @@ export function parseOid4vpRequest(raw: string): ParsedPresentationRequest | nul
       if (requestParam) {
         const decoded = decodeMaybe(requestParam);
         const request = parseJsonObject(decoded) as Oid4vpRequest | null;
-        if (request) return summarizePresentationRequest(value, { ...request, request_uri: request.request_uri ?? requestUri });
+        if (request)
+          return summarizePresentationRequest(value, {
+            ...request,
+            request_uri: request.request_uri ?? requestUri,
+          });
       }
-      const presentationDefinition = parseMaybeJson(url.searchParams.get("presentation_definition"));
+      const presentationDefinition = parseMaybeJson(
+        url.searchParams.get("presentation_definition"),
+      );
       const dcqlQuery = parseMaybeJson(url.searchParams.get("dcql_query"));
-      if (requestUri || presentationDefinition || dcqlQuery || url.protocol === "openid4vp:") {
+      if (
+        requestUri ||
+        presentationDefinition ||
+        dcqlQuery ||
+        url.protocol === "openid4vp:"
+      ) {
         return summarizePresentationRequest(value, {
           response_type: url.searchParams.get("response_type") ?? "vp_token",
           response_mode: url.searchParams.get("response_mode") ?? undefined,
@@ -142,10 +183,11 @@ export function parseOid4vpRequest(raw: string): ParsedPresentationRequest | nul
           nonce: url.searchParams.get("nonce") ?? undefined,
           state: url.searchParams.get("state") ?? undefined,
           request_uri: requestUri,
-          presentation_definition: presentationDefinition as PresentationDefinition | undefined,
+          presentation_definition: presentationDefinition as
+            PresentationDefinition | undefined,
           dcql_query: dcqlQuery as Record<string, unknown> | undefined,
           response_uri: url.searchParams.get("response_uri") ?? undefined,
-          redirect_uri: url.searchParams.get("redirect_uri") ?? undefined
+          redirect_uri: url.searchParams.get("redirect_uri") ?? undefined,
         });
       }
     } catch {
@@ -156,48 +198,70 @@ export function parseOid4vpRequest(raw: string): ParsedPresentationRequest | nul
 }
 
 export function parseWalletProtocol(raw: string): ParsedWalletProtocol {
-  return parseOid4vcCredentialOffer(raw) ?? parseOid4vpRequest(raw) ?? { kind: "unknown", raw };
+  return (
+    parseOid4vcCredentialOffer(raw) ??
+    parseOid4vpRequest(raw) ?? { kind: "unknown", raw }
+  );
 }
 
 export function credentialOfferLabel(parsed: ParsedCredentialOffer): string {
-  const ids = parsed.configurationIds.length ? parsed.configurationIds.join(", ") : "credential offer";
+  const ids = parsed.configurationIds.length
+    ? parsed.configurationIds.join(", ")
+    : "credential offer";
   return `${parsed.issuer ?? parsed.credentialOfferUri ?? "Unknown issuer"} · ${ids}`;
 }
 
-export function presentationRequestLabel(parsed: ParsedPresentationRequest): string {
-  const types = parsed.requestedCredentialTypes.length ? parsed.requestedCredentialTypes.join(", ") : "credential presentation";
+export function presentationRequestLabel(
+  parsed: ParsedPresentationRequest,
+): string {
+  const types = parsed.requestedCredentialTypes.length
+    ? parsed.requestedCredentialTypes.join(", ")
+    : "credential presentation";
   return `${parsed.verifier ?? "Verifier"} requests ${types}`;
 }
 
-export function matchCardsForOid4vp(cards: WalletCard[], parsed: ParsedPresentationRequest): WalletCard[] {
+export function matchCardsForOid4vp(
+  cards: WalletCard[],
+  parsed: ParsedPresentationRequest,
+): WalletCard[] {
   const requested = new Set(parsed.requestedCredentialTypes.map(normalizeType));
-  if (!requested.size) return cards.filter(card => canPresentCredential(card));
+  if (!requested.size)
+    return cards.filter((card) => canPresentCredential(card));
   const requestedTypes = Array.from(requested);
-  return cards.filter(card => {
+  return cards.filter((card) => {
     if (!canPresentCredential(card)) return false;
-    const cardTypes = [card.cardType, card.credentialType, card.displayNameEn].filter(Boolean).map(value => normalizeType(String(value)));
-    return cardTypes.some(type =>
-      requestedTypes.some(requestedType =>
-        type === requestedType ||
-        `${type}credential` === requestedType ||
-        type.includes(requestedType) ||
-        requestedType.includes(type)
-      )
+    const cardTypes = [card.cardType, card.credentialType, card.displayNameEn]
+      .filter(Boolean)
+      .map((value) => normalizeType(String(value)));
+    return cardTypes.some((type) =>
+      requestedTypes.some(
+        (requestedType) =>
+          type === requestedType ||
+          `${type}credential` === requestedType ||
+          type.includes(requestedType) ||
+          requestedType.includes(type),
+      ),
     );
   });
 }
 
-export function validateOid4vpBinding(parsed: ParsedPresentationRequest): Oid4vpBindingValidation {
+export function validateOid4vpBinding(
+  parsed: ParsedPresentationRequest,
+): Oid4vpBindingValidation {
   const errors: string[] = [];
   const warnings: string[] = [];
   if (!parsed.nonce && !parsed.requestUri) {
-    errors.push("OID4VP request must include nonce or request_uri before a wallet creates a VP.");
+    errors.push(
+      "OID4VP request must include nonce or request_uri before a wallet creates a VP.",
+    );
   }
   if (!parsed.verifier) {
     errors.push("OID4VP request must identify the verifier/client_id.");
   }
   if (!parsed.responseMode) {
-    warnings.push("OID4VP response_mode is missing; wallet should default only after user consent.");
+    warnings.push(
+      "OID4VP response_mode is missing; wallet should default only after user consent.",
+    );
   }
   return {
     ok: errors.length === 0,
@@ -209,25 +273,47 @@ export function validateOid4vpBinding(parsed: ParsedPresentationRequest): Oid4vp
   };
 }
 
-export function buildOid4vpConsentSummary(parsed: ParsedPresentationRequest, matches: WalletCard[]) {
+export function buildOid4vpConsentSummary(
+  parsed: ParsedPresentationRequest,
+  matches: WalletCard[],
+) {
   return {
     verifier: parsed.verifier ?? "Unknown verifier",
     nonce: parsed.nonce,
     state: parsed.state,
     descriptorCount: parsed.descriptorCount,
     requestedCredentialTypes: parsed.requestedCredentialTypes,
-    matchedCredentialIds: matches.map(card => card.credentialId),
+    matchedCredentialIds: matches.map((card) => card.credentialId),
     responseMode: parsed.responseMode ?? "direct_post",
     safetyChecks: [
-      { key: "nonce", ok: Boolean(parsed.nonce), label: "Verifier nonce present" },
-      { key: "audience", ok: Boolean(parsed.verifier), label: "Verifier identity present" },
-      { key: "match", ok: matches.length > 0, label: "Wallet has matching active credentials" },
-      { key: "consent", ok: true, label: "User consent required before presentation" }
-    ]
+      {
+        key: "nonce",
+        ok: Boolean(parsed.nonce),
+        label: "Verifier nonce present",
+      },
+      {
+        key: "audience",
+        ok: Boolean(parsed.verifier),
+        label: "Verifier identity present",
+      },
+      {
+        key: "match",
+        ok: matches.length > 0,
+        label: "Wallet has matching active credentials",
+      },
+      {
+        key: "consent",
+        ok: true,
+        label: "User consent required before presentation",
+      },
+    ],
   };
 }
 
-function summarizeOffer(raw: string, offer?: Oid4vcCredentialOffer): ParsedCredentialOffer {
+function summarizeOffer(
+  raw: string,
+  offer?: Oid4vcCredentialOffer,
+): ParsedCredentialOffer {
   const configurationIds = offer?.credential_configuration_ids ?? [];
   const grantTypes = Object.keys(offer?.grants ?? {});
   return {
@@ -236,11 +322,14 @@ function summarizeOffer(raw: string, offer?: Oid4vcCredentialOffer): ParsedCrede
     offer,
     issuer: offer?.credential_issuer,
     configurationIds,
-    grantTypes
+    grantTypes,
   };
 }
 
-function summarizePresentationRequest(raw: string, request: Oid4vpRequest): ParsedPresentationRequest {
+function summarizePresentationRequest(
+  raw: string,
+  request: Oid4vpRequest,
+): ParsedPresentationRequest {
   const definition = request.presentation_definition;
   const types = new Set<string>();
   for (const descriptor of definition?.input_descriptors ?? []) {
@@ -251,7 +340,11 @@ function summarizePresentationRequest(raw: string, request: Oid4vpRequest): Pars
       for (const item of field.filter?.enum ?? []) types.add(item);
     }
   }
-  const dcqlCredentials = Array.isArray((request.dcql_query as any)?.credentials) ? (request.dcql_query as any).credentials : [];
+  const dcqlCredentials = Array.isArray(
+    (request.dcql_query as any)?.credentials,
+  )
+    ? (request.dcql_query as any).credentials
+    : [];
   for (const credential of dcqlCredentials) {
     if (credential.id) types.add(String(credential.id));
     if (credential.format) types.add(String(credential.format));
@@ -264,17 +357,21 @@ function summarizePresentationRequest(raw: string, request: Oid4vpRequest): Pars
     raw,
     request,
     requestUri: request.request_uri,
-    verifier: request.client_id ?? (request.client_metadata?.client_name as string | undefined),
+    verifier:
+      request.client_id ??
+      (request.client_metadata?.client_name as string | undefined),
     nonce: request.nonce,
     state: request.state,
     responseMode: request.response_mode,
-    descriptorCount: definition?.input_descriptors?.length ?? dcqlCredentials.length ?? 0,
-    requestedCredentialTypes: Array.from(types)
+    descriptorCount:
+      definition?.input_descriptors?.length ?? dcqlCredentials.length ?? 0,
+    requestedCredentialTypes: Array.from(types),
   };
 }
 
 function normalizeOffer(value: unknown): Oid4vcCredentialOffer | undefined {
-  if (typeof value === "string") return JSON.parse(value) as Oid4vcCredentialOffer;
+  if (typeof value === "string")
+    return JSON.parse(value) as Oid4vcCredentialOffer;
   if (value && typeof value === "object") return value as Oid4vcCredentialOffer;
   return undefined;
 }
@@ -282,7 +379,9 @@ function normalizeOffer(value: unknown): Oid4vcCredentialOffer | undefined {
 function parseJsonObject(value: string): Record<string, any> | null {
   try {
     const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : null;
   } catch {
     return null;
   }

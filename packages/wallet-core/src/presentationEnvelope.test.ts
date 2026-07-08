@@ -12,21 +12,30 @@ import {
 
 describe("portable presentation envelope", () => {
   it("creates an envelope for every canonical wallet document type", () => {
-    const seedTypes = new Set(completeWalletSeedCards.map((card) => card.cardType));
-    expect([...CANONICAL_DOCUMENT_TYPES].filter((type) => !seedTypes.has(type))).toEqual([]);
+    const seedTypes = new Set(
+      completeWalletSeedCards.map((card) => card.cardType),
+    );
+    expect(
+      [...CANONICAL_DOCUMENT_TYPES].filter((type) => !seedTypes.has(type)),
+    ).toEqual([]);
 
     for (const card of completeWalletSeedCards) {
       const envelope = presentationEnvelopeFromWalletCard(card);
       expect(envelope.envelopeVersion, card.cardType).toBe("2026.07.v1");
       expect(envelope.display.documentType, card.cardType).toBe(card.cardType);
-      expect(envelope.evidence.documentReferences.length, card.cardType).toBeGreaterThan(0);
+      expect(
+        envelope.evidence.documentReferences.length,
+        card.cardType,
+      ).toBeGreaterThan(0);
       expect(envelope.sections.length, card.cardType).toBeGreaterThan(0);
     }
   });
 
   it("does not mark proofless credentials as green TrustCare proof", () => {
     const card = {
-      ...completeWalletSeedCards.find((item) => item.cardType === "patient_identity")!,
+      ...completeWalletSeedCards.find(
+        (item) => item.cardType === "patient_identity",
+      )!,
       credentialJwt: undefined,
       credentialProof: undefined,
       issuerDid: null,
@@ -38,7 +47,9 @@ describe("portable presentation envelope", () => {
   });
 
   it("keeps trust artifacts out of clinical readiness proof semantics", () => {
-    const card = completeWalletSeedCards.find((item) => item.cardType === "shl_manifest")!;
+    const card = completeWalletSeedCards.find(
+      (item) => item.cardType === "shl_manifest",
+    )!;
     const envelope = presentationEnvelopeFromWalletCard(card);
 
     expect(envelope.sourceObjectClass).toBe("link_manifest");
@@ -49,15 +60,25 @@ describe("portable presentation envelope", () => {
 
   it("excludes technical properties from selectable disclosure fields", () => {
     const envelope = presentationEnvelopeFromWalletCard(
-      completeWalletSeedCards.find((item) => item.cardType === "patient_summary")!,
+      completeWalletSeedCards.find(
+        (item) => item.cardType === "patient_summary",
+      )!,
     );
     const fields = selectableDisclosureFieldsFromEnvelope(envelope);
-    const forbidden = ["proof", "issuer", "watermark", "documentReference", "jwt"];
+    const forbidden = [
+      "proof",
+      "issuer",
+      "watermark",
+      "documentReference",
+      "jwt",
+    ];
 
     expect(fields.length).toBeGreaterThan(0);
     for (const fragment of forbidden) {
       expect(
-        fields.some((field) => field.path?.toLowerCase().includes(fragment.toLowerCase())),
+        fields.some((field) =>
+          field.path?.toLowerCase().includes(fragment.toLowerCase()),
+        ),
       ).toBe(false);
     }
   });
@@ -90,6 +111,8 @@ describe("micro IPS plus pack", () => {
     expect(pack.standards.systemOfRecord).toBe(false);
     expect(pack.provenance.shareOnlyVia).toBeTruthy();
     expect(pack.provenance.recordTimeRange).toBeTruthy();
-    expect(pack.records.some((record) => record.documentType === "shl_manifest")).toBe(false);
+    expect(
+      pack.records.some((record) => record.documentType === "shl_manifest"),
+    ).toBe(false);
   });
 });

@@ -12,4 +12,3 @@ export function translate(lang: Language, key: string): string {
 
 export * from "./en";
 export * from "./th";
-

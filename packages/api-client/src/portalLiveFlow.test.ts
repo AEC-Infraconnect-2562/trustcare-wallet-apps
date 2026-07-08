@@ -59,6 +59,20 @@ describe("Portal live-demo wallet flow", () => {
     expect(presentation.credentialCount).toBe(1);
     expect(presentation.selectedFields).toEqual(["identity"]);
 
+    const stateBackedPresentation = await walletApi.present(options, {
+      cardId: 41999,
+      selectedFields: ["identity"],
+      cardSnapshot: {
+        ...cards[0]!,
+        id: 41999,
+        credentialId: 90999,
+        ownerUserId: "demo-patient-001",
+      },
+    });
+    expect(stateBackedPresentation.qrData).toBe(
+      "ey.portal.live.patient.identity",
+    );
+
     await expect(walletApi.present(options, { cardId: 1 })).rejects.toThrow(
       "Wallet card not found",
     );

@@ -3,7 +3,9 @@ import { identityCredentialTypes } from "./credentialTypes";
 
 const identitySet = new Set<string>(identityCredentialTypes);
 
-export function sortIdentityFirst<T extends Pick<WalletCard, "cardType" | "createdAt">>(cards: T[]): T[] {
+export function sortIdentityFirst<
+  T extends Pick<WalletCard, "cardType" | "createdAt">,
+>(cards: T[]): T[] {
   return [...cards].sort((a, b) => {
     const aIdentity = identitySet.has(a.cardType) ? 0 : 1;
     const bIdentity = identitySet.has(b.cardType) ? 0 : 1;
@@ -12,13 +14,21 @@ export function sortIdentityFirst<T extends Pick<WalletCard, "cardType" | "creat
   });
 }
 
-export function flattenCardsByCategory(grouped: Record<string, WalletCard[]> | undefined): WalletCard[] {
+export function flattenCardsByCategory(
+  grouped: Record<string, WalletCard[]> | undefined,
+): WalletCard[] {
   if (!grouped) return [];
   return sortIdentityFirst(Object.values(grouped).flat());
 }
 
-export function countCardsByCategory(grouped: Record<string, WalletCard[]> | undefined): Record<string, number> {
+export function countCardsByCategory(
+  grouped: Record<string, WalletCard[]> | undefined,
+): Record<string, number> {
   if (!grouped) return {};
-  return Object.fromEntries(Object.entries(grouped).map(([category, cards]) => [category, cards.length]));
+  return Object.fromEntries(
+    Object.entries(grouped).map(([category, cards]) => [
+      category,
+      cards.length,
+    ]),
+  );
 }
-

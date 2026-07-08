@@ -7,14 +7,24 @@ import type {
   WalletExportResult,
   WalletImportResult,
   WalletStoredObject,
-  WalletStoredObjectType
+  WalletStoredObjectType,
 } from "./models";
-import { parseOid4vcCredentialOffer, parseOid4vpRequest, matchCardsForOid4vp } from "./oid4vc";
+import {
+  parseOid4vcCredentialOffer,
+  parseOid4vpRequest,
+  matchCardsForOid4vp,
+} from "./oid4vc";
 import { parseTrustCareQr } from "./qr";
 import { exportShlPackage, parseShlLink } from "./shl";
-import { walletObjectFromCredentialOffer, walletObjectFromPresentationRequest } from "./store";
+import {
+  walletObjectFromCredentialOffer,
+  walletObjectFromPresentationRequest,
+} from "./store";
 
-export function importWalletExchange(raw: string, walletCards: WalletCard[] = []): WalletImportResult {
+export function importWalletExchange(
+  raw: string,
+  walletCards: WalletCard[] = [],
+): WalletImportResult {
   const value = raw.trim();
   if (!value) {
     return fail("unknown", "Empty import payload.");
@@ -36,7 +46,7 @@ export function importWalletExchange(raw: string, walletCards: WalletCard[] = []
       webViewerUrl: extractViewerUrl(value, shl.raw),
       passcodeRequired: shl.passcodeRequired,
       currentAccessCount: 0,
-      expiresAt: shl.expiresAt
+      expiresAt: shl.expiresAt,
     };
     const payload = withTrustCareBindingPending(shlPackage, shl.raw);
     return {
@@ -53,13 +63,17 @@ export function importWalletExchange(raw: string, walletCards: WalletCard[] = []
         createdAt: new Date().toISOString(),
         expiresAt: shl.expiresAt,
         source: shl.url,
-        payload
+        payload,
       },
       warnings: [
-        ...(shl.url ? [] : ["ยัง decode SHL payload ในเครื่องนี้ได้ไม่ครบ จึงเก็บ QR payload เดิมไว้ให้ backend ตรวจสอบต่อ."]),
-        "นำเข้า Standard SHL โดยไม่แก้ canonical shlink เดิม และบันทึกสถานะรอ TrustCare Maker/Checker ก่อนยกระดับเป็น Certified SHL ภายใน TrustCare ecosystem."
+        ...(shl.url
+          ? []
+          : [
+              "ยัง decode SHL payload ในเครื่องนี้ได้ไม่ครบ จึงเก็บ QR payload เดิมไว้ให้ backend ตรวจสอบต่อ.",
+            ]),
+        "นำเข้า Standard SHL โดยไม่แก้ canonical shlink เดิม และบันทึกสถานะรอ TrustCare Maker/Checker ก่อนยกระดับเป็น Certified SHL ภายใน TrustCare ecosystem.",
       ],
-      errors: []
+      errors: [],
     };
   }
 
@@ -70,8 +84,10 @@ export function importWalletExchange(raw: string, walletCards: WalletCard[] = []
       format: "oid4vci-offer",
       protocol: "oid4vci",
       object: walletObjectFromCredentialOffer(oid4vci),
-      warnings: ["Credential offer imported. Fetch issuer metadata over TLS and ask for consent before accepting the credential."],
-      errors: []
+      warnings: [
+        "Credential offer imported. Fetch issuer metadata over TLS and ask for consent before accepting the credential.",
+      ],
+      errors: [],
     };
   }
 
@@ -83,9 +99,13 @@ export function importWalletExchange(raw: string, walletCards: WalletCard[] = []
       format: "oid4vp-request",
       protocol: "oid4vp",
       object: walletObjectFromPresentationRequest(oid4vp),
-      matchedCredentialIds: matches.map(card => card.credentialId),
-      warnings: matches.length ? ["OID4VP request imported. User consent is required before creating a presentation."] : ["No active local credential matched this OID4VP request."],
-      errors: []
+      matchedCredentialIds: matches.map((card) => card.credentialId),
+      warnings: matches.length
+        ? [
+            "OID4VP request imported. User consent is required before creating a presentation.",
+          ]
+        : ["No active local credential matched this OID4VP request."],
+      errors: [],
     };
   }
 
@@ -93,7 +113,11 @@ export function importWalletExchange(raw: string, walletCards: WalletCard[] = []
   if (json) return importJsonObject(value, json);
 
   const parsedQr = parseTrustCareQr(value);
-  if (parsedQr.kind === "vp-url" || parsedQr.kind === "presentation-id" || parsedQr.kind === "jwt") {
+  if (
+    parsedQr.kind === "vp-url" ||
+    parsedQr.kind === "presentation-id" ||
+    parsedQr.kind === "jwt"
+  ) {
     return {
       ok: true,
       format: parsedQr.kind === "jwt" ? "jwt" : "trustcare-vp-json",
@@ -106,14 +130,22 @@ export function importWalletExchange(raw: string, walletCards: WalletCard[] = []
         status: "pending",
         protocol: "trustcare",
         createdAt: new Date().toISOString(),
-        payload: parsedQr
+        payload: parsedQr,
       },
-      warnings: parsedQr.kind === "jwt" ? ["JWT imported. Backend verification is required before trusting the VP."] : [],
-      errors: []
+      warnings:
+        parsedQr.kind === "jwt"
+          ? [
+              "JWT imported. Backend verification is required before trusting the VP.",
+            ]
+          : [],
+      errors: [],
     };
   }
 
-  return fail("unknown", "Payload is not a recognized SHL, VC, VP, OID4VCI, or OID4VP import.");
+  return fail(
+    "unknown",
+    "Payload is not a recognized SHL, VC, VP, OID4VCI, or OID4VP import.",
+  );
 }
 
 export function exportWalletCard(card: WalletCard): WalletExportResult {
@@ -124,18 +156,24 @@ export function exportWalletCard(card: WalletCard): WalletExportResult {
     fileName: `trustcare-vc-${card.credentialId}.json`,
     mimeType: "application/vc+json",
     data: JSON.stringify(vc, null, 2),
-    warnings: card.credentialStatus === "active" ? [] : [`Credential status is ${card.credentialStatus}.`]
+    warnings:
+      card.credentialStatus === "active"
+        ? []
+        : [`Credential status is ${card.credentialStatus}.`],
   };
 }
 
-export function exportWalletPresentation(input: PresentationHistoryItem | ServicePacketResponse): WalletExportResult {
-  const presentationId = "presentationId" in input ? input.presentationId : `vp-history-${input.id}`;
+export function exportWalletPresentation(
+  input: PresentationHistoryItem | ServicePacketResponse,
+): WalletExportResult {
+  const presentationId =
+    "presentationId" in input ? input.presentationId : `vp-history-${input.id}`;
   const vp = {
     "@context": ["https://www.w3.org/ns/credentials/v2"],
     type: ["VerifiablePresentation", "TrustCarePresentation"],
     id: presentationId,
     holder: getStringish(input, "holderDid"),
-    trustcare: input
+    trustcare: input,
   };
   return {
     ok: true,
@@ -144,27 +182,52 @@ export function exportWalletPresentation(input: PresentationHistoryItem | Servic
     mimeType: "application/vp+json",
     data: JSON.stringify(removeUndefined(vp), null, 2),
     qrPayload: "qrData" in input ? input.qrData : undefined,
-    warnings: []
+    warnings: [],
   };
 }
 
-export function exportWalletObject(object: WalletStoredObject): WalletExportResult {
-  if (object.type === "shl" && looksLikeShlPackage(object.payload)) return exportShlPackage(object.payload);
-  if ((object.type === "vc" || object.type === "shl_manifest" || object.type === "sync_receipt" || object.type === "holder_vc") && looksLikeWalletCard(object.payload)) return exportWalletCard(object.payload);
-  if ((object.type === "vp" || object.type === "service_packet") && looksLikeServicePacket(object.payload)) return exportWalletPresentation(object.payload);
+export function exportWalletObject(
+  object: WalletStoredObject,
+): WalletExportResult {
+  if (object.type === "shl" && looksLikeShlPackage(object.payload))
+    return exportShlPackage(object.payload);
+  if (
+    (object.type === "vc" ||
+      object.type === "shl_manifest" ||
+      object.type === "sync_receipt" ||
+      object.type === "holder_vc") &&
+    looksLikeWalletCard(object.payload)
+  )
+    return exportWalletCard(object.payload);
+  if (
+    (object.type === "vp" || object.type === "service_packet") &&
+    looksLikeServicePacket(object.payload)
+  )
+    return exportWalletPresentation(object.payload);
   const format = formatForStoredObject(object.type);
   return {
     ok: true,
     format,
     fileName: `trustcare-${object.type}-${safeFilePart(object.id)}.json`,
     mimeType: "application/json",
-    data: JSON.stringify({ type: object.type, protocol: object.protocol, status: object.status, payload: object.payload }, null, 2),
+    data: JSON.stringify(
+      {
+        type: object.type,
+        protocol: object.protocol,
+        status: object.status,
+        payload: object.payload,
+      },
+      null,
+      2,
+    ),
     qrPayload: extractQrPayload(object.payload),
-    warnings: []
+    warnings: [],
   };
 }
 
-export function exportWalletObjects(objects: WalletStoredObject[]): WalletExportResult {
+export function exportWalletObjects(
+  objects: WalletStoredObject[],
+): WalletExportResult {
   return {
     ok: true,
     format: "raw-json",
@@ -175,34 +238,71 @@ export function exportWalletObjects(objects: WalletStoredObject[]): WalletExport
         type: "TrustCareWalletExport",
         exportedAt: new Date().toISOString(),
         count: objects.length,
-        objects
+        objects,
       },
       null,
-      2
+      2,
     ),
-    warnings: []
+    warnings: [],
   };
 }
 
-function importJsonObject(raw: string, json: Record<string, unknown>): WalletImportResult {
-  if (json.type === "SMARTHealthLink" || "shlUrl" in json || "qrPayload" in json) {
-    const qrPayload = typeof json.qrPayload === "string" ? json.qrPayload : typeof json.shlUrl === "string" ? json.shlUrl : raw;
+function importJsonObject(
+  raw: string,
+  json: Record<string, unknown>,
+): WalletImportResult {
+  if (
+    json.type === "SMARTHealthLink" ||
+    "shlUrl" in json ||
+    "qrPayload" in json
+  ) {
+    const qrPayload =
+      typeof json.qrPayload === "string"
+        ? json.qrPayload
+        : typeof json.shlUrl === "string"
+          ? json.shlUrl
+          : raw;
     const parsed = parseShlLink(qrPayload);
     const shlPayload: ShlPackage = {
       ...(json as Record<string, unknown>),
       id: typeof json.id === "number" ? json.id : stableNumericId(raw),
-      label: typeof json.label === "string" ? json.label : "Imported SMART Health Link",
+      label:
+        typeof json.label === "string"
+          ? json.label
+          : "Imported SMART Health Link",
       status: typeof json.status === "string" ? json.status : "pending",
-      manifestUrl: typeof json.manifestUrl === "string" ? json.manifestUrl : parsed?.url,
-      viewerUrl: typeof json.viewerUrl === "string" ? json.viewerUrl : parsed ? extractViewerUrl(qrPayload, parsed.raw) : undefined,
+      manifestUrl:
+        typeof json.manifestUrl === "string" ? json.manifestUrl : parsed?.url,
+      viewerUrl:
+        typeof json.viewerUrl === "string"
+          ? json.viewerUrl
+          : parsed
+            ? extractViewerUrl(qrPayload, parsed.raw)
+            : undefined,
       shlUrl: typeof json.shlUrl === "string" ? json.shlUrl : parsed?.raw,
-      canonicalShlUrl: typeof json.canonicalShlUrl === "string" ? json.canonicalShlUrl : parsed?.raw,
-      webViewerUrl: typeof json.webViewerUrl === "string" ? json.webViewerUrl : parsed ? extractViewerUrl(qrPayload, parsed.raw) : undefined,
+      canonicalShlUrl:
+        typeof json.canonicalShlUrl === "string"
+          ? json.canonicalShlUrl
+          : parsed?.raw,
+      webViewerUrl:
+        typeof json.webViewerUrl === "string"
+          ? json.webViewerUrl
+          : parsed
+            ? extractViewerUrl(qrPayload, parsed.raw)
+            : undefined,
       qrPayload,
-      passcodeRequired: typeof json.passcodeRequired === "boolean" ? json.passcodeRequired : parsed?.passcodeRequired,
-      currentAccessCount: typeof json.currentAccessCount === "number" ? json.currentAccessCount : 0
+      passcodeRequired:
+        typeof json.passcodeRequired === "boolean"
+          ? json.passcodeRequired
+          : parsed?.passcodeRequired,
+      currentAccessCount:
+        typeof json.currentAccessCount === "number"
+          ? json.currentAccessCount
+          : 0,
     } as ShlPackage;
-    const shlPayloadWithManifest = parsed ? withTrustCareBindingPending(shlPayload, parsed.raw) : shlPayload;
+    const shlPayloadWithManifest = parsed
+      ? withTrustCareBindingPending(shlPayload, parsed.raw)
+      : shlPayload;
     return {
       ok: true,
       format: "shl-json",
@@ -215,14 +315,19 @@ function importJsonObject(raw: string, json: Record<string, unknown>): WalletImp
         status: shlPayload.status,
         protocol: "shl",
         createdAt: new Date().toISOString(),
-        expiresAt: typeof json.expiresAt === "string" ? json.expiresAt : undefined,
+        expiresAt:
+          typeof json.expiresAt === "string" ? json.expiresAt : undefined,
         source: parsed?.url,
-        payload: { ...shlPayloadWithManifest, parsed }
+        payload: { ...shlPayloadWithManifest, parsed },
       },
       warnings: parsed
-        ? ["นำเข้า SHL JSON แล้ว และ TrustCare Manifest VP binding ยังอยู่ในสถานะรอ Maker/Checker ก่อนยกระดับความน่าเชื่อถือภายใน TrustCare."]
-        : ["นำเข้า SHL JSON แล้ว แต่ embedded QR payload ยัง decode ในเครื่องนี้ไม่ได้."],
-      errors: []
+        ? [
+            "นำเข้า SHL JSON แล้ว และ TrustCare Manifest VP binding ยังอยู่ในสถานะรอ Maker/Checker ก่อนยกระดับความน่าเชื่อถือภายใน TrustCare.",
+          ]
+        : [
+            "นำเข้า SHL JSON แล้ว แต่ embedded QR payload ยัง decode ในเครื่องนี้ไม่ได้.",
+          ],
+      errors: [],
     };
   }
 
@@ -231,9 +336,14 @@ function importJsonObject(raw: string, json: Record<string, unknown>): WalletImp
       ok: true,
       format: "trustcare-vc-json",
       protocol: "trustcare",
-      object: jsonObject("vc", json, "Imported Verifiable Credential", getStringish(json, "id") ?? stableId(raw)),
+      object: jsonObject(
+        "vc",
+        json,
+        "Imported Verifiable Credential",
+        getStringish(json, "id") ?? stableId(raw),
+      ),
       warnings: [],
-      errors: []
+      errors: [],
     };
   }
 
@@ -242,22 +352,39 @@ function importJsonObject(raw: string, json: Record<string, unknown>): WalletImp
       ok: true,
       format: "trustcare-vp-json",
       protocol: "trustcare",
-      object: jsonObject("vp", json, "Imported Verifiable Presentation", getStringish(json, "id") ?? stableId(raw)),
+      object: jsonObject(
+        "vp",
+        json,
+        "Imported Verifiable Presentation",
+        getStringish(json, "id") ?? stableId(raw),
+      ),
       warnings: [],
-      errors: []
+      errors: [],
     };
   }
 
   return {
     ok: true,
     format: "raw-json",
-    object: jsonObject("document_reference", json, "Imported JSON Document", stableId(raw)),
-    warnings: ["JSON imported as a document reference. Backend mapping is required before it becomes a VC or VP."],
-    errors: []
+    object: jsonObject(
+      "document_reference",
+      json,
+      "Imported JSON Document",
+      stableId(raw),
+    ),
+    warnings: [
+      "JSON imported as a document reference. Backend mapping is required before it becomes a VC or VP.",
+    ],
+    errors: [],
   };
 }
 
-function jsonObject(type: WalletStoredObjectType, payload: unknown, title: string, id: string): WalletStoredObject {
+function jsonObject(
+  type: WalletStoredObjectType,
+  payload: unknown,
+  title: string,
+  id: string,
+): WalletStoredObject {
   return {
     id: `${type}:${id}`,
     type,
@@ -265,7 +392,7 @@ function jsonObject(type: WalletStoredObjectType, payload: unknown, title: strin
     status: "pending",
     protocol: type === "shl" ? "shl" : "trustcare",
     createdAt: new Date().toISOString(),
-    payload
+    payload,
   };
 }
 
@@ -274,32 +401,46 @@ function normalizeCredential(card: WalletCard): Record<string, unknown> {
   if (isVcJson(data)) return data;
   return removeUndefined({
     "@context": ["https://www.w3.org/ns/credentials/v2"],
-    type: ["VerifiableCredential", card.credentialType ?? "TrustCareCredential"],
+    type: [
+      "VerifiableCredential",
+      card.credentialType ?? "TrustCareCredential",
+    ],
     id: String(card.credentialId),
     issuer: card.issuerDid ?? card.issuerHospitalName,
     validFrom: card.issuedAt,
     validUntil: card.expiresAt,
-    credentialStatus: { type: "TrustCareStatus", status: card.credentialStatus },
+    credentialStatus: {
+      type: "TrustCareStatus",
+      status: card.credentialStatus,
+    },
     credentialSubject: data["credentialSubject"] ?? data,
     trustcare: {
       cardId: card.id,
       cardType: card.cardType,
       displayName: card.displayName,
-      documentCategory: card.documentCategory
-    }
+      documentCategory: card.documentCategory,
+    },
   });
 }
 
 function isVcJson(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const object = value as Record<string, unknown>;
-  return hasType(object, "VerifiableCredential") || "credentialSubject" in object || "issuer" in object;
+  return (
+    hasType(object, "VerifiableCredential") ||
+    "credentialSubject" in object ||
+    "issuer" in object
+  );
 }
 
 function isVpJson(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const object = value as Record<string, unknown>;
-  return hasType(object, "VerifiablePresentation") || "verifiableCredential" in object || "holder" in object;
+  return (
+    hasType(object, "VerifiablePresentation") ||
+    "verifiableCredential" in object ||
+    "holder" in object
+  );
 }
 
 function hasType(object: Record<string, unknown>, type: string): boolean {
@@ -308,21 +449,42 @@ function hasType(object: Record<string, unknown>, type: string): boolean {
 }
 
 function looksLikeWalletCard(value: unknown): value is WalletCard {
-  return Boolean(value && typeof value === "object" && "credentialId" in value && "cardType" in value);
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    "credentialId" in value &&
+    "cardType" in value,
+  );
 }
 
 function looksLikeShlPackage(value: unknown): value is ShlPackage {
-  return Boolean(value && typeof value === "object" && "id" in value && ("shlUrl" in value || "qrPayload" in value || "viewerUrl" in value));
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    "id" in value &&
+    ("shlUrl" in value || "qrPayload" in value || "viewerUrl" in value),
+  );
 }
 
-function looksLikeServicePacket(value: unknown): value is ServicePacketResponse {
-  return Boolean(value && typeof value === "object" && "presentationId" in value && "qrData" in value);
+function looksLikeServicePacket(
+  value: unknown,
+): value is ServicePacketResponse {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    "presentationId" in value &&
+    "qrData" in value,
+  );
 }
 
 function extractQrPayload(value: unknown): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   const object = value as Record<string, unknown>;
-  return typeof object.qrData === "string" ? object.qrData : typeof object.qrPayload === "string" ? object.qrPayload : undefined;
+  return typeof object.qrData === "string"
+    ? object.qrData
+    : typeof object.qrPayload === "string"
+      ? object.qrPayload
+      : undefined;
 }
 
 function getStringish(value: unknown, key: string): string | undefined {
@@ -333,8 +495,15 @@ function getStringish(value: unknown, key: string): string | undefined {
 
 function formatForStoredObject(type: WalletStoredObjectType) {
   if (type === "shl") return "shl-json";
-  if (type === "vp" || type === "service_packet" || type === "manifest_vp") return "trustcare-vp-json";
-  if (type === "vc" || type === "shl_manifest" || type === "sync_receipt" || type === "holder_vc") return "trustcare-vc-json";
+  if (type === "vp" || type === "service_packet" || type === "manifest_vp")
+    return "trustcare-vp-json";
+  if (
+    type === "vc" ||
+    type === "shl_manifest" ||
+    type === "sync_receipt" ||
+    type === "holder_vc"
+  )
+    return "trustcare-vc-json";
   if (type === "oid4vci_offer") return "oid4vci-offer";
   if (type === "oid4vp_request") return "oid4vp-request";
   return "raw-json";
@@ -343,37 +512,48 @@ function formatForStoredObject(type: WalletStoredObjectType) {
 function parseJsonObject(value: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : null;
   } catch {
     return null;
   }
 }
 
-function extractViewerUrl(value: string, canonicalShl: string): string | undefined {
+function extractViewerUrl(
+  value: string,
+  canonicalShl: string,
+): string | undefined {
   if (value === canonicalShl) return undefined;
   try {
     const url = new URL(value);
     const hash = decodeURIComponent(url.hash.replace(/^#/, ""));
-    return hash === canonicalShl || hash.startsWith("shlink:/") ? value : undefined;
+    return hash === canonicalShl || hash.startsWith("shlink:/")
+      ? value
+      : undefined;
   } catch {
     return undefined;
   }
 }
 
-function withTrustCareBindingPending(shl: ShlPackage, canonicalShl: string): ShlPackageDetail {
+function withTrustCareBindingPending(
+  shl: ShlPackage,
+  canonicalShl: string,
+): ShlPackageDetail {
   const suffix = stableId(canonicalShl);
   return {
     ...shl,
     trustcareCertification: shl.trustcareCertification ?? {
       status: "pending_maker_checker",
       ownerConfirmed: false,
-      policyVersion: "trustcare-shl-governance-2026.07"
+      policyVersion: "trustcare-shl-governance-2026.07",
     },
     documentBundle: {
       bundleId: `imported_shl_bundle_${suffix}`,
       manifestVersion: 1,
       source: shl.manifestUrl ?? shl.viewerUrl ?? "standard_shl_import",
-      bindingModel: "Standard SHL transport-valid; TrustCare certification pending",
+      bindingModel:
+        "Standard SHL transport-valid; TrustCare certification pending",
       standards: ["SMART Health Links", "FHIR DocumentReference"],
       status: "pending_maker_checker",
       files: [],
@@ -392,24 +572,27 @@ function withTrustCareBindingPending(shl: ShlPackage, canonicalShl: string): Shl
           manifestVersion: 1,
           objectLinks: {
             manifest: shl.manifestUrl ?? undefined,
-            shlFile: canonicalShl
+            shlFile: canonicalShl,
           },
           vcBinding: {
-            recommendedCredentialType: "ShlManifestCredential"
+            recommendedCredentialType: "ShlManifestCredential",
           },
           accessBinding: {
             passcodeRequired: Boolean(shl.passcodeRequired),
             expiresAt: shl.expiresAt ?? undefined,
             currentAccessCount: shl.currentAccessCount ?? 0,
-            maxAccessCount: shl.maxAccessCount ?? undefined
-          }
-        }
-      ]
-    }
+            maxAccessCount: shl.maxAccessCount ?? undefined,
+          },
+        },
+      ],
+    },
   };
 }
 
-function fail(format: WalletImportResult["format"], error: string): WalletImportResult {
+function fail(
+  format: WalletImportResult["format"],
+  error: string,
+): WalletImportResult {
   return { ok: false, format, warnings: [], errors: [error] };
 }
 
@@ -433,6 +616,10 @@ function safeFilePart(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 80);
 }
 
-function removeUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
-  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as Partial<T>;
+function removeUndefined<T extends Record<string, unknown>>(
+  value: T,
+): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  ) as Partial<T>;
 }

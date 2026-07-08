@@ -11,23 +11,23 @@
 
 ## Component
 
-| Component | หน้าที่ |
-| --- | --- |
-| Wallet Web/Mobile | เลือกเอกสาร ตั้ง policy สร้าง request และแสดง QR สำหรับผู้ใช้ |
+| Component                | หน้าที่                                                                                                                             |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Wallet Web/Mobile        | เลือกเอกสาร ตั้ง policy สร้าง request และแสดง QR สำหรับผู้ใช้                                                                       |
 | TrustCare Portal Backend | เป็น SHL Sharing Application/Gateway สร้าง manifest endpoint, store encrypted files, enforce passcode/access count/expiry และ audit |
-| DB | เก็บ metadata เช่น publicationId, owner, selected documents, policy, manifest version, access logs, revocation |
-| S3/Object Storage | เก็บ encrypted FHIR/DocumentReference files หรือ JWE ที่ manifest ชี้ไป |
-| Contract Hub | กำหนด service readiness contexts, required documents, recommended transport, verifier policy |
-| Verifier | อ่าน `shlink:/...`, fetch manifest, ตรวจ trust layer และแสดงผล scan response |
+| DB                       | เก็บ metadata เช่น publicationId, owner, selected documents, policy, manifest version, access logs, revocation                      |
+| S3/Object Storage        | เก็บ encrypted FHIR/DocumentReference files หรือ JWE ที่ manifest ชี้ไป                                                             |
+| Contract Hub             | กำหนด service readiness contexts, required documents, recommended transport, verifier policy                                        |
+| Verifier                 | อ่าน `shlink:/...`, fetch manifest, ตรวจ trust layer และแสดงผล scan response                                                        |
 
 ## URL และ Payload ที่ต้องแยกกัน
 
-| ค่า | ใช้เพื่อ | ตัวอย่าง |
-| --- | --- | --- |
-| `canonicalShlUrl` | SHL มาตรฐานจริงที่ระบบอื่นต้องอ่านได้ | `shlink:/...` |
-| `manifestUrl` | Endpoint ที่ SHL payload ชี้ไปเพื่ออ่าน manifest | `https://portal.example/api/shl/manifests/{id}` |
-| `webViewerUrl` | Web wrapper สำหรับให้ browser เปิด viewer ได้และยังมี canonical SHL ใน fragment | `https://wallet.example/#shlink:/...` |
-| `qrPayload` | ค่าที่เอาไปแสดงเป็น QR ใน Wallet | ปกติใช้ `webViewerUrl` เพื่อ demo ข้ามเครื่องง่ายขึ้น |
+| ค่า               | ใช้เพื่อ                                                                        | ตัวอย่าง                                              |
+| ----------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `canonicalShlUrl` | SHL มาตรฐานจริงที่ระบบอื่นต้องอ่านได้                                           | `shlink:/...`                                         |
+| `manifestUrl`     | Endpoint ที่ SHL payload ชี้ไปเพื่ออ่าน manifest                                | `https://portal.example/api/shl/manifests/{id}`       |
+| `webViewerUrl`    | Web wrapper สำหรับให้ browser เปิด viewer ได้และยังมี canonical SHL ใน fragment | `https://wallet.example/#shlink:/...`                 |
+| `qrPayload`       | ค่าที่เอาไปแสดงเป็น QR ใน Wallet                                                | ปกติใช้ `webViewerUrl` เพื่อ demo ข้ามเครื่องง่ายขึ้น |
 
 ระบบต้องเก็บ `canonicalShlUrl` เสมอ เพื่อรักษา interoperability ตาม SHL spec ส่วน `webViewerUrl` เป็น convenience wrapper สำหรับ browser และ demo cross-device
 
@@ -58,7 +58,12 @@ POST /api/wallet/shl-packages
   },
   "publish": {
     "storageProvider": "s3",
-    "return": ["canonicalShlUrl", "webViewerUrl", "manifestUrl", "documentBundle"]
+    "return": [
+      "canonicalShlUrl",
+      "webViewerUrl",
+      "manifestUrl",
+      "documentBundle"
+    ]
   }
 }
 ```
@@ -106,10 +111,10 @@ POST /api/wallet/shl-packages/{publicationId}/revoke
 
 ## Standard SHL เทียบกับ TrustCare Manifest VP
 
-| ประเภท | Compatibility | TrustCare behavior |
-| --- | --- | --- |
-| Standard SHL | ใช้ได้กับ client SHL ทั่วไป | import/export/share/scan ได้ทันที ไม่ต้องมี Manifest VP |
-| SHL + Pending Manifest VP | ยังเป็น Standard SHL สำหรับระบบภายนอก | TrustCare สร้าง binding เป็นสถานะรอ Maker/Checker |
+| ประเภท                      | Compatibility                         | TrustCare behavior                                                                                |
+| --------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Standard SHL                | ใช้ได้กับ client SHL ทั่วไป           | import/export/share/scan ได้ทันที ไม่ต้องมี Manifest VP                                           |
+| SHL + Pending Manifest VP   | ยังเป็น Standard SHL สำหรับระบบภายนอก | TrustCare สร้าง binding เป็นสถานะรอ Maker/Checker                                                 |
 | SHL + Certified Manifest VP | ยังเป็น Standard SHL สำหรับระบบภายนอก | TrustCare verifier นับ Manifest VC/Holder VP เป็น trust proof หลัง owner + Maker/Checker approved |
 
 เมื่อนำ SHL ภายนอกเข้า TrustCare ecosystem ระบบสามารถสร้าง TrustCare Manifest VP binding เพิ่มได้ แต่ต้องรอ owner confirmation และ Maker/Checker ก่อนจึงแสดงเป็น verified

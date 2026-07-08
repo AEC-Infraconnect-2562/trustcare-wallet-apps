@@ -9,8 +9,17 @@ import {
   type DocumentRequestRequirement,
   type DocumentRequestSource,
 } from "./documentRequestFlow";
-import type { ReadinessContext, ReadinessRequirement, ReadinessResult } from "./models";
-import { getDocumentFormatCopy, getDocumentSourceCopy, getTrustStateCopy, type TrustUiState } from "./uxCopy";
+import type {
+  ReadinessContext,
+  ReadinessRequirement,
+  ReadinessResult,
+} from "./models";
+import {
+  getDocumentFormatCopy,
+  getDocumentSourceCopy,
+  getTrustStateCopy,
+  type TrustUiState,
+} from "./uxCopy";
 
 export type PurposePickerCardModel = {
   context: ReadinessContext;
@@ -92,8 +101,12 @@ export function buildReadinessSummary(
     | "missing"
   >,
 ): ReadinessSummaryModel {
-  const missingRequiredCount = readiness.missing.filter((item) => item.required).length;
-  const missingRecommendedCount = readiness.missing.filter((item) => !item.required).length;
+  const missingRequiredCount = readiness.missing.filter(
+    (item) => item.required,
+  ).length;
+  const missingRecommendedCount = readiness.missing.filter(
+    (item) => !item.required,
+  ).length;
   const criticalReady = Boolean(readiness.criticalReady);
   return {
     context: readiness.context,
@@ -114,7 +127,9 @@ export function buildReadinessSummary(
 
 export function buildMissingDocumentCards(
   context: ReadinessContext,
-  requirements: ReadonlyArray<ReadinessRequirement | DocumentRequestRequirement>,
+  requirements: ReadonlyArray<
+    ReadinessRequirement | DocumentRequestRequirement
+  >,
 ): MissingDocumentCardModel[] {
   return requirements.map((requirement) => {
     const normalized = normalizeRequirement(requirement);
@@ -195,7 +210,10 @@ export function detectImportPayload(value: string): ImportDetectionModel {
           "DocumentReference จากผู้ใช้ต้องรอ issuer ตรวจรับรอง",
         );
       }
-      if (type.includes("VerifiableCredential") || type.includes("VerifiablePresentation")) {
+      if (
+        type.includes("VerifiableCredential") ||
+        type.includes("VerifiablePresentation")
+      ) {
         return detection(
           "vc_vp",
           "verified_active_vc",
@@ -233,7 +251,8 @@ function detection(
     trustLabel: trustCopy.label,
     trustDescription: trustCopy.description,
     recommendedAction,
-    canImport: trustState !== "unknown_format" && trustState !== "subject_mismatch",
+    canImport:
+      trustState !== "unknown_format" && trustState !== "subject_mismatch",
     technicalHint,
   };
 }
@@ -254,7 +273,8 @@ function unknownDetection(message: string): ImportDetectionModel {
 function normalizeRequirement(
   requirement: ReadinessRequirement | DocumentRequestRequirement,
 ): DocumentRequestRequirement {
-  const source = requirement as ReadinessRequirement & DocumentRequestRequirement;
+  const source = requirement as ReadinessRequirement &
+    DocumentRequestRequirement;
   const rawTypes = source.documentTypes ?? source.cardTypes ?? [];
   const documentTypes = rawTypes
     .map((type) => normalizeDocumentType(type))

@@ -75,6 +75,7 @@ import {
   countCardsByCategory,
   buildDocumentRequestPlan,
   assessLocalReadiness,
+  createPresentationQrPayload,
   createShlViewerUrl,
   createDocumentRequestDraft,
   canPresentCredential,
@@ -1045,7 +1046,10 @@ export default function App() {
       if (!selectedCard) return;
       const presentationPolicy = credentialPresentationPolicy(selectedCard);
       if (!presentationPolicy.presentable) {
-        alert(presentationPolicy.reason ?? "Credential นี้ไม่ได้อยู่ในสถานะใช้งานได้");
+        alert(
+          presentationPolicy.reason ??
+            "Credential นี้ไม่ได้อยู่ในสถานะใช้งานได้",
+        );
         return;
       }
       if (webAuthn.isRegistered) {
@@ -1070,11 +1074,17 @@ export default function App() {
       }
       const result = await walletApi.present(apiOptions, {
         cardId: selectedCard.id,
+        cardSnapshot: selectedCard,
         selectedFields: fields,
         audience: "TrustCare credential verifier",
         validMinutes: 10,
       });
-      const scannableQr = createScannableWebUrl(result.qrData);
+      const qrPayload = createPresentationQrPayload({
+        origin: currentAppBaseUrl(),
+        presentationId: result.presentationId,
+        qrData: result.qrData,
+      });
+      const scannableQr = createScannableWebUrl(qrPayload);
       const presentationWithWebQr = { ...result, qrData: scannableQr };
       setPresentation(presentationWithWebQr);
       const nextQr = await toQrDataUrl(scannableQr, { margin: 1, width: 260 });
@@ -2059,9 +2069,7 @@ function HomeView({
   onPrepareContext: (context: ReadinessContext) => void;
 }) {
   const [readinessExpanded, setReadinessExpanded] = useState(false);
-  const activeCards = cards.filter(
-    (card) => canPresentCredential(card),
-  );
+  const activeCards = cards.filter((card) => canPresentCredential(card));
   const criticalCards = activeCards
     .filter((card) => card.pinned || criticalCardTypes.has(card.cardType))
     .slice(0, 5);
@@ -2465,8 +2473,7 @@ function DocumentsView({
     return cards.filter((card) => {
       if (category !== "all" && card.documentCategory !== category)
         return false;
-      if (status === "active" && !canPresentCredential(card))
-        return false;
+      if (status === "active" && !canPresentCredential(card)) return false;
       if (status === "expired" && card.credentialStatus !== "expired")
         return false;
       if (
@@ -6088,7 +6095,14 @@ function createScannableWebUrl(payload: string): string {
   }
   try {
     const url = new URL(raw);
-    if (url.searchParams.has("scan")) return raw;
+    if (
+      url.searchParams.has("scan") ||
+      url.searchParams.has("vp") ||
+      url.searchParams.has("presentationId") ||
+      url.pathname.includes("/presentations/")
+    ) {
+      return raw;
+    }
   } catch {
     // Raw VC/VP/SHL payloads are wrapped below so another device can open this web app.
   }

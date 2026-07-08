@@ -8,7 +8,9 @@ export type PortalRenderContract = {
   renderData: PortalRenderRecord;
 };
 
-export function extractPortalRenderData(subject: PortalRenderRecord): PortalRenderRecord {
+export function extractPortalRenderData(
+  subject: PortalRenderRecord,
+): PortalRenderRecord {
   const humanDocument = portalRecord(subject.humanDocument);
   return portalRecord(humanDocument.renderData ?? humanDocument);
 }

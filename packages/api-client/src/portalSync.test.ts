@@ -63,7 +63,10 @@ describe("syncTrustCarePortalWallet", () => {
               purpose: "opd_visit",
               verificationResult: "valid",
               presentedAt: "2026-07-03T10:00:00.000Z",
-              presentationData: { id: "vp-portal-1", type: ["VerifiablePresentation"] },
+              presentationData: {
+                id: "vp-portal-1",
+                type: ["VerifiablePresentation"],
+              },
             },
           ],
           syncedAt: "2026-07-06T12:00:00.000Z",
@@ -98,9 +101,7 @@ describe("syncTrustCarePortalWallet", () => {
     expect(calls[0]?.url).toBe(
       "https://trustcarehealth.live/api/auth/demo-login",
     );
-    expect(calls[1]?.url).toBe(
-      "https://trustcarehealth.live/api/wallet/sync",
-    );
+    expect(calls[1]?.url).toBe("https://trustcarehealth.live/api/wallet/sync");
     expect(calls.some((call) => call.url.includes("/api/trpc/"))).toBe(false);
     expect(result.cards).toHaveLength(1);
     expect(result.cards[0]?.credentialData?.id).toBe("urn:portal:vc:7001");
@@ -272,7 +273,9 @@ describe("syncTrustCarePortalWallet", () => {
         return jsonResponse({
           did: "did:web:trustcare.network:hospital:tcc",
           resolved: true,
-          verificationMethod: [{ id: "did:web:trustcare.network:hospital:tcc#vc-signing-key" }],
+          verificationMethod: [
+            { id: "did:web:trustcare.network:hospital:tcc#vc-signing-key" },
+          ],
           hospitalCode: "TCC",
         });
       }

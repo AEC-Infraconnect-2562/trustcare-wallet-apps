@@ -1,6 +1,18 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import * as SecureStore from "expo-secure-store";
-import { getDemoUser, walletDemoUsers, type WalletDemoUser } from "@trustcare/wallet-core";
+import {
+  getDemoUser,
+  walletDemoUsers,
+  type WalletDemoUser,
+} from "@trustcare/wallet-core";
 
 const activeUserStorageKey = "trustcare_wallet_mobile_active_user";
 const defaultUserId = "demo-patient-complete-001";
@@ -13,15 +25,24 @@ type MobileWalletSession = {
   resetActiveUser: () => Promise<void>;
 };
 
-const MobileWalletSessionContext = createContext<MobileWalletSession | null>(null);
+const MobileWalletSessionContext = createContext<MobileWalletSession | null>(
+  null,
+);
 
-export function MobileWalletSessionProvider({ children }: { children: ReactNode }) {
+export function MobileWalletSessionProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const [userId, setUserId] = useState(defaultUserId);
 
   useEffect(() => {
     void SecureStore.getItemAsync(activeUserStorageKey)
-      .then(storedUserId => {
-        if (storedUserId && walletDemoUsers.some(user => user.id === storedUserId)) {
+      .then((storedUserId) => {
+        if (
+          storedUserId &&
+          walletDemoUsers.some((user) => user.id === storedUserId)
+        ) {
           setUserId(storedUserId);
         }
       })
@@ -31,10 +52,10 @@ export function MobileWalletSessionProvider({ children }: { children: ReactNode 
   const user = useMemo(() => getDemoUser(userId), [userId]);
 
   const setActiveUserId = useCallback(async (nextUserId: string) => {
-    if (!walletDemoUsers.some(item => item.id === nextUserId)) return;
+    if (!walletDemoUsers.some((item) => item.id === nextUserId)) return;
     setUserId(nextUserId);
     await SecureStore.setItemAsync(activeUserStorageKey, nextUserId, {
-      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY
+      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     });
   }, []);
 
@@ -43,13 +64,16 @@ export function MobileWalletSessionProvider({ children }: { children: ReactNode 
     await SecureStore.deleteItemAsync(activeUserStorageKey);
   }, []);
 
-  const value = useMemo<MobileWalletSession>(() => ({
-    user,
-    userId: user.id,
-    users: walletDemoUsers,
-    setActiveUserId,
-    resetActiveUser
-  }), [resetActiveUser, setActiveUserId, user]);
+  const value = useMemo<MobileWalletSession>(
+    () => ({
+      user,
+      userId: user.id,
+      users: walletDemoUsers,
+      setActiveUserId,
+      resetActiveUser,
+    }),
+    [resetActiveUser, setActiveUserId, user],
+  );
 
   return (
     <MobileWalletSessionContext.Provider value={value}>
@@ -61,7 +85,9 @@ export function MobileWalletSessionProvider({ children }: { children: ReactNode 
 export function useActiveWalletUser() {
   const session = useContext(MobileWalletSessionContext);
   if (!session) {
-    throw new Error("useActiveWalletUser must be used within MobileWalletSessionProvider");
+    throw new Error(
+      "useActiveWalletUser must be used within MobileWalletSessionProvider",
+    );
   }
   return session;
 }

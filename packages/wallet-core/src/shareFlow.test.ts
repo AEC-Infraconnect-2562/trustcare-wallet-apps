@@ -154,7 +154,11 @@ describe("premium share flow policy and validation", () => {
   it("does not allow unverified patient uploads to become Certified SHL proof", () => {
     const cards = [
       card(1, "patient_identity"),
-      { ...card(2, "lab_result"), credentialStatus: "unverified", issuerDid: null },
+      {
+        ...card(2, "lab_result"),
+        credentialStatus: "unverified",
+        issuerDid: null,
+      },
     ];
     const draft = createShareDraft({
       source: "manual",

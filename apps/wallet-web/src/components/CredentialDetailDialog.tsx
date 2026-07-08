@@ -152,11 +152,18 @@ export function CredentialDetailDialog({
       role="dialog"
       aria-modal="true"
     >
-      <div className="credential-dialog" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="credential-dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
         <header className="credential-dialog-header">
           <div className="dialog-title-block">
             <div className="dialog-breadcrumb-row">
-              <button type="button" className="dialog-back-button" onClick={onClose}>
+              <button
+                type="button"
+                className="dialog-back-button"
+                onClick={onClose}
+              >
                 <ArrowLeft size={15} /> กลับ
               </button>
               <span className="dialog-crumbs">เอกสาร / {card.displayName}</span>
@@ -241,12 +248,18 @@ export function CredentialDetailDialog({
           <Button onClick={() => void handleGenerateQr()}>
             <QrCode size={18} /> QR Code
           </Button>
-          <Button type="button" className="purple" onClick={onSelectiveDisclosure}>
+          <Button
+            type="button"
+            className="purple"
+            onClick={onSelectiveDisclosure}
+          >
             <Eye size={18} /> SD / ZKP
           </Button>
           <Button
             className="secondary"
-            onClick={() => void navigator.clipboard?.writeText(String(card.credentialId))}
+            onClick={() =>
+              void navigator.clipboard?.writeText(String(card.credentialId))
+            }
           >
             <Clipboard size={18} /> คัดลอก ID
           </Button>
@@ -275,9 +288,15 @@ function TrustPanel({ envelope }: { envelope: PortablePresentationEnvelope }) {
         <ShieldCheck size={18} />
         <span>
           <strong>{trustStatusLabel(envelope.trust.status)}</strong>
-          <small>{envelope.trust.warnings[0] ?? envelope.trust.errors[0] ?? "Trust evidence normalized from portable presentation envelope."}</small>
+          <small>
+            {envelope.trust.warnings[0] ??
+              envelope.trust.errors[0] ??
+              "Trust evidence normalized from portable presentation envelope."}
+          </small>
         </span>
-        <Badge tone={trustBadgeTone(envelope.trust.badge)}>{envelope.trust.badge}</Badge>
+        <Badge tone={trustBadgeTone(envelope.trust.badge)}>
+          {envelope.trust.badge}
+        </Badge>
       </div>
       {envelope.trust.checklist.map((item) => (
         <div key={item.key} className="check-row">
@@ -313,7 +332,9 @@ function HistoryPanel({ history }: { history: PresentationHistoryItem[] }) {
                 : (item.purpose ?? "-")}
             </small>
           </span>
-          <Badge tone={item.verificationResult === "valid" ? "green" : "neutral"}>
+          <Badge
+            tone={item.verificationResult === "valid" ? "green" : "neutral"}
+          >
             {credentialStatusLabel(item.verificationResult ?? "recorded")}
           </Badge>
         </div>
@@ -342,7 +363,10 @@ function QrPopup({
       aria-label="VP QR Code"
       onClick={onClose}
     >
-      <section className="qr-popup" onClick={(event) => event.stopPropagation()}>
+      <section
+        className="qr-popup"
+        onClick={(event) => event.stopPropagation()}
+      >
         <header className="qr-popup-header">
           <div>
             <p className="eyebrow">VERIFIABLE PRESENTATION</p>
@@ -354,7 +378,11 @@ function QrPopup({
           </IconButton>
         </header>
         <div className="qr-popup-frame">
-          {qrDataUrl ? <img src={qrDataUrl} alt="VP QR Code" /> : <QrCode size={120} />}
+          {qrDataUrl ? (
+            <img src={qrDataUrl} alt="VP QR Code" />
+          ) : (
+            <QrCode size={120} />
+          )}
         </div>
         <p className="qr-popup-help">
           {qrDataUrl
@@ -369,7 +397,9 @@ function QrPopup({
             </div>
             <div>
               <dt>หมดอายุ</dt>
-              <dd>{new Date(presentation.expiresAt).toLocaleString("th-TH")}</dd>
+              <dd>
+                {new Date(presentation.expiresAt).toLocaleString("th-TH")}
+              </dd>
             </div>
           </dl>
         ) : null}
@@ -395,8 +425,13 @@ function hospitalName(
   return envelope.issuer?.name ?? card.issuerHospitalName ?? "TrustCare Issuer";
 }
 
-function trustStatusLabel(status: PortablePresentationEnvelope["trust"]["status"]) {
-  const labels: Record<PortablePresentationEnvelope["trust"]["status"], string> = {
+function trustStatusLabel(
+  status: PortablePresentationEnvelope["trust"]["status"],
+) {
+  const labels: Record<
+    PortablePresentationEnvelope["trust"]["status"],
+    string
+  > = {
     issuer_signed: "ลงนามแล้ว",
     transport_valid: "ขนส่งถูกต้อง",
     trustcare_pending: "รอรับรอง",
@@ -415,7 +450,7 @@ function escapeHtml(value: string): string {
       "&": "&amp;",
       "<": "&lt;",
       ">": "&gt;",
-      "\"": "&quot;",
+      '"': "&quot;",
       "'": "&#39;",
     };
     return replacements[char] ?? char;

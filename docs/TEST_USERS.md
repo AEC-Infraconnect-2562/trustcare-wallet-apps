@@ -6,21 +6,21 @@ The standalone wallet ships with scoped test users so TrustCare Portal and exter
 
 These users mirror TrustCare Portal demo users and must keep their original Portal photo assets. Do not replace these photos with generated images.
 
-| User ID | Name | Source | Primary Scope | Photo |
-| --- | --- | --- | --- | --- |
-| `demo-patient-001` | นายสมชาย ใจดี / Mr. Somchai Jaidee | TrustCare Portal | OPD, referral, claim, pharmacy, medical certificate | `https://trustcarehealth.live/manus-storage/patient_somsak_a2e00e97.jpg` |
-| `demo-patient-002` | นางสาวมาลี วัฒนา / Ms. Malee Wattana | TrustCare Portal | OPD, emergency, lab | `https://trustcarehealth.live/manus-storage/patient_malee_74d2ef04.jpg` |
-| `demo-patient-003` | Mr. John Williams | TrustCare Portal | Medical tourist, insurance, travel document | `https://trustcarehealth.live/manus-storage/patient_john_williams_b4e9e7f3.jpg` |
-| `demo-hospadmin-001` | นางวิภา บริหารเก่ง / Ms. Wipa Borihankeng | TrustCare Portal | Staff identity, maker/checker | `https://trustcarehealth.live/manus-storage/hospadmin_wipa_aeeee791.jpg` |
+| User ID              | Name                                      | Source           | Primary Scope                                       | Photo                                                                           |
+| -------------------- | ----------------------------------------- | ---------------- | --------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `demo-patient-001`   | นายสมชาย ใจดี / Mr. Somchai Jaidee        | TrustCare Portal | OPD, referral, claim, pharmacy, medical certificate | `https://trustcarehealth.live/manus-storage/patient_somsak_a2e00e97.jpg`        |
+| `demo-patient-002`   | นางสาวมาลี วัฒนา / Ms. Malee Wattana      | TrustCare Portal | OPD, emergency, lab                                 | `https://trustcarehealth.live/manus-storage/patient_malee_74d2ef04.jpg`         |
+| `demo-patient-003`   | Mr. John Williams                         | TrustCare Portal | Medical tourist, insurance, travel document         | `https://trustcarehealth.live/manus-storage/patient_john_williams_b4e9e7f3.jpg` |
+| `demo-hospadmin-001` | นางวิภา บริหารเก่ง / Ms. Wipa Borihankeng | TrustCare Portal | Staff identity, maker/checker                       | `https://trustcarehealth.live/manus-storage/hospadmin_wipa_aeeee791.jpg`        |
 
 ## Wallet-Native Users
 
 These users are new to this standalone partner-wallet system. Their photos are synthetic, realistic profile images stored in this repo and can be used for TrustCare Portal linking tests.
 
-| User ID | Name | Source | Primary Scope | Photo |
-| --- | --- | --- | --- | --- |
-| `partner-patient-001` | นางสาวกมลวรรณ ศรีสุข / Ms. Kamonwan Srisuk | Partner wallet native | OPD, lab, cross-border transfer | `apps/wallet-web/public/assets/users/wallet-native-01.png` |
-| `partner-patient-002` | Mr. David Chen | Partner wallet native | Medical tourist, insurance, travel document, guarantee letter | `apps/wallet-web/public/assets/users/wallet-native-02.png` |
+| User ID               | Name                                       | Source                | Primary Scope                                                 | Photo                                                      |
+| --------------------- | ------------------------------------------ | --------------------- | ------------------------------------------------------------- | ---------------------------------------------------------- |
+| `partner-patient-001` | นางสาวกมลวรรณ ศรีสุข / Ms. Kamonwan Srisuk | Partner wallet native | OPD, lab, cross-border transfer                               | `apps/wallet-web/public/assets/users/wallet-native-01.png` |
+| `partner-patient-002` | Mr. David Chen                             | Partner wallet native | Medical tourist, insurance, travel document, guarantee letter | `apps/wallet-web/public/assets/users/wallet-native-02.png` |
 
 ## Portal Interoperability Fixtures
 

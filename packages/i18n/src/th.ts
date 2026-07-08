@@ -37,6 +37,5 @@ export const th = {
   "common.type": "ประเภท",
   "common.close": "ปิด",
   "common.back": "กลับ",
-  "common.active": "ใช้งานได้"
+  "common.active": "ใช้งานได้",
 } as const;
-

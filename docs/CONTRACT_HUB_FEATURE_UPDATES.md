@@ -8,11 +8,11 @@
 
 TrustCare Wallet แยก SHL ออกเป็น 3 ประเภทใน UI และ verifier policy
 
-| ประเภท | ใช้เมื่อใด | พฤติกรรมที่ระบบควรทำ | Badge ใน UI |
-| --- | --- | --- | --- |
-| Standard SHL | SHL จากแหล่งภายนอกที่ไม่มี TrustCare Manifest VC/VP | อ่าน เก็บ ส่งออก แชร์ และสแกนเป็น SMART Health Link มาตรฐาน โดยไม่บังคับ Manifest VC/VP | `Standard SHL` |
-| TrustCare Verified SHL | SHL ถูกนำเข้า TrustCare และผ่านการยืนยันจากเจ้าของข้อมูล พร้อม Maker/Checker ของโรงพยาบาลในเครือ TrustCare | เปิดใช้การตรวจสอบ Manifest VP/VC และแสดงเอกสาร DocumentReference ที่ผูกกับ manifest ได้ | `TrustCare Verified SHL` |
-| TrustCare Pending SHL | มี Manifest VP/VC แต่หลักฐาน Maker/Checker ยังไม่ครบ | ยังแชร์และอ่านเป็น Standard SHL ได้ แต่ห้ามนับ Manifest VP/VC เป็น trust proof ของ TrustCare | `รอ Maker/Checker` |
+| ประเภท                 | ใช้เมื่อใด                                                                                                 | พฤติกรรมที่ระบบควรทำ                                                                         | Badge ใน UI              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------ |
+| Standard SHL           | SHL จากแหล่งภายนอกที่ไม่มี TrustCare Manifest VC/VP                                                        | อ่าน เก็บ ส่งออก แชร์ และสแกนเป็น SMART Health Link มาตรฐาน โดยไม่บังคับ Manifest VC/VP      | `Standard SHL`           |
+| TrustCare Verified SHL | SHL ถูกนำเข้า TrustCare และผ่านการยืนยันจากเจ้าของข้อมูล พร้อม Maker/Checker ของโรงพยาบาลในเครือ TrustCare | เปิดใช้การตรวจสอบ Manifest VP/VC และแสดงเอกสาร DocumentReference ที่ผูกกับ manifest ได้      | `TrustCare Verified SHL` |
+| TrustCare Pending SHL  | มี Manifest VP/VC แต่หลักฐาน Maker/Checker ยังไม่ครบ                                                       | ยังแชร์และอ่านเป็น Standard SHL ได้ แต่ห้ามนับ Manifest VP/VC เป็น trust proof ของ TrustCare | `รอ Maker/Checker`       |
 
 Contract Hub ควรส่ง trust profile นี้ไปกับ service-readiness contract และ verifier policy เพื่อให้ Portal, Wallet และ verifier แสดงผลเหมือนกัน
 

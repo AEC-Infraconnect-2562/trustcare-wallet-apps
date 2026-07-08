@@ -1,9 +1,9 @@
 import type { SharePackageMode } from "./canonicalDocuments";
-import { recommendSharePacket, type PacketRecommendation } from "./packetRecommendation";
 import {
-  selectedReadyDocuments,
-  type ShareDraft,
-} from "./shareDraft";
+  recommendSharePacket,
+  type PacketRecommendation,
+} from "./packetRecommendation";
+import { selectedReadyDocuments, type ShareDraft } from "./shareDraft";
 
 export type ShareDisclosureMode = "full" | "sd" | "zkp";
 export type ShareTimelineAnchor = "record" | "package";
@@ -57,7 +57,9 @@ export function recommendPolicyForDraft(
     context: draft.context,
     selectedDocumentTypes: selected
       .map((document) => document.documentType)
-      .filter(Boolean) as NonNullable<(typeof selected)[number]["documentType"]>[],
+      .filter(Boolean) as NonNullable<
+      (typeof selected)[number]["documentType"]
+    >[],
     selectedCount: selected.length,
     hasLargeRecordSet: selected.length > 3,
     recipientSupportsShl: options.recipientSupportsShl,
@@ -93,5 +95,9 @@ export function modeRequiresShl(mode: SharePackageMode): boolean {
 }
 
 export function modeRequiresVp(mode: SharePackageMode): boolean {
-  return mode === "DirectVP" || mode === "PurposeVP" || mode === "CertifiedSHLManifestPackage";
+  return (
+    mode === "DirectVP" ||
+    mode === "PurposeVP" ||
+    mode === "CertifiedSHLManifestPackage"
+  );
 }

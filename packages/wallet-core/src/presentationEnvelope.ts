@@ -22,11 +22,7 @@ import { canPresentCredential } from "./statusTone";
 import { walletCardHasCryptographicProof } from "./credentialProof";
 
 export type PortablePresentationKind =
-  | "credential"
-  | "presentation"
-  | "shl"
-  | "micro_ips_pack"
-  | "document_pointer";
+  "credential" | "presentation" | "shl" | "micro_ips_pack" | "document_pointer";
 
 export type PortablePresentationMode =
   | "DirectVP"
@@ -136,7 +132,11 @@ export type PortablePresentationEnvelope = {
     expiresAt?: string;
     accessPolicyHash?: string;
   };
-  qr?: { canonicalPayload?: string; viewerPayload?: string; expiresAt?: string };
+  qr?: {
+    canonicalPayload?: string;
+    viewerPayload?: string;
+    expiresAt?: string;
+  };
   provenance: {
     sourceSystem?: string;
     generatedAt?: string;
@@ -175,7 +175,13 @@ export const PORTABLE_PRESENTATION_ENVELOPE_SCHEMA = {
     envelopeId: { type: "string" },
     envelopeVersion: { const: "2026.07.v1" },
     kind: {
-      enum: ["credential", "presentation", "shl", "micro_ips_pack", "document_pointer"],
+      enum: [
+        "credential",
+        "presentation",
+        "shl",
+        "micro_ips_pack",
+        "document_pointer",
+      ],
     },
     mode: {
       enum: [
@@ -276,7 +282,11 @@ export function presentationEnvelopeFromWalletCard(
   const document = firstRecord(renderData.document, subject.document);
   const trustStatus = classifyPortableTrustStatus(card);
   const documentType = record.documentType;
-  const documentReferences = collectDocumentReferences(card, record, credential);
+  const documentReferences = collectDocumentReferences(
+    card,
+    record,
+    credential,
+  );
   const sections = buildCardSections({
     record,
     subject,
@@ -346,7 +356,8 @@ export function presentationEnvelopeFromWalletCard(
       status: trustStatus,
       checklist: buildCredentialChecklist(card, record, documentReferences),
       warnings: buildCredentialWarnings(card, record, trustStatus),
-      errors: trustStatus === "invalid_or_revoked" ? ["credential_not_active"] : [],
+      errors:
+        trustStatus === "invalid_or_revoked" ? ["credential_not_active"] : [],
     }),
     policy: {
       purpose: stringOrUndefined(record.source.system),
@@ -387,7 +398,10 @@ export function presentationEnvelopeFromPresentation(
         typeof presentation.transportDecision === "object" &&
         presentation.transportDecision &&
         "reason" in presentation.transportDecision
-          ? String((presentation.transportDecision as { reason?: unknown }).reason ?? "")
+          ? String(
+              (presentation.transportDecision as { reason?: unknown }).reason ??
+                "",
+            )
           : base.display.summary,
     },
     trust: buildTrustEnvelope({
@@ -459,12 +473,19 @@ export function presentationEnvelopeFromShl(
     subject: {
       id: stringOrUndefined(publication.portalRequest.patientId),
       identifiers: publication.portalRequest.patientId
-        ? [{ system: "trustcare.patient", value: String(publication.portalRequest.patientId) }]
+        ? [
+            {
+              system: "trustcare.patient",
+              value: String(publication.portalRequest.patientId),
+            },
+          ]
         : [],
     },
     issuer: {
       name: "TrustCare SHL Gateway",
-      did: stringOrUndefined(publication.manifest.trustcare.manifestCredential?.issuer),
+      did: stringOrUndefined(
+        publication.manifest.trustcare.manifestCredential?.issuer,
+      ),
     },
     recipient: { name: publication.manifest.receiver },
     display: {
@@ -500,7 +521,9 @@ export function presentationEnvelopeFromShl(
           },
           {
             label: "จำนวนครั้งที่เปิดได้",
-            value: publication.maxAccessCount ?? publication.manifest.access.maxAccessCount,
+            value:
+              publication.maxAccessCount ??
+              publication.manifest.access.maxAccessCount,
             discloseByDefault: false,
           },
         ],
@@ -519,7 +542,12 @@ export function presentationEnvelopeFromShl(
     trust: buildTrustEnvelope({
       status: trustStatus,
       checklist: [
-        checklistItem("standard_shl", "Standard SHL manifest", Boolean(publication.canonicalShlUrl), publication.manifestUrl),
+        checklistItem(
+          "standard_shl",
+          "Standard SHL manifest",
+          Boolean(publication.canonicalShlUrl),
+          publication.manifestUrl,
+        ),
         checklistItem(
           "manifest_vp",
           "TrustCare Manifest VP",
@@ -531,7 +559,9 @@ export function presentationEnvelopeFromShl(
           "holder_authorization",
           "Holder authorization credential",
           publication.trustLayerStatus !== "certified_manifest_vp" ||
-            Boolean(publication.manifest.trustcare.holderAuthorizationCredential),
+            Boolean(
+              publication.manifest.trustcare.holderAuthorizationCredential,
+            ),
           publication.manifest.trustcare.holderAuthorizationCredentialId,
         ),
       ],
@@ -576,7 +606,9 @@ export function presentationEnvelopeFromDocumentReference(
         record.patientId != null
           ? { system: "trustcare.patient", value: String(record.patientId) }
           : undefined,
-      ].filter((item): item is { system: string; value: string } => Boolean(item)),
+      ].filter((item): item is { system: string; value: string } =>
+        Boolean(item),
+      ),
     },
     issuer: {
       name: record.issuerName ?? undefined,
@@ -600,9 +632,17 @@ export function presentationEnvelopeFromDocumentReference(
         title: "DocumentReference",
         kind: "document",
         fields: [
-          { label: "Credential ID", value: record.credentialId, discloseByDefault: false },
+          {
+            label: "Credential ID",
+            value: record.credentialId,
+            discloseByDefault: false,
+          },
           { label: "Status", value: record.status, discloseByDefault: false },
-          { label: "Source", value: record.source.system, discloseByDefault: false },
+          {
+            label: "Source",
+            value: record.source.system,
+            discloseByDefault: false,
+          },
         ],
       },
     ],
@@ -615,8 +655,18 @@ export function presentationEnvelopeFromDocumentReference(
     trust: buildTrustEnvelope({
       status: trustStatus,
       checklist: [
-        checklistItem("document_reference", "DocumentReference evidence", true, record.documentReference.id),
-        checklistItem("issuer", "Issuer signature", trustStatus === "issuer_signed", record.issuerDid ?? undefined),
+        checklistItem(
+          "document_reference",
+          "DocumentReference evidence",
+          true,
+          record.documentReference.id,
+        ),
+        checklistItem(
+          "issuer",
+          "Issuer signature",
+          trustStatus === "issuer_signed",
+          record.issuerDid ?? undefined,
+        ),
       ],
       warnings:
         trustStatus === "patient_provided_unverified"
@@ -639,40 +689,59 @@ export function presentationEnvelopeFromDocumentReference(
   };
 }
 
-export function classifyPortableTrustStatus(input: unknown): PortableTrustStatus {
+export function classifyPortableTrustStatus(
+  input: unknown,
+): PortableTrustStatus {
   if (typeof input === "string") return coerceTrustStatus(input);
   const value = portalRecord(input);
   const card = (value.card && isWalletCard(value.card) ? value.card : input) as
-    | WalletCard
-    | unknown;
+    WalletCard | unknown;
   if (isWalletCard(card)) {
     const status = String(card.credentialStatus ?? "").toLowerCase();
     if (["revoked", "suspended", "expired", "invalid"].includes(status))
       return "invalid_or_revoked";
-    if (!card.credentialData && !card.credentialJwt && !card.credentialProof?.jwt)
+    if (
+      !card.credentialData &&
+      !card.credentialJwt &&
+      !card.credentialProof?.jwt
+    )
       return "metadata_only";
     if (isTrustArtifactDocumentType(card.cardType)) return "transport_valid";
     if (status === "unverified") return "patient_provided_unverified";
-    if (card.portalVerification?.status === "metadata_only") return "metadata_only";
+    if (card.portalVerification?.status === "metadata_only")
+      return "metadata_only";
     if (
       card.portalVerification?.verified &&
-      String(card.portalVerification.trustLevel ?? "").toLowerCase() === "green" &&
+      String(card.portalVerification.trustLevel ?? "").toLowerCase() ===
+        "green" &&
       walletCardHasCryptographicProof(card) &&
       card.issuerDid &&
       card.holderDid
     ) {
       return "trustcare_certified";
     }
-    if (walletCardHasCryptographicProof(card) && card.issuerDid && card.holderDid)
+    if (
+      walletCardHasCryptographicProof(card) &&
+      card.issuerDid &&
+      card.holderDid
+    )
       return "issuer_signed";
-    if (walletCardHasCryptographicProof(card) && (!card.issuerDid || !card.holderDid))
+    if (
+      walletCardHasCryptographicProof(card) &&
+      (!card.issuerDid || !card.holderDid)
+    )
       return "proof_missing";
-    if (card.sourceSystem === "partner_wallet") return "patient_provided_unverified";
+    if (card.sourceSystem === "partner_wallet")
+      return "patient_provided_unverified";
     return "proof_missing";
   }
   if (isWalletDocumentRecord(input)) {
     const record = input;
-    if (["revoked", "expired", "suspended"].includes(String(record.status).toLowerCase()))
+    if (
+      ["revoked", "expired", "suspended"].includes(
+        String(record.status).toLowerCase(),
+      )
+    )
       return "invalid_or_revoked";
     if (record.trustStatus === "trust_artifact") return "transport_valid";
     if (record.trustStatus === "pending_trustcare_binding")
@@ -685,13 +754,14 @@ export function classifyPortableTrustStatus(input: unknown): PortableTrustStatus
   }
   if (isShlPublication(input)) {
     const shl = input;
-    if (shl.trustLayerStatus === "pending_manifest_vp") return "trustcare_pending";
+    if (shl.trustLayerStatus === "pending_manifest_vp")
+      return "trustcare_pending";
     if (shl.trustLayerStatus === "certified_manifest_vp") {
       const certified = Boolean(
         shl.manifest.trustcare.manifestCredential &&
-          shl.manifest.trustcare.holderAuthorizationCredential &&
-          shl.manifest.trustcare.manifestVp &&
-          shl.manifest.trustcare.manifestVpHash,
+        shl.manifest.trustcare.holderAuthorizationCredential &&
+        shl.manifest.trustcare.manifestVp &&
+        shl.manifest.trustcare.manifestVpHash,
       );
       return certified ? "trustcare_certified" : "trustcare_pending";
     }
@@ -703,7 +773,8 @@ export function classifyPortableTrustStatus(input: unknown): PortableTrustStatus
 export function portableTrustBadge(
   status: PortableTrustStatus,
 ): "green" | "yellow" | "red" | "neutral" {
-  if (status === "trustcare_certified" || status === "issuer_signed") return "green";
+  if (status === "trustcare_certified" || status === "issuer_signed")
+    return "green";
   if (
     status === "transport_valid" ||
     status === "trustcare_pending" ||
@@ -719,7 +790,9 @@ export function selectableDisclosureFieldsFromEnvelope(
   envelope: PortablePresentationEnvelope,
 ): PortablePresentationField[] {
   return envelope.sections
-    .filter((section) => section.kind !== "technical" && section.kind !== "trust")
+    .filter(
+      (section) => section.kind !== "technical" && section.kind !== "trust",
+    )
     .flatMap((section) => section.fields)
     .filter((field) => isSelectableDisclosurePath(field.path ?? field.label));
 }
@@ -732,12 +805,28 @@ function buildCardSections(input: {
   document: PortalRenderRecord;
   documentType: CanonicalDocumentType;
 }): PortablePresentationSection[] {
-  const { record, subject, renderData, patient, document, documentType } = input;
+  const { record, subject, renderData, patient, document, documentType } =
+    input;
   const identityFields = [
-    field("ชื่อ-นามสกุล", displayString(patient.fullNameTh, patient.nameTh, subject.name), "patient.name", true),
-    field("Name", displayString(patient.fullNameEn, patient.nameEn), "patient.nameEn", true),
+    field(
+      "ชื่อ-นามสกุล",
+      displayString(patient.fullNameTh, patient.nameTh, subject.name),
+      "patient.name",
+      true,
+    ),
+    field(
+      "Name",
+      displayString(patient.fullNameEn, patient.nameEn),
+      "patient.nameEn",
+      true,
+    ),
     field("HN", portalValue(patient, "hn"), "patient.hn", false),
-    field("CarePass ID", portalValue(patient, "carepassId"), "patient.carepassId", false),
+    field(
+      "CarePass ID",
+      portalValue(patient, "carepassId"),
+      "patient.carepassId",
+      false,
+    ),
   ].filter(isFieldWithValue);
   const bodyFields = buildDisclosureFields(renderData, documentType);
   const documentFields = [
@@ -804,9 +893,16 @@ function appendRecordFields(
   pathPrefix: string = documentType,
 ): void {
   if (Array.isArray(value)) {
-    value.slice(0, 8).forEach((item, index) =>
-      appendRecordFields(fields, item, documentType, `${pathPrefix}.${index}`),
-    );
+    value
+      .slice(0, 8)
+      .forEach((item, index) =>
+        appendRecordFields(
+          fields,
+          item,
+          documentType,
+          `${pathPrefix}.${index}`,
+        ),
+      );
     return;
   }
   const record = portalRecord(value);
@@ -816,7 +912,12 @@ function appendRecordFields(
     if (!isSelectableDisclosurePath(path)) continue;
     if (isSimpleValue(rawValue)) {
       fields.push(
-        field(titleCaseLabel(key), rawValue, path, defaultDisclosureFor(documentType, key)),
+        field(
+          titleCaseLabel(key),
+          rawValue,
+          path,
+          defaultDisclosureFor(documentType, key),
+        ),
       );
     }
   }
@@ -828,13 +929,24 @@ function buildCredentialChecklist(
   documentReferences: unknown[],
 ): TrustLayerChecklistItem[] {
   return [
-    checklistItem("issuer", "Issuer DID", Boolean(card.issuerDid), card.issuerDid ?? undefined),
-    checklistItem("holder", "Holder DID", Boolean(card.holderDid), card.holderDid ?? undefined),
+    checklistItem(
+      "issuer",
+      "Issuer DID",
+      Boolean(card.issuerDid),
+      card.issuerDid ?? undefined,
+    ),
+    checklistItem(
+      "holder",
+      "Holder DID",
+      Boolean(card.holderDid),
+      card.holderDid ?? undefined,
+    ),
     checklistItem(
       "proof",
       "Cryptographic proof",
       walletCardHasCryptographicProof(card),
-      card.credentialProof?.format ?? (card.credentialJwt ? "vc+jwt" : undefined),
+      card.credentialProof?.format ??
+        (card.credentialJwt ? "vc+jwt" : undefined),
     ),
     checklistItem(
       "document_reference",
@@ -845,7 +957,10 @@ function buildCredentialChecklist(
     checklistItem(
       "status",
       "Status and expiry",
-      canPresentCredential({ credentialStatus: record.status, expiresAt: record.expiresAt }),
+      canPresentCredential({
+        credentialStatus: record.status,
+        expiresAt: record.expiresAt,
+      }),
       record.expiresAt ?? undefined,
     ),
   ];
@@ -857,7 +972,8 @@ function buildCredentialWarnings(
   status: PortableTrustStatus,
 ): string[] {
   const warnings: string[] = [];
-  if (status === "metadata_only") warnings.push("metadata_only_record_skipped_for_readiness");
+  if (status === "metadata_only")
+    warnings.push("metadata_only_record_skipped_for_readiness");
   if (status === "patient_provided_unverified")
     warnings.push("patient_provided_document_requires_trusted_signature");
   if (status === "proof_missing") warnings.push("cryptographic_proof_missing");
@@ -943,9 +1059,12 @@ function collectDocumentReferences(
       ? [credential.evidence]
       : [];
   const documentReferences = evidence.filter(
-    (item) => portalRecord(item).type === "DocumentReference" || portalRecord(item).resourceType === "DocumentReference",
+    (item) =>
+      portalRecord(item).type === "DocumentReference" ||
+      portalRecord(item).resourceType === "DocumentReference",
   );
-  if (record.documentReference) documentReferences.push(record.documentReference);
+  if (record.documentReference)
+    documentReferences.push(record.documentReference);
   const subject = portalRecord(credential.credentialSubject);
   const humanDocument = portalRecord(subject.humanDocument);
   const renderData = extractPortalRenderData(subject);
@@ -966,7 +1085,9 @@ function collectHashes(
   const values = [
     record.documentReference?.content?.[0]?.attachment?.hash,
     record.version.versionId ? hashJson(record.version.versionId) : undefined,
-    stringOrUndefined(credential.proof ? hashJson(credential.proof) : undefined),
+    stringOrUndefined(
+      credential.proof ? hashJson(credential.proof) : undefined,
+    ),
   ];
   return values.filter((item): item is string => Boolean(item));
 }
@@ -980,7 +1101,8 @@ function collectFhirProfiles(
     ...extractStringArray(credential, ["credentialSubject", "fhirProfiles"]),
     ...extractStringArray(credential, ["credentialSubject", "profiles"]),
   ];
-  if (record.documentReference?.resourceType) profiles.push(record.documentReference.resourceType);
+  if (record.documentReference?.resourceType)
+    profiles.push(record.documentReference.resourceType);
   return Array.from(new Set(profiles));
 }
 
@@ -1071,9 +1193,13 @@ function defaultDisclosureFor(
   documentType: CanonicalDocumentType,
   key: string,
 ): boolean {
-  if (documentType === "allergy_alert") return ["allergen", "reaction", "severity"].includes(key);
-  if (documentType === "patient_identity") return ["fullNameTh", "fullNameEn", "hn"].includes(key);
-  return ["summary", "status", "diagnosis", "medication", "coverage"].includes(key);
+  if (documentType === "allergy_alert")
+    return ["allergen", "reaction", "severity"].includes(key);
+  if (documentType === "patient_identity")
+    return ["fullNameTh", "fullNameEn", "hn"].includes(key);
+  return ["summary", "status", "diagnosis", "medication", "coverage"].includes(
+    key,
+  );
 }
 
 function sectionKindForType(
@@ -1128,7 +1254,9 @@ function field(
 function isFieldWithValue(
   value: PortablePresentationField,
 ): value is PortablePresentationField {
-  return value.value !== undefined && value.value !== null && value.value !== "";
+  return (
+    value.value !== undefined && value.value !== null && value.value !== ""
+  );
 }
 
 function checklistItem(
@@ -1167,7 +1295,9 @@ function isWalletDocumentRecord(value: unknown): value is WalletDocumentRecord {
   );
 }
 
-function isShlPublication(value: unknown): value is TrustCareShlGatewayPublication {
+function isShlPublication(
+  value: unknown,
+): value is TrustCareShlGatewayPublication {
   const record = portalRecord(value);
   return (
     typeof record.gatewayPublicationId === "string" &&
@@ -1186,16 +1316,21 @@ function isSimpleValue(value: unknown): boolean {
 }
 
 function firstRecord(...values: unknown[]): PortalRenderRecord {
-  return values.map(portalRecord).find((item) => Object.keys(item).length) ?? {};
+  return (
+    values.map(portalRecord).find((item) => Object.keys(item).length) ?? {}
+  );
 }
 
 function portalValue(source: PortalRenderRecord, path: string): unknown {
-  return path.split(".").reduce<unknown>((value, segment) => portalRecord(value)[segment], source);
+  return path
+    .split(".")
+    .reduce<unknown>((value, segment) => portalRecord(value)[segment], source);
 }
 
 function stringOrUndefined(value: unknown): string | undefined {
   if (typeof value === "string" && value.trim()) return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
   return undefined;
 }
 
@@ -1212,7 +1347,9 @@ function titleCaseLabel(key: string): string {
 }
 
 function stableEnvelopeId(prefix: string, value: unknown): string {
-  return `ppe:${prefix}:${hashJson(value).replace(/^sha256:/, "").slice(0, 24)}`;
+  return `ppe:${prefix}:${hashJson(value)
+    .replace(/^sha256:/, "")
+    .slice(0, 24)}`;
 }
 
 function uniqueByHash(values: unknown[]): unknown[] {

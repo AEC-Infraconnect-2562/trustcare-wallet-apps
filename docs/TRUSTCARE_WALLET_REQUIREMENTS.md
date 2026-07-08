@@ -30,4 +30,3 @@ It must reduce service friction for hospitals and patients. It must not become a
 - On-device production VC signing.
 - On-device SHL verification as the source of production trust decisions.
 - Replacing TrustCare Hospital Network backend.
-

@@ -38,9 +38,16 @@ export async function initOfflineWallet() {
   await ensureColumn(database, "wallet_objects", "owner_user_id", "TEXT");
 }
 
-async function ensureColumn(database: SQLite.SQLiteDatabase, table: string, column: string, definition: string) {
+async function ensureColumn(
+  database: SQLite.SQLiteDatabase,
+  table: string,
+  column: string,
+  definition: string,
+) {
   try {
-    await database.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    await database.execAsync(
+      `ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`,
+    );
   } catch {
     // Existing installations already have the column.
   }
@@ -51,7 +58,10 @@ export async function cacheCards(cards: WalletCard[], ownerUserId?: string) {
   await initOfflineWallet();
   await database.withTransactionAsync(async () => {
     if (ownerUserId) {
-      await database.runAsync("DELETE FROM wallet_cards WHERE owner_user_id = ?", ownerUserId);
+      await database.runAsync(
+        "DELETE FROM wallet_cards WHERE owner_user_id = ?",
+        ownerUserId,
+      );
     } else {
       await database.runAsync("DELETE FROM wallet_cards");
     }
@@ -61,7 +71,7 @@ export async function cacheCards(cards: WalletCard[], ownerUserId?: string) {
         card.id,
         ownerUserId ?? card.ownerUserId ?? null,
         JSON.stringify(card),
-        new Date().toISOString()
+        new Date().toISOString(),
       );
     }
   });
@@ -71,21 +81,39 @@ export async function loadCards(ownerUserId?: string): Promise<WalletCard[]> {
   const database = await db();
   await initOfflineWallet();
   const rows = ownerUserId
-    ? await database.getAllAsync<{ payload: string }>("SELECT payload FROM wallet_cards WHERE owner_user_id = ? ORDER BY id", ownerUserId)
-    : await database.getAllAsync<{ payload: string }>("SELECT payload FROM wallet_cards ORDER BY id");
-  return rows.map(row => JSON.parse(row.payload) as WalletCard);
+    ? await database.getAllAsync<{ payload: string }>(
+        "SELECT payload FROM wallet_cards WHERE owner_user_id = ? ORDER BY id",
+        ownerUserId,
+      )
+    : await database.getAllAsync<{ payload: string }>(
+        "SELECT payload FROM wallet_cards ORDER BY id",
+      );
+  return rows.map((row) => JSON.parse(row.payload) as WalletCard);
 }
 
-export async function loadLastCardSync(ownerUserId?: string): Promise<string | null> {
+export async function loadLastCardSync(
+  ownerUserId?: string,
+): Promise<string | null> {
   const database = await db();
   await initOfflineWallet();
   const row = ownerUserId
-    ? await database.getFirstAsync<{ synced_at: string }>("SELECT synced_at FROM wallet_cards WHERE owner_user_id = ? ORDER BY synced_at DESC LIMIT 1", ownerUserId)
-    : await database.getFirstAsync<{ synced_at: string }>("SELECT synced_at FROM wallet_cards ORDER BY synced_at DESC LIMIT 1");
+    ? await database.getFirstAsync<{ synced_at: string }>(
+        "SELECT synced_at FROM wallet_cards WHERE owner_user_id = ? ORDER BY synced_at DESC LIMIT 1",
+        ownerUserId,
+      )
+    : await database.getFirstAsync<{ synced_at: string }>(
+        "SELECT synced_at FROM wallet_cards ORDER BY synced_at DESC LIMIT 1",
+      );
   return row?.synced_at ?? null;
 }
 
-export async function cacheQr(cardId: number, qrData: string, presentationId: string, expiresAt?: string, ownerUserId?: string) {
+export async function cacheQr(
+  cardId: number,
+  qrData: string,
+  presentationId: string,
+  expiresAt?: string,
+  ownerUserId?: string,
+) {
   const database = await db();
   await initOfflineWallet();
   await database.runAsync(
@@ -95,7 +123,7 @@ export async function cacheQr(cardId: number, qrData: string, presentationId: st
     qrData,
     presentationId,
     expiresAt ?? null,
-    new Date().toISOString()
+    new Date().toISOString(),
   );
 }
 
@@ -103,17 +131,28 @@ export async function loadCachedQr(cardId: number, ownerUserId?: string) {
   const database = await db();
   await initOfflineWallet();
   const row = ownerUserId
-    ? await database.getFirstAsync<{ qr_data: string; presentation_id: string; expires_at?: string | null; generated_at: string }>(
+    ? await database.getFirstAsync<{
+        qr_data: string;
+        presentation_id: string;
+        expires_at?: string | null;
+        generated_at: string;
+      }>(
         "SELECT qr_data, presentation_id, expires_at, generated_at FROM qr_cache WHERE card_id = ? AND owner_user_id = ?",
         cardId,
         ownerUserId,
       )
-    : await database.getFirstAsync<{ qr_data: string; presentation_id: string; expires_at?: string | null; generated_at: string }>(
+    : await database.getFirstAsync<{
+        qr_data: string;
+        presentation_id: string;
+        expires_at?: string | null;
+        generated_at: string;
+      }>(
         "SELECT qr_data, presentation_id, expires_at, generated_at FROM qr_cache WHERE card_id = ?",
         cardId,
       );
   if (!row) return null;
-  if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) return null;
+  if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now())
+    return null;
   return {
     qrData: row.qr_data,
     presentationId: row.presentation_id,
@@ -122,7 +161,10 @@ export async function loadCachedQr(cardId: number, ownerUserId?: string) {
   };
 }
 
-export async function cacheStoredObject(object: WalletStoredObject, ownerUserId?: string) {
+export async function cacheStoredObject(
+  object: WalletStoredObject,
+  ownerUserId?: string,
+) {
   const database = await db();
   await initOfflineWallet();
   await database.runAsync(
@@ -131,16 +173,22 @@ export async function cacheStoredObject(object: WalletStoredObject, ownerUserId?
     ownerUserId ?? null,
     object.type,
     JSON.stringify(object),
-    object.createdAt
+    object.createdAt,
   );
 }
 
-export async function cacheStoredObjects(objects: WalletStoredObject[], ownerUserId?: string) {
+export async function cacheStoredObjects(
+  objects: WalletStoredObject[],
+  ownerUserId?: string,
+) {
   const database = await db();
   await initOfflineWallet();
   await database.withTransactionAsync(async () => {
     if (ownerUserId) {
-      await database.runAsync("DELETE FROM wallet_objects WHERE owner_user_id = ?", ownerUserId);
+      await database.runAsync(
+        "DELETE FROM wallet_objects WHERE owner_user_id = ?",
+        ownerUserId,
+      );
     }
     for (const object of objects) {
       await database.runAsync(
@@ -149,23 +197,32 @@ export async function cacheStoredObjects(objects: WalletStoredObject[], ownerUse
         ownerUserId ?? null,
         object.type,
         JSON.stringify(object),
-        object.createdAt
+        object.createdAt,
       );
     }
   });
 }
 
-export async function loadStoredObjects(ownerUserId?: string): Promise<WalletStoredObject[]> {
+export async function loadStoredObjects(
+  ownerUserId?: string,
+): Promise<WalletStoredObject[]> {
   const database = await db();
   await initOfflineWallet();
   const rows = ownerUserId
-    ? await database.getAllAsync<{ payload: string }>("SELECT payload FROM wallet_objects WHERE owner_user_id = ? ORDER BY created_at DESC", ownerUserId)
-    : await database.getAllAsync<{ payload: string }>("SELECT payload FROM wallet_objects ORDER BY created_at DESC");
-  return rows.map(row => JSON.parse(row.payload) as WalletStoredObject);
+    ? await database.getAllAsync<{ payload: string }>(
+        "SELECT payload FROM wallet_objects WHERE owner_user_id = ? ORDER BY created_at DESC",
+        ownerUserId,
+      )
+    : await database.getAllAsync<{ payload: string }>(
+        "SELECT payload FROM wallet_objects ORDER BY created_at DESC",
+      );
+  return rows.map((row) => JSON.parse(row.payload) as WalletStoredObject);
 }
 
 export async function clearOfflineWallet() {
   const database = await db();
   await initOfflineWallet();
-  await database.execAsync("DELETE FROM wallet_cards; DELETE FROM qr_cache; DELETE FROM wallet_objects;");
+  await database.execAsync(
+    "DELETE FROM wallet_cards; DELETE FROM qr_cache; DELETE FROM wallet_objects;",
+  );
 }

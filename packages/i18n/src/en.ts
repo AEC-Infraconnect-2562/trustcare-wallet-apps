@@ -37,6 +37,5 @@ export const en = {
   "common.type": "Type",
   "common.close": "Close",
   "common.back": "Back",
-  "common.active": "Active"
+  "common.active": "Active",
 } as const;
-

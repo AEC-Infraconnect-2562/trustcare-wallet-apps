@@ -110,7 +110,13 @@ export type TrustCareShlGatewayPublication = CheckinQrResponse & {
 export type TrustCareShlGatewayAccessAttempt = {
   publication: Pick<
     TrustCareShlGatewayPublication,
-    "gatewayPublicationId" | "shlId" | "expiresAt" | "maxAccessCount" | "passcodeRequired" | "accessCodeDelivery" | "manifestUrl"
+    | "gatewayPublicationId"
+    | "shlId"
+    | "expiresAt"
+    | "maxAccessCount"
+    | "passcodeRequired"
+    | "accessCodeDelivery"
+    | "manifestUrl"
   > & {
     currentAccessCount?: number | null;
     status?: string;
@@ -136,7 +142,9 @@ export type TrustCareShlGatewayAccessDecision = {
   };
 };
 
-export function evaluateTrustCareShlGatewayAccess(input: TrustCareShlGatewayAccessAttempt): TrustCareShlGatewayAccessDecision {
+export function evaluateTrustCareShlGatewayAccess(
+  input: TrustCareShlGatewayAccessAttempt,
+): TrustCareShlGatewayAccessDecision {
   const policy = evaluateShlAccessPolicy(
     {
       status: input.publication.status ?? "active",

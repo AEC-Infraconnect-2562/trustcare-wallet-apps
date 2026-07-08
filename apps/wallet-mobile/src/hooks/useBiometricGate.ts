@@ -14,7 +14,7 @@ export function useBiometricGate() {
     const result = await LocalAuthentication.authenticateAsync({
       promptMessage: "ยืนยันตัวตนก่อนแสดง VP QR",
       cancelLabel: "ยกเลิก",
-      disableDeviceFallback: false
+      disableDeviceFallback: false,
     });
     if (!result.success) {
       setLastError("ยืนยันตัวตนไม่สำเร็จ");
@@ -24,5 +24,10 @@ export function useBiometricGate() {
     return true;
   }, [biometricEnabled]);
 
-  return { enabled: biometricEnabled, setEnabled: setBiometricEnabled, authenticate, lastError };
+  return {
+    enabled: biometricEnabled,
+    setEnabled: setBiometricEnabled,
+    authenticate,
+    lastError,
+  };
 }

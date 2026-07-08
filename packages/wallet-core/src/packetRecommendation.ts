@@ -84,7 +84,12 @@ export function recommendSharePacket(
     mode,
     label: copy.label,
     description: copy.description,
-    reason: buildRecommendationReason(input.context, mode, selectedCount, hasLarge),
+    reason: buildRecommendationReason(
+      input.context,
+      mode,
+      selectedCount,
+      hasLarge,
+    ),
     confidence:
       warnings.length === 0 && selectedCount > 0
         ? "high"

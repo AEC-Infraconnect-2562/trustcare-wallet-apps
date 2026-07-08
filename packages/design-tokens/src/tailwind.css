@@ -13,6 +13,6 @@
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
-  --font-sans: "IBM Plex Sans Thai", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans:
+    "IBM Plex Sans Thai", "Inter", ui-sans-serif, system-ui, sans-serif;
 }
-

@@ -7,10 +7,7 @@ import {
   selectedReadyDocuments,
   type ShareDraft,
 } from "./shareDraft";
-import {
-  modeRequiresShl,
-  type ShareAccessPolicy,
-} from "./sharePolicy";
+import { modeRequiresShl, type ShareAccessPolicy } from "./sharePolicy";
 
 export type ShareValidationOptions = {
   shareGatewayReady?: boolean;
@@ -60,7 +57,13 @@ export function validateShareDraft(
       packageMode: policy.mode,
       selectedDocumentCount: selected.length,
     });
-    blockers.push(issue("no_documents", "ยังไม่ได้เลือกเอกสาร", "เลือกเอกสารอย่างน้อย 1 รายการ"));
+    blockers.push(
+      issue(
+        "no_documents",
+        "ยังไม่ได้เลือกเอกสาร",
+        "เลือกเอกสารอย่างน้อย 1 รายการ",
+      ),
+    );
   }
 
   if (requiredMissing.length > 0) {
@@ -122,7 +125,8 @@ export function validateShareDraft(
     }
     const inactive = selected.filter(
       (document) =>
-        document.card && String(document.card.credentialStatus ?? "active") !== "active",
+        document.card &&
+        String(document.card.credentialStatus ?? "active") !== "active",
     );
     if (inactive.length) {
       blockers.push(
@@ -151,7 +155,10 @@ export function validateShareDraft(
   }
 
   if (modeRequiresShl(policy.mode)) {
-    if (policy.shl?.passcodeRequired && !isShlPasscodeReady(policy.shl.passcode)) {
+    if (
+      policy.shl?.passcodeRequired &&
+      !isShlPasscodeReady(policy.shl.passcode)
+    ) {
       pushReason(disabledReasons, {
         action: "create_share_package",
         packageMode: policy.mode,

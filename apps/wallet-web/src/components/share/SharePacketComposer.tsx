@@ -24,7 +24,14 @@ export function SharePacketComposer({
 }: {
   purpose: ReadinessContext;
   recipient: string;
-  readiness: Pick<ReadinessResult, "requiredReady" | "requiredTotal" | "recommendedReady" | "recommendedTotal" | "criticalReady">;
+  readiness: Pick<
+    ReadinessResult,
+    | "requiredReady"
+    | "requiredTotal"
+    | "recommendedReady"
+    | "recommendedTotal"
+    | "criticalReady"
+  >;
   selectedCount: number;
   biometricRequired: boolean;
   biometricReady: boolean;
@@ -41,7 +48,8 @@ export function SharePacketComposer({
     | "warnings"
   >;
 }) {
-  const hasIssues = validation.blockers.length > 0 || validation.warnings.length > 0;
+  const hasIssues =
+    validation.blockers.length > 0 || validation.warnings.length > 0;
   return (
     <section className="share-packet-composer">
       <div className="share-packet-summary">
@@ -61,13 +69,15 @@ export function SharePacketComposer({
             <Send size={16} />
             {modeLabel}
           </span>
-          <span className={biometricRequired && !biometricReady ? "warning" : ""}>
+          <span
+            className={biometricRequired && !biometricReady ? "warning" : ""}
+          >
             <Fingerprint size={16} />
             {biometricRequired
               ? biometricReady
                 ? "ยืนยันตัวตนพร้อม"
                 : "ต้องยืนยันตัวตน"
-            : "Biometric เป็นตัวเลือก"}
+              : "Biometric เป็นตัวเลือก"}
           </span>
         </div>
         <div className={`share-mode-summary ${mode}`}>
@@ -81,7 +91,9 @@ export function SharePacketComposer({
           <strong>
             แนะนำ {readiness.recommendedReady}/{readiness.recommendedTotal}
           </strong>
-          <em>{readiness.criticalReady ? "พร้อมแชร์" : "ยังขาดเอกสารจำเป็น"}</em>
+          <em>
+            {readiness.criticalReady ? "พร้อมแชร์" : "ยังขาดเอกสารจำเป็น"}
+          </em>
         </div>
         {hasIssues && (
           <div className="share-validation-summary">

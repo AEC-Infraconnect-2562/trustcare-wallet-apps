@@ -100,10 +100,7 @@ export function getDisabledReason(
         "blocked",
       );
     }
-    if (
-      input.packageMode === "DirectVP" ||
-      input.packageMode === "PurposeVP"
-    ) {
+    if (input.packageMode === "DirectVP" || input.packageMode === "PurposeVP") {
       if (!input.shareGatewayReady) {
         return reason(
           input.action,

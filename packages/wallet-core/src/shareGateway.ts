@@ -16,7 +16,13 @@ export type ShareGatewayAccessPolicy = {
   passcodeRequired?: boolean;
   passcodeHint?: string | null;
   maxAccessCount?: number;
-  accessCodeDelivery?: "separate_channel" | "not_required" | "sms" | "in_person" | "secure_message" | string;
+  accessCodeDelivery?:
+    | "separate_channel"
+    | "not_required"
+    | "sms"
+    | "in_person"
+    | "secure_message"
+    | string;
 };
 
 export type ShareGatewayPublicationRequest = {
@@ -50,7 +56,10 @@ export function normalizeShareGatewayBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, "");
 }
 
-export function shareGatewayArtifactPath(kind: ShareGatewayArtifactKind, artifactId: string): string {
+export function shareGatewayArtifactPath(
+  kind: ShareGatewayArtifactKind,
+  artifactId: string,
+): string {
   const encoded = encodeURIComponent(artifactId);
   switch (kind) {
     case "vp":
@@ -69,7 +78,11 @@ export function shareGatewayArtifactPath(kind: ShareGatewayArtifactKind, artifac
   }
 }
 
-export function shareGatewayArtifactUrl(baseUrl: string, kind: ShareGatewayArtifactKind, artifactId: string): string {
+export function shareGatewayArtifactUrl(
+  baseUrl: string,
+  kind: ShareGatewayArtifactKind,
+  artifactId: string,
+): string {
   return `${normalizeShareGatewayBaseUrl(baseUrl)}${shareGatewayArtifactPath(kind, artifactId)}`;
 }
 
@@ -99,6 +112,6 @@ export function createShareGatewayPublicationRequest(input: {
     recipient: input.recipient,
     expiresAt: input.expiresAt,
     accessPolicy: input.accessPolicy,
-    trustcare: input.trustcare
+    trustcare: input.trustcare,
   };
 }

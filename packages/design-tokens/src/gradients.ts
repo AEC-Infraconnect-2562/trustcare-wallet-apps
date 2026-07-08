@@ -32,11 +32,17 @@ export const walletCardGradients = {
   guarantee_letter: ["#ca8a04", "#854d0e"],
   mpi_link_certificate: ["#57534e", "#292524"],
   sync_receipt: ["#475569", "#1e293b"],
-  transcript: ["#36a36f", "#26704f"]
+  transcript: ["#36a36f", "#26704f"],
 } as const;
 
 export type WalletCardGradientKey = keyof typeof walletCardGradients;
 
-export function gradientForCardType(cardType: string): readonly [string, string] {
-  return (walletCardGradients as Record<string, readonly [string, string]>)[cardType] ?? walletCardGradients.identity;
+export function gradientForCardType(
+  cardType: string,
+): readonly [string, string] {
+  return (
+    (walletCardGradients as Record<string, readonly [string, string]>)[
+      cardType
+    ] ?? walletCardGradients.identity
+  );
 }

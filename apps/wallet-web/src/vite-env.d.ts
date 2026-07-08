@@ -9,4 +9,3 @@ declare class BarcodeDetector {
   detect(source: CanvasImageSource): Promise<BarcodeDetectorResult[]>;
   static getSupportedFormats?: () => Promise<string[]>;
 }
-

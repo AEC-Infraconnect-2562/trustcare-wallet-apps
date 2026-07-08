@@ -25,8 +25,16 @@ describe("portal sync merge", () => {
   });
 
   it("archives an older active credential when a newer version arrives", () => {
-    const existing = card({ id: 1, version: 1, issuedAt: "2026-07-01T00:00:00.000Z" });
-    const incoming = card({ id: 2, version: 2, issuedAt: "2026-07-03T00:00:00.000Z" });
+    const existing = card({
+      id: 1,
+      version: 1,
+      issuedAt: "2026-07-01T00:00:00.000Z",
+    });
+    const incoming = card({
+      id: 2,
+      version: 2,
+      issuedAt: "2026-07-03T00:00:00.000Z",
+    });
     const result = mergePortalSyncedCards({
       existingCards: [existing],
       incomingCards: [incoming],
@@ -44,8 +52,16 @@ describe("portal sync merge", () => {
   });
 
   it("ignores stale incoming credentials for the same lineage", () => {
-    const existing = card({ id: 2, version: 2, issuedAt: "2026-07-03T00:00:00.000Z" });
-    const stale = card({ id: 1, version: 1, issuedAt: "2026-07-01T00:00:00.000Z" });
+    const existing = card({
+      id: 2,
+      version: 2,
+      issuedAt: "2026-07-03T00:00:00.000Z",
+    });
+    const stale = card({
+      id: 1,
+      version: 1,
+      issuedAt: "2026-07-01T00:00:00.000Z",
+    });
     const result = mergePortalSyncedCards({
       existingCards: [existing],
       incomingCards: [stale],
@@ -82,7 +98,9 @@ describe("portal sync merge", () => {
     });
 
     expect(result.cards).toHaveLength(1);
-    expect(result.cards[0]?.credentialId).toBe("urn:portal:new:patient-identity");
+    expect(result.cards[0]?.credentialId).toBe(
+      "urn:portal:new:patient-identity",
+    );
     expect(result.archivedObjects).toHaveLength(1);
     expect(result.report).toMatchObject({
       updated: 1,
@@ -147,13 +165,19 @@ describe("portal sync merge", () => {
     });
 
     expect(result.cards).toHaveLength(1);
-    expect(result.cards[0]?.credentialId).toBe("urn:portal:vc:patient_identity:active");
+    expect(result.cards[0]?.credentialId).toBe(
+      "urn:portal:vc:patient_identity:active",
+    );
     expect(result.report.staleIgnored).toBe(1);
     expect(result.archivedObjects).toHaveLength(0);
   });
 
   it("archives Portal credentials missing from an authoritative snapshot", () => {
-    const oldIdentity = card({ id: 1, version: 1, issuedAt: "2026-07-01T00:00:00.000Z" });
+    const oldIdentity = card({
+      id: 1,
+      version: 1,
+      issuedAt: "2026-07-01T00:00:00.000Z",
+    });
     const oldQuotation = card({
       id: 3,
       cardType: "quotation",
@@ -165,7 +189,11 @@ describe("portal sync merge", () => {
       version: 1,
       issuedAt: "2026-07-01T00:00:00.000Z",
     });
-    const incomingIdentity = card({ id: 2, version: 2, issuedAt: "2026-07-03T00:00:00.000Z" });
+    const incomingIdentity = card({
+      id: 2,
+      version: 2,
+      issuedAt: "2026-07-03T00:00:00.000Z",
+    });
 
     const result = mergePortalSyncedCards({
       existingCards: [oldIdentity, oldQuotation],
@@ -195,7 +223,11 @@ describe("portal sync merge", () => {
   });
 
   it("builds known credential and future push payloads from the active wallet scope", () => {
-    const owned = card({ id: 1, ownerUserId: "demo-patient-complete-001", version: 2 });
+    const owned = card({
+      id: 1,
+      ownerUserId: "demo-patient-complete-001",
+      version: 2,
+    });
     const other = card({ id: 2, ownerUserId: "another-user", version: 1 });
 
     expect(buildPortalKnownCredentials([owned])).toHaveLength(1);
@@ -207,26 +239,30 @@ describe("portal sync merge", () => {
 
     expect(draft.schema).toBe("trustcare.wallet.push.v1");
     expect(draft.credentials).toHaveLength(1);
-    expect(draft.credentials[0]?.walletCredentialId).toBe("urn:portal:vc:patient_identity");
+    expect(draft.credentials[0]?.walletCredentialId).toBe(
+      "urn:portal:vc:patient_identity",
+    );
     expect(draft.policy.operation).toBe("upsert_with_version_check");
   });
 });
 
-function card(input: {
-  id?: number;
-  ownerUserId?: string;
-  version?: number;
-  issuedAt?: string;
-  cardType?: string;
-  displayName?: string;
-  displayNameEn?: string;
-  documentCategory?: string;
-  credentialId?: string;
-  documentReferenceId?: string | null;
-  carepassId?: string;
-  hn?: string;
-  credentialStatus?: WalletCard["credentialStatus"];
-} = {}): WalletCard {
+function card(
+  input: {
+    id?: number;
+    ownerUserId?: string;
+    version?: number;
+    issuedAt?: string;
+    cardType?: string;
+    displayName?: string;
+    displayNameEn?: string;
+    documentCategory?: string;
+    credentialId?: string;
+    documentReferenceId?: string | null;
+    carepassId?: string;
+    hn?: string;
+    credentialStatus?: WalletCard["credentialStatus"];
+  } = {},
+): WalletCard {
   const version = input.version ?? 1;
   const issuedAt = input.issuedAt ?? "2026-07-01T00:00:00.000Z";
   const credentialId = input.credentialId ?? "urn:portal:vc:patient_identity";
@@ -242,7 +278,8 @@ function card(input: {
       hn: input.hn ?? "HN-TEST-001",
     },
   };
-  if (documentReferenceId) credentialSubject.documentReferenceId = documentReferenceId;
+  if (documentReferenceId)
+    credentialSubject.documentReferenceId = documentReferenceId;
   const evidence = documentReferenceId
     ? [
         {

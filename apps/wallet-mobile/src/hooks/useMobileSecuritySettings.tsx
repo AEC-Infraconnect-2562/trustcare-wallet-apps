@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import * as SecureStore from "expo-secure-store";
 import { env } from "../env";
 
@@ -22,9 +30,14 @@ const defaults = {
   theme: "light" as MobileThemeMode,
 };
 
-const MobileSecuritySettingsContext = createContext<MobileSecuritySettings | null>(null);
+const MobileSecuritySettingsContext =
+  createContext<MobileSecuritySettings | null>(null);
 
-export function MobileSecuritySettingsProvider({ children }: { children: ReactNode }) {
+export function MobileSecuritySettingsProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [settings, setSettings] = useState(defaults);
 
@@ -34,7 +47,10 @@ export function MobileSecuritySettingsProvider({ children }: { children: ReactNo
         if (!stored) return;
         const parsed = JSON.parse(stored) as Partial<typeof defaults>;
         setSettings({
-          biometricEnabled: typeof parsed.biometricEnabled === "boolean" ? parsed.biometricEnabled : defaults.biometricEnabled,
+          biometricEnabled:
+            typeof parsed.biometricEnabled === "boolean"
+              ? parsed.biometricEnabled
+              : defaults.biometricEnabled,
           screenCaptureProtectionEnabled:
             typeof parsed.screenCaptureProtectionEnabled === "boolean"
               ? parsed.screenCaptureProtectionEnabled
@@ -54,12 +70,14 @@ export function MobileSecuritySettingsProvider({ children }: { children: ReactNo
   }, []);
 
   const setBiometricEnabled = useCallback(
-    async (enabled: boolean) => persist({ ...settings, biometricEnabled: enabled }),
+    async (enabled: boolean) =>
+      persist({ ...settings, biometricEnabled: enabled }),
     [persist, settings],
   );
 
   const setScreenCaptureProtectionEnabled = useCallback(
-    async (enabled: boolean) => persist({ ...settings, screenCaptureProtectionEnabled: enabled }),
+    async (enabled: boolean) =>
+      persist({ ...settings, screenCaptureProtectionEnabled: enabled }),
     [persist, settings],
   );
 
@@ -76,16 +94,28 @@ export function MobileSecuritySettingsProvider({ children }: { children: ReactNo
       setScreenCaptureProtectionEnabled,
       setTheme,
     }),
-    [isLoaded, setBiometricEnabled, setScreenCaptureProtectionEnabled, setTheme, settings],
+    [
+      isLoaded,
+      setBiometricEnabled,
+      setScreenCaptureProtectionEnabled,
+      setTheme,
+      settings,
+    ],
   );
 
-  return <MobileSecuritySettingsContext.Provider value={value}>{children}</MobileSecuritySettingsContext.Provider>;
+  return (
+    <MobileSecuritySettingsContext.Provider value={value}>
+      {children}
+    </MobileSecuritySettingsContext.Provider>
+  );
 }
 
 export function useMobileSecuritySettings() {
   const settings = useContext(MobileSecuritySettingsContext);
   if (!settings) {
-    throw new Error("useMobileSecuritySettings must be used within MobileSecuritySettingsProvider");
+    throw new Error(
+      "useMobileSecuritySettings must be used within MobileSecuritySettingsProvider",
+    );
   }
   return settings;
 }

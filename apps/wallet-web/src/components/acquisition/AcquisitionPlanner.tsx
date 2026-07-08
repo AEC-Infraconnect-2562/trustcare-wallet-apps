@@ -45,7 +45,9 @@ export function AcquisitionPlanner({
     <div className="acquisition-planner">
       <section className="acquisition-hero">
         <div>
-          <span className="eyebrow">{requestMode ? "ขอเอกสาร" : "นำเข้าเอกสาร"}</span>
+          <span className="eyebrow">
+            {requestMode ? "ขอเอกสาร" : "นำเข้าเอกสาร"}
+          </span>
           <h3>{plan.serviceLabel}</h3>
           <p>
             {requestMode
@@ -53,7 +55,9 @@ export function AcquisitionPlanner({
               : "เลือกวิธีนำเข้าและตรวจ trust state ก่อนบันทึกเป็นเอกสารใน Wallet"}
           </p>
         </div>
-        <span className="acquisition-count">{plan.selectedRequirements.length} รายการ</span>
+        <span className="acquisition-count">
+          {plan.selectedRequirements.length} รายการ
+        </span>
       </section>
 
       <section className="acquisition-section">
@@ -124,8 +128,9 @@ export function AcquisitionPlanner({
           <span className="eyebrow">ตรวจสอบก่อนส่ง</span>
           <h3>{requestMode ? "ส่งคำขอเอกสาร" : "สร้างงานนำเข้า"}</h3>
           <p>
-            เอกสารที่ผู้ใช้ให้มาเองจะยังไม่ถือว่า verified จนกว่า trusted issuer จะลงนาม
-            ส่วน Certified SHL ต้องมี Manifest VP และ Holder VC หลังผ่าน TrustCare Maker/Checker
+            เอกสารที่ผู้ใช้ให้มาเองจะยังไม่ถือว่า verified จนกว่า trusted issuer
+            จะลงนาม ส่วน Certified SHL ต้องมี Manifest VP และ Holder VC หลังผ่าน
+            TrustCare Maker/Checker
           </p>
         </div>
         <div className="acquisition-message-stack">
@@ -170,7 +175,11 @@ function PlannerOptionSection<T extends string>({
   return (
     <section className="acquisition-section">
       <span className="eyebrow">{title}</span>
-      <PlannerOptionGrid options={options} activeId={activeId} onSelect={onSelect} />
+      <PlannerOptionGrid
+        options={options}
+        activeId={activeId}
+        onSelect={onSelect}
+      />
     </section>
   );
 }
@@ -210,7 +219,9 @@ function PlannerOptionGrid<T extends string>({
             <small>{option.description}</small>
           </span>
           {option.recommended && <em>แนะนำ</em>}
-          {!option.enabled && option.reasonDisabled && <small>{option.reasonDisabled}</small>}
+          {!option.enabled && option.reasonDisabled && (
+            <small>{option.reasonDisabled}</small>
+          )}
         </button>
       ))}
     </div>

@@ -1,6 +1,10 @@
 import { normalizeDocumentType } from "./canonicalDocuments";
 import { hashJson } from "./demoResolvers";
-import type { WalletCard, WalletCardsByCategory, WalletStoredObject } from "./models";
+import type {
+  WalletCard,
+  WalletCardsByCategory,
+  WalletStoredObject,
+} from "./models";
 import { sortIdentityFirst } from "./sorting";
 
 export type PortalKnownCredential = {
@@ -40,9 +44,14 @@ type IndexedCard = {
   fingerprint: string;
 };
 
-const subjectFirstLineageTypes = new Set(["patient_identity", "staff_identity"]);
+const subjectFirstLineageTypes = new Set([
+  "patient_identity",
+  "staff_identity",
+]);
 
-export function buildPortalKnownCredentials(cards: WalletCard[]): PortalKnownCredential[] {
+export function buildPortalKnownCredentials(
+  cards: WalletCard[],
+): PortalKnownCredential[] {
   return cards
     .filter((card) => card.sourceSystem === "trustcare_portal")
     .map((card) => ({
@@ -101,13 +110,21 @@ export function mergePortalSyncedCards(input: {
     }
 
     if (next.fingerprint === current.fingerprint && comparison === "same") {
-      activeByLineage.set(next.lineageKey, mergeRefreshedMetadata(current.card, incoming));
-      existingByLineage.set(next.lineageKey, indexCard(activeByLineage.get(next.lineageKey)!));
+      activeByLineage.set(
+        next.lineageKey,
+        mergeRefreshedMetadata(current.card, incoming),
+      );
+      existingByLineage.set(
+        next.lineageKey,
+        indexCard(activeByLineage.get(next.lineageKey)!),
+      );
       report.unchanged += 1;
       continue;
     }
 
-    archivedObjects.push(archivedCredentialObject(current.card, incoming, syncedAt));
+    archivedObjects.push(
+      archivedCredentialObject(current.card, incoming, syncedAt),
+    );
     activeByLineage.set(next.lineageKey, incoming);
     existingByLineage.set(next.lineageKey, next);
     report.updated += 1;
@@ -120,7 +137,9 @@ export function mergePortalSyncedCards(input: {
     );
     for (const [lineageKey, card] of activeByLineage) {
       if (incomingLineages.has(lineageKey)) continue;
-      archivedObjects.push(archivedSnapshotRemovedCredentialObject(card, syncedAt));
+      archivedObjects.push(
+        archivedSnapshotRemovedCredentialObject(card, syncedAt),
+      );
       activeByLineage.delete(lineageKey);
       report.archived += 1;
     }
@@ -136,7 +155,9 @@ export function mergePortalSyncedCards(input: {
   };
 }
 
-export function groupCardsByCategory(cards: WalletCard[]): WalletCardsByCategory {
+export function groupCardsByCategory(
+  cards: WalletCard[],
+): WalletCardsByCategory {
   return cards.reduce<WalletCardsByCategory>((groups, card) => {
     const category = card.documentCategory || "clinical_summary";
     groups[category] = [...(groups[category] ?? []), card];
@@ -169,8 +190,8 @@ function credentialLineageKey(card: WalletCard): string {
   const subjectLineageId = stableSubjectLineageId(subject);
   const lineageId =
     (subjectFirstLineageTypes.has(documentType)
-      ? subjectLineageId ?? documentLineageId
-      : documentLineageId ?? subjectLineageId) ??
+      ? (subjectLineageId ?? documentLineageId)
+      : (documentLineageId ?? subjectLineageId)) ??
     stringValue(card.credentialId) ??
     "unknown-lineage";
   return [
@@ -228,7 +249,9 @@ function stableDocumentLineageId(
   ]);
 }
 
-function stableSubjectLineageId(subject: Record<string, unknown>): string | null {
+function stableSubjectLineageId(
+  subject: Record<string, unknown>,
+): string | null {
   const humanDocument = record(subject.humanDocument);
   const renderData = record(humanDocument.renderData ?? humanDocument);
   const renderPatient = record(renderData.patient);
@@ -282,8 +305,10 @@ function credentialVersion(card: WalletCard): number | string | null {
     evidence?.versionId,
   ];
   for (const candidate of candidates) {
-    if (typeof candidate === "number" && Number.isFinite(candidate)) return candidate;
-    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+    if (typeof candidate === "number" && Number.isFinite(candidate))
+      return candidate;
+    if (typeof candidate === "string" && candidate.trim())
+      return candidate.trim();
   }
   return null;
 }
@@ -323,7 +348,10 @@ function compareCredentialVersion(
   incoming: IndexedCard,
   existing: IndexedCard,
 ): "newer" | "same" | "stale" {
-  const versionComparison = compareVersionValue(incoming.version, existing.version);
+  const versionComparison = compareVersionValue(
+    incoming.version,
+    existing.version,
+  );
   if (versionComparison > 0) return "newer";
   if (versionComparison < 0) return "stale";
   if (incoming.fingerprint === existing.fingerprint) return "same";
@@ -355,10 +383,25 @@ function credentialLifecycleRank(card: WalletCard): number {
     .map((value) => stringValue(value)?.toLowerCase())
     .filter((value): value is string => Boolean(value));
 
-  if (statuses.some((status) => /revoked|suspended|cancelled|canceled|deleted|invalid/.test(status))) return 0;
-  if (statuses.some((status) => /expired|superseded|replaced|archived|deprecated|inactive/.test(status))) return 1;
+  if (
+    statuses.some((status) =>
+      /revoked|suspended|cancelled|canceled|deleted|invalid/.test(status),
+    )
+  )
+    return 0;
+  if (
+    statuses.some((status) =>
+      /expired|superseded|replaced|archived|deprecated|inactive/.test(status),
+    )
+  )
+    return 1;
   if (statuses.some((status) => /pending|draft|review/.test(status))) return 2;
-  if (statuses.some((status) => /active|valid|current|usable|verified|issued/.test(status))) return 3;
+  if (
+    statuses.some((status) =>
+      /active|valid|current|usable|verified|issued/.test(status),
+    )
+  )
+    return 3;
   return 2;
 }
 
@@ -369,7 +412,8 @@ function compareVersionValue(
   if (incoming == null || existing == null) return 0;
   const incomingNumber = numericVersion(incoming);
   const existingNumber = numericVersion(existing);
-  if (incomingNumber != null && existingNumber != null) return incomingNumber - existingNumber;
+  if (incomingNumber != null && existingNumber != null)
+    return incomingNumber - existingNumber;
   return String(incoming).localeCompare(String(existing), undefined, {
     numeric: true,
     sensitivity: "base",
@@ -378,15 +422,20 @@ function compareVersionValue(
 
 function numericVersion(value: number | string): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && /^\d+(\.\d+)?$/.test(value.trim())) return Number(value);
+  if (typeof value === "string" && /^\d+(\.\d+)?$/.test(value.trim()))
+    return Number(value);
   return null;
 }
 
-function mergeRefreshedMetadata(existing: WalletCard, incoming: WalletCard): WalletCard {
+function mergeRefreshedMetadata(
+  existing: WalletCard,
+  incoming: WalletCard,
+): WalletCard {
   return {
     ...existing,
     credentialStatus: incoming.credentialStatus,
-    portalVerification: incoming.portalVerification ?? existing.portalVerification,
+    portalVerification:
+      incoming.portalVerification ?? existing.portalVerification,
     credentialProof: incoming.credentialProof ?? existing.credentialProof,
     credentialJwt: incoming.credentialJwt ?? existing.credentialJwt,
     lastPresentedAt: incoming.lastPresentedAt ?? existing.lastPresentedAt,
@@ -407,7 +456,9 @@ function archivedCredentialObject(
     subtitle: [
       previous.displayNameEn,
       previousVersion != null ? `v${previousVersion}` : null,
-      replacementVersion != null ? `แทนที่ด้วย v${replacementVersion}` : "แทนที่ด้วย credential ใหม่",
+      replacementVersion != null
+        ? `แทนที่ด้วย v${replacementVersion}`
+        : "แทนที่ด้วย credential ใหม่",
     ]
       .filter(Boolean)
       .join(" · "),
@@ -460,10 +511,14 @@ function archivedSnapshotRemovedCredentialObject(
   };
 }
 
-function dedupeArchivedObjects(objects: WalletStoredObject[]): WalletStoredObject[] {
+function dedupeArchivedObjects(
+  objects: WalletStoredObject[],
+): WalletStoredObject[] {
   const map = new Map<string, WalletStoredObject>();
   for (const object of objects) map.set(object.id, object);
-  return Array.from(map.values()).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  return Array.from(map.values()).sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+  );
 }
 
 function normalizedDocumentType(card: Pick<WalletCard, "cardType">): string {

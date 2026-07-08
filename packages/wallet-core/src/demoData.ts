@@ -1,15 +1,21 @@
-import type { PresentationHistoryItem, ShlPackageDetail, WalletCard, WalletCardsByCategory, WalletPresentationResponse } from "./models";
+import type {
+  PresentationHistoryItem,
+  ShlPackageDetail,
+  WalletCard,
+  WalletCardsByCategory,
+  WalletPresentationResponse,
+} from "./models";
 import {
   completeWalletPresentationHistory,
   completeWalletShlPackages,
   getCompleteWalletCardsByCategory,
-  getCompleteWalletSeed
+  getCompleteWalletSeed,
 } from "./completeSeedData";
 import { demoPresentationUrl } from "./qr";
 import { createTrustCareShlGatewayPublication } from "./shlGateway";
 import {
   TRUSTCARE_PORTAL_WEB_ORIGIN,
-  trustCarePortalPersonImages
+  trustCarePortalPersonImages,
 } from "./portalSyncData";
 import { canPresentCredential } from "./statusTone";
 
@@ -24,7 +30,7 @@ export {
   getCompleteWalletSeed,
   type CompleteSeedDocumentCategory,
   type CompleteSeedDocumentDefinition,
-  type CompleteSeedDocumentType
+  type CompleteSeedDocumentType,
 } from "./completeSeedData";
 
 const now = new Date("2026-07-04T09:41:00+07:00");
@@ -68,11 +74,15 @@ export type WalletDemoUser = {
 };
 
 export const TRUSTCARE_PORTAL_ASSET_ORIGIN = TRUSTCARE_PORTAL_WEB_ORIGIN;
-export { TRUSTCARE_PORTAL_WEB_ORIGIN, portalSyncedUsers, trustCarePortalPersonImages } from "./portalSyncData";
+export {
+  TRUSTCARE_PORTAL_WEB_ORIGIN,
+  portalSyncedUsers,
+  trustCarePortalPersonImages,
+} from "./portalSyncData";
 
 export const walletNativePersonImages = {
   nativeFemale: "assets/users/wallet-native-02.png",
-  nativeMale: "assets/users/wallet-native-01.png"
+  nativeMale: "assets/users/wallet-native-01.png",
 } as const;
 
 export const walletDemoUsers: WalletDemoUser[] = [
@@ -100,11 +110,12 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:trustcare.network:hospital:tcc",
     avatarUrl: trustCarePortalPersonImages.demoPatient001,
     avatarSource: "trustcare_portal",
-    persona: "ผู้ป่วยจาก TrustCare Portal สำหรับทดสอบ OPD การส่งต่อ เคลม และงานยา",
+    persona:
+      "ผู้ป่วยจาก TrustCare Portal สำหรับทดสอบ OPD การส่งต่อ เคลม และงานยา",
     tags: ["opd", "referral", "claim", "pharmacy", "medical_certificate"],
     conditions: ["E11", "I10"],
     allergies: ["Penicillin severe"],
-    cardBase: 1000
+    cardBase: 1000,
   },
   {
     id: "demo-patient-002",
@@ -130,11 +141,12 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:trustcare.network:hospital:tcc",
     avatarUrl: trustCarePortalPersonImages.demoPatient002,
     avatarSource: "trustcare_portal",
-    persona: "ผู้ป่วยจาก TrustCare Portal สำหรับทดสอบ OPD เหตุฉุกเฉิน และผลแล็บ",
+    persona:
+      "ผู้ป่วยจาก TrustCare Portal สำหรับทดสอบ OPD เหตุฉุกเฉิน และผลแล็บ",
     tags: ["opd", "emergency", "lab"],
     conditions: ["J45"],
     allergies: ["Sulfonamide rash"],
-    cardBase: 2000
+    cardBase: 2000,
   },
   {
     id: "demo-patient-003",
@@ -161,11 +173,12 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:trustcare.network:hospital:tcp",
     avatarUrl: trustCarePortalPersonImages.demoPatient003,
     avatarSource: "trustcare_portal",
-    persona: "ผู้ป่วยต่างชาติจาก TrustCare Portal สำหรับทดสอบประกันและเอกสารเดินทาง",
+    persona:
+      "ผู้ป่วยต่างชาติจาก TrustCare Portal สำหรับทดสอบประกันและเอกสารเดินทาง",
     tags: ["medical_tourist", "insurance", "travel_document"],
     conditions: ["M17.1"],
     allergies: ["No known drug allergy"],
-    cardBase: 3000
+    cardBase: 3000,
   },
   {
     id: "demo-hospadmin-001",
@@ -191,11 +204,12 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:trustcare.network:hospital:tcc",
     avatarUrl: trustCarePortalPersonImages.demoHospadmin001,
     avatarSource: "trustcare_portal",
-    persona: "เจ้าหน้าที่โรงพยาบาลจาก TrustCare Portal สำหรับทดสอบสิทธิ์ผู้ปฏิบัติงาน",
+    persona:
+      "เจ้าหน้าที่โรงพยาบาลจาก TrustCare Portal สำหรับทดสอบสิทธิ์ผู้ปฏิบัติงาน",
     tags: ["staff_identity", "maker_checker"],
     conditions: [],
     allergies: [],
-    cardBase: 4000
+    cardBase: 4000,
   },
   {
     id: "portal-empty-patient-001",
@@ -221,11 +235,12 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:trustcare.network:hospital:tcc",
     avatarUrl: trustCarePortalPersonImages.patientFemale,
     avatarSource: "trustcare_portal",
-    persona: "กระเป๋าเปล่าสำหรับทดสอบปุ่ม Sync ข้อมูลรายบุคคลจาก TrustCare Portal",
+    persona:
+      "กระเป๋าเปล่าสำหรับทดสอบปุ่ม Sync ข้อมูลรายบุคคลจาก TrustCare Portal",
     tags: ["empty_wallet", "portal_sync_test"],
     conditions: [],
     allergies: [],
-    cardBase: 910000
+    cardBase: 910000,
   },
   {
     id: "portal-empty-staff-001",
@@ -251,11 +266,12 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:trustcare.network:hospital:tcc",
     avatarUrl: trustCarePortalPersonImages.nurseFemale,
     avatarSource: "trustcare_portal",
-    persona: "กระเป๋าเปล่าของเจ้าหน้าที่สำหรับทดสอบปุ่ม Sync จาก TrustCare Portal",
+    persona:
+      "กระเป๋าเปล่าของเจ้าหน้าที่สำหรับทดสอบปุ่ม Sync จาก TrustCare Portal",
     tags: ["empty_wallet", "portal_sync_test", "staff_identity"],
     conditions: [],
     allergies: [],
-    cardBase: 911000
+    cardBase: 911000,
   },
   {
     id: "demo-patient-complete-001",
@@ -282,11 +298,23 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:trustcare.network:hospital:tcc",
     avatarUrl: trustCarePortalPersonImages.demoPatient001,
     avatarSource: "trustcare_portal",
-    persona: "Wallet ผู้ป่วยครบชุด ครอบคลุมเอกสารสุขภาพทุกประเภทที่เกี่ยวข้องกับผู้ป่วย",
-    tags: ["complete_seed", "opd", "emergency", "referral", "claim", "pharmacy", "medical_tourist", "insurance", "travel_document", "shl"],
+    persona:
+      "Wallet ผู้ป่วยครบชุด ครอบคลุมเอกสารสุขภาพทุกประเภทที่เกี่ยวข้องกับผู้ป่วย",
+    tags: [
+      "complete_seed",
+      "opd",
+      "emergency",
+      "referral",
+      "claim",
+      "pharmacy",
+      "medical_tourist",
+      "insurance",
+      "travel_document",
+      "shl",
+    ],
     conditions: ["E11", "I10", "E78.5"],
     allergies: ["Penicillin severe", "Shellfish moderate"],
-    cardBase: 900000
+    cardBase: 900000,
   },
   {
     id: "demo-staff-complete-001",
@@ -311,11 +339,17 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:trustcare.network:hospital:tcc",
     avatarUrl: trustCarePortalPersonImages.doctorFemale,
     avatarSource: "trustcare_portal",
-    persona: "Wallet เจ้าหน้าที่ครบชุดสำหรับทดสอบ staff_identity การตรวจสอบ และการเข้าถึงบริการ",
-    tags: ["complete_seed", "staff_identity", "credential_checker", "service_verifier"],
+    persona:
+      "Wallet เจ้าหน้าที่ครบชุดสำหรับทดสอบ staff_identity การตรวจสอบ และการเข้าถึงบริการ",
+    tags: [
+      "complete_seed",
+      "staff_identity",
+      "credential_checker",
+      "service_verifier",
+    ],
     conditions: [],
     allergies: [],
-    cardBase: 901000
+    cardBase: 901000,
   },
   {
     id: "partner-patient-001",
@@ -340,11 +374,12 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:partner-wallet.example:issuer:pxh",
     avatarUrl: walletNativePersonImages.nativeFemale,
     avatarSource: "wallet_generated",
-    persona: "ผู้ป่วยที่สร้างใน Wallet นี้ สำหรับทดสอบการนำเข้าและส่งออกกับ partner ภายนอก",
+    persona:
+      "ผู้ป่วยที่สร้างใน Wallet นี้ สำหรับทดสอบการนำเข้าและส่งออกกับ partner ภายนอก",
     tags: ["opd", "lab", "cross_border"],
     conditions: ["Z34"],
     allergies: ["No known drug allergy"],
-    cardBase: 5000
+    cardBase: 5000,
   },
   {
     id: "partner-patient-002",
@@ -369,19 +404,31 @@ export const walletDemoUsers: WalletDemoUser[] = [
     issuerDid: "did:web:partner-wallet.example:issuer:pxh",
     avatarUrl: walletNativePersonImages.nativeMale,
     avatarSource: "wallet_generated",
-    persona: "ผู้ป่วยต่างชาติที่สร้างใน Wallet นี้ สำหรับทดสอบการเชื่อมโยงกลับไป TrustCare Portal",
-    tags: ["medical_tourist", "insurance", "travel_document", "guarantee_letter"],
+    persona:
+      "ผู้ป่วยต่างชาติที่สร้างใน Wallet นี้ สำหรับทดสอบการเชื่อมโยงกลับไป TrustCare Portal",
+    tags: [
+      "medical_tourist",
+      "insurance",
+      "travel_document",
+      "guarantee_letter",
+    ],
     conditions: ["M16"],
     allergies: ["No known drug allergy"],
-    cardBase: 6000
-  }
+    cardBase: 6000,
+  },
 ];
 
 export const demoPatient = walletDemoUsers[0];
 
 export function getDemoUser(userId?: string | number): WalletDemoUser {
   if (!userId) return demoPatient;
-  return walletDemoUsers.find(user => String(user.id) === String(userId) || String(user.patientId) === String(userId)) ?? demoPatient;
+  return (
+    walletDemoUsers.find(
+      (user) =>
+        String(user.id) === String(userId) ||
+        String(user.patientId) === String(userId),
+    ) ?? demoPatient
+  );
 }
 
 export function getDemoWalletCards(userId?: string | number): WalletCard[] {
@@ -390,46 +437,66 @@ export function getDemoWalletCards(userId?: string | number): WalletCard[] {
   if (user.tags.includes("complete_seed")) {
     return getCompleteWalletSeed(user.id).sort((a, b) => a.id - b.id);
   }
-  const cards = user.role === "staff" ? buildStaffCards(user) : buildPatientCards(user);
+  const cards =
+    user.role === "staff" ? buildStaffCards(user) : buildPatientCards(user);
   return cards.sort((a, b) => a.id - b.id);
 }
 
-export function getDemoCardsByCategory(userId?: string | number): WalletCardsByCategory {
+export function getDemoCardsByCategory(
+  userId?: string | number,
+): WalletCardsByCategory {
   const user = getDemoUser(userId);
-  if (user.tags.includes("complete_seed")) return getCompleteWalletCardsByCategory(user.id);
-  return getDemoWalletCards(userId).reduce<WalletCardsByCategory>((acc, card) => {
-    acc[card.documentCategory] ??= [];
-    acc[card.documentCategory].push(card);
-    return acc;
-  }, {});
+  if (user.tags.includes("complete_seed"))
+    return getCompleteWalletCardsByCategory(user.id);
+  return getDemoWalletCards(userId).reduce<WalletCardsByCategory>(
+    (acc, card) => {
+      acc[card.documentCategory] ??= [];
+      acc[card.documentCategory].push(card);
+      return acc;
+    },
+    {},
+  );
 }
 
-export function getDemoHistory(userId?: string | number): PresentationHistoryItem[] {
+export function getDemoHistory(
+  userId?: string | number,
+): PresentationHistoryItem[] {
   const user = getDemoUser(userId);
   if (user.tags.includes("empty_wallet")) return [];
-  if (user.id === "demo-patient-complete-001") return completeWalletPresentationHistory;
+  if (user.id === "demo-patient-complete-001")
+    return completeWalletPresentationHistory;
   if (user.id === "demo-staff-complete-001") return [];
   return [
     {
       id: `${user.id}:hist:single`,
-      verifierName: user.source === "trustcare_portal" ? "HealthPass Partner Verifier" : "TrustCare Portal Verifier",
+      verifierName:
+        user.source === "trustcare_portal"
+          ? "HealthPass Partner Verifier"
+          : "TrustCare Portal Verifier",
       purpose: "single_document",
       presentationId: `vp_${user.id}_single`,
       verificationResult: "valid",
-      presentedAt: isoOffset(-1)
+      presentedAt: isoOffset(-1),
     },
     {
       id: `${user.id}:hist:service`,
-      verifierName: user.source === "trustcare_portal" ? "Partner service intake" : "TrustCare service readiness",
-      purpose: user.tags.includes("medical_tourist") ? "medical_tourist" : "opd_visit",
+      verifierName:
+        user.source === "trustcare_portal"
+          ? "Partner service intake"
+          : "TrustCare service readiness",
+      purpose: user.tags.includes("medical_tourist")
+        ? "medical_tourist"
+        : "opd_visit",
       presentationId: `vp_${user.id}_service`,
       verificationResult: "valid",
-      presentedAt: isoOffset(-2)
-    }
+      presentedAt: isoOffset(-2),
+    },
   ];
 }
 
-export function getDemoShlPackages(userId?: string | number): ShlPackageDetail[] {
+export function getDemoShlPackages(
+  userId?: string | number,
+): ShlPackageDetail[] {
   const user = getDemoUser(userId);
   if (user.tags.includes("empty_wallet")) return [];
   if (user.id === "demo-patient-complete-001") return completeWalletShlPackages;
@@ -443,7 +510,7 @@ export function getDemoShlPackages(userId?: string | number): ShlPackageDetail[]
       : user.tags.includes("referral")
         ? "referral"
         : "opd_visit";
-  const cards = getDemoWalletCards(user.id).filter(card =>
+  const cards = getDemoWalletCards(user.id).filter((card) =>
     [
       "patient_identity",
       "patient_summary",
@@ -454,17 +521,22 @@ export function getDemoShlPackages(userId?: string | number): ShlPackageDetail[]
       "diagnostic_report",
       "referral_vc",
       "insurance_eligibility",
-      "travel_document_verification"
-    ].includes(card.cardType)
+      "travel_document_verification",
+    ].includes(card.cardType),
   );
   const publication = createTrustCareShlGatewayPublication({
     context,
     ownerUserId: user.id,
     patientId: user.patientId,
-    selectedCardIds: cards.map(card => card.id),
+    selectedCardIds: cards.map((card) => card.id),
     cards,
-    receiver: user.source === "trustcare_portal" ? "HealthPass Partner Verifier" : "TrustCare Portal",
-    purpose: user.tags.includes("medical_tourist") ? "medical_tourist_intake" : "patient_summary",
+    receiver:
+      user.source === "trustcare_portal"
+        ? "HealthPass Partner Verifier"
+        : "TrustCare Portal",
+    purpose: user.tags.includes("medical_tourist")
+      ? "medical_tourist_intake"
+      : "patient_summary",
     origin: "https://aec-infraconnect-2562.github.io/trustcare-wallet-apps",
     includeTrustCareManifestVp: trustcareCertified,
     policy: {
@@ -472,74 +544,104 @@ export function getDemoShlPackages(userId?: string | number): ShlPackageDetail[]
       passcodeRequired: false,
       passcodeHint: null,
       accessCodeDelivery: "not_required",
-      maxAccessCount: 5
-    }
+      maxAccessCount: 5,
+    },
   });
   return [
     {
       ...publication,
       id: user.cardBase + 701,
       label: `${user.nameEn} Service Share Package`,
-      purpose: user.tags.includes("medical_tourist") ? "medical_tourist_intake" : "patient_summary",
+      purpose: user.tags.includes("medical_tourist")
+        ? "medical_tourist_intake"
+        : "patient_summary",
       context: user.tags.includes("insurance") ? "insurance" : "treatment",
       status: "active",
       manifestCredentialId: publication.manifest.trustcare.manifestCredentialId,
       presentationId: publication.manifest.trustcare.holderPresentationId,
       manifestCredential: publication.manifest.trustcare.manifestCredential,
-      holderAuthorizationCredential: publication.manifest.trustcare.holderAuthorizationCredential,
+      holderAuthorizationCredential:
+        publication.manifest.trustcare.holderAuthorizationCredential,
       manifestVp: publication.manifest.trustcare.manifestVp,
       manifestVpUrl: publication.manifest.trustcare.manifestVpUrl,
       manifestVpHash: publication.manifest.trustcare.manifestVpHash,
-      trustcareCertification: trustcareCertified ? {
-        status: "maker_checker_approved",
-        ownerConfirmed: true,
-        makerId: `maker-${user.id}`,
-        makerName: `${user.hospitalName} Maker`,
-        makerApprovedAt: isoOffset(-2),
-        checkerId: `checker-${user.id}`,
-        checkerName: `${user.hospitalName} Checker`,
-        checkerApprovedAt: isoOffset(-1),
-        networkHospitalDid: user.issuerDid,
-        consentReceiptId: `consent-${user.id}`,
-        policyVersion: "trustcare-shl-governance-2026.07"
-      } : {
-        status: "not_applicable",
-        ownerConfirmed: false,
-        policyVersion: "standard-shl-transport"
-      },
+      trustcareCertification: trustcareCertified
+        ? {
+            status: "maker_checker_approved",
+            ownerConfirmed: true,
+            makerId: `maker-${user.id}`,
+            makerName: `${user.hospitalName} Maker`,
+            makerApprovedAt: isoOffset(-2),
+            checkerId: `checker-${user.id}`,
+            checkerName: `${user.hospitalName} Checker`,
+            checkerApprovedAt: isoOffset(-1),
+            networkHospitalDid: user.issuerDid,
+            consentReceiptId: `consent-${user.id}`,
+            policyVersion: "trustcare-shl-governance-2026.07",
+          }
+        : {
+            status: "not_applicable",
+            ownerConfirmed: false,
+            policyVersion: "standard-shl-transport",
+          },
       currentAccessCount: user.source === "trustcare_portal" ? 1 : 0,
       files: publication.manifest.files,
       versions: [{ version: 1, status: "active" }],
-      accessLogs: [{ recipient: user.source === "trustcare_portal" ? "HealthPass Partner Verifier" : "TrustCare Portal Verifier", at: isoOffset(-1) }],
-      documentBundle: publication.manifest.documentBundle
-    }
+      accessLogs: [
+        {
+          recipient:
+            user.source === "trustcare_portal"
+              ? "HealthPass Partner Verifier"
+              : "TrustCare Portal Verifier",
+          at: isoOffset(-1),
+        },
+      ],
+      documentBundle: publication.manifest.documentBundle,
+    },
   ];
 }
 
 export const demoWalletCards: WalletCard[] = getDemoWalletCards(demoPatient.id);
-export const demoCardsByCategory: WalletCardsByCategory = getDemoCardsByCategory(demoPatient.id);
-export const demoHistory: PresentationHistoryItem[] = getDemoHistory(demoPatient.id);
-export const demoShlPackages: ShlPackageDetail[] = getDemoShlPackages(demoPatient.id);
+export const demoCardsByCategory: WalletCardsByCategory =
+  getDemoCardsByCategory(demoPatient.id);
+export const demoHistory: PresentationHistoryItem[] = getDemoHistory(
+  demoPatient.id,
+);
+export const demoShlPackages: ShlPackageDetail[] = getDemoShlPackages(
+  demoPatient.id,
+);
 
-export function buildPortalInteroperabilityFixtures(userId?: string | number, origin = "https://aec-infraconnect-2562.github.io/trustcare-wallet-apps") {
+export function buildPortalInteroperabilityFixtures(
+  userId?: string | number,
+  origin = "https://aec-infraconnect-2562.github.io/trustcare-wallet-apps",
+) {
   const user = getDemoUser(userId);
   const cards = getDemoWalletCards(user.id);
   const shl = getDemoShlPackages(user.id)[0];
   const state = `state-${user.id}`;
   const nonce = `nonce-${user.id}`;
-  const requestedType = cards.some(card => card.credentialType === "CoverageEligibilityCredential")
+  const requestedType = cards.some(
+    (card) => card.credentialType === "CoverageEligibilityCredential",
+  )
     ? "CoverageEligibilityCredential"
     : user.tags.includes("insurance")
       ? "InsuranceEligibilityCredential"
       : "PatientSummaryCredential";
   const credentialOffer = {
-    credential_issuer: user.source === "trustcare_portal" ? TRUSTCARE_PORTAL_WEB_ORIGIN : origin,
-    credential_configuration_ids: cards.map(card => card.credentialType).filter(Boolean),
+    credential_issuer:
+      user.source === "trustcare_portal" ? TRUSTCARE_PORTAL_WEB_ORIGIN : origin,
+    credential_configuration_ids: cards
+      .map((card) => card.credentialType)
+      .filter(Boolean),
     grants: {
       "urn:ietf:params:oauth:grant-type:pre-authorized_code": {
         "pre-authorized_code": `preauth-${user.id}`,
-        tx_code: { input_mode: "numeric", length: 6, description: "Demo-only transaction code" }
-      }
+        tx_code: {
+          input_mode: "numeric",
+          length: 6,
+          description: "Demo-only transaction code",
+        },
+      },
     },
     trustcare: {
       sourceSystem: user.source,
@@ -547,13 +649,16 @@ export function buildPortalInteroperabilityFixtures(userId?: string | number, or
       patientId: user.patientId,
       holderDid: user.holderDid,
       portalOpenId: user.portalOpenId,
-      avatarSource: user.avatarSource
-    }
+      avatarSource: user.avatarSource,
+    },
   };
   const presentationRequest = {
     response_type: "vp_token",
     response_mode: "direct_post",
-    client_id: user.source === "trustcare_portal" ? "did:web:partner-wallet.example:verifier" : "did:web:trustcarehealth.live:verifier",
+    client_id:
+      user.source === "trustcare_portal"
+        ? "did:web:partner-wallet.example:verifier"
+        : "did:web:trustcarehealth.live:verifier",
     redirect_uri: `${origin}/verifier/callback`,
     nonce,
     state,
@@ -564,16 +669,21 @@ export function buildPortalInteroperabilityFixtures(userId?: string | number, or
         {
           id: requestedType,
           name: requestedType,
-          constraints: { fields: [{ path: ["$.type"], filter: { const: requestedType } }] }
-        }
-      ]
+          constraints: {
+            fields: [{ path: ["$.type"], filter: { const: requestedType } }],
+          },
+        },
+      ],
     },
     trustcare: {
       expectedHolderDid: user.holderDid,
       patientId: user.patientId,
       sourceSystem: user.source,
-      requestedBy: user.source === "trustcare_portal" ? "partner-wallet" : "trustcare-portal"
-    }
+      requestedBy:
+        user.source === "trustcare_portal"
+          ? "partner-wallet"
+          : "trustcare-portal",
+    },
   };
   return {
     user,
@@ -581,24 +691,30 @@ export function buildPortalInteroperabilityFixtures(userId?: string | number, or
       cards: cards.length,
       shlPackages: shl ? 1 : 0,
       oid4vciOffers: 1,
-      oid4vpRequests: 1
+      oid4vpRequests: 1,
     },
     credentialOfferUrl: `openid-credential-offer://?credential_offer=${encodeURIComponent(JSON.stringify(credentialOffer))}`,
     presentationRequestUrl: `openid4vp://?request=${encodeURIComponent(JSON.stringify(presentationRequest))}`,
     shlQrPayload: shl?.qrPayload,
-    sampleCredentialIds: cards.map(card => card.credentialId),
-    samplePresentationIds: getDemoHistory(user.id).map(item => item.presentationId).filter(Boolean),
+    sampleCredentialIds: cards.map((card) => card.credentialId),
+    samplePresentationIds: getDemoHistory(user.id)
+      .map((item) => item.presentationId)
+      .filter(Boolean),
     scope: {
       ownerUserId: user.id,
       patientId: user.patientId,
       holderDid: user.holderDid,
       sourceSystem: user.source,
-      portalOpenId: user.portalOpenId
-    }
+      portalOpenId: user.portalOpenId,
+    },
   };
 }
 
-export function createDemoPresentation(card: WalletCard, selectedFields: string[] = [], origin = "https://trustcare.example.com"): WalletPresentationResponse {
+export function createDemoPresentation(
+  card: WalletCard,
+  selectedFields: string[] = [],
+  origin = "https://trustcare.example.com",
+): WalletPresentationResponse {
   const presentationId = `vp_demo_${card.id}_${Date.now().toString(36)}`;
   return {
     presentationId,
@@ -611,27 +727,63 @@ export function createDemoPresentation(card: WalletCard, selectedFields: string[
     transportDecision: {
       mode: "direct_vp",
       label: "Single-document VP",
-      reason: "Purpose-bound VP QR for one credential without exposing the full wallet scope."
+      reason:
+        "Purpose-bound VP QR for one credential without exposing the full wallet scope.",
     },
     verificationChecklist: [
-      { key: "issuer", label: "Issuer DID", ok: Boolean(card.issuerDid), detail: card.issuerDid ?? "" },
-      { key: "holder", label: "Holder DID", ok: Boolean(card.holderDid), detail: card.holderDid ?? "" },
-      { key: "status", label: "Credential active", ok: canPresentCredential(card) },
-      { key: "scope", label: "Wallet user scope", ok: Boolean((card as WalletCard & { ownerUserId?: string }).ownerUserId), detail: (card as WalletCard & { ownerUserId?: string }).ownerUserId ?? "" },
-      { key: "consent", label: "Purpose-bound sharing", ok: true }
-    ]
+      {
+        key: "issuer",
+        label: "Issuer DID",
+        ok: Boolean(card.issuerDid),
+        detail: card.issuerDid ?? "",
+      },
+      {
+        key: "holder",
+        label: "Holder DID",
+        ok: Boolean(card.holderDid),
+        detail: card.holderDid ?? "",
+      },
+      {
+        key: "status",
+        label: "Credential active",
+        ok: canPresentCredential(card),
+      },
+      {
+        key: "scope",
+        label: "Wallet user scope",
+        ok: Boolean(
+          (card as WalletCard & { ownerUserId?: string }).ownerUserId,
+        ),
+        detail:
+          (card as WalletCard & { ownerUserId?: string }).ownerUserId ?? "",
+      },
+      { key: "consent", label: "Purpose-bound sharing", ok: true },
+    ],
   };
 }
 
 function buildPatientCards(user: WalletDemoUser): WalletCard[] {
   const cards: WalletCard[] = [identityCard(user), patientSummaryCard(user)];
   if (hasRealAllergy(user)) cards.push(allergyCard(user));
-  if (user.tags.includes("pharmacy") || user.tags.includes("emergency")) cards.push(prescriptionCard(user));
-  if (user.tags.includes("lab") || user.tags.includes("claim") || user.tags.includes("cross_border")) cards.push(labCard(user));
-  if (user.tags.includes("medical_certificate")) cards.push(medicalCertificateCard(user));
-  if (user.tags.includes("referral") || user.tags.includes("cross_border")) cards.push(referralCard(user));
-  if (user.tags.includes("insurance") || user.tags.includes("claim")) cards.push(insuranceCard(user));
-  if (user.tags.includes("travel_document") || user.tags.includes("medical_tourist")) cards.push(travelCard(user));
+  if (user.tags.includes("pharmacy") || user.tags.includes("emergency"))
+    cards.push(prescriptionCard(user));
+  if (
+    user.tags.includes("lab") ||
+    user.tags.includes("claim") ||
+    user.tags.includes("cross_border")
+  )
+    cards.push(labCard(user));
+  if (user.tags.includes("medical_certificate"))
+    cards.push(medicalCertificateCard(user));
+  if (user.tags.includes("referral") || user.tags.includes("cross_border"))
+    cards.push(referralCard(user));
+  if (user.tags.includes("insurance") || user.tags.includes("claim"))
+    cards.push(insuranceCard(user));
+  if (
+    user.tags.includes("travel_document") ||
+    user.tags.includes("medical_tourist")
+  )
+    cards.push(travelCard(user));
   return cards;
 }
 
@@ -653,10 +805,10 @@ function buildStaffCards(user: WalletDemoUser): WalletCard[] {
           role: "Hospital Administrator",
           email: user.email,
           phone: user.phone,
-          photoUrl: user.avatarUrl
-        }
-      }
-    })
+          photoUrl: user.avatarUrl,
+        },
+      },
+    }),
   ];
 }
 
@@ -671,8 +823,8 @@ function identityCard(user: WalletDemoUser): WalletCard {
     expiresAt: "2030-07-01T09:00:00.000Z",
     subject: {
       patient: patientSubject(user),
-      organization: organizationSubject(user)
-    }
+      organization: organizationSubject(user),
+    },
   });
 }
 
@@ -688,11 +840,16 @@ function patientSummaryCard(user: WalletDemoUser): WalletCard {
     subject: {
       patient: patientSubject(user),
       clinical: {
-        conditions: user.conditions.map(code => ({ code, display: diagnosisText(code) })),
+        conditions: user.conditions.map((code) => ({
+          code,
+          display: diagnosisText(code),
+        })),
         allergies: user.allergies,
-        medications: user.conditions.map(code => ({ name: medicationForCondition(code) }))
-      }
-    }
+        medications: user.conditions.map((code) => ({
+          name: medicationForCondition(code),
+        })),
+      },
+    },
   });
 }
 
@@ -705,7 +862,13 @@ function allergyCard(user: WalletDemoUser): WalletCard {
     documentCategory: "clinical_summary",
     credentialType: "AllergyAlertCredential",
     expiresAt: "2028-07-01T09:20:00.000Z",
-    subject: { patient: patientSubject(user), allergies: user.allergies.map(agent => ({ agent, severity: agent.toLowerCase().includes("severe") ? "high" : "moderate" })) }
+    subject: {
+      patient: patientSubject(user),
+      allergies: user.allergies.map((agent) => ({
+        agent,
+        severity: agent.toLowerCase().includes("severe") ? "high" : "moderate",
+      })),
+    },
   });
 }
 
@@ -720,9 +883,20 @@ function prescriptionCard(user: WalletDemoUser): WalletCard {
     expiresAt: "2026-08-02T07:00:00.000Z",
     subject: {
       patient: patientSubject(user),
-      prescriber: { name: user.hospitalCode === "TCP" ? "นพ.ภาณุ ทะเลใส" : "นพ.ธนวัฒน์ รักษาดี", licenseNo: `MD-${user.hospitalCode}-12345` },
-      fhir: { medicationRequests: [{ name: medicationForCondition(user.conditions[0]), instructions: "Take as directed by physician" }] }
-    }
+      prescriber: {
+        name:
+          user.hospitalCode === "TCP" ? "นพ.ภาณุ ทะเลใส" : "นพ.ธนวัฒน์ รักษาดี",
+        licenseNo: `MD-${user.hospitalCode}-12345`,
+      },
+      fhir: {
+        medicationRequests: [
+          {
+            name: medicationForCondition(user.conditions[0]),
+            instructions: "Take as directed by physician",
+          },
+        ],
+      },
+    },
   });
 }
 
@@ -735,7 +909,17 @@ function labCard(user: WalletDemoUser): WalletCard {
     documentCategory: "diagnostics_and_results",
     credentialType: "LabResultCredential",
     expiresAt: "2027-07-02T09:30:00.000Z",
-    subject: { patient: patientSubject(user), observations: [{ code: "4548-4", display: "HbA1c", value: user.conditions.includes("E11") ? "7.4" : "5.6", unit: "%" }] }
+    subject: {
+      patient: patientSubject(user),
+      observations: [
+        {
+          code: "4548-4",
+          display: "HbA1c",
+          value: user.conditions.includes("E11") ? "7.4" : "5.6",
+          unit: "%",
+        },
+      ],
+    },
   });
 }
 
@@ -748,7 +932,10 @@ function medicalCertificateCard(user: WalletDemoUser): WalletCard {
     documentCategory: "clinical_summary",
     credentialType: "MedicalCertificateCredential",
     expiresAt: "2027-01-01T09:30:00.000Z",
-    subject: { patient: patientSubject(user), certificate: { fitForWork: true, issuedFor: "service readiness demo" } }
+    subject: {
+      patient: patientSubject(user),
+      certificate: { fitForWork: true, issuedFor: "service readiness demo" },
+    },
   });
 }
 
@@ -761,7 +948,14 @@ function referralCard(user: WalletDemoUser): WalletCard {
     documentCategory: "care_transition",
     credentialType: "ReferralCredential",
     expiresAt: "2026-10-01T09:30:00.000Z",
-    subject: { patient: patientSubject(user), referral: { from: user.hospitalName, to: "TrustCare compatible hospital", reason: diagnosisText(user.conditions[0]) } }
+    subject: {
+      patient: patientSubject(user),
+      referral: {
+        from: user.hospitalName,
+        to: "TrustCare compatible hospital",
+        reason: diagnosisText(user.conditions[0]),
+      },
+    },
   });
 }
 
@@ -774,7 +968,16 @@ function insuranceCard(user: WalletDemoUser): WalletCard {
     documentCategory: "claims_and_finance",
     credentialType: "InsuranceEligibilityCredential",
     expiresAt: "2027-07-01T09:30:00.000Z",
-    subject: { patient: patientSubject(user), payer: { name: user.source === "trustcare_portal" ? "NHSO Demo" : "Partner International Plan", status: "eligible" } }
+    subject: {
+      patient: patientSubject(user),
+      payer: {
+        name:
+          user.source === "trustcare_portal"
+            ? "NHSO Demo"
+            : "Partner International Plan",
+        status: "eligible",
+      },
+    },
   });
 }
 
@@ -787,24 +990,38 @@ function travelCard(user: WalletDemoUser): WalletCard {
     documentCategory: "medical_tourism",
     credentialType: "TravelDocumentVerificationCredential",
     expiresAt: "2026-12-31T09:30:00.000Z",
-    subject: { patient: patientSubject(user), travel: { passport: user.passport ?? "PX-PASSPORT-DEMO", nationality: user.passport ? "international" : "THA" } }
+    subject: {
+      patient: patientSubject(user),
+      travel: {
+        passport: user.passport ?? "PX-PASSPORT-DEMO",
+        nationality: user.passport ? "international" : "THA",
+      },
+    },
   });
 }
 
-function baseCard(user: WalletDemoUser, input: {
-  offset: number;
-  cardType: string;
-  displayName: string;
-  displayNameEn: string;
-  documentCategory: string;
-  credentialType: string;
-  expiresAt: string;
-  subject: Record<string, unknown>;
-}): WalletCard {
+function baseCard(
+  user: WalletDemoUser,
+  input: {
+    offset: number;
+    cardType: string;
+    displayName: string;
+    displayNameEn: string;
+    documentCategory: string;
+    credentialType: string;
+    expiresAt: string;
+    subject: Record<string, unknown>;
+  },
+): WalletCard {
   const cardId = user.cardBase + input.offset;
   const credentialId = `${user.source === "trustcare_portal" ? "TC" : "PX"}-${user.id}-${input.offset}`;
   const issuedAtValue = "2026-07-01T09:00:00.000Z";
-  const documentReference = buildDemoDocumentReference(user, input, credentialId, issuedAtValue);
+  const documentReference = buildDemoDocumentReference(
+    user,
+    input,
+    credentialId,
+    issuedAtValue,
+  );
   return {
     id: cardId,
     cardType: input.cardType,
@@ -826,13 +1043,16 @@ function baseCard(user: WalletDemoUser, input: {
     sourceSystem: user.source,
     scopeLabel: user.sourceLabel,
     credentialData: {
-      "@context": ["https://www.w3.org/ns/credentials/v2", "https://trustcare.network/contexts/wallet-medical-document/v1"],
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://trustcare.network/contexts/wallet-medical-document/v1",
+      ],
       id: credentialId,
       type: ["VerifiableCredential", input.credentialType],
       issuer: {
         id: user.issuerDid,
         name: user.hospitalName,
-        nameTh: user.hospitalNameTh
+        nameTh: user.hospitalNameTh,
       },
       validFrom: issuedAtValue,
       validUntil: input.expiresAt,
@@ -845,20 +1065,24 @@ function baseCard(user: WalletDemoUser, input: {
           label: user.sourceLabel,
           portalOpenId: user.portalOpenId,
           userId: user.id,
-          patientId: user.patientId
+          patientId: user.patientId,
         },
         humanDocument: {
           rendererVersion: "trustcare-wallet-document-renderer-2026.07",
           layout: demoLayoutForDocument(input.cardType),
           sourceSystem: user.sourceLabel,
           fhirResources: demoFhirResourcesForDocument(input.cardType),
-          noPortrait: !["patient_identity", "staff_identity", "travel_document_verification"].includes(input.cardType),
+          noPortrait: ![
+            "patient_identity",
+            "staff_identity",
+            "travel_document_verification",
+          ].includes(input.cardType),
           renderData: {
             hospital: {
               code: user.hospitalCode,
               nameTh: user.hospitalNameTh,
               nameEn: user.hospitalName,
-              hcode: user.hospitalCode
+              hcode: user.hospitalCode,
             },
             patient: {
               fullNameTh: user.nameTh,
@@ -866,20 +1090,20 @@ function baseCard(user: WalletDemoUser, input: {
               hn: user.hn,
               carepassId: user.carepassId,
               photoUrl: user.avatarUrl,
-              avatarUrl: user.avatarUrl
+              avatarUrl: user.avatarUrl,
             },
             document: {
               no: `${user.hospitalCode}-${input.cardType}-${cardId}`,
-              qrLabel: "VP"
+              qrLabel: "VP",
             },
-            issuer: { did: user.issuerDid }
-          }
-        }
+            issuer: { did: user.issuerDid },
+          },
+        },
       },
       credentialStatus: {
         id: `${credentialId}#status`,
         type: "TrustCareDemoStatus",
-        status: "active"
+        status: "active",
       },
       evidence: [
         {
@@ -888,10 +1112,10 @@ function baseCard(user: WalletDemoUser, input: {
           fhirResources: demoFhirResourcesForDocument(input.cardType),
           documentReferenceId: `DocumentReference/${credentialId}`,
           resource: documentReference,
-          attachment: documentReference.content[0]?.attachment
-        }
-      ]
-    }
+          attachment: documentReference.content[0]?.attachment,
+        },
+      ],
+    },
   } as WalletCard;
 }
 
@@ -905,7 +1129,7 @@ function buildDemoDocumentReference(
     expiresAt: string;
   },
   credentialId: string,
-  issuedAtValue: string
+  issuedAtValue: string,
 ) {
   return {
     resourceType: "DocumentReference",
@@ -913,41 +1137,66 @@ function buildDemoDocumentReference(
     status: "current",
     docStatus: "final",
     type: {
-      coding: [{ system: "https://trustcare.network/fhir/CodeSystem/document-type", code: input.cardType, display: input.displayNameEn }],
-      text: input.displayName
+      coding: [
+        {
+          system: "https://trustcare.network/fhir/CodeSystem/document-type",
+          code: input.cardType,
+          display: input.displayNameEn,
+        },
+      ],
+      text: input.displayName,
     },
     category: [
       {
-        coding: [{ system: "https://trustcare.network/fhir/CodeSystem/document-category", code: input.documentCategory, display: input.documentCategory }]
-      }
+        coding: [
+          {
+            system:
+              "https://trustcare.network/fhir/CodeSystem/document-category",
+            code: input.documentCategory,
+            display: input.documentCategory,
+          },
+        ],
+      },
     ],
-    subject: user.role === "staff"
-      ? { reference: `Practitioner/${user.carepassId}`, display: user.nameEn }
-      : { reference: `Patient/${user.patientId}`, display: user.nameEn },
+    subject:
+      user.role === "staff"
+        ? { reference: `Practitioner/${user.carepassId}`, display: user.nameEn }
+        : { reference: `Patient/${user.patientId}`, display: user.nameEn },
     date: issuedAtValue,
-    author: [{ reference: `Organization/${user.hospitalCode}`, display: user.hospitalName }],
-    custodian: { reference: `Organization/${user.hospitalCode}`, display: user.hospitalName },
+    author: [
+      {
+        reference: `Organization/${user.hospitalCode}`,
+        display: user.hospitalName,
+      },
+    ],
+    custodian: {
+      reference: `Organization/${user.hospitalCode}`,
+      display: user.hospitalName,
+    },
     content: [
       {
         attachment: {
-          contentType: input.cardType === "lab_result" ? "application/fhir+json" : "application/pdf",
+          contentType:
+            input.cardType === "lab_result"
+              ? "application/fhir+json"
+              : "application/pdf",
           language: "th-TH",
           title: `${input.displayNameEn} - ${credentialId}`,
           creation: issuedAtValue,
           hash: `sha256:demo-${credentialId}`,
-          url: `/demo-documents/${credentialId}.pdf`
+          url: `/demo-documents/${credentialId}.pdf`,
         },
         format: {
           system: "https://trustcare.network/fhir/CodeSystem/document-format",
           code: demoLayoutForDocument(input.cardType),
-          display: "TrustCare demo rendered document"
-        }
-      }
+          display: "TrustCare demo rendered document",
+        },
+      },
     ],
     context: {
       period: { start: issuedAtValue, end: input.expiresAt },
-      related: [{ reference: `Credential/${credentialId}` }]
-    }
+      related: [{ reference: `Credential/${credentialId}` }],
+    },
   };
 }
 
@@ -962,7 +1211,7 @@ function demoLayoutForDocument(cardType: string): string {
     medical_certificate: "signed_medical_certificate",
     referral_vc: "referral_letter",
     insurance_eligibility: "coverage_eligibility_response",
-    travel_document_verification: "travel_document_verification"
+    travel_document_verification: "travel_document_verification",
   };
   return map[cardType] ?? "clinical_document";
 }
@@ -971,14 +1220,19 @@ function demoFhirResourcesForDocument(cardType: string): string[] {
   const map: Record<string, string[]> = {
     patient_identity: ["Patient", "Organization"],
     staff_identity: ["Practitioner", "PractitionerRole", "Organization"],
-    patient_summary: ["Composition", "Condition", "MedicationStatement", "AllergyIntolerance"],
+    patient_summary: [
+      "Composition",
+      "Condition",
+      "MedicationStatement",
+      "AllergyIntolerance",
+    ],
     allergy_alert: ["AllergyIntolerance"],
     prescription: ["MedicationRequest", "Practitioner"],
     lab_result: ["DiagnosticReport", "Observation"],
     medical_certificate: ["Composition", "Practitioner"],
     referral_vc: ["ServiceRequest", "DocumentReference"],
     insurance_eligibility: ["CoverageEligibilityResponse", "Coverage"],
-    travel_document_verification: ["Patient", "DocumentReference"]
+    travel_document_verification: ["Patient", "DocumentReference"],
   };
   return map[cardType] ?? ["DocumentReference"];
 }
@@ -995,7 +1249,7 @@ function patientSubject(user: WalletDemoUser) {
     gender: user.gender,
     status: "ปกติ",
     photoUrl: user.avatarUrl,
-    avatarUrl: user.avatarUrl
+    avatarUrl: user.avatarUrl,
   };
 }
 
@@ -1003,12 +1257,14 @@ function organizationSubject(user: WalletDemoUser) {
   return {
     code: user.hospitalCode,
     name: user.hospitalNameTh,
-    nameEn: user.hospitalName
+    nameEn: user.hospitalName,
   };
 }
 
 function hasRealAllergy(user: WalletDemoUser): boolean {
-  return user.allergies.some(item => !item.toLowerCase().includes("no known"));
+  return user.allergies.some(
+    (item) => !item.toLowerCase().includes("no known"),
+  );
 }
 
 function diagnosisText(code: string | undefined): string {
@@ -1018,7 +1274,7 @@ function diagnosisText(code: string | undefined): string {
     J45: "Asthma",
     "M17.1": "Knee osteoarthritis",
     M16: "Hip osteoarthritis",
-    Z34: "Supervision of normal pregnancy"
+    Z34: "Supervision of normal pregnancy",
   };
   return map[code ?? ""] ?? "General examination";
 }

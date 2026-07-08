@@ -15,7 +15,11 @@ export function ReadinessSummaryCard({
   return (
     <section className="readiness-summary-card" aria-label={summary.label}>
       <div
-        className={summary.criticalReady ? "readiness-ring ready" : "readiness-ring warning"}
+        className={
+          summary.criticalReady
+            ? "readiness-ring ready"
+            : "readiness-ring warning"
+        }
         style={{ "--score": summary.score } as CSSProperties}
       >
         {summary.score}%
@@ -30,7 +34,10 @@ export function ReadinessSummaryCard({
         </div>
       </div>
       <div className="readiness-summary-actions">
-        <Button onClick={onPrimary} className={summary.criticalReady ? "green" : "purple"}>
+        <Button
+          onClick={onPrimary}
+          className={summary.criticalReady ? "green" : "purple"}
+        >
           {summary.criticalReady ? <Send size={18} /> : <FilePlus2 size={18} />}
           {summary.primaryCtaLabel}
         </Button>

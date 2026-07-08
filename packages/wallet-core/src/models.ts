@@ -1,9 +1,11 @@
 export type Language = "th" | "en";
 export type ThemeMode = "light" | "dark" | "system";
 
-export type CredentialStatus = "active" | "revoked" | "expired" | "superseded" | "suspended" | string;
+export type CredentialStatus =
+  "active" | "revoked" | "expired" | "superseded" | "suspended" | string;
 
-export type TrustLevel = "green" | "yellow" | "red" | "blue" | "verified" | "warning" | "unknown";
+export type TrustLevel =
+  "green" | "yellow" | "red" | "blue" | "verified" | "warning" | "unknown";
 
 export type WalletCard = {
   id: number;
@@ -53,6 +55,7 @@ export type WalletCardsByCategory = Record<string, WalletCard[]>;
 
 export type WalletPresentationRequest = {
   cardId: number;
+  cardSnapshot?: WalletCard | null;
   selectedFields?: string[];
   audience?: string;
   validMinutes?: number;
@@ -71,11 +74,13 @@ export type WalletPresentationResponse = {
   mode: string;
   credentialCount: number;
   selectedFields: string[];
-  transportDecision?: {
-    mode?: string;
-    label?: string;
-    reason?: string;
-  } | unknown;
+  transportDecision?:
+    | {
+        mode?: string;
+        label?: string;
+        reason?: string;
+      }
+    | unknown;
   verificationChecklist?: TrustLayerChecklistItem[] | unknown;
   expiresAt: string;
   qrData: string;
@@ -156,7 +161,12 @@ export type ShlPackage = {
   maxAccessCount?: number | null;
   expiresAt?: string | null;
   trustcareCertification?: {
-    status: "maker_checker_approved" | "pending_maker_checker" | "rejected" | "not_applicable" | string;
+    status:
+      | "maker_checker_approved"
+      | "pending_maker_checker"
+      | "rejected"
+      | "not_applicable"
+      | string;
     ownerConfirmed?: boolean;
     makerId?: string;
     makerName?: string;
@@ -191,7 +201,15 @@ export type VerifierResult = {
   trustLevel: TrustLevel;
   issuer?: string;
   holderDid?: string;
-  protocol?: "trustcare-vp" | "trustcare-vc" | "oid4vp" | "oid4vci" | "shl" | "jwt" | "json" | "unknown";
+  protocol?:
+    | "trustcare-vp"
+    | "trustcare-vc"
+    | "oid4vp"
+    | "oid4vci"
+    | "shl"
+    | "jwt"
+    | "json"
+    | "unknown";
   requestSummary?: string;
   matchedCredentialIds?: Array<number | string>;
   credentials?: unknown[];
@@ -233,7 +251,9 @@ export type ReadinessResult = {
   requiredReady: number;
   recommendedTotal: number;
   recommendedReady: number;
-  ready: Array<ReadinessRequirement & { status: "ready"; matchedCards: WalletCard[] }>;
+  ready: Array<
+    ReadinessRequirement & { status: "ready"; matchedCards: WalletCard[] }
+  >;
   missing: Array<ReadinessRequirement & { status: "missing" }>;
   selectedCardIds: number[];
   recommendedActions: string[];
@@ -336,12 +356,14 @@ export type CheckinQrResponse = {
   readinessScore: number;
   credentialCount: number;
   status: "ready" | "pending_review" | string;
-  gatewayMode?: "portal_backend" | "static_demo_gateway" | "local_preview" | string;
+  gatewayMode?:
+    "portal_backend" | "static_demo_gateway" | "local_preview" | string;
   gatewayPublicationId?: string;
   gatewayBaseUrl?: string;
   storageProvider?: "s3" | "static" | "local" | string;
   manifestEndpointMethod?: "POST" | "GET" | "BOTH" | string;
-  trustLayerStatus?: "standard_shl" | "pending_manifest_vp" | "certified_manifest_vp" | string;
+  trustLayerStatus?:
+    "standard_shl" | "pending_manifest_vp" | "certified_manifest_vp" | string;
   manifest?: Record<string, unknown>;
   portalRequest?: Record<string, unknown>;
   warnings?: string[];
@@ -396,7 +418,8 @@ export type WalletStoredObject = {
   title: string;
   subtitle?: string;
   status: "active" | "pending" | "expired" | "verified" | "invalid" | string;
-  protocol?: "trustcare" | "oid4vci" | "oid4vp" | "shl" | "fhir" | "document_reference";
+  protocol?:
+    "trustcare" | "oid4vci" | "oid4vp" | "shl" | "fhir" | "document_reference";
   createdAt: string;
   expiresAt?: string | null;
   source?: string;

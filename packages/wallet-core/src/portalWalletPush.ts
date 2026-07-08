@@ -1,6 +1,9 @@
 import { normalizeDocumentType } from "./canonicalDocuments";
 import type { WalletCard } from "./models";
-import { buildPortalKnownCredentials, type PortalKnownCredential } from "./portalSyncMerge";
+import {
+  buildPortalKnownCredentials,
+  type PortalKnownCredential,
+} from "./portalSyncMerge";
 
 export type PortalWalletPushCredential = {
   walletCredentialId: string;
@@ -40,15 +43,23 @@ export function buildPortalWalletPushDraft(input: {
   cards: WalletCard[];
   createdAt?: string;
 }): PortalWalletPushDraft {
-  const ownedCards = input.cards.filter((card) => card.ownerUserId === input.ownerUserId);
+  const ownedCards = input.cards.filter(
+    (card) => card.ownerUserId === input.ownerUserId,
+  );
   return {
     schema: "trustcare.wallet.push.v1",
     walletUserId: input.ownerUserId,
-    holderDid: input.holderDid ?? ownedCards.find((card) => card.holderDid)?.holderDid ?? null,
+    holderDid:
+      input.holderDid ??
+      ownedCards.find((card) => card.holderDid)?.holderDid ??
+      null,
     sourceWallet: "trustcare-wallet-apps",
     createdAt: input.createdAt ?? new Date().toISOString(),
     credentials: ownedCards
-      .filter((card) => card.credentialData && typeof card.credentialData === "object")
+      .filter(
+        (card) =>
+          card.credentialData && typeof card.credentialData === "object",
+      )
       .map((card) => ({
         walletCredentialId: String(card.credentialId),
         documentType: normalizeDocumentType(card.cardType) ?? card.cardType,
@@ -89,8 +100,10 @@ function credentialVersionHint(card: WalletCard): number | string | null {
     subjectRecord.version,
     subjectRecord.credentialVersion,
   ]) {
-    if (typeof candidate === "number" && Number.isFinite(candidate)) return candidate;
-    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+    if (typeof candidate === "number" && Number.isFinite(candidate))
+      return candidate;
+    if (typeof candidate === "string" && candidate.trim())
+      return candidate.trim();
   }
   return null;
 }

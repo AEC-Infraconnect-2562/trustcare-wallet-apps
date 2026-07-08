@@ -7,7 +7,9 @@ import {
 
 describe("portal render contract", () => {
   it("normalizes humanDocument.renderData into the shared renderer subject", () => {
-    const credential = { issuer: { id: "did:web:trustcare.network:hospital:tcc" } };
+    const credential = {
+      issuer: { id: "did:web:trustcare.network:hospital:tcc" },
+    };
     const subject = {
       id: "Patient/demo-patient-001",
       document: { id: "legacy-document-id", status: "expired" },
@@ -35,10 +37,19 @@ describe("portal render contract", () => {
 
     const normalized = normalizePortalRenderSubject(subject, credential);
 
-    expect(normalized.hospital).toMatchObject({ code: "tcc", nameEn: "TrustCare Central Hospital" });
+    expect(normalized.hospital).toMatchObject({
+      code: "tcc",
+      nameEn: "TrustCare Central Hospital",
+    });
     expect(normalized.patient).toMatchObject({ hn: "HN-TCC-00100001" });
-    expect(normalized.document).toMatchObject({ id: "portal-document-id", status: "active" });
-    expect(normalized.issuer).toMatchObject({ id: "did:web:trustcare.network:hospital:tcc", code: "tcc" });
+    expect(normalized.document).toMatchObject({
+      id: "portal-document-id",
+      status: "active",
+    });
+    expect(normalized.issuer).toMatchObject({
+      id: "did:web:trustcare.network:hospital:tcc",
+      code: "tcc",
+    });
   });
 
   it("uses renderData document payload before legacy subject aliases", () => {
@@ -64,7 +75,9 @@ describe("portal render contract", () => {
         packageName: "ผ่าตัดเปลี่ยนข้อเข่า",
       },
     });
-    expect(mergePortalRenderPayload(subject, ["treatmentQuotation", "quotation"])).toMatchObject({
+    expect(
+      mergePortalRenderPayload(subject, ["treatmentQuotation", "quotation"]),
+    ).toMatchObject({
       packageName: "ผ่าตัดเปลี่ยนข้อเข่า",
       estimatedTotal: 450000,
       document: { status: "active" },

@@ -8,16 +8,10 @@ import {
 import type { ReadinessContext, ReadinessResult, WalletCard } from "./models";
 
 export type ShareDraftSource =
-  | "prepare"
-  | "manual"
-  | "single_document"
-  | "oid4vp_request";
+  "prepare" | "manual" | "single_document" | "oid4vp_request";
 
 export type ShareDraftDocumentStatus =
-  | "ready"
-  | "missing"
-  | "unsupported"
-  | "locked";
+  "ready" | "missing" | "unsupported" | "locked";
 
 export type ShareDraftDocumentTrust =
   | "issuer_signed"
@@ -117,19 +111,25 @@ export function createShareDraftFromPrepare(
   return createShareDraft({ ...input, source: "prepare" });
 }
 
-export function selectedReadyDocuments(draft: ShareDraft): ShareDraftDocument[] {
+export function selectedReadyDocuments(
+  draft: ShareDraft,
+): ShareDraftDocument[] {
   return draft.documents.filter(
     (document) => document.selected && document.status === "ready",
   );
 }
 
-export function missingRequiredDocuments(draft: ShareDraft): ShareDraftDocument[] {
+export function missingRequiredDocuments(
+  draft: ShareDraft,
+): ShareDraftDocument[] {
   return draft.documents.filter(
     (document) => document.required && document.status === "missing",
   );
 }
 
-export function optionalMissingDocuments(draft: ShareDraft): ShareDraftDocument[] {
+export function optionalMissingDocuments(
+  draft: ShareDraft,
+): ShareDraftDocument[] {
   return draft.documents.filter(
     (document) => !document.required && document.status === "missing",
   );

@@ -4,7 +4,7 @@ const refreshTokenKey = "trustcare_wallet_refresh_token";
 
 export async function saveRefreshToken(token: string) {
   await SecureStore.setItemAsync(refreshTokenKey, token, {
-    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
   });
 }
 
@@ -15,4 +15,3 @@ export async function loadRefreshToken() {
 export async function clearRefreshToken() {
   await SecureStore.deleteItemAsync(refreshTokenKey);
 }
-

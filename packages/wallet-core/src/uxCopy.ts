@@ -60,7 +60,8 @@ const trustStateCopy: Record<TrustUiState, UxCopy> = {
   },
   unknown_format: {
     label: "ไม่รู้จักรูปแบบ",
-    description: "Wallet ยังอ่าน payload นี้ไม่ได้ ให้ตรวจสอบไฟล์หรือ QR อีกครั้ง",
+    description:
+      "Wallet ยังอ่าน payload นี้ไม่ได้ ให้ตรวจสอบไฟล์หรือ QR อีกครั้ง",
     tone: "red",
   },
   trustcare_certified: {
@@ -108,12 +109,14 @@ const sourceCopy: Record<DocumentRequestSource, UxCopy> = {
 const formatCopy: Record<DocumentRequestFormat, UxCopy> = {
   vc_vp: {
     label: "เอกสารรับรองหรือ VP",
-    description: "เหมาะกับเอกสารเดี่ยวหรือชุดเล็กที่ต้องเปิดเผยเฉพาะข้อมูลจำเป็น",
+    description:
+      "เหมาะกับเอกสารเดี่ยวหรือชุดเล็กที่ต้องเปิดเผยเฉพาะข้อมูลจำเป็น",
     tone: "green",
   },
   oid4vci_offer: {
     label: "รับ credential จากผู้ออกเอกสาร",
-    description: "เหมาะเมื่อ issuer ส่ง offer เพื่อให้ Wallet รับ VC ที่ลงนามแล้ว",
+    description:
+      "เหมาะเมื่อ issuer ส่ง offer เพื่อให้ Wallet รับ VC ที่ลงนามแล้ว",
     tone: "green",
   },
   fhir_document_reference: {
@@ -138,7 +141,8 @@ const formatCopy: Record<DocumentRequestFormat, UxCopy> = {
   },
   pdf_image: {
     label: "PDF หรือรูปภาพ",
-    description: "ใช้เป็นหลักฐานนำเข้า ยังไม่ถือเป็นเอกสารรับรองจนกว่า issuer ลงนาม",
+    description:
+      "ใช้เป็นหลักฐานนำเข้า ยังไม่ถือเป็นเอกสารรับรองจนกว่า issuer ลงนาม",
     tone: "yellow",
   },
 };
@@ -184,17 +188,20 @@ const packageCopy: Record<SharePackageMode, UxCopy> = {
   },
   PurposeVP: {
     label: "VP ตามวัตถุประสงค์",
-    description: "เหมาะกับ OPD หรือห้องยาที่ใช้เอกสารไม่มากและต้องเลือกเปิดเผยข้อมูล",
+    description:
+      "เหมาะกับ OPD หรือห้องยาที่ใช้เอกสารไม่มากและต้องเลือกเปิดเผยข้อมูล",
     tone: "green",
   },
   StandardSHL: {
     label: "SHL มาตรฐาน",
-    description: "เหมาะกับข้อมูลขนาดใหญ่หรือข้อมูลต่อเนื่อง และยังเข้ากับระบบภายนอก",
+    description:
+      "เหมาะกับข้อมูลขนาดใหญ่หรือข้อมูลต่อเนื่อง และยังเข้ากับระบบภายนอก",
     tone: "blue",
   },
   CertifiedSHLManifestPackage: {
     label: "SHL + Manifest VP",
-    description: "เหมาะกับการส่งต่อ เคลม หรือข้ามเครือข่ายที่ต้องตรวจ trust layer",
+    description:
+      "เหมาะกับการส่งต่อ เคลม หรือข้ามเครือข่ายที่ต้องตรวจ trust layer",
     tone: "green",
   },
 };
@@ -339,7 +346,9 @@ export function getDocumentFormatCopy(format: DocumentRequestFormat): UxCopy {
   return formatCopy[format];
 }
 
-export function getReturnChannelCopy(channel: DocumentRequestReturnChannel): UxCopy {
+export function getReturnChannelCopy(
+  channel: DocumentRequestReturnChannel,
+): UxCopy {
   return returnChannelCopy[channel];
 }
 
@@ -347,7 +356,9 @@ export function getSharePackageCopy(mode: SharePackageMode): UxCopy {
   return packageCopy[mode];
 }
 
-export function getCanonicalDocumentTypeCopy(type: CanonicalDocumentType): UxCopy {
+export function getCanonicalDocumentTypeCopy(
+  type: CanonicalDocumentType,
+): UxCopy {
   return documentTypeCopy[type];
 }
 

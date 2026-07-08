@@ -1,6 +1,9 @@
 import { StyleSheet, Text, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
-import type { PortablePresentationEnvelope, WalletCard } from "@trustcare/wallet-core";
+import type {
+  PortablePresentationEnvelope,
+  WalletCard,
+} from "@trustcare/wallet-core";
 
 export function CredentialDocumentNative({
   card,
@@ -11,9 +14,14 @@ export function CredentialDocumentNative({
   envelope: PortablePresentationEnvelope;
   qrValue?: string;
 }) {
-  const identitySection = envelope.sections.find((section) => section.kind === "identity");
+  const identitySection = envelope.sections.find(
+    (section) => section.kind === "identity",
+  );
   const bodySections = envelope.sections
-    .filter((section) => section.kind !== "technical" && section.key !== identitySection?.key)
+    .filter(
+      (section) =>
+        section.kind !== "technical" && section.key !== identitySection?.key,
+    )
     .slice(0, 4);
 
   return (
@@ -24,7 +32,9 @@ export function CredentialDocumentNative({
         </View>
         <View style={styles.headerText}>
           <Text style={styles.hospital} numberOfLines={2}>
-            {envelope.issuer?.name ?? card.issuerHospitalName ?? "TrustCare Issuer"}
+            {envelope.issuer?.name ??
+              card.issuerHospitalName ??
+              "TrustCare Issuer"}
           </Text>
           <Text style={styles.title} numberOfLines={2}>
             {envelope.display.title}
@@ -35,7 +45,9 @@ export function CredentialDocumentNative({
             </Text>
           ) : null}
         </View>
-        <Text style={[styles.statusPill, statusPillStyle(envelope.trust.badge)]}>
+        <Text
+          style={[styles.statusPill, statusPillStyle(envelope.trust.badge)]}
+        >
           {trustLabel(envelope.trust.status)}
         </Text>
       </View>
@@ -43,7 +55,9 @@ export function CredentialDocumentNative({
       <View style={styles.body}>
         <Text style={styles.ownerLabel}>ผู้ถือเอกสาร</Text>
         <Text style={styles.name}>{envelope.subject.displayName ?? "-"}</Text>
-        {identitySection ? <FieldGrid fields={identitySection.fields.slice(0, 4)} /> : null}
+        {identitySection ? (
+          <FieldGrid fields={identitySection.fields.slice(0, 4)} />
+        ) : null}
       </View>
 
       {bodySections.map((section) => (
@@ -60,13 +74,16 @@ export function CredentialDocumentNative({
             {String(card.credentialId)}
           </Text>
         </View>
-        <View style={styles.qr}>{qrValue ? <QRCode value={qrValue} size={76} /> : <Text>QR</Text>}</View>
+        <View style={styles.qr}>
+          {qrValue ? <QRCode value={qrValue} size={76} /> : <Text>QR</Text>}
+        </View>
       </View>
 
       <View style={styles.footer}>
         <Text style={styles.footerText}>
           {envelope.trust.checklist.filter((item) => item.ok).length}/
-          {envelope.trust.checklist.length} trust checks · {envelope.provenance.sourceSystem ?? "wallet"}
+          {envelope.trust.checklist.length} trust checks ·{" "}
+          {envelope.provenance.sourceSystem ?? "wallet"}
         </Text>
       </View>
     </View>
@@ -97,15 +114,24 @@ function FieldGrid({
 
 function displayValue(value: unknown): string {
   if (value === null || value === undefined || value === "") return "-";
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
     return String(value);
   }
   if (Array.isArray(value)) return value.map(displayValue).join(", ");
   return JSON.stringify(value);
 }
 
-function trustLabel(status: PortablePresentationEnvelope["trust"]["status"]): string {
-  const labels: Record<PortablePresentationEnvelope["trust"]["status"], string> = {
+function trustLabel(
+  status: PortablePresentationEnvelope["trust"]["status"],
+): string {
+  const labels: Record<
+    PortablePresentationEnvelope["trust"]["status"],
+    string
+  > = {
     issuer_signed: "ลงนามแล้ว",
     transport_valid: "ขนส่งถูกต้อง",
     trustcare_pending: "รอรับรอง",
@@ -118,7 +144,9 @@ function trustLabel(status: PortablePresentationEnvelope["trust"]["status"]): st
   return labels[status];
 }
 
-function statusPillStyle(badge: PortablePresentationEnvelope["trust"]["badge"]) {
+function statusPillStyle(
+  badge: PortablePresentationEnvelope["trust"]["badge"],
+) {
   if (badge === "green") return styles.statusPillGreen;
   if (badge === "yellow") return styles.statusPillYellow;
   if (badge === "red") return styles.statusPillRed;

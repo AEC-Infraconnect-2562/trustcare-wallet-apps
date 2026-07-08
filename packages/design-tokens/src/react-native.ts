@@ -10,6 +10,5 @@ export const nativeTheme = {
   typography,
   trustBadge,
   gradients: walletCardGradients,
-  gradientForCardType
+  gradientForCardType,
 } as const;
-

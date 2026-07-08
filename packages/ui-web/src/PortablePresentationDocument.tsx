@@ -1,5 +1,14 @@
-import { BadgeCheck, FileCheck2, Link2, ShieldCheck, TriangleAlert } from "lucide-react";
-import { trustBadgeTone, type PortablePresentationEnvelope } from "@trustcare/wallet-core";
+import {
+  BadgeCheck,
+  FileCheck2,
+  Link2,
+  ShieldCheck,
+  TriangleAlert,
+} from "lucide-react";
+import {
+  trustBadgeTone,
+  type PortablePresentationEnvelope,
+} from "@trustcare/wallet-core";
 import { Badge } from "./primitives";
 
 export function PortablePresentationDocument({
@@ -10,24 +19,43 @@ export function PortablePresentationDocument({
   compact?: boolean;
 }) {
   return (
-    <article className={`portable-envelope ${compact ? "portable-envelope-compact" : ""}`}>
+    <article
+      className={`portable-envelope ${compact ? "portable-envelope-compact" : ""}`}
+    >
       <header className="portable-envelope-header">
         <span className="portable-envelope-icon">
-          {envelope.trust.badge === "red" ? <TriangleAlert size={18} /> : <ShieldCheck size={18} />}
+          {envelope.trust.badge === "red" ? (
+            <TriangleAlert size={18} />
+          ) : (
+            <ShieldCheck size={18} />
+          )}
         </span>
         <span>
           <small>{modeLabel(envelope.mode)}</small>
           <h3>{envelope.display.title}</h3>
           {envelope.display.titleEn ? <p>{envelope.display.titleEn}</p> : null}
         </span>
-        <Badge tone={trustBadgeTone(envelope.trust.badge)}>{trustStatusLabel(envelope.trust.status)}</Badge>
+        <Badge tone={trustBadgeTone(envelope.trust.badge)}>
+          {trustStatusLabel(envelope.trust.status)}
+        </Badge>
       </header>
 
       <section className="portable-envelope-grid">
-        <InfoBlock label="เจ้าของเอกสาร" value={envelope.subject.displayName ?? "-"} />
-        <InfoBlock label="ผู้ออกเอกสาร" value={envelope.issuer?.name ?? envelope.issuer?.did ?? "-"} />
+        <InfoBlock
+          label="เจ้าของเอกสาร"
+          value={envelope.subject.displayName ?? "-"}
+        />
+        <InfoBlock
+          label="ผู้ออกเอกสาร"
+          value={envelope.issuer?.name ?? envelope.issuer?.did ?? "-"}
+        />
         <InfoBlock label="ผู้ถือกระเป๋า" value={envelope.holder?.did ?? "-"} />
-        <InfoBlock label="หมดอายุ" value={formatDateTime(envelope.policy.expiresAt ?? envelope.qr?.expiresAt)} />
+        <InfoBlock
+          label="หมดอายุ"
+          value={formatDateTime(
+            envelope.policy.expiresAt ?? envelope.qr?.expiresAt,
+          )}
+        />
       </section>
 
       {envelope.sections
@@ -79,7 +107,9 @@ export function PortablePresentationDocument({
               {envelope.trust.checklist.map((item) => (
                 <li key={item.key} data-ok={item.ok ? "true" : "false"}>
                   <span>{item.label}</span>
-                  <strong>{item.status ?? (item.ok ? "present" : "missing")}</strong>
+                  <strong>
+                    {item.status ?? (item.ok ? "present" : "missing")}
+                  </strong>
                 </li>
               ))}
             </ul>
@@ -120,8 +150,13 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
   );
 }
 
-function trustStatusLabel(status: PortablePresentationEnvelope["trust"]["status"]): string {
-  const labels: Record<PortablePresentationEnvelope["trust"]["status"], string> = {
+function trustStatusLabel(
+  status: PortablePresentationEnvelope["trust"]["status"],
+): string {
+  const labels: Record<
+    PortablePresentationEnvelope["trust"]["status"],
+    string
+  > = {
     issuer_signed: "ลงนามแล้ว",
     transport_valid: "ขนส่งถูกต้อง",
     trustcare_pending: "รอรับรอง",
@@ -147,7 +182,11 @@ function modeLabel(mode: PortablePresentationEnvelope["mode"]): string {
 
 function displayValue(value: unknown): string {
   if (value === null || value === undefined || value === "") return "-";
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
     return String(value);
   }
   if (Array.isArray(value)) return value.map(displayValue).join(", ");
@@ -158,5 +197,8 @@ function formatDateTime(value?: string): string {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+  return date.toLocaleString("th-TH", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }

@@ -45,7 +45,8 @@ export function createShareResult(
     return {
       state: "draft",
       label: "พร้อมตรวจทานก่อนแชร์",
-      description: "ตรวจผู้รับ เอกสาร เงื่อนไขการเปิดอ่าน และข้อมูลที่จะเปิดเผย",
+      description:
+        "ตรวจผู้รับ เอกสาร เงื่อนไขการเปิดอ่าน และข้อมูลที่จะเปิดเผย",
       warnings: validation.warnings.map((issue) => issue.message),
     };
   }
@@ -65,10 +66,13 @@ export function createShareResult(
   return {
     state: "ready",
     label: "พร้อมให้สแกน",
-    description: "QR นี้ resolve ได้และผ่านการตรวจรูปแบบเบื้องต้นใน Wallet แล้ว",
+    description:
+      "QR นี้ resolve ได้และผ่านการตรวจรูปแบบเบื้องต้นใน Wallet แล้ว",
     qrPayload: publication?.qrPayload,
     artifactUrl: publication?.artifactUrl,
-    warnings: publication?.warnings ?? validation.warnings.map((issue) => issue.message),
+    warnings:
+      publication?.warnings ??
+      validation.warnings.map((issue) => issue.message),
     packageMode: packageResult.mode,
   };
 }

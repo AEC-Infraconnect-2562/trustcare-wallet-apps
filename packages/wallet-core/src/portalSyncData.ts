@@ -21,7 +21,7 @@ export const trustCarePortalPersonImages = {
   radiologist: portalStorageAsset("doctor_kriangkrai_b6bcdefb.jpg"),
   medTech: portalStorageAsset("doctor_prasit_2ed84c26.jpg"),
   patientMale: portalStorageAsset("patient_somsak_a2e00e97.jpg"),
-  patientFemale: portalStorageAsset("patient_malee_74d2ef04.jpg")
+  patientFemale: portalStorageAsset("patient_malee_74d2ef04.jpg"),
 } as const;
 
 export type PortalSyncedUser = {
@@ -46,7 +46,7 @@ export const portalSyncedUsers: Record<string, PortalSyncedUser> = {
     hospitalId: 4,
     avatarStoragePath: "/manus-storage/patient_somsak_a2e00e97.jpg",
     avatarUrl: trustCarePortalPersonImages.demoPatient001,
-    updatedAt: "2026-07-06T09:23:34.000Z"
+    updatedAt: "2026-07-06T09:23:34.000Z",
   },
   "demo-patient-002": {
     openId: "demo-patient-002",
@@ -57,7 +57,7 @@ export const portalSyncedUsers: Record<string, PortalSyncedUser> = {
     hospitalId: 4,
     avatarStoragePath: "/manus-storage/patient_malee_74d2ef04.jpg",
     avatarUrl: trustCarePortalPersonImages.demoPatient002,
-    updatedAt: "2026-07-06T07:54:03.000Z"
+    updatedAt: "2026-07-06T07:54:03.000Z",
   },
   "demo-patient-003": {
     openId: "demo-patient-003",
@@ -68,7 +68,7 @@ export const portalSyncedUsers: Record<string, PortalSyncedUser> = {
     hospitalId: 8,
     avatarStoragePath: "/manus-storage/patient_john_williams_b4e9e7f3.jpg",
     avatarUrl: trustCarePortalPersonImages.demoPatient003,
-    updatedAt: "2026-07-06T09:48:28.000Z"
+    updatedAt: "2026-07-06T09:48:28.000Z",
   },
   "demo-hospadmin-001": {
     openId: "demo-hospadmin-001",
@@ -79,34 +79,37 @@ export const portalSyncedUsers: Record<string, PortalSyncedUser> = {
     hospitalId: 4,
     avatarStoragePath: "/manus-storage/hospadmin_wipa_aeeee791.jpg",
     avatarUrl: trustCarePortalPersonImages.demoHospadmin001,
-    updatedAt: "2026-07-06T07:52:37.000Z"
-  }
+    updatedAt: "2026-07-06T07:52:37.000Z",
+  },
 };
 
 export type PortalIssuerCode = "TCC" | "TCP" | "TCM";
 
-export const portalIssuerRegistry: Record<PortalIssuerCode, {
-  code: PortalIssuerCode;
-  nameTh: string;
-  nameEn: string;
-  did: string;
-}> = {
+export const portalIssuerRegistry: Record<
+  PortalIssuerCode,
+  {
+    code: PortalIssuerCode;
+    nameTh: string;
+    nameEn: string;
+    did: string;
+  }
+> = {
   TCC: {
     code: "TCC",
     nameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
     nameEn: "TrustCare Central Hospital",
-    did: "did:web:trustcare.network:hospital:tcc"
+    did: "did:web:trustcare.network:hospital:tcc",
   },
   TCP: {
     code: "TCP",
     nameTh: "โรงพยาบาลทรัสต์แคร์ ภูเก็ต อินเตอร์เนชันแนล",
     nameEn: "TrustCare Phuket International Hospital",
-    did: "did:web:trustcare.network:hospital:tcp"
+    did: "did:web:trustcare.network:hospital:tcp",
   },
   TCM: {
     code: "TCM",
     nameTh: "โรงพยาบาลทรัสต์แคร์ เชียงใหม่ ครอสบอร์เดอร์",
     nameEn: "TrustCare Chiang Mai Cross-Border Hospital",
-    did: "did:web:trustcare.network:hospital:tcm"
-  }
+    did: "did:web:trustcare.network:hospital:tcm",
+  },
 };

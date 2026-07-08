@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { translate, type Language } from "./index";
 
 type LanguageContextValue = {
@@ -10,7 +18,7 @@ type LanguageContextValue = {
 const LanguageContext = createContext<LanguageContextValue>({
   lang: "th",
   setLang: () => undefined,
-  t: key => key
+  t: (key) => key,
 });
 
 const storageKey = "trustcare_language";
@@ -31,11 +39,17 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = lang;
   }, [lang]);
 
-  const value = useMemo(() => ({ lang, setLang, t: (key: string) => translate(lang, key) }), [lang, setLang]);
-  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
+  const value = useMemo(
+    () => ({ lang, setLang, t: (key: string) => translate(lang, key) }),
+    [lang, setLang],
+  );
+  return (
+    <LanguageContext.Provider value={value}>
+      {children}
+    </LanguageContext.Provider>
+  );
 }
 
 export function useLanguage() {
   return useContext(LanguageContext);
 }
-
