@@ -113,7 +113,7 @@ runLiveGatewayTest("live share gateway QR resolution", () => {
     expect(certifiedVerification.protocol).toBe("shl");
     expect(certifiedVerification.trustLevel).toBe("green");
     expect(certifiedVerification.verified).toBe(true);
-  });
+  }, 60_000);
 });
 
 function expectVpPackage(
