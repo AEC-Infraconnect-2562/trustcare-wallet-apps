@@ -4692,7 +4692,7 @@ export function readScanPayloadFromLocation(): string {
 }
 
 export function scanPayloadFromHash(hash: string): string {
-  const value = decodeURIComponent(hash.replace(/^#/, ""));
+  const value = hash.replace(/^#/, "");
   if (!value) return "";
   if (value.startsWith("scan=") || value.startsWith("?scan=")) {
     const normalized = value.startsWith("?") ? value.slice(1) : value;
