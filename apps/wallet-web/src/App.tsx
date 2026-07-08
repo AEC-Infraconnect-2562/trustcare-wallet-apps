@@ -170,6 +170,7 @@ const isStaticStandaloneRuntime =
 
 const walletSessionKey = "trustcare-wallet-active-user";
 const defaultLoginUserId = "demo-patient-001";
+const walletRuntimeRelease = "w3c-vc-jwt-railway-gateway";
 
 export default function App() {
   const { lang, setLang, t } = useLanguage();
@@ -1024,7 +1025,7 @@ export default function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" data-release={walletRuntimeRelease}>
       <header className="app-top-shell">
         <div className="brand-block">
           <div className="brand-mark">TC</div>
