@@ -1,14 +1,15 @@
-import { useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { Shield, Trash2 } from "lucide-react-native";
+import { useNativeLanguage } from "@trustcare/i18n/src/provider.native";
 import { useActiveWalletUser } from "../hooks/useActiveWalletUser";
+import { useMobileSecuritySettings } from "../hooks/useMobileSecuritySettings";
 import { clearRefreshToken } from "../storage/secureSession";
 import { clearOfflineWallet } from "../storage/offlineWallet";
 
 export function SettingsScreen() {
   const { user, users, setActiveUserId, resetActiveUser } = useActiveWalletUser();
-  const [biometric, setBiometric] = useState(true);
-  const [capture, setCapture] = useState(true);
+  const { lang, setLang } = useNativeLanguage();
+  const security = useMobileSecuritySettings();
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <Text style={styles.title}>ตั้งค่า</Text>
@@ -33,11 +34,23 @@ export function SettingsScreen() {
       </View>
       <View style={styles.row}>
         <View style={styles.copy}><Text style={styles.name}>Biometric gate</Text><Text style={styles.desc}>ยืนยันตัวตนก่อนแสดง QR และรายละเอียดสำคัญ</Text></View>
-        <Switch value={biometric} onValueChange={setBiometric} />
+        <Switch value={security.biometricEnabled} onValueChange={(enabled) => void security.setBiometricEnabled(enabled)} />
       </View>
       <View style={styles.row}>
         <View style={styles.copy}><Text style={styles.name}>ป้องกันการบันทึกหน้าจอ</Text><Text style={styles.desc}>ลดความเสี่ยงจาก screenshot บนหน้าข้อมูลสำคัญ</Text></View>
-        <Switch value={capture} onValueChange={setCapture} />
+        <Switch value={security.screenCaptureProtectionEnabled} onValueChange={(enabled) => void security.setScreenCaptureProtectionEnabled(enabled)} />
+      </View>
+      <View style={styles.row}>
+        <View style={styles.copy}><Text style={styles.name}>ภาษา</Text><Text style={styles.desc}>สลับภาษา UI ระหว่างไทยและอังกฤษสำหรับหน้าที่ใช้ i18n</Text></View>
+        <Pressable style={styles.segmentButton} onPress={() => setLang(lang === "th" ? "en" : "th")}>
+          <Text style={styles.segmentText}>{lang.toUpperCase()}</Text>
+        </Pressable>
+      </View>
+      <View style={styles.row}>
+        <View style={styles.copy}><Text style={styles.name}>ธีม</Text><Text style={styles.desc}>บันทึกโหมดธีมและใช้กับ navigation surface ของ mobile wallet</Text></View>
+        <Pressable style={styles.segmentButton} onPress={() => void security.setTheme(security.theme === "light" ? "dark" : "light")}>
+          <Text style={styles.segmentText}>{security.theme === "light" ? "LIGHT" : "DARK"}</Text>
+        </Pressable>
       </View>
       <Pressable
         style={styles.danger}
@@ -77,6 +90,8 @@ const styles = StyleSheet.create({
   copy: { flex: 1 },
   name: { fontSize: 15, fontWeight: "700", color: "#111827" },
   desc: { color: "#62718a", marginTop: 4, flex: 1, lineHeight: 20 },
+  segmentButton: { minWidth: 76, minHeight: 42, borderRadius: 21, backgroundColor: "#eef3ff", alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
+  segmentText: { color: "#4f67f2", fontWeight: "800" },
   danger: { borderRadius: 12, backgroundColor: "#fee2e2", padding: 16, flexDirection: "row", alignItems: "center", gap: 12 },
   dangerText: { color: "#991b1b", fontWeight: "700" },
   note: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16 }

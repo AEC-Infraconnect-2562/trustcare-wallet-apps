@@ -1,12 +1,13 @@
 import * as LocalAuthentication from "expo-local-authentication";
 import { useCallback, useState } from "react";
+import { useMobileSecuritySettings } from "./useMobileSecuritySettings";
 
 export function useBiometricGate() {
-  const [enabled, setEnabled] = useState(true);
+  const { biometricEnabled, setBiometricEnabled } = useMobileSecuritySettings();
   const [lastError, setLastError] = useState<string | null>(null);
 
   const authenticate = useCallback(async () => {
-    if (!enabled) return true;
+    if (!biometricEnabled) return true;
     const hasHardware = await LocalAuthentication.hasHardwareAsync();
     const enrolled = await LocalAuthentication.isEnrolledAsync();
     if (!hasHardware || !enrolled) return true;
@@ -21,8 +22,7 @@ export function useBiometricGate() {
     }
     setLastError(null);
     return true;
-  }, [enabled]);
+  }, [biometricEnabled]);
 
-  return { enabled, setEnabled, authenticate, lastError };
+  return { enabled: biometricEnabled, setEnabled: setBiometricEnabled, authenticate, lastError };
 }
-

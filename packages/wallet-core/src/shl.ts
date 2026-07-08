@@ -1,5 +1,6 @@
 import type { ShlPackage, WalletExportResult } from "./models";
 import { resolveDemoShlManifestFromUrl } from "./demoResolvers";
+import type { TrustCareTone } from "./statusTone";
 
 export type ParsedShlLink = {
   kind: "shl";
@@ -24,6 +25,18 @@ export type ShlManifestFetchResult = {
   errors: string[];
 };
 
+export type ShlAccessPolicyInput = Pick<
+  ShlPackage,
+  "status" | "expiresAt" | "currentAccessCount" | "maxAccessCount" | "passcodeRequired"
+>;
+
+export type ShlAccessPolicyEvaluation = {
+  allowed: boolean;
+  tone: Exclude<TrustCareTone, "blue">;
+  warnings: string[];
+  errors: string[];
+};
+
 export function shlAccessSummary(shl: Pick<ShlPackage, "passcodeRequired" | "expiresAt" | "currentAccessCount" | "maxAccessCount" | "status">): string[] {
   const lines = [
     shl.passcodeRequired ? "ต้องใช้ passcode" : "ไม่ต้องใช้ passcode",
@@ -35,9 +48,40 @@ export function shlAccessSummary(shl: Pick<ShlPackage, "passcodeRequired" | "exp
 }
 
 export function isShlActive(shl: Pick<ShlPackage, "status" | "expiresAt">, now = new Date()): boolean {
-  if (shl.status !== "active") return false;
-  if (!shl.expiresAt) return true;
-  return new Date(shl.expiresAt).getTime() > now.getTime();
+  return evaluateShlAccessPolicy(shl, now).allowed;
+}
+
+export function evaluateShlAccessPolicy(input: Partial<ShlAccessPolicyInput>, now = new Date()): ShlAccessPolicyEvaluation {
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  const status = String(input.status ?? "active").toLowerCase();
+  if (!["active", "ready", "valid"].includes(status)) {
+    errors.push(`SHL status is ${input.status ?? "unknown"}.`);
+  }
+  if (input.expiresAt) {
+    const expiresAt = new Date(input.expiresAt).getTime();
+    if (Number.isFinite(expiresAt) && expiresAt <= now.getTime()) {
+      errors.push("SHL access policy has expired.");
+    }
+  } else {
+    warnings.push("SHL access policy has no explicit expiry.");
+  }
+  if (
+    typeof input.currentAccessCount === "number" &&
+    typeof input.maxAccessCount === "number" &&
+    input.currentAccessCount >= input.maxAccessCount
+  ) {
+    errors.push("SHL access count limit has been reached.");
+  }
+  if (input.passcodeRequired) {
+    warnings.push("SHL requires passcode delivery through a separate channel.");
+  }
+  return {
+    allowed: errors.length === 0,
+    tone: errors.length ? "red" : warnings.length ? "yellow" : "green",
+    warnings,
+    errors,
+  };
 }
 
 export function parseShlLink(raw: string): ParsedShlLink | null {
@@ -136,6 +180,20 @@ export async function fetchShlManifest(
       fileCount: 0,
       warnings: ["เก็บ SHL payload เดิมไว้แล้ว แต่ payload นี้ไม่มี manifest URL สำหรับอ่านรายการไฟล์."],
       errors: []
+    };
+  }
+  const policy = evaluateShlAccessPolicy({
+    status: "active",
+    expiresAt: shl.expiresAt,
+    passcodeRequired: shl.passcodeRequired,
+  });
+  if (!policy.allowed) {
+    return {
+      ok: false,
+      shl,
+      fileCount: 0,
+      warnings: policy.warnings,
+      errors: policy.errors,
     };
   }
   if (shl.passcodeRequired && !options.passcode) {

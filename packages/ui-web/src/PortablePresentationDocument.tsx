@@ -1,5 +1,5 @@
 import { BadgeCheck, FileCheck2, Link2, ShieldCheck, TriangleAlert } from "lucide-react";
-import type { PortablePresentationEnvelope } from "@trustcare/wallet-core";
+import { trustBadgeTone, type PortablePresentationEnvelope } from "@trustcare/wallet-core";
 import { Badge } from "./primitives";
 
 export function PortablePresentationDocument({
@@ -20,7 +20,7 @@ export function PortablePresentationDocument({
           <h3>{envelope.display.title}</h3>
           {envelope.display.titleEn ? <p>{envelope.display.titleEn}</p> : null}
         </span>
-        <Badge tone={badgeTone(envelope.trust.badge)}>{trustStatusLabel(envelope.trust.status)}</Badge>
+        <Badge tone={trustBadgeTone(envelope.trust.badge)}>{trustStatusLabel(envelope.trust.status)}</Badge>
       </header>
 
       <section className="portable-envelope-grid">
@@ -118,13 +118,6 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   );
-}
-
-function badgeTone(badge: PortablePresentationEnvelope["trust"]["badge"]) {
-  if (badge === "green") return "green";
-  if (badge === "red") return "red";
-  if (badge === "yellow") return "yellow";
-  return "neutral";
 }
 
 function trustStatusLabel(status: PortablePresentationEnvelope["trust"]["status"]): string {

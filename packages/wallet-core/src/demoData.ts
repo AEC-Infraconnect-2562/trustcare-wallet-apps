@@ -11,6 +11,7 @@ import {
   TRUSTCARE_PORTAL_WEB_ORIGIN,
   trustCarePortalPersonImages
 } from "./portalSyncData";
+import { canPresentCredential } from "./statusTone";
 
 export {
   completeCardsByCategory,
@@ -615,7 +616,7 @@ export function createDemoPresentation(card: WalletCard, selectedFields: string[
     verificationChecklist: [
       { key: "issuer", label: "Issuer DID", ok: Boolean(card.issuerDid), detail: card.issuerDid ?? "" },
       { key: "holder", label: "Holder DID", ok: Boolean(card.holderDid), detail: card.holderDid ?? "" },
-      { key: "status", label: "Credential active", ok: card.credentialStatus === "active" },
+      { key: "status", label: "Credential active", ok: canPresentCredential(card) },
       { key: "scope", label: "Wallet user scope", ok: Boolean((card as WalletCard & { ownerUserId?: string }).ownerUserId), detail: (card as WalletCard & { ownerUserId?: string }).ownerUserId ?? "" },
       { key: "consent", label: "Purpose-bound sharing", ok: true }
     ]

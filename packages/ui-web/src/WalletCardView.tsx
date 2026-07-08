@@ -1,6 +1,6 @@
 import { gradientForCardType } from "@trustcare/design-tokens";
 import type { PhotoCandidate, WalletCard } from "@trustcare/wallet-core";
-import { initialsFromName, labelForCredentialType, photoCandidatesForCard } from "@trustcare/wallet-core";
+import { canPresentCredential, credentialStatusLabel, initialsFromName, labelForCredentialType, photoCandidatesForCard } from "@trustcare/wallet-core";
 import { BadgeCheck, QrCode } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState } from "react";
@@ -9,7 +9,7 @@ const photoDocumentTypes = new Set(["patient_identity", "staff_identity", "trave
 
 export function WalletCardView({ card, onClick }: { card: WalletCard; onClick?: () => void }) {
   const [from, to] = gradientForCardType(card.cardType);
-  const disabled = card.credentialStatus !== "active";
+  const disabled = !canPresentCredential(card);
   const photoCandidates = photoDocumentTypes.has(card.cardType) ? photoCandidatesForCard(card) : [];
   const photoInitials = initialsFromName(card.displayNameEn ?? card.displayName ?? labelForCredentialType(card.cardType));
   return (
@@ -27,7 +27,7 @@ export function WalletCardView({ card, onClick }: { card: WalletCard; onClick?: 
             <BadgeCheck size={20} />
           )}
         </span>
-        <span className="wallet-card-status">active</span>
+        <span className="wallet-card-status">{credentialStatusLabel(card.credentialStatus)}</span>
       </span>
       <span className="wallet-card-body">
         <span className="wallet-card-issuer">{card.issuerHospitalName ?? "TrustCare Network"}</span>

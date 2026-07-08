@@ -7,6 +7,7 @@ import {
   type WalletDocumentRecord,
 } from "./canonicalDocuments";
 import { hashJson } from "./demoResolvers";
+import { canPresentCredential } from "./statusTone";
 
 export type MicroIpsPlusConsent = {
   consentId: string;
@@ -43,6 +44,13 @@ export type MicroIpsPlusPack = {
     required: boolean;
   }>;
   records: WalletDocumentRecord[];
+  standards: {
+    clinicalSummary: "HL7_IPS_R4";
+    documentIndex: "FHIR_DocumentReference_R4";
+    documentExchange: "IHE_MHD";
+    credentialExchange: "W3C_VC_VP";
+    systemOfRecord: false;
+  };
   evidence: Array<{
     recordId: string;
     documentReferenceId: string;
@@ -59,6 +67,7 @@ export type MicroIpsPlusPack = {
   provenance: {
     source: "trustcare-wallet";
     selectedBy: "minimum-necessary";
+    shareOnlyVia: "PurposeVP" | "StandardSHL" | "CertifiedSHLManifestPackage";
     packageTime: string;
     recordTimeRange?: { start?: string; end?: string };
   };
@@ -99,7 +108,7 @@ export function selectMinimumNecessaryRecords(
     if (!documentType) continue;
     if (!allowedTypes.has(documentType)) continue;
     if (isTrustArtifactDocumentType(documentType)) continue;
-    if (record.status !== "active") continue;
+    if (!canPresentCredential({ credentialStatus: record.status, expiresAt: record.expiresAt })) continue;
     const current = selectedByType.get(documentType);
     if (!current || compareRecordFreshness(record, current) > 0) {
       selectedByType.set(documentType, record);
@@ -154,8 +163,15 @@ export function buildMicroIpsPlusPack(
           recordIds: sectionRecords.map((record) => record.id),
           required: requirement.required,
         };
-      }),
+    }),
     records,
+    standards: {
+      clinicalSummary: "HL7_IPS_R4",
+      documentIndex: "FHIR_DocumentReference_R4",
+      documentExchange: "IHE_MHD",
+      credentialExchange: "W3C_VC_VP",
+      systemOfRecord: false,
+    },
     evidence: records.map((record) => ({
       recordId: record.id,
       documentReferenceId: record.documentReference.id,
@@ -167,6 +183,7 @@ export function buildMicroIpsPlusPack(
     provenance: {
       source: "trustcare-wallet",
       selectedBy: "minimum-necessary",
+      shareOnlyVia: records.length > 3 ? "CertifiedSHLManifestPackage" : "PurposeVP",
       packageTime: generatedAt,
       recordTimeRange: recordTimeRange(records),
     },
@@ -187,6 +204,10 @@ export function validateMicroIpsPlusPack(
   if (!pack.consent?.consentId) errors.push("consent.consentId is required.");
   if (!pack.consent?.purpose) errors.push("consent.purpose is required.");
   if (!pack.evidence.length) warnings.push("No DocumentReference evidence.");
+  if (pack.standards?.systemOfRecord !== false)
+    errors.push("Micro-IPS+ must not declare itself as a system of record.");
+  if (!pack.provenance?.shareOnlyVia)
+    errors.push("Micro-IPS+ must route sharing through VP or SHL packages.");
   if (pack.trust.unverifiedCount > 0)
     warnings.push("Some records are patient-provided and not trusted issuer signed.");
   if (pack.records.some((record) => isTrustArtifactDocumentType(record.documentType))) {

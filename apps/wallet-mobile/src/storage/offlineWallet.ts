@@ -76,6 +76,15 @@ export async function loadCards(ownerUserId?: string): Promise<WalletCard[]> {
   return rows.map(row => JSON.parse(row.payload) as WalletCard);
 }
 
+export async function loadLastCardSync(ownerUserId?: string): Promise<string | null> {
+  const database = await db();
+  await initOfflineWallet();
+  const row = ownerUserId
+    ? await database.getFirstAsync<{ synced_at: string }>("SELECT synced_at FROM wallet_cards WHERE owner_user_id = ? ORDER BY synced_at DESC LIMIT 1", ownerUserId)
+    : await database.getFirstAsync<{ synced_at: string }>("SELECT synced_at FROM wallet_cards ORDER BY synced_at DESC LIMIT 1");
+  return row?.synced_at ?? null;
+}
+
 export async function cacheQr(cardId: number, qrData: string, presentationId: string, expiresAt?: string, ownerUserId?: string) {
   const database = await db();
   await initOfflineWallet();
@@ -88,6 +97,29 @@ export async function cacheQr(cardId: number, qrData: string, presentationId: st
     expiresAt ?? null,
     new Date().toISOString()
   );
+}
+
+export async function loadCachedQr(cardId: number, ownerUserId?: string) {
+  const database = await db();
+  await initOfflineWallet();
+  const row = ownerUserId
+    ? await database.getFirstAsync<{ qr_data: string; presentation_id: string; expires_at?: string | null; generated_at: string }>(
+        "SELECT qr_data, presentation_id, expires_at, generated_at FROM qr_cache WHERE card_id = ? AND owner_user_id = ?",
+        cardId,
+        ownerUserId,
+      )
+    : await database.getFirstAsync<{ qr_data: string; presentation_id: string; expires_at?: string | null; generated_at: string }>(
+        "SELECT qr_data, presentation_id, expires_at, generated_at FROM qr_cache WHERE card_id = ?",
+        cardId,
+      );
+  if (!row) return null;
+  if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) return null;
+  return {
+    qrData: row.qr_data,
+    presentationId: row.presentation_id,
+    expiresAt: row.expires_at ?? undefined,
+    generatedAt: row.generated_at,
+  };
 }
 
 export async function cacheStoredObject(object: WalletStoredObject, ownerUserId?: string) {

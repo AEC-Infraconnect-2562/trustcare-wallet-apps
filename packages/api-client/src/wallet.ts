@@ -2,6 +2,7 @@ import {
   buildContractHubCatalog,
   buildPrepareWorkbench,
   buildServiceBundleEnvelope,
+  canPresentCredential,
   createDemoPresentation,
   createTrustCareShlGatewayPublication,
   getDemoCardsByCategory,
@@ -301,7 +302,7 @@ export async function present(
     const cards = await demoWalletCards(options);
     const card = cards.find((item) => item.id === input.cardId);
     if (!card) throw new Error("Wallet card not found");
-    if (card.credentialStatus !== "active")
+    if (!canPresentCredential(card))
       throw new Error("This wallet card is not active");
     const signedCredentialPresentation = createSignedCredentialPresentation(
       card,

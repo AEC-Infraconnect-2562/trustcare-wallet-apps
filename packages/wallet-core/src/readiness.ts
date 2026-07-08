@@ -5,6 +5,7 @@ import {
   normalizeDocumentType,
   readinessRequirementsFromProfiles
 } from "./canonicalDocuments";
+import { canPresentCredential } from "./statusTone";
 
 export const readinessContextLabels: Record<ReadinessContext, { th: string; en: string; purpose: string }> = Object.fromEntries(
   Object.entries(canonicalServiceProfiles).map(([context, profile]) => [
@@ -19,7 +20,7 @@ export const readinessRequirements: Record<ReadinessContext, ReadinessRequiremen
 
 export function assessLocalReadiness(cards: WalletCard[], context: ReadinessContext): ReadinessResult {
   const requirements = readinessRequirements[context];
-  const activeCards = cards.filter(card => String(card.credentialStatus ?? "active") === "active" && !isTrustArtifactDocumentType(card.cardType));
+  const activeCards = cards.filter(card => canPresentCredential(card) && !isTrustArtifactDocumentType(card.cardType));
   const ready: ReadinessResult["ready"] = [];
   const missing: ReadinessResult["missing"] = [];
   const selectedCardIds = new Set<number>();

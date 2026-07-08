@@ -5,6 +5,7 @@ import {
   parseTrustCareQr,
   fetchShlManifest,
   resolveDemoResolverPayload,
+  validateOid4vpBinding,
   verifyShlManifestTrust,
   type VerifierResult,
 } from "@trustcare/wallet-core";
@@ -75,19 +76,18 @@ export async function verifyQr(
   }
   const oid4vp = parseOid4vpRequest(qrData);
   if (oid4vp) {
+    const binding = validateOid4vpBinding(oid4vp);
     return {
-      verified: Boolean(oid4vp.nonce || oid4vp.requestUri),
-      trustLevel: oid4vp.nonce || oid4vp.requestUri ? "yellow" : "red",
+      verified: binding.ok,
+      trustLevel: binding.ok ? "yellow" : "red",
       protocol: "oid4vp",
       issuer: oid4vp.verifier ?? "OID4VP verifier",
       requestSummary: `Requests ${oid4vp.requestedCredentialTypes.join(", ") || `${oid4vp.descriptorCount} descriptor(s)`}`,
       warnings: [
         "OID4VP request parsed. Select matching credentials and generate VP only after user consent.",
+        ...binding.warnings,
       ],
-      errors:
-        oid4vp.nonce || oid4vp.requestUri
-          ? []
-          : ["OID4VP request has no nonce/request_uri; treat as untrusted."],
+      errors: binding.errors,
     };
   }
   const resolvedVp = await resolvePublishedVp(

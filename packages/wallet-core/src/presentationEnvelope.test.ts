@@ -87,6 +87,8 @@ describe("micro IPS plus pack", () => {
     expect(pack.generatedAt).toBeTruthy();
     expect(pack.expiresAt).toBeTruthy();
     expect(pack.evidence.length).toBeGreaterThan(0);
+    expect(pack.standards.systemOfRecord).toBe(false);
+    expect(pack.provenance.shareOnlyVia).toBeTruthy();
     expect(pack.provenance.recordTimeRange).toBeTruthy();
     expect(pack.records.some((record) => record.documentType === "shl_manifest")).toBe(false);
   });

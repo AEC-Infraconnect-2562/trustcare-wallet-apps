@@ -1,4 +1,5 @@
 import type { WalletCard } from "./models";
+import { canPresentCredential } from "./statusTone";
 
 export type Oid4vcCredentialOffer = {
   credential_issuer: string;
@@ -69,6 +70,15 @@ export type ParsedWalletProtocol =
   | ParsedCredentialOffer
   | ParsedPresentationRequest
   | { kind: "unknown"; raw: string };
+
+export type Oid4vpBindingValidation = {
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
+  verifier?: string;
+  nonce?: string;
+  responseMode?: string;
+};
 
 export function parseOid4vcCredentialOffer(raw: string): ParsedCredentialOffer | null {
   const value = raw.trim();
@@ -161,10 +171,10 @@ export function presentationRequestLabel(parsed: ParsedPresentationRequest): str
 
 export function matchCardsForOid4vp(cards: WalletCard[], parsed: ParsedPresentationRequest): WalletCard[] {
   const requested = new Set(parsed.requestedCredentialTypes.map(normalizeType));
-  if (!requested.size) return cards.filter(card => card.credentialStatus === "active");
+  if (!requested.size) return cards.filter(card => canPresentCredential(card));
   const requestedTypes = Array.from(requested);
   return cards.filter(card => {
-    if (card.credentialStatus !== "active") return false;
+    if (!canPresentCredential(card)) return false;
     const cardTypes = [card.cardType, card.credentialType, card.displayNameEn].filter(Boolean).map(value => normalizeType(String(value)));
     return cardTypes.some(type =>
       requestedTypes.some(requestedType =>
@@ -175,6 +185,28 @@ export function matchCardsForOid4vp(cards: WalletCard[], parsed: ParsedPresentat
       )
     );
   });
+}
+
+export function validateOid4vpBinding(parsed: ParsedPresentationRequest): Oid4vpBindingValidation {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (!parsed.nonce && !parsed.requestUri) {
+    errors.push("OID4VP request must include nonce or request_uri before a wallet creates a VP.");
+  }
+  if (!parsed.verifier) {
+    errors.push("OID4VP request must identify the verifier/client_id.");
+  }
+  if (!parsed.responseMode) {
+    warnings.push("OID4VP response_mode is missing; wallet should default only after user consent.");
+  }
+  return {
+    ok: errors.length === 0,
+    errors,
+    warnings,
+    verifier: parsed.verifier,
+    nonce: parsed.nonce,
+    responseMode: parsed.responseMode,
+  };
 }
 
 export function buildOid4vpConsentSummary(parsed: ParsedPresentationRequest, matches: WalletCard[]) {

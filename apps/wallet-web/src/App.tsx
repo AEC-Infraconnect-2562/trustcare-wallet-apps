@@ -77,6 +77,10 @@ import {
   assessLocalReadiness,
   createShlViewerUrl,
   createDocumentRequestDraft,
+  canPresentCredential,
+  credentialPresentationPolicy,
+  credentialStatusLabel,
+  credentialStatusTone,
   credentialTypeForDocument,
   documentRequestFormatLabel,
   documentRequestReturnChannelLabel,
@@ -98,6 +102,7 @@ import {
   shlAccessSummary,
   shareModePatientDescription,
   shareModePatientLabel,
+  storedObjectTone,
   validateShareDraft,
   walletObjectsFromCards,
   walletObjectsFromHistory,
@@ -1038,8 +1043,9 @@ export default function App() {
   const generateQr = useCallback(
     async (fields: string[] = []) => {
       if (!selectedCard) return;
-      if (selectedCard.credentialStatus !== "active") {
-        alert("Credential นี้ไม่ได้อยู่ในสถานะใช้งานได้");
+      const presentationPolicy = credentialPresentationPolicy(selectedCard);
+      if (!presentationPolicy.presentable) {
+        alert(presentationPolicy.reason ?? "Credential นี้ไม่ได้อยู่ในสถานะใช้งานได้");
         return;
       }
       if (webAuthn.isRegistered) {
@@ -2054,7 +2060,7 @@ function HomeView({
 }) {
   const [readinessExpanded, setReadinessExpanded] = useState(false);
   const activeCards = cards.filter(
-    (card) => card.credentialStatus === "active",
+    (card) => canPresentCredential(card),
   );
   const criticalCards = activeCards
     .filter((card) => card.pinned || criticalCardTypes.has(card.cardType))
@@ -2227,10 +2233,8 @@ function HomeView({
                   ? `หมดอายุ ${new Date(card.expiresAt).toLocaleDateString("th-TH")}`
                   : "ไม่มีวันหมดอายุ"}
               </small>
-              <Badge
-                tone={card.credentialStatus === "active" ? "green" : "red"}
-              >
-                {statusLabel(card.credentialStatus)}
+              <Badge tone={credentialStatusTone(card.credentialStatus)}>
+                {credentialStatusLabel(card.credentialStatus)}
               </Badge>
             </button>
           ))}
@@ -2461,7 +2465,7 @@ function DocumentsView({
     return cards.filter((card) => {
       if (category !== "all" && card.documentCategory !== category)
         return false;
-      if (status === "active" && card.credentialStatus !== "active")
+      if (status === "active" && !canPresentCredential(card))
         return false;
       if (status === "expired" && card.credentialStatus !== "expired")
         return false;
@@ -4059,7 +4063,7 @@ function ShareView({
             const stored = walletObjectsFromShl([shl])[0];
             return (
               <Surface key={shl.id} className="shl-card">
-                <Badge tone={shl.status === "active" ? "green" : "yellow"}>
+                <Badge tone={storedObjectTone(stored)}>
                   {statusLabel(shl.status)}
                 </Badge>
                 <h3>{shl.label}</h3>
@@ -4750,7 +4754,9 @@ function PrepareView({
                 <strong>{card.displayNameEn ?? card.displayName}</strong>
                 <small>{categoryLabel(card.documentCategory)}</small>
               </span>
-              <Badge tone="green">{statusLabel(card.credentialStatus)}</Badge>
+              <Badge tone={credentialStatusTone(card.credentialStatus)}>
+                {credentialStatusLabel(card.credentialStatus)}
+              </Badge>
             </div>
           ))}
           {!packetContents.length && (
@@ -6624,15 +6630,7 @@ function writeStoredExtras(value: Record<string, WalletStoredObject[]>) {
 function toneForObject(
   object: WalletStoredObject,
 ): "neutral" | "green" | "yellow" | "red" | "blue" {
-  if (
-    object.status === "active" ||
-    object.status === "verified" ||
-    object.status === "valid"
-  )
-    return "green";
-  if (object.status === "expired" || object.status === "invalid") return "red";
-  if (object.status === "pending") return "yellow";
-  return "neutral";
+  return storedObjectTone(object);
 }
 
 function downloadExport(result: WalletExportResult) {

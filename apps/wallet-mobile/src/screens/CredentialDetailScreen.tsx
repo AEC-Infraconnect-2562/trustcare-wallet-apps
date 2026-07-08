@@ -5,42 +5,55 @@ import { Download, Eye, QrCode, Shield, ArrowLeft } from "lucide-react-native";
 import * as ScreenCapture from "expo-screen-capture";
 import { walletApi } from "@trustcare/api-client";
 import {
+  canPresentCredential,
+  credentialStatusLabel,
+  extractSelectableFields,
   flattenCardsByCategory,
   getDemoCardsByCategory,
+  getDemoHistory,
   presentationEnvelopeFromPresentation,
   presentationEnvelopeFromWalletCard,
+  requireAtLeastOneField,
   type WalletPresentationResponse,
 } from "@trustcare/wallet-core";
 import { CredentialDocumentNative } from "../components/CredentialDocumentNative";
 import { useActiveWalletUser } from "../hooks/useActiveWalletUser";
 import { useBiometricGate } from "../hooks/useBiometricGate";
-import { cacheQr } from "../storage/offlineWallet";
+import { useMobileSecuritySettings } from "../hooks/useMobileSecuritySettings";
+import { cacheQr, loadCachedQr } from "../storage/offlineWallet";
 import { env } from "../env";
 
-type Tab = "details" | "trust" | "payload";
+type Tab = "details" | "trust" | "payload" | "history";
 
 export function CredentialDetailScreen() {
   const { user } = useActiveWalletUser();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [presentation, setPresentation] = useState<WalletPresentationResponse | null>(null);
   const [tab, setTab] = useState<Tab>("details");
+  const [selectiveOpen, setSelectiveOpen] = useState(false);
+  const [selectedFields, setSelectedFields] = useState<Record<string, boolean>>({});
+  const [message, setMessage] = useState("");
+  const security = useMobileSecuritySettings();
   const biometric = useBiometricGate();
   const apiOptions = useMemo(() => ({ url: env.apiUrl, demoMode: env.demoMode, demoOrigin: "https://trustcare.example.com", userId: user.id }), [user.id]);
   const card = useMemo(() => flattenCardsByCategory(getDemoCardsByCategory(user.id)).find(item => String(item.id) === String(id)), [id, user.id]);
+  const history = useMemo(() => getDemoHistory(user.id), [user.id]);
+  const selectableFields = useMemo(() => extractSelectableFields(card?.credentialData), [card?.credentialData]);
   const envelope = useMemo(() => {
     if (!card) return null;
     return presentation
       ? presentationEnvelopeFromPresentation(card, presentation)
       : presentationEnvelopeFromWalletCard(card);
   }, [card, presentation]);
+  const presentable = card ? canPresentCredential(card) : false;
 
   useEffect(() => {
-    if (!env.screenCaptureProtection) return undefined;
+    if (!env.screenCaptureProtection || !security.screenCaptureProtectionEnabled) return undefined;
     void ScreenCapture.preventScreenCaptureAsync();
     return () => {
       void ScreenCapture.allowScreenCaptureAsync();
     };
-  }, []);
+  }, [security.screenCaptureProtectionEnabled]);
 
   if (!card) {
     return <View style={styles.notFound}><Text style={styles.notFoundTitle}>ไม่พบเอกสารใน Wallet นี้</Text><Text style={styles.muted}>เอกสารนี้ไม่ได้อยู่ใน scope ของ {user.nameTh}</Text></View>;
@@ -49,10 +62,57 @@ export function CredentialDetailScreen() {
   const activeCard = card;
 
   async function generateQr(selectedFields: string[] = []) {
+    setMessage("");
+    if (!canPresentCredential(activeCard)) {
+      setMessage(`เอกสารนี้ยังแชร์ไม่ได้: ${credentialStatusLabel(activeCard.credentialStatus)}`);
+      return;
+    }
     if (!(await biometric.authenticate())) return;
-    const result = await walletApi.present(apiOptions, { cardId: activeCard.id, selectedFields, validMinutes: 10 });
-    setPresentation(result);
-    await cacheQr(activeCard.id, result.qrData, result.presentationId, result.expiresAt, user.id);
+    try {
+      const result = await walletApi.present(apiOptions, {
+        cardId: activeCard.id,
+        selectedFields,
+        audience: "TrustCare mobile verifier",
+        validMinutes: 10,
+      });
+      setPresentation(result);
+      await cacheQr(activeCard.id, result.qrData, result.presentationId, result.expiresAt, user.id);
+      setSelectiveOpen(false);
+      return;
+    } catch (error) {
+      if (selectedFields.length) {
+        setMessage(error instanceof Error ? error.message : "สร้าง selective VP ไม่สำเร็จ");
+        return;
+      }
+      const cached = await loadCachedQr(activeCard.id, user.id);
+      if (!cached) {
+        setMessage(error instanceof Error ? error.message : "สร้าง QR ไม่สำเร็จและไม่มี cache ที่ยังไม่หมดอายุ");
+        return;
+      }
+      setPresentation({
+        presentationId: cached.presentationId,
+        format: "jwt-vp",
+        mode: "offline_cached",
+        credentialCount: 1,
+        selectedFields: [],
+        expiresAt: cached.expiresAt ?? new Date().toISOString(),
+        qrData: cached.qrData,
+      });
+      setMessage("ใช้ QR จาก cache ที่ยังไม่หมดอายุ");
+    }
+  }
+
+  function confirmSelectiveDisclosure() {
+    try {
+      const fields = requireAtLeastOneField(
+        selectableFields
+          .filter(field => selectedFields[field.path] ?? field.recommended)
+          .map(field => field.path),
+      );
+      void generateQr(fields);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "กรุณาเลือกข้อมูล");
+    }
   }
 
   return (
@@ -60,10 +120,33 @@ export function CredentialDetailScreen() {
       <Pressable style={styles.back} onPress={() => router.back()}><ArrowLeft color="#4f67f2" /><Text style={styles.backText}>กลับ</Text></Pressable>
       {envelope ? <CredentialDocumentNative card={card} envelope={envelope} qrValue={presentation?.qrData} /> : null}
       <View style={styles.actions}>
-        <Pressable style={styles.actionPrimary} onPress={() => void generateQr()}><QrCode color="#fff" /><Text style={styles.actionPrimaryText}>QR Code</Text></Pressable>
-        <Pressable style={styles.actionPurple} onPress={() => void generateQr(["credentialSubject.patient.fullNameTh"])}><Eye color="#7c3aed" /><Text style={styles.actionPurpleText}>SD (ZKP)</Text></Pressable>
+        <Pressable disabled={!presentable} style={[styles.actionPrimary, !presentable && styles.disabledAction]} onPress={() => void generateQr()}><QrCode color="#fff" /><Text style={styles.actionPrimaryText}>QR Code</Text></Pressable>
+        <Pressable disabled={!presentable} style={[styles.actionPurple, !presentable && styles.disabledAction]} onPress={() => setSelectiveOpen(previous => !previous)}><Eye color="#7c3aed" /><Text style={styles.actionPurpleText}>SD (ZKP)</Text></Pressable>
         <Pressable style={styles.actionGreen}><Download color="#167347" /><Text style={styles.actionGreenText}>PDF</Text></Pressable>
       </View>
+      {!!message && <Text style={styles.message}>{message}</Text>}
+      {selectiveOpen && (
+        <View style={styles.selectorPanel}>
+          <Text style={styles.selectorTitle}>เลือกข้อมูลที่จะเปิดเผย</Text>
+          {selectableFields.map(field => (
+            <Pressable
+              key={field.path}
+              style={styles.fieldRow}
+              onPress={() => setSelectedFields(previous => ({ ...previous, [field.path]: !(previous[field.path] ?? field.recommended) }))}
+            >
+              <View style={[styles.checkbox, (selectedFields[field.path] ?? field.recommended) && styles.checkboxChecked]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>{field.label}</Text>
+                <Text style={styles.muted} numberOfLines={1}>{field.valuePreview || "-"}</Text>
+              </View>
+            </Pressable>
+          ))}
+          {!selectableFields.length && <Text style={styles.muted}>เอกสารนี้ไม่มี field ที่เปิดเผยแบบ selective ได้</Text>}
+          <Pressable style={[styles.shareSelected, !selectableFields.length && styles.disabledAction]} disabled={!selectableFields.length} onPress={confirmSelectiveDisclosure}>
+            <Text style={styles.shareSelectedText}>แชร์เฉพาะข้อมูลที่เลือก</Text>
+          </Pressable>
+        </View>
+      )}
       {presentation && (
         <View style={styles.presentation}>
           <QrCode color="#4f67f2" />
@@ -75,9 +158,9 @@ export function CredentialDetailScreen() {
         </View>
       )}
       <View style={styles.tabs}>
-        {(["details", "trust", "payload"] as Tab[]).map(item => (
+        {(["details", "trust", "payload", "history"] as Tab[]).map(item => (
           <Pressable key={item} style={[styles.tab, tab === item && styles.activeTab]} onPress={() => setTab(item)}>
-            <Text style={[styles.tabText, tab === item && styles.activeTabText]}>{item === "details" ? "รายละเอียด" : item === "trust" ? "Trust" : "Payload"}</Text>
+            <Text style={[styles.tabText, tab === item && styles.activeTabText]}>{item === "details" ? "รายละเอียด" : item === "trust" ? "Trust" : item === "history" ? "ประวัติ" : "Payload"}</Text>
           </Pressable>
         ))}
       </View>
@@ -106,6 +189,28 @@ export function CredentialDetailScreen() {
           </View>
         )}
         {tab === "payload" && <Text style={styles.mono}>{JSON.stringify(card.credentialData, null, 2)}</Text>}
+        {tab === "history" && (
+          <View style={styles.trustList}>
+            {history.map(item => (
+              <View key={item.id} style={styles.historyRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.value}>{item.verifierName ?? item.purpose ?? "Verifier"}</Text>
+                  <Text style={styles.muted}>{item.presentedAt ? new Date(item.presentedAt).toLocaleString("th-TH") : item.presentationId ?? "-"}</Text>
+                </View>
+                <Text style={styles.historyBadge}>{item.verificationResult ?? "recorded"}</Text>
+              </View>
+            ))}
+            {presentation && (
+              <View style={styles.historyRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.value}>QR ล่าสุดในเครื่อง</Text>
+                  <Text style={styles.muted}>{presentation.presentationId}</Text>
+                </View>
+                <Text style={styles.historyBadge}>{presentation.mode}</Text>
+              </View>
+            )}
+          </View>
+        )}
       </View>
     </ScrollView>
   );
@@ -132,6 +237,16 @@ const styles = StyleSheet.create({
   actionPurpleText: { color: "#7c3aed", fontWeight: "700" },
   actionGreen: { flex: 1, minHeight: 66, borderRadius: 8, backgroundColor: "#dcf8e8", alignItems: "center", justifyContent: "center", gap: 6 },
   actionGreenText: { color: "#167347", fontWeight: "700" },
+  disabledAction: { opacity: 0.46 },
+  message: { color: "#b45309", fontWeight: "700", marginBottom: 12 },
+  selectorPanel: { borderRadius: 12, backgroundColor: "#fff", borderWidth: 1, borderColor: "#d8dfe4", padding: 16, gap: 10, marginBottom: 16 },
+  selectorTitle: { color: "#111827", fontSize: 16, fontWeight: "700" },
+  fieldRow: { minHeight: 58, borderRadius: 10, backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e2e8f0", padding: 10, flexDirection: "row", alignItems: "center", gap: 10 },
+  checkbox: { width: 18, height: 18, borderRadius: 5, borderWidth: 2, borderColor: "#9ca3af" },
+  checkboxChecked: { backgroundColor: "#4f67f2", borderColor: "#4f67f2" },
+  fieldLabel: { color: "#111827", fontWeight: "700" },
+  shareSelected: { minHeight: 48, borderRadius: 10, backgroundColor: "#4f67f2", alignItems: "center", justifyContent: "center" },
+  shareSelectedText: { color: "#fff", fontWeight: "700" },
   presentation: { borderRadius: 8, backgroundColor: "#fff", padding: 16, flexDirection: "row", gap: 12, alignItems: "center", marginBottom: 16 },
   presentationTitle: { fontSize: 16, fontWeight: "700" },
   muted: { color: "#62718a" },
@@ -147,6 +262,8 @@ const styles = StyleSheet.create({
   value: { flex: 1, textAlign: "right", color: "#111827", fontSize: 13.5, fontWeight: "700" },
   mono: { fontFamily: "Courier", fontSize: 13 },
   trustRow: { flexDirection: "row", gap: 12, alignItems: "center" },
+  historyRow: { minHeight: 58, borderRadius: 10, backgroundColor: "#f8fafc", padding: 12, flexDirection: "row", alignItems: "center", gap: 10 },
+  historyBadge: { color: "#0b6b42", backgroundColor: "#dcfce7", overflow: "hidden", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, fontWeight: "700", fontSize: 12 },
   notFound: { flex: 1, backgroundColor: "#f4f6fa", alignItems: "center", justifyContent: "center", padding: 24, gap: 8 },
   notFoundTitle: { color: "#111827", fontSize: 18, fontWeight: "700", textAlign: "center" }
 });

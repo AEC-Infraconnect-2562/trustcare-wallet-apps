@@ -24,6 +24,8 @@ import { useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import type { PhotoCandidate, WalletCard } from "@trustcare/wallet-core";
 import {
+  credentialStatusLabel,
+  credentialStatusTone,
   extractPortalRenderData,
   initialsFromName,
   mergePortalRenderPayload,
@@ -72,7 +74,7 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
             <strong>{card.displayName}</strong>
             <span>{card.displayNameEn ?? card.cardType}</span>
           </div>
-          <Badge tone={card.credentialStatus === "active" ? "green" : "red"}>{card.credentialStatus === "active" ? "ใช้งานได้" : card.credentialStatus}</Badge>
+          <Badge tone={credentialStatusTone(card.credentialStatus)}>{credentialStatusLabel(card.credentialStatus)}</Badge>
         </div>
 
         <div className="hospital-document-meta">
@@ -120,7 +122,7 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
           <p>{issuerNameEn}</p>
           <strong>{card.displayName} / {card.displayNameEn ?? card.cardType}</strong>
         </div>
-        <Badge tone={card.credentialStatus === "active" ? "green" : "red"}>{card.credentialStatus === "active" ? "ใช้งานได้" : card.credentialStatus}</Badge>
+        <Badge tone={credentialStatusTone(card.credentialStatus)}>{credentialStatusLabel(card.credentialStatus)}</Badge>
       </div>
 
       <div className="credential-band document-meta-band">
@@ -160,8 +162,8 @@ export function CredentialDocument({ card, qrDataUrl, compact = false }: { card:
       <div className="credential-status-row document-status-row">
         <div>
           <span>สถานะ / STATUS</span>
-          <Badge tone={card.credentialStatus === "active" ? "green" : "red"}>
-            <ShieldCheck size={14} /> {card.credentialStatus === "active" ? "ใช้งานได้" : card.credentialStatus}
+          <Badge tone={credentialStatusTone(card.credentialStatus)}>
+            <ShieldCheck size={14} /> {credentialStatusLabel(card.credentialStatus)}
           </Badge>
         </div>
         <div>
@@ -377,7 +379,7 @@ function DocumentSignoff({ card, subject }: { card: WalletCard; subject: Record<
       </div>
       <div>
         <span>สถานะเอกสาร</span>
-        <strong>{card.credentialStatus === "active" ? "ใช้งานได้" : card.credentialStatus}</strong>
+        <strong>{credentialStatusLabel(card.credentialStatus)}</strong>
         <small>ตรวจสอบได้ด้วย VC/VP และ DocumentReference evidence</small>
       </div>
     </section>

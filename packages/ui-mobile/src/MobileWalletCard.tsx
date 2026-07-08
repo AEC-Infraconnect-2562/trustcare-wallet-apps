@@ -1,13 +1,14 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { gradientForCardType } from "@trustcare/design-tokens";
-import type { WalletCard } from "@trustcare/wallet-core";
+import { canPresentCredential, credentialStatusLabel, type WalletCard } from "@trustcare/wallet-core";
 
 export function MobileWalletCard({ card, stacked = false, onPress }: { card: WalletCard; stacked?: boolean; onPress?: () => void }) {
   const [from, to] = gradientForCardType(card.cardType);
   const holderName = holderNameFromCard(card);
+  const disabled = !canPresentCredential(card);
   return (
-    <Pressable onPress={onPress} style={[styles.wrap, stacked && styles.stacked]}>
+    <Pressable onPress={onPress} style={[styles.wrap, stacked && styles.stacked, disabled && styles.disabled]}>
       <LinearGradient colors={[from, to]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.card}>
         <View style={styles.iconBox}><Text style={styles.iconText}>VC</Text></View>
         <View>
@@ -17,7 +18,7 @@ export function MobileWalletCard({ card, stacked = false, onPress }: { card: Wal
         <View style={styles.footer}>
           <Text style={styles.name}>{holderName}</Text>
           <Text style={styles.meta}>หมดอายุ {card.expiresAt ? new Date(card.expiresAt).toLocaleDateString("th-TH") : "-"}</Text>
-          <Text style={styles.verified}>Verified</Text>
+          <Text style={styles.verified}>{credentialStatusLabel(card.credentialStatus)}</Text>
         </View>
       </LinearGradient>
     </Pressable>
@@ -37,6 +38,9 @@ const styles = StyleSheet.create({
   },
   stacked: {
     marginTop: -68
+  },
+  disabled: {
+    opacity: 0.62
   },
   card: {
     minHeight: 188,

@@ -10,6 +10,7 @@ import {
   createDemoShlKey,
   createShlLinkPayload,
   createShlViewerUrl,
+  evaluateShlAccessPolicy,
 } from "./shl";
 import { createDemoManifestUrl, hashJson } from "./demoResolvers";
 import { shareGatewayArtifactUrl } from "./shareGateway";
@@ -105,6 +106,68 @@ export type TrustCareShlGatewayPublication = CheckinQrResponse & {
   portalRequest: Record<string, unknown>;
   warnings: string[];
 };
+
+export type TrustCareShlGatewayAccessAttempt = {
+  publication: Pick<
+    TrustCareShlGatewayPublication,
+    "gatewayPublicationId" | "shlId" | "expiresAt" | "maxAccessCount" | "passcodeRequired" | "accessCodeDelivery" | "manifestUrl"
+  > & {
+    currentAccessCount?: number | null;
+    status?: string;
+  };
+  passcodeProvided?: boolean;
+  recipient?: string;
+  now?: Date;
+};
+
+export type TrustCareShlGatewayAccessDecision = {
+  allowed: boolean;
+  requestMethod: "POST" | "GET";
+  warnings: string[];
+  errors: string[];
+  auditEvent: {
+    type: "TrustCareShlAccessDecision";
+    publicationId: string | number;
+    shlId: string | number;
+    recipient: string;
+    decidedAt: string;
+    outcome: "allowed" | "blocked";
+    reasons: string[];
+  };
+};
+
+export function evaluateTrustCareShlGatewayAccess(input: TrustCareShlGatewayAccessAttempt): TrustCareShlGatewayAccessDecision {
+  const policy = evaluateShlAccessPolicy(
+    {
+      status: input.publication.status ?? "active",
+      expiresAt: input.publication.expiresAt,
+      currentAccessCount: input.publication.currentAccessCount ?? 0,
+      maxAccessCount: input.publication.maxAccessCount ?? null,
+      passcodeRequired: input.publication.passcodeRequired,
+    },
+    input.now ?? new Date(),
+  );
+  const errors = [...policy.errors];
+  if (input.publication.passcodeRequired && !input.passcodeProvided) {
+    errors.push("SHL requires passcode before manifest access.");
+  }
+  const allowed = errors.length === 0;
+  return {
+    allowed,
+    requestMethod: input.publication.passcodeRequired ? "POST" : "GET",
+    warnings: policy.warnings,
+    errors,
+    auditEvent: {
+      type: "TrustCareShlAccessDecision",
+      publicationId: input.publication.gatewayPublicationId,
+      shlId: input.publication.shlId,
+      recipient: input.recipient ?? "unknown",
+      decidedAt: (input.now ?? new Date()).toISOString(),
+      outcome: allowed ? "allowed" : "blocked",
+      reasons: allowed ? policy.warnings : errors,
+    },
+  };
+}
 
 export function createTrustCareShlGatewayPublication(
   input: TrustCareShlGatewayCreateRequest,

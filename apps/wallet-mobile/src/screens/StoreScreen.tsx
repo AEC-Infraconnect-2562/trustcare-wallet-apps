@@ -8,6 +8,7 @@ import {
   getDemoShlPackages,
   importWalletExchange,
   mergeWalletObjects,
+  storedObjectTone,
   walletObjectsFromCards,
   walletObjectsFromHistory,
   walletObjectsFromShl,
@@ -94,7 +95,7 @@ export function StoreScreen() {
               <Text style={styles.badge}>{object.type}</Text>
               {!!object.protocol && <Text style={styles.protocol}>{object.protocol}</Text>}
             </View>
-            <ShieldCheck color={object.status === "active" || object.status === "verified" ? "#16a34a" : "#d97706"} />
+            <ShieldCheck color={toneColor(storedObjectTone(object))} />
           </View>
           <Text style={styles.objectTitle}>{object.title}</Text>
           <Text style={styles.objectSub} numberOfLines={2}>{object.subtitle ?? object.source ?? object.id}</Text>
@@ -106,6 +107,14 @@ export function StoreScreen() {
       ))}
     </ScrollView>
   );
+}
+
+function toneColor(tone: ReturnType<typeof storedObjectTone>): string {
+  if (tone === "green") return "#16a34a";
+  if (tone === "yellow") return "#d97706";
+  if (tone === "red") return "#dc2626";
+  if (tone === "blue") return "#4f67f2";
+  return "#647084";
 }
 
 function Action({ icon, label }: { icon: ReactNode; label: string }) {

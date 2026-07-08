@@ -18,6 +18,7 @@ import {
   type PortalRenderRecord,
 } from "./portalRenderContract";
 import type { TrustCareShlGatewayPublication } from "./shlGateway";
+import { canPresentCredential } from "./statusTone";
 
 export type PortablePresentationKind =
   | "credential"
@@ -840,7 +841,12 @@ function buildCredentialChecklist(
       documentReferences.length > 0,
       String(documentReferences.length),
     ),
-    checklistItem("status", "Status and expiry", record.status === "active", record.expiresAt ?? undefined),
+    checklistItem(
+      "status",
+      "Status and expiry",
+      canPresentCredential({ credentialStatus: record.status, expiresAt: record.expiresAt }),
+      record.expiresAt ?? undefined,
+    ),
   ];
 }
 

@@ -18,8 +18,11 @@ import {
   PortablePresentationDocument,
 } from "@trustcare/ui-web";
 import {
+  credentialStatusLabel,
+  credentialStatusTone,
   presentationEnvelopeFromPresentation,
   presentationEnvelopeFromWalletCard,
+  trustBadgeTone,
   type PortablePresentationEnvelope,
   type PresentationHistoryItem,
   type WalletCard,
@@ -162,7 +165,7 @@ export function CredentialDetailDialog({
               <p className="eyebrow">{hospitalName(card, envelope)}</p>
               <h2>{card.displayName}</h2>
               <Badge tone={credentialStatusTone(card.credentialStatus)}>
-                {statusLabel(card.credentialStatus)}
+                {credentialStatusLabel(card.credentialStatus)}
               </Badge>
             </div>
           </div>
@@ -274,7 +277,7 @@ function TrustPanel({ envelope }: { envelope: PortablePresentationEnvelope }) {
           <strong>{trustStatusLabel(envelope.trust.status)}</strong>
           <small>{envelope.trust.warnings[0] ?? envelope.trust.errors[0] ?? "Trust evidence normalized from portable presentation envelope."}</small>
         </span>
-        <Badge tone={badgeTone(envelope.trust.badge)}>{envelope.trust.badge}</Badge>
+        <Badge tone={trustBadgeTone(envelope.trust.badge)}>{envelope.trust.badge}</Badge>
       </div>
       {envelope.trust.checklist.map((item) => (
         <div key={item.key} className="check-row">
@@ -311,7 +314,7 @@ function HistoryPanel({ history }: { history: PresentationHistoryItem[] }) {
             </small>
           </span>
           <Badge tone={item.verificationResult === "valid" ? "green" : "neutral"}>
-            {statusLabel(item.verificationResult ?? "recorded")}
+            {credentialStatusLabel(item.verificationResult ?? "recorded")}
           </Badge>
         </div>
       ))}
@@ -392,28 +395,6 @@ function hospitalName(
   return envelope.issuer?.name ?? card.issuerHospitalName ?? "TrustCare Issuer";
 }
 
-function statusLabel(status?: string | null): string {
-  const labels: Record<string, string> = {
-    active: "ใช้งานได้",
-    verified: "ตรวจสอบแล้ว",
-    valid: "ถูกต้อง",
-    pending: "รอดำเนินการ",
-    expired: "หมดอายุ",
-    revoked: "ถูกเพิกถอน",
-    invalid: "ไม่ถูกต้อง",
-    recorded: "บันทึกแล้ว",
-  };
-  return labels[String(status ?? "")] ?? String(status ?? "-");
-}
-
-function credentialStatusTone(status?: string | null): "green" | "yellow" | "red" | "neutral" {
-  const normalized = String(status ?? "").toLowerCase();
-  if (["active", "verified", "valid"].includes(normalized)) return "green";
-  if (["pending", "superseded", "suspended"].includes(normalized)) return "yellow";
-  if (["revoked", "expired", "invalid"].includes(normalized)) return "red";
-  return "neutral";
-}
-
 function trustStatusLabel(status: PortablePresentationEnvelope["trust"]["status"]) {
   const labels: Record<PortablePresentationEnvelope["trust"]["status"], string> = {
     issuer_signed: "ลงนามแล้ว",
@@ -426,13 +407,6 @@ function trustStatusLabel(status: PortablePresentationEnvelope["trust"]["status"
     proof_missing: "ยังไม่มี proof",
   };
   return labels[status];
-}
-
-function badgeTone(badge: PortablePresentationEnvelope["trust"]["badge"]) {
-  if (badge === "green") return "green";
-  if (badge === "red") return "red";
-  if (badge === "yellow") return "yellow";
-  return "neutral";
 }
 
 function escapeHtml(value: string): string {
