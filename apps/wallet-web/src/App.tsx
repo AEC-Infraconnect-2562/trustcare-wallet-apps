@@ -176,7 +176,7 @@ const isStaticStandaloneRuntime =
 const walletSessionKey = "trustcare-wallet-active-user:v1";
 const legacyWalletSessionKey = "trustcare-wallet-active-user";
 const defaultLoginUserId = "demo-patient-001";
-const walletRuntimeRelease = "w3c-vc-jwt-railway-gateway";
+const walletRuntimeRelease = "credential-photo-fallbacks-33d96ac";
 
 function readWalletSessionUserId() {
   return readStringStorage(walletSessionKey, [legacyWalletSessionKey]);
