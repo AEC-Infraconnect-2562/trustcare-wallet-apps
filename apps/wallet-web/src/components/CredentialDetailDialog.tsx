@@ -263,9 +263,7 @@ export function CredentialDetailDialog({
           </Button>
           <Button
             className="secondary"
-            onClick={() =>
-              void navigator.clipboard?.writeText(String(card.credentialId))
-            }
+            onClick={() => void copyToClipboard(String(card.credentialId))}
           >
             <Clipboard size={18} /> คัดลอก ID
           </Button>
@@ -525,7 +523,7 @@ function QrPopup({
           <Button
             className="secondary"
             disabled={!qrPayload}
-            onClick={() => void navigator.clipboard?.writeText(qrPayload)}
+            onClick={() => void copyToClipboard(qrPayload)}
           >
             <Clipboard size={18} /> คัดลอก QR URL
           </Button>
@@ -534,6 +532,25 @@ function QrPopup({
       </section>
     </div>
   );
+}
+
+async function copyToClipboard(value: string) {
+  if (!value) return;
+  try {
+    await navigator.clipboard?.writeText(value);
+    return;
+  } catch {
+    // Fall back below for browsers that deny clipboard access outside HTTPS/user gesture contexts.
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
 }
 
 function hospitalName(

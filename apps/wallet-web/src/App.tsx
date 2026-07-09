@@ -43,7 +43,6 @@ import {
   buildPortalInteroperabilityFixtures,
   countCardsByCategory,
   assessLocalReadiness,
-  createPresentationQrPayload,
   createDocumentRequestDraft,
   credentialPresentationPolicy,
   documentRequestFormatLabel,
@@ -54,6 +53,8 @@ import {
   getDemoUser,
   groupCardsByCategory,
   importWalletExchange,
+  assertPrimaryVerifierQrPayload,
+  buildSharePackage,
   parseShlLink,
   fetchShlManifest,
   mergePortalSyncedCards,
@@ -178,6 +179,23 @@ const walletSessionKey = "trustcare-wallet-active-user:v1";
 const legacyWalletSessionKey = "trustcare-wallet-active-user";
 const defaultLoginUserId = "demo-patient-001";
 const walletRuntimeRelease = "authoritative-photo-sources";
+
+function isResolverBackedQrPayload(payload: string): boolean {
+  const canonical = extractScannablePayload(payload);
+  const shareGatewayBaseUrl = currentShareGatewayBaseUrl();
+  if (!shareGatewayBaseUrl) return false;
+  try {
+    const url = new URL(canonical);
+    const gateway = new URL(`${shareGatewayBaseUrl.replace(/\/$/, "")}/`);
+    return (
+      url.origin === gateway.origin &&
+      url.pathname.startsWith(`${gateway.pathname}presentations/`) &&
+      url.pathname.endsWith(".jwt")
+    );
+  } catch {
+    return false;
+  }
+}
 
 function readWalletSessionUserId() {
   return readStringStorage(walletSessionKey, [legacyWalletSessionKey]);
@@ -628,22 +646,24 @@ export default function App() {
       }
       if (!offlineWallet.isOnline && !fields.length) {
         const cached = await offlineWallet.getOfflineQr(selectedCard.id);
-        if (cached) {
-          const cachedPayload = createPresentationQrPayload({
-            origin: currentAppBaseUrl(),
-            presentationId: cached.presentationId,
-            qrData: cached.qrData,
-            expiresAt: cached.expiresAt,
-          });
-          const scannableCachedQr = createScannableWebUrl(cachedPayload);
+        if (cached && isResolverBackedQrPayload(cached.qrData)) {
+          const scannableCachedQr = createScannableWebUrl(cached.qrData);
           setPresentation({
             presentationId: cached.presentationId,
             format: "jwt-vp",
-            mode: "offline_cached",
+            mode: "offline_cached_gateway_resolver",
             credentialCount: 1,
             selectedFields: [],
             expiresAt: cached.expiresAt ?? new Date().toISOString(),
             qrData: scannableCachedQr,
+            verificationChecklist: [
+              {
+                key: "gateway",
+                label: "Public resolver URL",
+                ok: true,
+                detail: extractScannablePayload(scannableCachedQr),
+              },
+            ],
           });
           setQrDataUrl(
             await toQrDataUrl(scannableCachedQr, { margin: 1, width: 260 }),
@@ -657,34 +677,108 @@ export default function App() {
           return;
         }
       }
-      const result = await walletApi.present(apiOptions, {
-        cardId: selectedCard.id,
-        cardSnapshot: selectedCard,
-        selectedFields: fields,
-        audience: "TrustCare credential verifier",
-        validMinutes: 10,
-      });
-      const qrPayload = createPresentationQrPayload({
-        origin: currentAppBaseUrl(),
-        presentationId: result.presentationId,
-        qrData: result.qrData,
-        expiresAt: result.expiresAt,
-        selectedFields: result.selectedFields,
-      });
-      const scannableQr = createScannableWebUrl(qrPayload);
-      const presentationWithWebQr = { ...result, qrData: scannableQr };
-      setPresentation(presentationWithWebQr);
-      const nextQr = await toQrDataUrl(scannableQr, { margin: 1, width: 260 });
-      setQrDataUrl(nextQr);
-      await offlineWallet.cacheQr(
-        selectedCard.id,
-        scannableQr,
-        result.presentationId,
-        result.expiresAt,
-      );
-      setSelectiveOpen(false);
+      const shareGatewayBaseUrl = currentShareGatewayBaseUrl();
+      if (!shareGatewayBaseUrl) {
+        alert(
+          "ยังไม่ได้ตั้งค่า Share Gateway สำหรับสร้าง QR ที่สแกนข้ามเครื่องและตรวจ proof ได้",
+        );
+        return;
+      }
+      try {
+        const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+        const context: ReadinessContext = readinessContext;
+        const purposeLabel = readinessContextLabels[context]?.th ?? context;
+        const holderDid = selectedCard.holderDid ?? activeUser.holderDid;
+        const result = buildSharePackage({
+          mode: "PurposeVP",
+          context,
+          cards: [selectedCard],
+          selectedCardIds: [selectedCard.id],
+          holderDid,
+          recipient: "TrustCare credential verifier",
+          purpose: `${selectedCard.displayName} · ${purposeLabel}`,
+          selectedFields: fields,
+          expiresAt,
+          origin: currentAppBaseUrl(),
+          gatewayBaseUrl: shareGatewayBaseUrl,
+          viewerBaseUrl: currentAppBaseUrl(),
+        });
+        if (!("presentation" in result)) {
+          throw new Error("สร้าง VP package ไม่สำเร็จ");
+        }
+        const publication = await shareGatewayApi.publishVpSharePackage({
+          gatewayBaseUrl: shareGatewayBaseUrl,
+          result,
+          userId: selectedUserId,
+          holderDid,
+          purpose: context,
+          purposeLabel,
+          recipient: "TrustCare credential verifier",
+          expiresAt,
+        });
+        const resolverPayload =
+          publication.qrPayload ??
+          publication.publicUrl ??
+          result.presentation.qrData;
+        assertPrimaryVerifierQrPayload(resolverPayload);
+        const scannableQr = createScannableWebUrl(resolverPayload);
+        const presentationWithWebQr: WalletPresentationResponse = {
+          ...result.presentation,
+          mode: "gateway_resolver_vp",
+          qrData: scannableQr,
+          transportDecision: {
+            mode: "share_gateway_resolver",
+            label: "Public verifier URL",
+            reason:
+              "Credential detail QR is published through the Share Gateway so another device opens the public verifier and resolves the backend-signed VP.",
+          },
+          verificationChecklist: [
+            ...(Array.isArray(result.presentation.verificationChecklist)
+              ? result.presentation.verificationChecklist
+              : []),
+            {
+              key: "gateway",
+              label: "Public resolver URL",
+              ok: true,
+              detail: resolverPayload,
+            },
+            {
+              key: "proof",
+              label: "Backend signed VP",
+              ok: true,
+              detail: publication.jwksUrl ?? publication.publicUrl,
+            },
+          ],
+        };
+        setPresentation(presentationWithWebQr);
+        const nextQr = await toQrDataUrl(scannableQr, {
+          margin: 1,
+          width: 260,
+        });
+        setQrDataUrl(nextQr);
+        await offlineWallet.cacheQr(
+          selectedCard.id,
+          scannableQr,
+          result.presentation.presentationId,
+          result.presentation.expiresAt,
+        );
+        setSelectiveOpen(false);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "สร้าง QR Code สำหรับ VP ไม่สำเร็จ";
+        alert(message);
+      }
     },
-    [apiOptions, offlineWallet, selectedCard, webAuthn],
+    [
+      activeUser.holderDid,
+      offlineWallet,
+      readinessContext,
+      selectedCard,
+      selectedUserId,
+      webAuthn,
+    ],
   );
 
   const importPayload = useCallback(

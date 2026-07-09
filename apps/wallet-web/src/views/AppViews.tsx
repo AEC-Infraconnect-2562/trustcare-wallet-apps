@@ -1642,10 +1642,11 @@ export function ShareView({
         if (!publication.qrPayload) {
           throw new Error("Share Gateway ไม่ได้ส่ง VP resolver URL กลับมา");
         }
-        setSharePayload(publication.qrPayload);
+        const webScanPayload = createScannableWebUrl(publication.qrPayload);
+        setSharePayload(webScanPayload);
         setShareExportPayload(exportPayload);
         setShareQrDataUrl(
-          await toQrDataUrl(publication.qrPayload, { margin: 1, width: 240 }),
+          await toQrDataUrl(webScanPayload, { margin: 1, width: 240 }),
         );
         setSharePublication({
           state: "published",

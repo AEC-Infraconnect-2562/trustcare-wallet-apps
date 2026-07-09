@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getDemoUser, getDemoWalletCards } from "@trustcare/wallet-core";
 import {
   avatarUrlCandidatesForUser,
+  createScannableWebUrl,
   extractScannablePayload,
   getShlTrustProfile,
   scanPayloadFromHash,
@@ -19,6 +20,16 @@ describe("scan URL payload parsing", () => {
     expect(extractScannablePayload(`https://wallet.example/${hash}`)).toBe(
       payload,
     );
+  });
+
+  it("wraps public resolver URLs so phone cameras open the public verifier page", () => {
+    const resolverUrl =
+      "https://wallet.example/api/share-gateway/presentations/vp_abc.jwt";
+    const webScanUrl = createScannableWebUrl(resolverUrl);
+
+    expect(webScanUrl).toContain("#scan=");
+    expect(extractScannablePayload(webScanUrl)).toBe(resolverUrl);
+    expect(createScannableWebUrl(webScanUrl)).toBe(webScanUrl);
   });
 });
 
