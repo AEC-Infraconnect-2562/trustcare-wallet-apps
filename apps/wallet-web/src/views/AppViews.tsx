@@ -51,7 +51,13 @@ import {
   Wallet,
 } from "lucide-react";
 import { shareGatewayApi } from "@trustcare/api-client";
-import { Badge, Button, Surface, WalletCardView } from "@trustcare/ui-web";
+import {
+  Badge,
+  Button,
+  Surface,
+  WalletCardView,
+  useLoadedPhotoCandidate,
+} from "@trustcare/ui-web";
 import {
   assessLocalReadiness,
   buildDocumentRequestPlan,
@@ -4857,33 +4863,37 @@ export function UserAvatarImage({
     () => avatarUrlCandidatesForUser(user, cards),
     [cards, user],
   );
-  const [candidateIndex, setCandidateIndex] = useState(0);
-  const [loadedSource, setLoadedSource] = useState("");
-  const source = candidates[candidateIndex] ?? resolveAvatarFallbackUrl(user);
+  const photoCandidates = useMemo(
+    () =>
+      candidates.map((url, index) => ({
+        label: `user.avatar:${index + 1}`,
+        url,
+      })),
+    [candidates],
+  );
+  const {
+    candidate,
+    imageSrc,
+    isLoaded,
+    markFailed,
+    markLoaded,
+  } = useLoadedPhotoCandidate(photoCandidates);
   const initials = initialsFromName(user.nameEn || user.nameTh);
-
-  useEffect(() => {
-    setCandidateIndex(0);
-  }, [candidates]);
-
-  useEffect(() => {
-    setLoadedSource("");
-  }, [source]);
 
   return (
     <span className="user-avatar-image" aria-label={user.nameEn || user.nameTh}>
       <span className="user-avatar-fallback" aria-hidden="true">
         {initials}
       </span>
-      <img
-        className={loadedSource === source ? "loaded" : ""}
-        src={source}
-        alt=""
-        onLoad={() => setLoadedSource(source)}
-        onError={() => {
-          setCandidateIndex((index) => index + 1);
-        }}
-      />
+      {candidate && imageSrc && (
+        <img
+          className={isLoaded ? "loaded" : ""}
+          src={imageSrc}
+          alt=""
+          onLoad={markLoaded}
+          onError={markFailed}
+        />
+      )}
     </span>
   );
 }
@@ -4909,7 +4919,6 @@ export function avatarUrlCandidatesForUser(
   for (const candidate of normalizePhotoUrlCandidates(user.avatarUrl)) {
     add(candidate);
   }
-  add(resolveAvatarFallbackUrl(user));
   return candidates;
 }
 
@@ -4930,16 +4939,6 @@ function resolveAvatarCandidateUrl(url: string): string {
   )
     return trimmed;
   return resolveAvatarUrl(trimmed);
-}
-
-export function resolveAvatarFallbackUrl(user: WalletDemoUser): string {
-  if (user.avatarSource !== "trustcare_portal")
-    return resolveAvatarUrl(user.avatarUrl);
-  const fallback =
-    user.gender === "male"
-      ? "assets/users/wallet-native-01.png"
-      : "assets/users/wallet-native-02.png";
-  return resolveAvatarUrl(fallback);
 }
 
 export function resolveAvatarUrl(url: string): string {

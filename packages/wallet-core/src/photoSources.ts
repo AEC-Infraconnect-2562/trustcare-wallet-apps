@@ -8,19 +8,6 @@ export type PhotoCandidate = {
 const TRUSTCARE_PORTAL_ORIGIN = "https://trustcarehealth.live";
 const STORAGE_PROXY_PATH = "/api/storage-proxy/";
 const MANUS_STORAGE_PATH = "/manus-storage/";
-const TRUSTCARE_PORTAL_LOCAL_PHOTO_FALLBACKS: Record<string, string> = {
-  "doctor_kriangkrai_b6bcdefb.jpg": "assets/users/wallet-native-01.png",
-  "doctor_napa_abd67502.jpg": "assets/users/wallet-native-02.png",
-  "doctor_prasit_2ed84c26.jpg": "assets/users/wallet-native-01.png",
-  "doctor_thanawat_f91f7278.jpg": "assets/users/wallet-native-01.png",
-  "engineer_piya_eb6aeff4.jpg": "assets/users/wallet-native-01.png",
-  "hospadmin_wipa_aeeee791.jpg": "assets/users/wallet-native-02.png",
-  "nurse_anucha_e814499a.jpg": "assets/users/wallet-native-01.png",
-  "nurse_pimjai_ace1fd06.jpg": "assets/users/wallet-native-02.png",
-  "patient_john_williams_b4e9e7f3.jpg": "assets/users/wallet-native-01.png",
-  "patient_malee_74d2ef04.jpg": "assets/users/wallet-native-02.png",
-  "patient_somsak_a2e00e97.jpg": "assets/users/wallet-native-01.png",
-};
 
 export function getValueAtPath(source: unknown, path: string): unknown {
   return path.split(".").reduce<unknown>((acc, key) => {
@@ -102,7 +89,6 @@ export function normalizePhotoUrlCandidates(value: string): string[] {
       const fileName = path.slice(MANUS_STORAGE_PATH.length);
       add(`${origin}${MANUS_STORAGE_PATH}${fileName}`);
       add(`${origin}${STORAGE_PROXY_PATH}${fileName}`);
-      addTrustCarePortalLocalFallback(fileName, add);
       return;
     }
     if (path.startsWith(STORAGE_PROXY_PATH)) {
@@ -114,7 +100,6 @@ export function normalizePhotoUrlCandidates(value: string): string[] {
         : proxyValue;
       add(`${origin}${MANUS_STORAGE_PATH}${fileName}`);
       add(`${origin}${STORAGE_PROXY_PATH}${fileName}`);
-      addTrustCarePortalLocalFallback(fileName, add);
       return;
     }
     add(`${origin}${path}`);
@@ -158,7 +143,6 @@ export function normalizePhotoUrlCandidates(value: string): string[] {
     add(
       `${TRUSTCARE_PORTAL_ORIGIN}${STORAGE_PROXY_PATH}${fileName}`,
     );
-    addTrustCarePortalLocalFallback(fileName, add);
   }
 
   add(trimmed);
@@ -194,13 +178,4 @@ function dedupePhotoCandidates(candidates: PhotoCandidate[]): PhotoCandidate[] {
     seen.add(candidate.url);
     return true;
   });
-}
-
-function addTrustCarePortalLocalFallback(
-  fileName: string,
-  add: (url: string | null | undefined) => void,
-): void {
-  const normalized = fileName.split(/[?#]/)[0]?.toLowerCase();
-  if (!normalized) return;
-  add(TRUSTCARE_PORTAL_LOCAL_PHOTO_FALLBACKS[normalized]);
 }

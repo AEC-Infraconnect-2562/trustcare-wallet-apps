@@ -20,7 +20,7 @@ describe("scan URL payload parsing", () => {
 });
 
 describe("login user photos", () => {
-  it("uses credential photo candidates before the generic gender fallback", () => {
+  it("keeps Portal user photos authoritative and does not add generic portrait candidates", () => {
     const user = getDemoUser("demo-patient-003");
     const candidates = avatarUrlCandidatesForUser(
       user,
@@ -31,6 +31,18 @@ describe("login user photos", () => {
       "https://trustcarehealth.live/manus-storage/patient_john_williams_b4e9e7f3.jpg",
       "https://trustcarehealth.live/api/storage-proxy/patient_john_williams_b4e9e7f3.jpg",
     ]);
-    expect(candidates).toContain("/assets/users/wallet-native-01.png");
+    expect(candidates.some((candidate) => candidate.includes("wallet-native"))).toBe(
+      false,
+    );
+  });
+
+  it("keeps wallet-generated photos for wallet-native users", () => {
+    const user = getDemoUser("partner-patient-001");
+    const candidates = avatarUrlCandidatesForUser(
+      user,
+      getDemoWalletCards(user.id),
+    );
+
+    expect(candidates).toContain("/assets/users/wallet-native-02.png");
   });
 });

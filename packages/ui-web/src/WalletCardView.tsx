@@ -91,10 +91,10 @@ function WalletCardPhoto({
   candidates: PhotoCandidate[];
   initials: string;
 }) {
-  const { candidate, isLoaded, markFailed, markLoaded } =
+  const { candidate, imageSrc, isLoaded, markFailed, markLoaded } =
     useLoadedPhotoCandidate(candidates);
 
-  if (!candidate) {
+  if (!candidate || !imageSrc) {
     return (
       <span className="wallet-card-photo-fallback">{initials || "TC"}</span>
     );
@@ -105,8 +105,8 @@ function WalletCardPhoto({
       <span className="wallet-card-photo-fallback">{initials || "TC"}</span>
       <img
         className={isLoaded ? "loaded" : ""}
-        key={candidate.url}
-        src={candidate.url}
+        key={imageSrc}
+        src={imageSrc}
         alt=""
         onLoad={markLoaded}
         onError={markFailed}

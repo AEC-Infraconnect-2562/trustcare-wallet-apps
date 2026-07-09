@@ -264,10 +264,10 @@ function CredentialHolderPhoto({
   alt: string;
   initials: string;
 }) {
-  const { candidate, isLoaded, markFailed, markLoaded } =
+  const { candidate, imageSrc, isLoaded, markFailed, markLoaded } =
     useLoadedPhotoCandidate(candidates);
 
-  if (!candidate) {
+  if (!candidate || !imageSrc) {
     return (
       <div
         className="credential-photo credential-photo-fallback"
@@ -285,8 +285,8 @@ function CredentialHolderPhoto({
       </span>
       <img
         className={isLoaded ? "loaded" : ""}
-        key={candidate.url}
-        src={candidate.url}
+        key={imageSrc}
+        src={imageSrc}
         alt={isLoaded ? alt : ""}
         onLoad={markLoaded}
         onError={markFailed}
