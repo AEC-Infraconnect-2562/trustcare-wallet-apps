@@ -9548,6 +9548,9 @@ body {
 }
 
 .app-top-shell {
+  position: relative;
+  top: auto;
+  z-index: 5;
   min-height: var(--shell-header-height);
   padding: var(--space-2) clamp(18px, 2.4vw, 32px);
   grid-template-columns: minmax(240px, 0.55fr) minmax(0, auto);
@@ -9583,6 +9586,8 @@ body {
 }
 
 .topbar {
+  position: relative;
+  top: auto;
   min-height: var(--workspace-topbar-height);
   margin: 0 calc(clamp(18px, 2.3vw, 32px) * -1);
   padding: var(--space-3) clamp(18px, 2.3vw, 32px);
@@ -9827,6 +9832,8 @@ body {
   }
 
   .topbar {
+    position: relative;
+    top: auto;
     margin: 0 -14px;
     padding: 10px 14px;
     grid-template-columns: minmax(0, 1fr);
@@ -9854,6 +9861,8 @@ body {
 @media (max-width: 720px) {
   .topbar {
     display: grid;
+    position: relative;
+    top: auto;
     min-height: auto;
     padding-block: 10px;
   }
