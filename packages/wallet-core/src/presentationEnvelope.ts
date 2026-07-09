@@ -1000,7 +1000,13 @@ function buildCredentialWarnings(
     warnings.push("metadata_only_record_skipped_for_readiness");
   if (status === "patient_provided_unverified")
     warnings.push("patient_provided_document_requires_trusted_signature");
-  if (status === "proof_missing") warnings.push("cryptographic_proof_missing");
+  if (status === "proof_missing") {
+    warnings.push(
+      card.sourceSystem === "trustcare_portal"
+        ? "portal_issuer_proof_missing"
+        : "cryptographic_proof_missing",
+    );
+  }
   if (isTrustArtifactDocumentType(record.documentType))
     warnings.push("trust_artifact_not_clinical_readiness_document");
   if (!card.holderDid) warnings.push("holder_binding_missing");

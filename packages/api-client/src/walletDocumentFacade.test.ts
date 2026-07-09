@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import * as walletApi from "./wallet";
 
 describe("wallet API document facade", () => {
@@ -8,6 +8,10 @@ describe("wallet API document facade", () => {
     demoOrigin: "https://wallet.example",
     userId: "demo-patient-complete-001",
   } satisfies walletApi.WalletApiOptions;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
   it("lists canonical wallet documents backed by DocumentReference metadata", async () => {
     const documents = await walletApi.listDocuments(options, {
@@ -100,5 +104,38 @@ describe("wallet API document facade", () => {
     expect(issued.credential.credentialProof?.format).toBe("sd-jwt-vc");
     expect(issued.holderProof.jwt).toBeTruthy();
     expect(issued.storedObject.protocol).toBe("oid4vci");
+  });
+
+  it("does not re-sign Portal-origin credentials with the Wallet gateway issuer", async () => {
+    vi.stubGlobal("window", { document: {} });
+    const signingRequests: string[] = [];
+    const cardsByCategory = await walletApi.cardsByCategory({
+      ...options,
+      userId: "demo-patient-003",
+      shareGatewayUrl: "https://wallet-web-production-6a00.up.railway.app/api/share-gateway",
+      fetchImpl: async (url) => {
+        signingRequests.push(String(url));
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            credentialId: "unexpected",
+            credentialJwt: "unexpected.jwt",
+            credentialProof: { format: "vc+jwt", jwt: "unexpected.jwt" },
+            warnings: [],
+            errors: [],
+          }),
+          { headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    const cards = Object.values(cardsByCategory).flat();
+    const johnPortalCard = cards.find(
+      (card) => card.issuerDid === "did:web:trustcare.network:hospital:tcp",
+    );
+
+    expect(johnPortalCard?.sourceSystem).toBe("trustcare_portal");
+    expect(johnPortalCard?.credentialJwt).toBeUndefined();
+    expect(johnPortalCard?.credentialProof).toBeUndefined();
+    expect(signingRequests).toEqual([]);
   });
 });

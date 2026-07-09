@@ -1472,6 +1472,7 @@ function trustedMutationOrigins(request) {
       requestOrigin(request),
       "http://localhost:5173",
       "http://127.0.0.1:5173",
+      "https://aec-infraconnect-2562.github.io",
       ...String(process.env.TRUSTCARE_GATEWAY_ALLOWED_ORIGINS ?? "")
         .split(",")
         .map((item) => item.trim())

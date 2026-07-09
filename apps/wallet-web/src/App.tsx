@@ -165,7 +165,10 @@ const baseApiOptions = {
       : "https://trustcare.example.com",
   shlGatewayUrl: env.shlGatewayUrl,
   shlViewerUrl: env.shlViewerUrl,
-  shareGatewayUrl: env.shareGatewayUrl,
+  shareGatewayUrl:
+    typeof window !== "undefined"
+      ? (currentShareGatewayBaseUrl() ?? undefined)
+      : env.shareGatewayUrl,
   portalOrigin: "https://trustcarehealth.live",
   portalSyncMode: "disabled" as const,
 };

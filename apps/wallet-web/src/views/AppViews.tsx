@@ -129,7 +129,7 @@ import { PurposePickerCard } from "../components/prepare/PurposePickerCard";
 import { ReadinessSummaryCard } from "../components/prepare/ReadinessSummaryCard";
 import { SharePacketComposer } from "../components/share/SharePacketComposer";
 import { TrustChecklist } from "../components/trust/TrustChecklist";
-import { env } from "../env";
+import { defaultPublicShareGatewayUrl, env } from "../env";
 import { useWebAuthn } from "../hooks/useWebAuthn";
 import { toQrDataUrl } from "../utils/qrCode";
 import {
@@ -4938,14 +4938,17 @@ export function clearScanPayloadFromLocation() {
 export function currentShareGatewayBaseUrl(): string | null {
   const configured = env.shareGatewayUrl;
   if (configured) return configured.replace(/\/$/, "");
-  if (typeof window === "undefined") return null;
-  if (
-    window.location.hostname === "127.0.0.1" ||
-    window.location.hostname === "localhost"
-  ) {
+  if (typeof window === "undefined") {
+    return defaultPublicShareGatewayUrl.replace(/\/$/, "");
+  }
+  const { hostname, origin } = window.location;
+  if (hostname === "127.0.0.1" || hostname === "localhost") {
     return `${window.location.origin}/api/share-gateway`;
   }
-  return "https://trustcarehealth.live/api/share-gateway";
+  if (hostname.endsWith("github.io")) {
+    return defaultPublicShareGatewayUrl.replace(/\/$/, "");
+  }
+  return `${origin}/api/share-gateway`;
 }
 
 export function currentAppBaseUrl(): string {

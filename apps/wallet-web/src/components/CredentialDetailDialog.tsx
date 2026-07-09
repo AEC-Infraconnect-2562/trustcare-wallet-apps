@@ -396,8 +396,9 @@ function TrustPanel({ envelope }: { envelope: PortablePresentationEnvelope }) {
         <span>
           <strong>{trustStatusLabel(envelope.trust.status)}</strong>
           <small>
-            {envelope.trust.warnings[0] ??
-              envelope.trust.errors[0] ??
+            {trustEvidenceMessage(
+              envelope.trust.warnings[0] ?? envelope.trust.errors[0],
+            ) ??
               "Trust evidence normalized from portable presentation envelope."}
           </small>
         </span>
@@ -574,9 +575,26 @@ function trustStatusLabel(
     patient_provided_unverified: "ผู้ใช้เพิ่มเอง",
     invalid_or_revoked: "ใช้ไม่ได้",
     metadata_only: "metadata only",
-    proof_missing: "ยังไม่มี proof",
+    proof_missing: "รอ proof จาก issuer",
   };
   return labels[status];
+}
+
+function trustEvidenceMessage(message?: string): string | undefined {
+  const messages: Record<string, string> = {
+    portal_issuer_proof_missing:
+      "Credential นี้ระบุว่ามาจาก TrustCare Portal แต่ยังไม่มี VC JWT/proof จาก issuer จึงต้อง Sync หรือรับ credential ที่ลงนามจาก Portal ก่อน",
+    cryptographic_proof_missing:
+      "Credential นี้ยังไม่มี cryptographic proof สำหรับตรวจลายเซ็น issuer",
+    holder_binding_missing:
+      "Credential นี้ยังไม่มี holder DID binding",
+    metadata_only_record_skipped_for_readiness:
+      "รายการนี้เป็น metadata-only จึงยังใช้เป็น VC สำหรับ readiness ไม่ได้",
+    patient_provided_document_requires_trusted_signature:
+      "เอกสารที่ผู้ใช้เพิ่มเองต้องมี trusted issuer signature ก่อนใช้ยืนยัน",
+  };
+  if (!message) return undefined;
+  return messages[message] ?? message;
 }
 
 function escapeHtml(value: string): string {

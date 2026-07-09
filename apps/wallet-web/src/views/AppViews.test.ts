@@ -1,14 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getDemoUser, getDemoWalletCards } from "@trustcare/wallet-core";
 import {
   avatarUrlCandidatesForUser,
   createScannableWebUrl,
+  currentShareGatewayBaseUrl,
   extractScannablePayload,
   getShlTrustProfile,
   scanPayloadFromHash,
   trustcareBindingLabel,
   trustcareCertificationStatusLabel,
 } from "./AppViews";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("scan URL payload parsing", () => {
   it("preserves nested resolver query params inside hash scan URLs", () => {
@@ -31,6 +36,34 @@ describe("scan URL payload parsing", () => {
     expect(webScanUrl).toContain("#scan=");
     expect(extractScannablePayload(webScanUrl)).toBe(resolverUrl);
     expect(createScannableWebUrl(webScanUrl)).toBe(webScanUrl);
+  });
+});
+
+describe("share gateway URL resolution", () => {
+  it("uses the public Railway gateway when running as a GitHub Pages static app", () => {
+    vi.stubGlobal("window", {
+      location: {
+        hostname: "aec-infraconnect-2562.github.io",
+        origin: "https://aec-infraconnect-2562.github.io",
+      },
+    });
+
+    expect(currentShareGatewayBaseUrl()).toBe(
+      "https://wallet-web-production-6a00.up.railway.app/api/share-gateway",
+    );
+  });
+
+  it("uses same-origin share gateway for full-stack public hosts", () => {
+    vi.stubGlobal("window", {
+      location: {
+        hostname: "wallet-web-production-6a00.up.railway.app",
+        origin: "https://wallet-web-production-6a00.up.railway.app",
+      },
+    });
+
+    expect(currentShareGatewayBaseUrl()).toBe(
+      "https://wallet-web-production-6a00.up.railway.app/api/share-gateway",
+    );
   });
 });
 

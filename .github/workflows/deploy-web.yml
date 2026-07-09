@@ -46,6 +46,8 @@ jobs:
         run: pnpm build:web
         env:
           VITE_BASE_PATH: /trustcare-wallet-apps/
+          VITE_TRUSTCARE_SHARE_GATEWAY_URL: https://wallet-web-production-6a00.up.railway.app/api/share-gateway
+          VITE_TRUSTCARE_PUBLIC_SHARE_GATEWAY_URL: https://wallet-web-production-6a00.up.railway.app/api/share-gateway
 
       - name: Add SPA fallback
         run: cp apps/wallet-web/dist/index.html apps/wallet-web/dist/404.html

@@ -140,7 +140,7 @@ function trustLabel(
     patient_provided_unverified: "ผู้ใช้เพิ่มเอง",
     invalid_or_revoked: "ใช้ไม่ได้",
     metadata_only: "metadata",
-    proof_missing: "ไม่มี proof",
+    proof_missing: "รอ proof จาก issuer",
   };
   return labels[status];
 }

@@ -807,6 +807,7 @@ function shouldRequestIssuerSignature(card: WalletCard): boolean {
   return Boolean(
     card.credentialData &&
     card.credentialStatus === "active" &&
+    card.sourceSystem !== "trustcare_portal" &&
     card.sourceSystem !== "partner_wallet",
   );
 }
@@ -817,7 +818,13 @@ function demoCredentialSigningGatewayBaseUrl(
   if (!isBrowserRuntime()) return undefined;
   if (options.shareGatewayUrl) return options.shareGatewayUrl;
   if (!options.demoOrigin) return undefined;
-  return `${options.demoOrigin.replace(/\/$/, "")}/api/share-gateway`;
+  try {
+    const origin = new URL(options.demoOrigin);
+    if (origin.hostname.endsWith("github.io")) return undefined;
+    return `${origin.origin}/api/share-gateway`;
+  } catch {
+    return undefined;
+  }
 }
 
 function isBrowserRuntime(): boolean {

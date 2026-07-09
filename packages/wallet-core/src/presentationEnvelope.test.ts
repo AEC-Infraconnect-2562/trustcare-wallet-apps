@@ -45,6 +45,7 @@ describe("portable presentation envelope", () => {
 
     expect(classifyPortableTrustStatus(card)).toBe("proof_missing");
     expect(envelope.trust.badge).not.toBe("green");
+    expect(envelope.trust.warnings).toContain("portal_issuer_proof_missing");
   });
 
   it("treats an issuer-profile signed VC JWT as portable issuer proof", () => {
