@@ -9678,7 +9678,9 @@ body {
 }
 
 .status-strip {
-  top: var(--shell-header-height);
+  position: relative;
+  top: auto;
+  z-index: 1;
   min-height: 48px;
   margin: 0 calc(clamp(18px, 2.3vw, 32px) * -1) var(--space-5);
   padding: 8px clamp(18px, 2.3vw, 32px);
@@ -9832,7 +9834,7 @@ body {
   }
 
   .status-strip {
-    top: var(--workspace-topbar-height);
+    top: auto;
     margin-inline: -14px;
     padding-inline: 14px;
   }
