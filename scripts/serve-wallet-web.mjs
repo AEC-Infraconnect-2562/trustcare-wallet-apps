@@ -325,7 +325,34 @@ async function signPresentationJwt(input) {
     `vp_${presentationHash.slice(0, 16)}`,
   );
   const jwtPresentation = stripUndefined({ ...vp, id: presentationId });
-  const jwt = await new SignJWT(jwtPresentation)
+  const issuedAt = Math.floor(now.getTime() / 1000);
+  const expirationTime = Math.floor(new Date(expiresAt).getTime() / 1000);
+  const jwtSubject = stringValue(vp.holder, input.context.issuerDid);
+  const proofReadyPresentation = stripUndefined({
+    ...jwtPresentation,
+    iss: input.context.issuerDid,
+    sub: jwtSubject,
+    aud: input.audience,
+    jti: presentationId,
+    iat: issuedAt,
+    exp: expirationTime,
+    trustcare: {
+      ...objectValue(jwtPresentation.trustcare),
+      dataIntegrityCryptosuite: "ecdsa-jcs-2019",
+      dataIntegrityProofPurpose: "authentication",
+      dataIntegrityVerificationMethod: input.context.kid,
+    },
+  });
+  const proof = await createDataIntegrityProof(proofReadyPresentation, {
+    context: input.context,
+    created: now.toISOString(),
+    expires: expiresAt,
+  });
+  const signedPresentation = stripUndefined({
+    ...proofReadyPresentation,
+    proof,
+  });
+  const jwt = await new SignJWT(signedPresentation)
     .setProtectedHeader({
       alg: "ES256",
       typ: "vp+jwt",
@@ -333,14 +360,38 @@ async function signPresentationJwt(input) {
       jku: input.context.jku,
     })
     .setIssuer(input.context.issuerDid)
-    .setSubject(stringValue(vp.holder, input.context.issuerDid))
+    .setSubject(jwtSubject)
     .setAudience(input.audience)
     .setJti(presentationId)
-    .setIssuedAt(Math.floor(now.getTime() / 1000))
-    .setExpirationTime(Math.floor(new Date(expiresAt).getTime() / 1000))
+    .setIssuedAt(issuedAt)
+    .setExpirationTime(expirationTime)
     .sign(input.context.privateKey);
 
-  return { jwt, vp: jwtPresentation, credentialJwts, warnings };
+  return { jwt, vp: signedPresentation, credentialJwts, warnings };
+}
+
+async function createDataIntegrityProof(document, input) {
+  const proof = stripUndefined({
+    type: "DataIntegrityProof",
+    cryptosuite: "ecdsa-jcs-2019",
+    created: input.created,
+    expires: input.expires,
+    verificationMethod: input.context.kid,
+    proofPurpose: "authentication",
+    "@context": document["@context"],
+  });
+  const signingData = await buildDataIntegritySigningData(document, proof);
+  const signature = new Uint8Array(
+    await globalThis.crypto.subtle.sign(
+      { name: "ECDSA", hash: "SHA-256" },
+      input.context.privateKey,
+      signingData,
+    ),
+  );
+  return {
+    ...proof,
+    proofValue: `z${base58Encode(signature)}`,
+  };
 }
 
 async function signCredentialJwt(input) {
@@ -844,6 +895,95 @@ async function sha256Hex(value) {
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+async function buildDataIntegritySigningData(document, proof) {
+  const unsecuredDocument = stripProofForDataIntegrity(document);
+  const proofConfig = stripUndefined({ ...proof });
+  delete proofConfig.proofValue;
+  delete proofConfig.jws;
+  if (proofConfig["@context"]) {
+    unsecuredDocument["@context"] = proofConfig["@context"];
+  }
+  const proofConfigHash = await sha256Bytes(
+    new TextEncoder().encode(jcsCanonicalize(proofConfig)),
+  );
+  const documentHash = await sha256Bytes(
+    new TextEncoder().encode(jcsCanonicalize(unsecuredDocument)),
+  );
+  return concatBytes(proofConfigHash, documentHash);
+}
+
+async function sha256Bytes(bytes) {
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return new Uint8Array(digest);
+}
+
+function concatBytes(left, right) {
+  const output = new Uint8Array(left.length + right.length);
+  output.set(left, 0);
+  output.set(right, left.length);
+  return output;
+}
+
+function stripProofForDataIntegrity(value) {
+  const copy = deepJsonClone(value);
+  delete copy.proof;
+  return copy;
+}
+
+function deepJsonClone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function jcsCanonicalize(value) {
+  if (value === null) return "null";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error("JCS cannot canonicalize non-finite numbers.");
+    }
+    return JSON.stringify(value);
+  }
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => jcsCanonicalize(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .filter((key) => value[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${jcsCanonicalize(value[key])}`)
+      .join(",")}}`;
+  }
+  throw new Error(`JCS cannot canonicalize ${typeof value}.`);
+}
+
+function base58Encode(bytes) {
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  if (!bytes.length) return "";
+  const digits = [0];
+  for (const byte of bytes) {
+    let carry = byte;
+    for (let index = 0; index < digits.length; index += 1) {
+      const value = digits[index] * 256 + carry;
+      digits[index] = value % 58;
+      carry = Math.floor(value / 58);
+    }
+    while (carry > 0) {
+      digits.push(carry % 58);
+      carry = Math.floor(carry / 58);
+    }
+  }
+  let output = "";
+  for (const byte of bytes) {
+    if (byte !== 0) break;
+    output += "1";
+  }
+  for (let index = digits.length - 1; index >= 0; index -= 1) {
+    output += alphabet[digits[index]];
+  }
+  return output;
 }
 
 function stableStringify(value) {

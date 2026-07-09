@@ -207,6 +207,12 @@ describe("verifyQr VP resolver behavior", () => {
     expect(signedPayload.type).toEqual(
       expect.arrayContaining(["VerifiablePresentation"]),
     );
+    expect(signedPayload.proof).toMatchObject({
+      type: "DataIntegrityProof",
+      cryptosuite: "ecdsa-jcs-2019",
+      proofPurpose: "authentication",
+      verificationMethod: signingKey.kid,
+    });
     expect(nestedCredential).toMatchObject({
       type: ["VerifiableCredential", "EnvelopedVerifiableCredential"],
     });
@@ -243,6 +249,12 @@ describe("verifyQr VP resolver behavior", () => {
     expect(result.trustLevel).toBe("green");
     expect(JSON.stringify(result.verificationChecklist)).toContain(
       "Signature status",
+    );
+    expect(JSON.stringify(result.verificationChecklist)).toContain(
+      "Data Integrity proof",
+    );
+    expect(JSON.stringify(result.verificationChecklist)).toContain(
+      "verified via",
     );
   });
 

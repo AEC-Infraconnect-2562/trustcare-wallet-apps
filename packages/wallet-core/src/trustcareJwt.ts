@@ -4,8 +4,10 @@ import {
   exportJWK,
   generateKeyPair,
   importJWK,
+  type JWK,
 } from "jose";
 import {
+  createDataIntegrityProof,
   envelopedVerifiableCredentialFromJwt,
   extractCredentialJwt,
 } from "./credentialProof";
@@ -259,8 +261,38 @@ export async function signTrustCarePresentationJwt(input: {
     ...vp,
     id: presentationId,
   });
+  const issuedAt = Math.floor(now.getTime() / 1000);
+  const expirationTime = Math.floor(new Date(expiresAt).getTime() / 1000);
+  const jwtSubject = stringValue(vp.holder, signingKey.issuerDid);
+  const jwtAudience = input.audience ?? TRUSTCARE_DEFAULT_AUDIENCE;
+  const proofReadyPresentation = stripUndefined<JsonRecord>({
+    ...jwtPresentation,
+    iss: signingKey.issuerDid,
+    sub: jwtSubject,
+    aud: jwtAudience,
+    jti: presentationId,
+    iat: issuedAt,
+    exp: expirationTime,
+    trustcare: {
+      ...objectValue(jwtPresentation.trustcare),
+      dataIntegrityCryptosuite: "ecdsa-jcs-2019",
+      dataIntegrityProofPurpose: "authentication",
+      dataIntegrityVerificationMethod: signingKey.kid,
+    },
+  });
+  const proof = await createDataIntegrityProof(proofReadyPresentation, {
+    privateKeyJwk: signingKey.privateJwk as JWK,
+    verificationMethod: signingKey.kid,
+    proofPurpose: "authentication",
+    created: now.toISOString(),
+    expires: expiresAt,
+  });
+  const signedPresentation = stripUndefined<JsonRecord>({
+    ...proofReadyPresentation,
+    proof,
+  });
   const key = await importJWK(signingKey.privateJwk, signingKey.alg);
-  const jwt = await new SignJWT(jwtPresentation)
+  const jwt = await new SignJWT(signedPresentation)
     .setProtectedHeader(
       stripUndefined({
         alg: signingKey.alg,
@@ -270,15 +302,15 @@ export async function signTrustCarePresentationJwt(input: {
       }),
     )
     .setIssuer(signingKey.issuerDid)
-    .setSubject(stringValue(vp.holder, signingKey.issuerDid))
-    .setAudience(input.audience ?? TRUSTCARE_DEFAULT_AUDIENCE)
+    .setSubject(jwtSubject)
+    .setAudience(jwtAudience)
     .setJti(presentationId)
-    .setIssuedAt(Math.floor(now.getTime() / 1000))
-    .setExpirationTime(Math.floor(new Date(expiresAt).getTime() / 1000))
+    .setIssuedAt(issuedAt)
+    .setExpirationTime(expirationTime)
     .sign(key);
 
   return {
-    vp: jwtPresentation,
+    vp: signedPresentation,
     jwt,
     credentialJwts,
     warnings,
