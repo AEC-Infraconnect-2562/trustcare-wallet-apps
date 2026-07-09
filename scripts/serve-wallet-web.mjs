@@ -830,7 +830,17 @@ function stripProofLikeFields(value) {
 
 function sanitizePublicJwk(jwk) {
   const publicJwk = { ...jwk };
-  for (const field of ["d", "p", "q", "dp", "dq", "qi", "oth", "k"]) {
+  for (const field of [
+    "d",
+    "p",
+    "q",
+    "dp",
+    "dq",
+    "qi",
+    "oth",
+    "k",
+    "key_ops",
+  ]) {
     delete publicJwk[field];
   }
   return publicJwk;
