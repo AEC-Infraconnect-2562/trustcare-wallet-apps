@@ -5,6 +5,7 @@ import {
   classifyPortableTrustStatus,
   completeWalletSeedCards,
   presentationEnvelopeFromWalletCard,
+  presentationEnvelopeFromPresentation,
   selectableDisclosureFieldsFromEnvelope,
   validateMicroIpsPlusPack,
   walletDocumentRecordFromCard,
@@ -44,6 +45,50 @@ describe("portable presentation envelope", () => {
 
     expect(classifyPortableTrustStatus(card)).toBe("proof_missing");
     expect(envelope.trust.badge).not.toBe("green");
+  });
+
+  it("does not inherit a proof-missing card status after creating a signed VP", () => {
+    const card = {
+      ...completeWalletSeedCards.find(
+        (item) => item.cardType === "patient_identity",
+      )!,
+      credentialJwt: undefined,
+      credentialProof: undefined,
+    };
+
+    const envelope = presentationEnvelopeFromPresentation(card, {
+      presentationId: "vp_regression_signed_resolver",
+      format: "jwt-vp",
+      mode: "gateway_resolver_vp",
+      credentialCount: 1,
+      selectedFields: [],
+      expiresAt: "2026-07-09T16:56:30.212Z",
+      qrData:
+        "https://wallet.example/?verify=public#scan=https%3A%2F%2Fwallet.example%2Fapi%2Fshare-gateway%2Fpresentations%2Fvp_regression_signed_resolver.jwt",
+      verificationChecklist: [
+        {
+          key: "gateway",
+          label: "Public resolver URL",
+          ok: true,
+          detail:
+            "https://wallet.example/api/share-gateway/presentations/vp_regression_signed_resolver.jwt",
+        },
+      ],
+    });
+
+    expect(envelope.kind).toBe("presentation");
+    expect(envelope.trust.status).toBe("issuer_signed");
+    expect(envelope.trust.badge).toBe("green");
+    expect(envelope.trust.warnings).not.toContain(
+      "cryptographic_proof_missing",
+    );
+    expect(envelope.trust.checklist).toContainEqual(
+      expect.objectContaining({
+        key: "proof",
+        ok: true,
+        detail: "jwt-vp",
+      }),
+    );
   });
 
   it("keeps trust artifacts out of clinical readiness proof semantics", () => {

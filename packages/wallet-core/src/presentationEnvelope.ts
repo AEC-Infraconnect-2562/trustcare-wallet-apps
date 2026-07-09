@@ -382,7 +382,20 @@ export function presentationEnvelopeFromPresentation(
 ): PortablePresentationEnvelope {
   const base = presentationEnvelopeFromWalletCard(card);
   const mode = coercePresentationMode(presentation.mode);
-  const checklist = normalizeChecklist(presentation.verificationChecklist);
+  const checklist = withPresentationProofChecklist(
+    normalizeChecklist(presentation.verificationChecklist),
+    presentation,
+  );
+  const trustStatus = classifyPortableTrustStatus({
+    card,
+    presentation,
+    checklist,
+  });
+  const warnings = presentationHasCryptographicProof(presentation, checklist)
+    ? base.trust.warnings.filter(
+        (warning) => warning !== "cryptographic_proof_missing",
+      )
+    : base.trust.warnings;
   return {
     ...base,
     envelopeId: stableEnvelopeId("vp", presentation.presentationId),
@@ -403,13 +416,9 @@ export function presentationEnvelopeFromPresentation(
           : base.display.summary,
     },
     trust: buildTrustEnvelope({
-      status: classifyPortableTrustStatus({
-        card,
-        presentation,
-        checklist,
-      }),
+      status: trustStatus,
       checklist: checklist.length ? checklist : base.trust.checklist,
-      warnings: base.trust.warnings,
+      warnings,
       errors: base.trust.errors,
     }),
     policy: {
@@ -692,6 +701,23 @@ export function classifyPortableTrustStatus(
 ): PortableTrustStatus {
   if (typeof input === "string") return coerceTrustStatus(input);
   const value = portalRecord(input);
+  const presentation = isWalletPresentationResponseLike(value.presentation)
+    ? value.presentation
+    : undefined;
+  if (presentation) {
+    const checklist = normalizeChecklist(
+      value.checklist ?? presentation.verificationChecklist,
+    );
+    const card = isWalletCard(value.card) ? value.card : undefined;
+    if (card) {
+      const status = String(card.credentialStatus ?? "").toLowerCase();
+      if (["revoked", "suspended", "expired", "invalid"].includes(status))
+        return "invalid_or_revoked";
+    }
+    return presentationHasCryptographicProof(presentation, checklist)
+      ? "issuer_signed"
+      : "proof_missing";
+  }
   const card = (value.card && isWalletCard(value.card) ? value.card : input) as
     WalletCard | unknown;
   if (isWalletCard(card)) {
@@ -1148,6 +1174,67 @@ function normalizeChecklist(value: unknown): TrustLayerChecklistItem[] {
           detail: stringOrUndefined(item.detail),
         }))
     : [];
+}
+
+function withPresentationProofChecklist(
+  checklist: TrustLayerChecklistItem[],
+  presentation: WalletPresentationResponse,
+): TrustLayerChecklistItem[] {
+  const hasProofItem = checklist.some((item) => isProofChecklistItem(item));
+  if (hasProofItem) return checklist;
+  const hasProof = presentationHasCryptographicProof(presentation, checklist);
+  if (!hasProof) return checklist;
+  return [
+    ...checklist,
+    {
+      key: "proof",
+      label: "Presentation proof",
+      ok: true,
+      detail: presentation.format,
+    },
+  ];
+}
+
+function presentationHasCryptographicProof(
+  presentation: WalletPresentationResponse,
+  checklist: TrustLayerChecklistItem[] = normalizeChecklist(
+    presentation.verificationChecklist,
+  ),
+): boolean {
+  if (checklist.some((item) => isProofChecklistItem(item) && item.ok)) {
+    return true;
+  }
+  const format = presentation.format.toLowerCase();
+  const isJwtPresentation =
+    format.includes("jwt") || format.includes("sd-jwt");
+  return Boolean(
+    isJwtPresentation &&
+      presentation.presentationId &&
+      presentation.qrData &&
+      presentation.credentialCount > 0,
+  );
+}
+
+function isProofChecklistItem(item: TrustLayerChecklistItem): boolean {
+  const text = `${item.key} ${item.label}`.toLowerCase();
+  return (
+    text.includes("proof") ||
+    text.includes("signature") ||
+    text.includes("signed")
+  );
+}
+
+function isWalletPresentationResponseLike(
+  value: unknown,
+): value is WalletPresentationResponse {
+  const record = portalRecord(value);
+  return Boolean(
+    typeof record.presentationId === "string" &&
+      typeof record.format === "string" &&
+      typeof record.mode === "string" &&
+      typeof record.expiresAt === "string" &&
+      typeof record.qrData === "string",
+  );
 }
 
 function coercePresentationMode(value: string): PortablePresentationMode {
