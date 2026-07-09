@@ -19,7 +19,8 @@ export class TrustCareContractError extends Error {
   }
 }
 
-export type ShareGatewayMode = "portal_backend" | "local_dev_gateway";
+export type ShareGatewayMode =
+  "portal_backend" | "local_dev_gateway" | "trustcare_production_gateway";
 
 export type ShareGatewayArtifactKind =
   | "vp"
@@ -166,7 +167,12 @@ export function assertShareGatewayPublicationResponse(
   const issues: TrustCareValidationIssue[] = [];
   const object = objectRecord(value);
   requireBoolean(object, "ok", issues);
-  requireOneOf(object, "mode", ["portal_backend", "local_dev_gateway"], issues);
+  requireOneOf(
+    object,
+    "mode",
+    ["portal_backend", "local_dev_gateway", "trustcare_production_gateway"],
+    issues,
+  );
   requireString(object, "artifactId", issues);
   requireOneOf(
     object,

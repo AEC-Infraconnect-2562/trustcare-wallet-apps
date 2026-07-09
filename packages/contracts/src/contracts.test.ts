@@ -21,6 +21,26 @@ describe("TrustCare shared contracts", () => {
       }),
     ).toMatchObject({ ok: true, artifactId: "vp_123" });
 
+    expect(
+      assertShareGatewayPublicationResponse({
+        ok: true,
+        mode: "trustcare_production_gateway",
+        artifactId: "vp_railway_123",
+        kind: "vp",
+        publicUrl:
+          "https://wallet-web-production-6a00.up.railway.app/api/share-gateway/presentations/vp_railway_123.jwt",
+        qrPayload:
+          "https://wallet-web-production-6a00.up.railway.app/api/share-gateway/presentations/vp_railway_123.jwt",
+        jwksUrl:
+          "https://wallet-web-production-6a00.up.railway.app/api/share-gateway/.well-known/jwks.json",
+        warnings: [],
+        errors: [],
+      }),
+    ).toMatchObject({
+      mode: "trustcare_production_gateway",
+      artifactId: "vp_railway_123",
+    });
+
     expect(() =>
       assertShareGatewayPublicationResponse({
         ok: true,
