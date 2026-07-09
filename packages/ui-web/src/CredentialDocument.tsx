@@ -20,7 +20,6 @@ import {
   Syringe,
   UserRound,
 } from "lucide-react";
-import { useEffect, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import type {
   CredentialRenderField,
@@ -36,6 +35,7 @@ import {
   photoCandidatesForCard,
 } from "@trustcare/wallet-core";
 import { Badge } from "./primitives";
+import { useLoadedPhotoCandidate } from "./useLoadedPhotoCandidate";
 
 type Field = CredentialRenderField & {
   label: string;
@@ -264,13 +264,8 @@ function CredentialHolderPhoto({
   alt: string;
   initials: string;
 }) {
-  const [candidateIndex, setCandidateIndex] = useState(0);
-  const [loadedUrl, setLoadedUrl] = useState("");
-  const candidate = candidates[candidateIndex];
-
-  useEffect(() => {
-    setLoadedUrl("");
-  }, [candidate?.url]);
+  const { candidate, isLoaded, markFailed, markLoaded } =
+    useLoadedPhotoCandidate(candidates);
 
   if (!candidate) {
     return (
@@ -289,12 +284,12 @@ function CredentialHolderPhoto({
         {initials || "TC"}
       </span>
       <img
-        className={loadedUrl === candidate.url ? "loaded" : ""}
+        className={isLoaded ? "loaded" : ""}
         key={candidate.url}
         src={candidate.url}
-        alt={loadedUrl === candidate.url ? alt : ""}
-        onLoad={() => setLoadedUrl(candidate.url)}
-        onError={() => setCandidateIndex((index) => index + 1)}
+        alt={isLoaded ? alt : ""}
+        onLoad={markLoaded}
+        onError={markFailed}
       />
     </div>
   );

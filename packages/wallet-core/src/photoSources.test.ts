@@ -33,7 +33,16 @@ describe("photoSources", () => {
     ).toEqual([
       "https://trustcarehealth.live/manus-storage/patient_somsak_a2e00e97.jpg",
       "https://trustcarehealth.live/api/storage-proxy/patient_somsak_a2e00e97.jpg",
+      "assets/users/wallet-native-01.png",
     ]);
+  });
+
+  it("adds a local wallet portrait fallback for known Portal photos", () => {
+    expect(
+      normalizePhotoUrlCandidates(
+        "https://trustcarehealth.live/manus-storage/patient_malee_74d2ef04.jpg",
+      ),
+    ).toContain("assets/users/wallet-native-02.png");
   });
 
   it("reads Portal photo paths from current nested credential schemas", () => {
@@ -73,6 +82,7 @@ describe("photoSources", () => {
     expect(candidates.map((candidate) => candidate.url)).toEqual([
       "https://trustcarehealth.live/manus-storage/patient_somsak_a2e00e97.jpg",
       "https://trustcarehealth.live/api/storage-proxy/patient_somsak_a2e00e97.jpg",
+      "assets/users/wallet-native-01.png",
     ]);
   });
 });
