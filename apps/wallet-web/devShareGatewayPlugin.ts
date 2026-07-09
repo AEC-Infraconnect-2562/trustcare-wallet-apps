@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   createEphemeralEs256SigningKey,
   publicJwksForSigningKey,
+  signTrustCareCredentialJwt,
   signTrustCarePresentationJwt,
   type TrustCareSigningKey,
 } from "../../packages/wallet-core/src/trustcareJwt.ts";
@@ -14,6 +15,39 @@ type StoredArtifact = {
   payload: unknown;
   createdAt: string;
 };
+
+const demoHospitalIssuerProfiles = new Map([
+  [
+    "tcc",
+    {
+      code: "tcc",
+      name: "TrustCare Central Hospital",
+      nameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
+      trustDomain: "hospital",
+      country: "TH",
+    },
+  ],
+  [
+    "tcp",
+    {
+      code: "tcp",
+      name: "TrustCare Phuket International Hospital",
+      nameTh: "โรงพยาบาลทรัสต์แคร์ ภูเก็ต อินเตอร์เนชันแนล",
+      trustDomain: "hospital",
+      country: "TH",
+    },
+  ],
+  [
+    "tcm",
+    {
+      code: "tcm",
+      name: "TrustCare Chiang Mai Cross-Border Hospital",
+      nameTh: "โรงพยาบาลทรัสต์แคร์ เชียงใหม่",
+      trustDomain: "hospital",
+      country: "TH",
+    },
+  ],
+]);
 
 export function devShareGatewayPlugin(): Plugin {
   const artifacts = new Map<string, StoredArtifact>();
@@ -33,9 +67,43 @@ export function devShareGatewayPlugin(): Plugin {
     server.middlewares.use(async (req, res, next) => {
       const url = new URL(req.url ?? "/", requestOrigin(req));
       if (url.pathname === "/.well-known/jwks.json") {
-        const signingKey = await localSigningKey(signingKeyPromise, "");
-        signingKeyPromise = Promise.resolve(signingKey);
+        const baseSigningKey = await localSigningKey(signingKeyPromise, "");
+        signingKeyPromise = Promise.resolve(baseSigningKey);
+        const signingKey = issuerSigningKeyForProfile(
+          baseSigningKey,
+          requestOrigin(req),
+          { kind: "system" },
+        );
         json(res, 200, publicJwksForSigningKey(signingKey));
+        return;
+      }
+      if (url.pathname === "/.well-known/did.json") {
+        const baseSigningKey = await localSigningKey(signingKeyPromise, "");
+        signingKeyPromise = Promise.resolve(baseSigningKey);
+        const signingKey = issuerSigningKeyForProfile(
+          baseSigningKey,
+          requestOrigin(req),
+          { kind: "system" },
+        );
+        json(res, 200, didDocumentForSigningKey(signingKey));
+        return;
+      }
+      const issuerDocumentRoute = matchIssuerDidRoute(url.pathname);
+      if (issuerDocumentRoute) {
+        const baseSigningKey = await localSigningKey(signingKeyPromise, "");
+        signingKeyPromise = Promise.resolve(baseSigningKey);
+        const issuerKey = issuerSigningKeyForProfile(
+          baseSigningKey,
+          requestOrigin(req),
+          { kind: "hospital", code: issuerDocumentRoute.code },
+        );
+        json(
+          res,
+          200,
+          issuerDocumentRoute.kind === "jwks"
+            ? publicJwksForSigningKey(issuerKey)
+            : didDocumentForSigningKey(issuerKey),
+        );
         return;
       }
       if (!url.pathname.startsWith("/api/share-gateway")) {
@@ -83,9 +151,97 @@ async function handleGatewayRequest(
   const origin = requestOrigin(req);
   const pathname = url.pathname.replace(/^\/api\/share-gateway/, "") || "/";
 
+  const issuerDocumentRoute = matchIssuerDidRoute(pathname);
+  if (req.method === "GET" && issuerDocumentRoute) {
+    const baseSigningKey = await getSigningKey();
+    const issuerKey = issuerSigningKeyForProfile(baseSigningKey, origin, {
+      kind: "hospital",
+      code: issuerDocumentRoute.code,
+    });
+    json(
+      res,
+      200,
+      issuerDocumentRoute.kind === "jwks"
+        ? publicJwksForSigningKey(issuerKey)
+        : didDocumentForSigningKey(issuerKey),
+    );
+    return;
+  }
+
   if (req.method === "GET" && pathname === "/.well-known/jwks.json") {
-    const signingKey = await getSigningKey();
+    const signingKey = issuerSigningKeyForProfile(
+      await getSigningKey(),
+      origin,
+      { kind: "system" },
+    );
     json(res, 200, publicJwksForSigningKey(signingKey));
+    return;
+  }
+  if (req.method === "GET" && pathname === "/.well-known/did.json") {
+    const signingKey = issuerSigningKeyForProfile(
+      await getSigningKey(),
+      origin,
+      { kind: "system" },
+    );
+    json(res, 200, didDocumentForSigningKey(signingKey));
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/credentials/sign") {
+    const body = await readJsonBody(req);
+    const credential = isRecord(body.credential) ? body.credential : null;
+    if (!credential) {
+      json(res, 400, {
+        ok: false,
+        errors: ["credential is required."],
+      });
+      return;
+    }
+    const issuerProfile = issuerProfileFromCredential(credential);
+    const baseSigningKey = await getSigningKey();
+    const signingKey = issuerSigningKeyForProfile(
+      baseSigningKey,
+      origin,
+      issuerProfile,
+    );
+    const expiresAt =
+      stringValue(body.expiresAt) ||
+      stringValue(credential.validUntil) ||
+      new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString();
+    const signed = await signTrustCareCredentialJwt({
+      credential: buildIssuerSignedCredential(
+        credential,
+        signingKey,
+        issuerProfile,
+        expiresAt,
+      ),
+      signingKey,
+      credentialType: stringValue(body.credentialType) || undefined,
+      subject: stringValue(body.holderDid) || undefined,
+      audience: stringValue(body.audience) || undefined,
+      expiresAt,
+    });
+    json(res, 201, {
+      ok: true,
+      credentialId: signed.credentialId,
+      credentialJwt: signed.jwt,
+      credentialProof: {
+        type: "W3C VC JWT",
+        format: "vc+jwt",
+        jwt: signed.jwt,
+        alg: "ES256",
+        kid: signingKey.kid,
+        source:
+          issuerProfile.kind === "hospital"
+            ? "trustcare_hospital_issuer_profile"
+            : "trustcare_system_issuer_profile",
+      },
+      issuerDid: signingKey.issuerDid,
+      jwksUrl: signingKey.jku,
+      signedCredential: signed.credential,
+      warnings: [],
+      errors: [],
+    });
     return;
   }
 
@@ -117,7 +273,7 @@ async function handleGatewayRequest(
         },
         purpose: stringValue(body.purpose),
         expiresAt: stringValue(body.expiresAt) || undefined,
-        signUnsignedCredentials: true,
+        signUnsignedCredentials: false,
       });
       storedPayload = signed.jwt;
       storedContentType = "application/vp+jwt";
@@ -258,6 +414,241 @@ function publicArtifactPath(kind: string, artifactId: string): string {
     default:
       return `/api/share-gateway/artifacts/${encoded}.json`;
   }
+}
+
+function issuerSigningKeyForProfile(
+  baseSigningKey: TrustCareSigningKey,
+  origin: string,
+  profile: { kind: "system" } | { kind: "hospital"; code: string },
+): TrustCareSigningKey {
+  const baseOrigin = issuerDidBaseOrigin(origin);
+  if (profile.kind === "system") {
+    const issuerDid = didWebFromOrigin(baseOrigin);
+    return withSigningKeyIdentity({
+      ...baseSigningKey,
+      issuerDid,
+      kid: `${issuerDid}#wallet-signing-key`,
+      jku: `${baseOrigin}/api/share-gateway/.well-known/jwks.json`,
+    });
+  }
+  const code = normalizeHospitalCode(profile.code);
+  const issuerDid = didWebFromPath(baseOrigin, ["hospital", code]);
+  return withSigningKeyIdentity({
+    ...baseSigningKey,
+    issuerDid,
+    kid: `${issuerDid}#hospital-${code}-signing-key`,
+    jku: `${baseOrigin}/hospital/${code}/jwks.json`,
+  });
+}
+
+function withSigningKeyIdentity(
+  signingKey: TrustCareSigningKey,
+): TrustCareSigningKey {
+  return {
+    ...signingKey,
+    publicJwk: {
+      ...signingKey.publicJwk,
+      alg: signingKey.alg,
+      kid: signingKey.kid,
+      use: "sig",
+    },
+    privateJwk: {
+      ...signingKey.privateJwk,
+      alg: signingKey.alg,
+      kid: signingKey.kid,
+      use: "sig",
+    },
+  };
+}
+
+function didDocumentForSigningKey(signingKey: TrustCareSigningKey) {
+  return {
+    "@context": [
+      "https://www.w3.org/ns/did/v1",
+      "https://w3id.org/security/jwk/v1",
+    ],
+    id: signingKey.issuerDid,
+    verificationMethod: [
+      {
+        id: signingKey.kid,
+        type: "JsonWebKey",
+        controller: signingKey.issuerDid,
+        publicKeyJwk: signingKey.publicJwk,
+      },
+    ],
+    assertionMethod: [signingKey.kid],
+    authentication: [signingKey.kid],
+  };
+}
+
+function buildIssuerSignedCredential(
+  credential: Record<string, unknown>,
+  signingKey: TrustCareSigningKey,
+  issuerProfile: { kind: "system" } | { kind: "hospital"; code: string },
+  expiresAt: string,
+): Record<string, unknown> {
+  const originalIssuer = credential.issuer;
+  const code =
+    issuerProfile.kind === "hospital"
+      ? normalizeHospitalCode(issuerProfile.code)
+      : "";
+  const profile = code ? demoHospitalIssuerProfiles.get(code) : null;
+  const issuer =
+    issuerProfile.kind === "hospital"
+      ? {
+          id: signingKey.issuerDid,
+          name: profile?.name ?? `TrustCare Hospital ${code.toUpperCase()}`,
+          nameTh: profile?.nameTh,
+          trustDomain: profile?.trustDomain ?? "hospital",
+          country: profile?.country ?? "TH",
+        }
+      : {
+          id: signingKey.issuerDid,
+          name: "TrustCare Wallet System",
+          trustDomain: "wallet-system",
+          country: "TH",
+        };
+  return stripUndefined({
+    ...credential,
+    issuer,
+    validUntil: credential.validUntil ?? expiresAt,
+    evidence: [
+      ...arrayValue(credential.evidence),
+      {
+        type: "SourceCredentialIssuer",
+        sourceIssuer: originalIssuer,
+        signingIssuer: signingKey.issuerDid,
+      },
+    ],
+    trustcare: {
+      ...(objectValue(credential.trustcare) ?? {}),
+      issuerSignedCredential: true,
+      issuerProfile:
+        issuerProfile.kind === "hospital" ? `hospital:${code}` : "system",
+      originalIssuer,
+      signingIssuerDid: signingKey.issuerDid,
+      signingJwksUrl: signingKey.jku,
+    },
+  });
+}
+
+function issuerProfileFromCredential(
+  credential: Record<string, unknown>,
+): { kind: "system" } | { kind: "hospital"; code: string } {
+  const trustcare = objectValue(credential.trustcare);
+  const issuer = credential.issuer;
+  const issuerId =
+    typeof issuer === "string"
+      ? issuer
+      : isRecord(issuer)
+        ? stringValue(issuer.id)
+        : "";
+  const candidates = [
+    stringValue(trustcare?.issuerHospitalCode),
+    stringValue(trustcare?.issuerHospitalId),
+    hospitalCodeFromDid(issuerId),
+    hospitalCodeFromName(stringValue(credential.issuerHospitalName)),
+    hospitalCodeFromName(
+      isRecord(issuer)
+        ? stringValue(issuer.name, stringValue(issuer.nameTh))
+        : "",
+    ),
+  ].filter(Boolean);
+  const code = normalizeHospitalCode(candidates[0] ?? "");
+  if (code) return { kind: "hospital", code };
+  return { kind: "system" };
+}
+
+function matchIssuerDidRoute(
+  pathname: string,
+): { code: string; kind: "did" | "jwks" } | null {
+  const match =
+    /^(?:\/api\/share-gateway)?\/hospital\/([^/]+)\/(?:did(?:\.json|\/jwks\.json)|jwks\.json)$/.exec(
+      pathname,
+    );
+  if (!match) return null;
+  const code = normalizeHospitalCode(decodeURIComponent(match[1] ?? ""));
+  if (!code) return null;
+  return {
+    code,
+    kind: pathname.endsWith("/jwks.json") ? "jwks" : "did",
+  };
+}
+
+function didWebFromOrigin(origin: string): string {
+  try {
+    const url = new URL(origin);
+    return `did:web:${url.host.replace(/:/g, "%3A")}`;
+  } catch {
+    return "did:web:wallet-demo.trustcare.local";
+  }
+}
+
+function didWebFromPath(origin: string, pathSegments: string[]): string {
+  try {
+    const url = new URL(origin);
+    const host = url.host.replace(/:/g, "%3A");
+    const path = pathSegments
+      .map((segment) => encodeURIComponent(segment.toLowerCase()))
+      .join(":");
+    return `did:web:${host}${path ? `:${path}` : ""}`;
+  } catch {
+    return `did:web:wallet-demo.trustcare.local:${pathSegments.join(":")}`;
+  }
+}
+
+function issuerDidBaseOrigin(origin: string): string {
+  return (
+    stringValue(process.env.TRUSTCARE_ISSUER_DID_WEB_BASE_URL) ||
+    stringValue(process.env.TRUSTCARE_DID_WEB_BASE_URL) ||
+    origin
+  ).replace(/\/+$/, "");
+}
+
+function hospitalCodeFromDid(value: string): string {
+  const match = /:hospital:([^:#/?]+)/i.exec(value);
+  return match ? normalizeHospitalCode(match[1]) : "";
+}
+
+function hospitalCodeFromName(value: string): string {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("phuket")) return "tcp";
+  if (normalized.includes("chiang mai") || normalized.includes("เชียงใหม่")) {
+    return "tcm";
+  }
+  if (normalized.includes("trustcare") || normalized.includes("ทรัสต์แคร์")) {
+    return "tcc";
+  }
+  return "";
+}
+
+function normalizeHospitalCode(value: string): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "");
+}
+
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => stripUndefined(item))
+      .filter((item) => item !== undefined) as T;
+  }
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .map(([key, item]) => [key, stripUndefined(item)]),
+  ) as T;
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 
 function artifactKey(kind: string, artifactId: string): string {

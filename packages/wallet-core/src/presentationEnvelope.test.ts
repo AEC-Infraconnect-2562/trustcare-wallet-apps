@@ -47,6 +47,39 @@ describe("portable presentation envelope", () => {
     expect(envelope.trust.badge).not.toBe("green");
   });
 
+  it("treats an issuer-profile signed VC JWT as portable issuer proof", () => {
+    const card = {
+      ...completeWalletSeedCards.find(
+        (item) => item.cardType === "patient_identity",
+      )!,
+      issuerDid: "did:web:wallet.example:hospital:tcc",
+      credentialJwt: "header.payload.signature",
+      credentialProof: {
+        type: "W3C VC JWT",
+        format: "vc+jwt",
+        jwt: "header.payload.signature",
+        alg: "ES256",
+        kid: "did:web:wallet.example:hospital:tcc#hospital-tcc-signing-key",
+        source: "trustcare_hospital_issuer_profile",
+      },
+    };
+    const envelope = presentationEnvelopeFromWalletCard(card);
+
+    expect(classifyPortableTrustStatus(card)).toBe("issuer_signed");
+    expect(envelope.trust.status).toBe("issuer_signed");
+    expect(envelope.trust.badge).toBe("green");
+    expect(envelope.trust.warnings).not.toContain(
+      "cryptographic_proof_missing",
+    );
+    expect(envelope.trust.checklist).toContainEqual(
+      expect.objectContaining({
+        key: "proof",
+        ok: true,
+        detail: "vc+jwt",
+      }),
+    );
+  });
+
   it("does not inherit a proof-missing card status after creating a signed VP", () => {
     const card = {
       ...completeWalletSeedCards.find(

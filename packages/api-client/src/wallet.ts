@@ -5,7 +5,6 @@ import {
   canPresentCredential,
   createDemoPresentation,
   createTrustCareShlGatewayPublication,
-  getDemoCardsByCategory,
   getDemoHistory,
   getDemoUser,
   getDemoWalletCards,
@@ -40,6 +39,7 @@ import {
   type DemoOid4vciIssuedCredential,
   type FhirDocumentReferenceLike,
   type SharePackageBuildInput,
+  type WalletCard,
   type WalletDocumentRecord,
 } from "@trustcare/wallet-core";
 import type { TrustCareClientOptions } from "./trpc";
@@ -50,6 +50,7 @@ import {
   syncTrustCarePortalCardsByCategory,
   type PortalSyncMode,
 } from "./portalSync";
+import { signCredentialWithShareGateway } from "./shareGatewayClient";
 
 export type WalletApiOptions = TrustCareClientOptions & {
   demoMode?: boolean;
@@ -760,20 +761,82 @@ export async function interoperabilityFixtures(
 async function demoCardsByCategory(
   options: WalletApiOptions,
 ): Promise<WalletCardsByCategory> {
-  if (usesPortalLiveSync(options)) {
-    return syncTrustCarePortalCardsByCategory(options);
-  }
-  return getDemoCardsByCategory(options.userId);
+  return groupCardsByCategory(await demoWalletCards(options));
 }
 
 async function demoWalletCards(options: WalletApiOptions) {
-  if (usesPortalLiveSync(options)) {
-    return Object.values(
-      await syncTrustCarePortalCardsByCategory(options),
-    ).flat();
-  }
-  return getDemoWalletCards(options.userId);
+  const cards = usesPortalLiveSync(options)
+    ? Object.values(await syncTrustCarePortalCardsByCategory(options)).flat()
+    : getDemoWalletCards(options.userId);
+  return hydrateIssuerSignedCredentials(options, cards);
 }
+
+async function hydrateIssuerSignedCredentials(
+  options: WalletApiOptions,
+  cards: WalletCard[],
+): Promise<WalletCard[]> {
+  const gatewayBaseUrl = demoCredentialSigningGatewayBaseUrl(options);
+  const signableCards = cards.filter(shouldRequestIssuerSignature);
+  if (!gatewayBaseUrl || !signableCards.length) return cards;
+  const signedCards = new Map<string | number, WalletCard>();
+  await Promise.all(
+    signableCards.map(async (card) => {
+      const signed = await signCredentialWithShareGateway({
+        gatewayBaseUrl,
+        credential: card.credentialData ?? {},
+        cardId: card.id,
+        credentialId: card.credentialId,
+        credentialType: card.credentialType,
+        holderDid: card.holderDid,
+        expiresAt: card.expiresAt,
+        audience: TRUSTCARE_WALLET_VERIFIER_AUDIENCE,
+      });
+      signedCards.set(card.id, {
+        ...card,
+        credentialJwt: signed.credentialJwt,
+        credentialProof: signed.credentialProof,
+        issuerDid: signed.issuerDid ?? card.issuerDid,
+        credentialData: signed.signedCredential ?? card.credentialData,
+      });
+    }),
+  );
+  return cards.map((card) => signedCards.get(card.id) ?? card);
+}
+
+function shouldRequestIssuerSignature(card: WalletCard): boolean {
+  return Boolean(
+    card.credentialData &&
+    card.credentialStatus === "active" &&
+    card.sourceSystem !== "partner_wallet",
+  );
+}
+
+function demoCredentialSigningGatewayBaseUrl(
+  options: WalletApiOptions,
+): string | undefined {
+  if (!isBrowserRuntime()) return undefined;
+  if (options.shareGatewayUrl) return options.shareGatewayUrl;
+  if (!options.demoOrigin) return undefined;
+  return `${options.demoOrigin.replace(/\/$/, "")}/api/share-gateway`;
+}
+
+function isBrowserRuntime(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.document !== "undefined" &&
+    typeof fetch === "function"
+  );
+}
+
+function groupCardsByCategory(cards: WalletCard[]): WalletCardsByCategory {
+  return cards.reduce<WalletCardsByCategory>((grouped, card) => {
+    grouped[card.documentCategory] ??= [];
+    grouped[card.documentCategory].push(card);
+    return grouped;
+  }, {});
+}
+
+const TRUSTCARE_WALLET_VERIFIER_AUDIENCE = "https://trustcare.network/verifier";
 
 function presentationCardSnapshot(
   options: WalletApiOptions,

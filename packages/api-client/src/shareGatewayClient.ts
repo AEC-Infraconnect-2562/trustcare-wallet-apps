@@ -36,6 +36,35 @@ export type PublishShlSharePackageInput = {
   expiresAt: string;
 };
 
+export type SignCredentialWithGatewayInput = {
+  cardId?: string | number;
+  credentialId?: string | number;
+  credential: Record<string, unknown>;
+  credentialType?: string | null;
+  holderDid?: string | null;
+  expiresAt?: string | null;
+  audience?: string;
+};
+
+export type SignCredentialWithGatewayResponse = {
+  ok: boolean;
+  credentialId: string;
+  credentialJwt: string;
+  credentialProof: {
+    type?: string | null;
+    format?: string | null;
+    jwt?: string | null;
+    alg?: string | null;
+    kid?: string | null;
+    source?: string | null;
+  };
+  issuerDid?: string | null;
+  jwksUrl?: string | null;
+  signedCredential?: Record<string, unknown>;
+  warnings: string[];
+  errors: string[];
+};
+
 export type ShareGatewayClient = {
   publishVp(
     input: PublishVpSharePackageInput,
@@ -252,6 +281,41 @@ export async function publishShareArtifact(input: {
     throw new Error(`Share Gateway publish failed: ${errors}`);
   }
   return gatewayPayload as ShareGatewayPublicationResponse;
+}
+
+export async function signCredentialWithShareGateway(
+  input: SignCredentialWithGatewayInput & ShareGatewayClientOptions,
+): Promise<SignCredentialWithGatewayResponse> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const response = await fetchImpl(
+    `${normalizeShareGatewayBaseUrl(input.gatewayBaseUrl)}/credentials/sign`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({
+        cardId: input.cardId,
+        credentialId: input.credentialId,
+        credential: input.credential,
+        credentialType: input.credentialType,
+        holderDid: input.holderDid,
+        expiresAt: input.expiresAt,
+        audience: input.audience,
+      }),
+    },
+  );
+  const payload = (await response
+    .json()
+    .catch(() => null)) as SignCredentialWithGatewayResponse | null;
+  if (!response.ok || !payload?.ok || !payload.credentialJwt) {
+    const errors = payload?.errors?.length
+      ? payload.errors.join(" ")
+      : response.statusText;
+    throw new Error(`Share Gateway credential signing failed: ${errors}`);
+  }
+  return payload;
 }
 
 export async function resolvePresentation(
