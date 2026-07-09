@@ -1033,7 +1033,11 @@ export default function App() {
   }
 
   return (
-    <main className="app-shell" data-release={walletRuntimeRelease}>
+    <main
+      className="app-shell"
+      data-release={walletRuntimeRelease}
+      data-view={view}
+    >
       <header className="app-top-shell">
         <div className="brand-block">
           <div className="brand-mark">TC</div>
@@ -1245,9 +1249,6 @@ export default function App() {
               {portalSyncBusy ? "กำลัง Sync" : "Sync Portal"}
             </button>
           )}
-          <button type="button" onClick={() => openDocumentsHub("receive")}>
-            <Camera size={18} /> {t("wallet.scanQr")}
-          </button>
           <button
             type="button"
             onClick={() => exportResult(exportWalletObjects(storedObjects))}

@@ -9512,3 +9512,391 @@ b {
     aspect-ratio: 1;
   }
 }
+
+/* Premium app shell polish: final cascade layer for visual rhythm and scanability. */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --shell-header-height: 62px;
+  --workspace-topbar-height: 76px;
+  --content-max-width: 1440px;
+  --surface-border: color-mix(in srgb, var(--border) 86%, transparent);
+  --surface-soft: color-mix(in srgb, var(--card) 90%, var(--background));
+  --elevation-soft:
+    0 1px 2px rgba(15, 23, 42, 0.05), 0 14px 34px rgba(15, 23, 42, 0.065);
+  --elevation-command: 0 10px 28px rgba(15, 23, 42, 0.07);
+}
+
+body {
+  background:
+    radial-gradient(
+      circle at 12% -12%,
+      rgba(66, 103, 214, 0.08),
+      transparent 32%
+    ),
+    radial-gradient(
+      circle at 92% 2%,
+      rgba(47, 143, 113, 0.07),
+      transparent 26%
+    ),
+    var(--background);
+}
+
+.app-top-shell {
+  min-height: var(--shell-header-height);
+  padding: var(--space-2) clamp(18px, 2.4vw, 32px);
+  grid-template-columns: minmax(240px, 0.55fr) minmax(0, auto);
+  gap: var(--space-5);
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26);
+}
+
+.brand-copy strong {
+  font-size: 13.5px;
+}
+
+.primary-tabs {
+  gap: var(--space-2);
+}
+
+.primary-tabs .nav-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+}
+
+.main-pane {
+  --workspace-topbar-height: 76px;
+  padding: 0 clamp(18px, 2.3vw, 32px) 80px;
+}
+
+.topbar {
+  min-height: var(--workspace-topbar-height);
+  margin: 0 calc(clamp(18px, 2.3vw, 32px) * -1);
+  padding: var(--space-3) clamp(18px, 2.3vw, 32px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-5);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--card) 96%, transparent),
+    color-mix(in srgb, var(--background) 74%, var(--card))
+  );
+  border-bottom: 1px solid var(--surface-border);
+  backdrop-filter: blur(18px);
+}
+
+.topbar-title-block {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "crumb"
+    "title"
+    "subtitle";
+  row-gap: 2px;
+}
+
+.app-shell[data-view="home"] .topbar-title-block {
+  grid-template-areas:
+    "title"
+    "subtitle";
+}
+
+.app-shell[data-view="home"] .breadcrumb-row {
+  display: none;
+}
+
+.breadcrumb-row {
+  min-height: 28px;
+}
+
+.back-button {
+  min-height: 28px;
+  border-color: var(--surface-border);
+  background: color-mix(in srgb, var(--card) 96%, transparent);
+  box-shadow: none;
+}
+
+.breadcrumbs {
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 50%, var(--card));
+}
+
+.topbar h1 {
+  font-size: clamp(22px, 1.75vw, 30px);
+  line-height: 1.12;
+}
+
+.topbar p {
+  max-width: 760px;
+  font-size: 12.5px;
+}
+
+.topbar-actions {
+  gap: var(--space-2);
+}
+
+.top-user-session {
+  min-width: 230px;
+  max-width: 290px;
+  min-height: 40px;
+  border-color: var(--surface-border);
+  background: color-mix(in srgb, var(--card) 96%, transparent);
+  box-shadow: var(--elevation-command);
+}
+
+.round-action,
+.shell-scan-button {
+  min-height: 40px;
+  height: 40px;
+}
+
+.round-action {
+  width: 40px;
+  border-color: var(--surface-border);
+  box-shadow: var(--shadow-xs);
+}
+
+.shell-scan-button {
+  padding: 0 16px;
+  box-shadow: 0 14px 28px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.status-strip {
+  top: var(--shell-header-height);
+  min-height: 48px;
+  margin: 0 calc(clamp(18px, 2.3vw, 32px) * -1) var(--space-5);
+  padding: 8px clamp(18px, 2.3vw, 32px);
+  border-bottom: 1px solid var(--surface-border);
+  background: color-mix(in srgb, var(--card) 95%, transparent);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.035);
+}
+
+.status-strip > div,
+.status-strip > button {
+  min-height: 32px;
+  border-color: var(--surface-border);
+  background: color-mix(in srgb, var(--muted) 36%, var(--card));
+}
+
+.status-strip button {
+  background: color-mix(in srgb, var(--card) 96%, transparent);
+}
+
+.view-stack {
+  gap: var(--space-6);
+  width: min(100%, var(--content-max-width));
+}
+
+.home-hero-grid,
+.home-two-column,
+.receive-grid,
+.share-flow-grid {
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.health-passport-card,
+.home-readiness-panel,
+.documents-command,
+.receive-card,
+.share-step,
+.share-intent-card,
+.share-result-card,
+.share-review-card,
+.share-secondary-tools summary,
+.readiness-summary-card,
+.purpose-picker-card,
+.missing-document-card,
+.packet-recommendation-card,
+.share-packet-summary,
+.acquisition-hero,
+.credential-section,
+.tc-surface,
+.metric-card,
+.wallet-card-tile,
+.bundle-card,
+.store-object,
+.stored-object-summary {
+  border-color: var(--surface-border);
+  background: color-mix(in srgb, var(--card) 96%, transparent);
+  box-shadow: var(--elevation-soft);
+}
+
+.health-passport-card,
+.home-readiness-panel,
+.documents-command {
+  padding: clamp(18px, 2vw, 26px);
+}
+
+.passport-summary-grid,
+.critical-card-row,
+.document-filter-row,
+.document-category-tabs,
+.service-readiness-list {
+  gap: var(--space-3);
+}
+
+.passport-summary-grid div,
+.critical-card,
+.service-readiness-row,
+.next-action-card {
+  border-color: var(--surface-border);
+  background: color-mix(in srgb, var(--muted) 42%, var(--card));
+}
+
+.home-readiness-panel {
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+.home-readiness-panel .readiness-ring,
+.readiness-ring {
+  box-shadow:
+    inset 0 0 0 1px var(--surface-border),
+    0 16px 34px rgba(66, 103, 214, 0.1);
+}
+
+.service-readiness-row {
+  padding: 11px 12px;
+  border-radius: 12px;
+}
+
+.service-readiness-row.active {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--primary) 9%, var(--card)),
+    color-mix(in srgb, var(--card) 96%, transparent)
+  );
+  box-shadow:
+    inset 3px 0 0 var(--primary),
+    0 10px 24px rgba(66, 103, 214, 0.08);
+}
+
+.service-readiness-row small,
+.service-readiness-row em {
+  color: color-mix(in srgb, var(--muted-foreground) 78%, transparent);
+}
+
+.readiness-action-row {
+  margin-top: var(--space-1);
+}
+
+@media (max-width: 1180px) and (min-width: 941px) {
+  .app-top-shell {
+    gap: var(--space-3);
+    padding-bottom: var(--space-3);
+  }
+
+  .primary-tabs {
+    padding-bottom: 0;
+  }
+
+  .topbar {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .topbar-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 940px) {
+  .main-pane {
+    padding: 0 14px 92px;
+  }
+
+  .topbar {
+    margin: 0 -14px;
+    padding: 10px 14px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  .status-strip {
+    top: var(--workspace-topbar-height);
+    margin-inline: -14px;
+    padding-inline: 14px;
+  }
+
+  .topbar-actions {
+    position: static;
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .top-user-session {
+    min-width: 0;
+    max-width: min(240px, 52vw);
+  }
+}
+
+@media (max-width: 720px) {
+  .topbar {
+    display: grid;
+    min-height: auto;
+    padding-block: 10px;
+  }
+
+  .breadcrumb-row {
+    padding-right: 0;
+  }
+
+  .topbar-title-block {
+    gap: var(--space-1);
+  }
+
+  .topbar h1 {
+    font-size: 21px;
+  }
+
+  .topbar p {
+    font-size: 11.75px;
+  }
+
+  .topbar-actions {
+    gap: var(--space-2);
+  }
+
+  .top-user-session {
+    max-width: min(210px, 58vw);
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .top-user-session small {
+    display: none;
+  }
+
+  .shell-scan-button {
+    width: 40px;
+    min-width: 40px;
+  }
+
+  .round-action {
+    width: 40px;
+  }
+
+  .home-readiness-panel,
+  .health-passport-card,
+  .documents-command {
+    padding: var(--space-4);
+  }
+}
