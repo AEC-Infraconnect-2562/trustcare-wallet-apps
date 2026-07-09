@@ -20,7 +20,7 @@ import {
   Syringe,
   UserRound,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import type {
   CredentialRenderField,
@@ -265,7 +265,12 @@ function CredentialHolderPhoto({
   initials: string;
 }) {
   const [candidateIndex, setCandidateIndex] = useState(0);
+  const [loadedUrl, setLoadedUrl] = useState("");
   const candidate = candidates[candidateIndex];
+
+  useEffect(() => {
+    setLoadedUrl("");
+  }, [candidate?.url]);
 
   if (!candidate) {
     return (
@@ -280,10 +285,15 @@ function CredentialHolderPhoto({
 
   return (
     <div className="credential-photo" aria-label="รูปผู้ถือเอกสาร">
+      <span className="credential-photo-fallback-text" aria-hidden="true">
+        {initials || "TC"}
+      </span>
       <img
+        className={loadedUrl === candidate.url ? "loaded" : ""}
         key={candidate.url}
         src={candidate.url}
-        alt={alt}
+        alt={loadedUrl === candidate.url ? alt : ""}
+        onLoad={() => setLoadedUrl(candidate.url)}
         onError={() => setCandidateIndex((index) => index + 1)}
       />
     </div>

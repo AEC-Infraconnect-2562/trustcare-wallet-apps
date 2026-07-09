@@ -77,6 +77,7 @@ import {
   buildPortalInteroperabilityFixtures,
   getDemoUser,
   getDemoWalletCards,
+  initialsFromName,
   normalizePhotoUrl,
   normalizePhotoUrlCandidates,
   parseShlLink,
@@ -443,6 +444,28 @@ export function HomeView({
             <Button className="secondary" onClick={() => onView("share")}>
               <Share2 size={18} /> แชร์
             </Button>
+          </div>
+          <div
+            className="passport-document-stack"
+            aria-label="เอกสารสำคัญในกระเป๋า"
+          >
+            {criticalCards.slice(0, 3).map((card) => (
+              <button
+                key={card.id}
+                type="button"
+                className="passport-document-row"
+                onClick={() => onOpenCard(card)}
+              >
+                <ShieldCheck size={17} />
+                <span>
+                  <strong>{card.displayNameEn ?? card.displayName}</strong>
+                  <small>{categoryLabel(card.documentCategory)}</small>
+                </span>
+                <Badge tone={credentialStatusTone(card.credentialStatus)}>
+                  {credentialStatusLabel(card.credentialStatus)}
+                </Badge>
+              </button>
+            ))}
           </div>
         </Surface>
         <Surface className="home-readiness-panel">
@@ -4835,20 +4858,33 @@ export function UserAvatarImage({
     [cards, user],
   );
   const [candidateIndex, setCandidateIndex] = useState(0);
+  const [loadedSource, setLoadedSource] = useState("");
   const source = candidates[candidateIndex] ?? resolveAvatarFallbackUrl(user);
+  const initials = initialsFromName(user.nameEn || user.nameTh);
 
   useEffect(() => {
     setCandidateIndex(0);
   }, [candidates]);
 
+  useEffect(() => {
+    setLoadedSource("");
+  }, [source]);
+
   return (
-    <img
-      src={source}
-      alt={user.nameEn || user.nameTh}
-      onError={() => {
-        setCandidateIndex((index) => index + 1);
-      }}
-    />
+    <span className="user-avatar-image" aria-label={user.nameEn || user.nameTh}>
+      <span className="user-avatar-fallback" aria-hidden="true">
+        {initials}
+      </span>
+      <img
+        className={loadedSource === source ? "loaded" : ""}
+        src={source}
+        alt=""
+        onLoad={() => setLoadedSource(source)}
+        onError={() => {
+          setCandidateIndex((index) => index + 1);
+        }}
+      />
+    </span>
   );
 }
 
@@ -4860,6 +4896,7 @@ export function avatarUrlCandidatesForUser(
   const add = (url: string | null | undefined) => {
     if (!url) return;
     const resolved = resolveAvatarCandidateUrl(url);
+    if (isUnstableBrowserAvatarUrl(resolved)) return;
     if (resolved && !candidates.includes(resolved)) candidates.push(resolved);
   };
 
@@ -4874,6 +4911,14 @@ export function avatarUrlCandidatesForUser(
   }
   add(resolveAvatarFallbackUrl(user));
   return candidates;
+}
+
+function isUnstableBrowserAvatarUrl(url: string): boolean {
+  try {
+    return new URL(url).hostname.endsWith(".manus.space");
+  } catch {
+    return false;
+  }
 }
 
 function resolveAvatarCandidateUrl(url: string): string {

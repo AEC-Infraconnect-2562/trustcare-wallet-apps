@@ -9,7 +9,7 @@ import {
 } from "@trustcare/wallet-core";
 import { BadgeCheck, QrCode } from "lucide-react";
 import type { CSSProperties } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const photoDocumentTypes = new Set([
   "patient_identity",
@@ -92,7 +92,12 @@ function WalletCardPhoto({
   initials: string;
 }) {
   const [candidateIndex, setCandidateIndex] = useState(0);
+  const [loadedUrl, setLoadedUrl] = useState("");
   const candidate = candidates[candidateIndex];
+
+  useEffect(() => {
+    setLoadedUrl("");
+  }, [candidate?.url]);
 
   if (!candidate) {
     return (
@@ -101,11 +106,16 @@ function WalletCardPhoto({
   }
 
   return (
-    <img
-      key={candidate.url}
-      src={candidate.url}
-      alt=""
-      onError={() => setCandidateIndex((index) => index + 1)}
-    />
+    <>
+      <span className="wallet-card-photo-fallback">{initials || "TC"}</span>
+      <img
+        className={loadedUrl === candidate.url ? "loaded" : ""}
+        key={candidate.url}
+        src={candidate.url}
+        alt=""
+        onLoad={() => setLoadedUrl(candidate.url)}
+        onError={() => setCandidateIndex((index) => index + 1)}
+      />
+    </>
   );
 }
