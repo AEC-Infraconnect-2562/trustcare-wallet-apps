@@ -20,6 +20,34 @@ export function useLoadedPhotoCandidate(candidates: PhotoCandidate[]) {
     setLoadedUrl("");
   }, [imageSrc]);
 
+  useEffect(() => {
+    if (!imageSrc || loadedUrl === imageSrc) return undefined;
+
+    let cancelled = false;
+    const image = new Image();
+
+    image.onload = () => {
+      if (!cancelled) setLoadedUrl(imageSrc);
+    };
+    image.onerror = () => {
+      if (cancelled) return;
+      setCandidateIndex((index) =>
+        candidates[index]?.url === candidateUrl ? index + 1 : index,
+      );
+    };
+    image.src = imageSrc;
+
+    if (image.complete && image.naturalWidth > 0) {
+      setLoadedUrl(imageSrc);
+    }
+
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [candidateListKey, candidateUrl, candidates, imageSrc, loadedUrl]);
+
   return {
     candidate,
     imageSrc,
