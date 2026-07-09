@@ -71,7 +71,7 @@ export function importWalletExchange(
           : [
               "ยัง decode SHL payload ในเครื่องนี้ได้ไม่ครบ จึงเก็บ QR payload เดิมไว้ให้ backend ตรวจสอบต่อ.",
             ]),
-        "นำเข้า Standard SHL โดยไม่แก้ canonical shlink เดิม และบันทึกสถานะรอ TrustCare Maker/Checker ก่อนยกระดับเป็น Certified SHL ภายใน TrustCare ecosystem.",
+        "นำเข้า Standard SHL โดยไม่แก้ canonical shlink เดิม และบันทึกสถานะรอ TrustCare Manifest verification ก่อนยกระดับเป็น Certified SHL ภายใน TrustCare ecosystem.",
       ],
       errors: [],
     };
@@ -322,7 +322,7 @@ function importJsonObject(
       },
       warnings: parsed
         ? [
-            "นำเข้า SHL JSON แล้ว และ TrustCare Manifest VP binding ยังอยู่ในสถานะรอ Maker/Checker ก่อนยกระดับความน่าเชื่อถือภายใน TrustCare.",
+            "นำเข้า SHL JSON แล้ว และ TrustCare Manifest VP binding ยังอยู่ในสถานะรอ Manifest verification ก่อนยกระดับความน่าเชื่อถือภายใน TrustCare.",
           ]
         : [
             "นำเข้า SHL JSON แล้ว แต่ embedded QR payload ยัง decode ในเครื่องนี้ไม่ได้.",

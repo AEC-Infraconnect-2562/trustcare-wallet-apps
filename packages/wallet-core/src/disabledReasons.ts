@@ -130,7 +130,7 @@ export function getDisabledReason(
       return reason(
         input.action,
         "ยังสร้าง Certified SHL ไม่ได้",
-        "ส่งคำขอผ่าน TrustCare Portal ให้ผ่าน Maker/Checker เพื่อสร้าง Manifest VP และ Holder VC",
+        "ส่งคำขอผ่าน TrustCare Portal เพื่อสร้าง Manifest VP และ Holder VC ที่ verifier ตรวจสอบได้",
         "blocked",
       );
     }

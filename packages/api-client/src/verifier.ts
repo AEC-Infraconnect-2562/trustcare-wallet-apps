@@ -290,7 +290,7 @@ async function verifyQrUnsafe(
       typeof jsonPayload.trustcareCertification === "object"
         ? (jsonPayload.trustcareCertification as Record<string, any>)
         : {};
-    const makerCheckerApproved = Boolean(
+    const trustcarePolicyApproved = Boolean(
       certification.status === "maker_checker_approved" &&
       certification.ownerConfirmed &&
       certification.makerApprovedAt &&
@@ -305,9 +305,9 @@ async function verifyQrUnsafe(
       !String(jsonPayload.holderPresentationId).startsWith("pending:trustcare"),
     );
     return {
-      verified: Boolean(hasManifestBinding && makerCheckerApproved),
+      verified: Boolean(hasManifestBinding && trustcarePolicyApproved),
       trustLevel:
-        hasManifestBinding && makerCheckerApproved
+        hasManifestBinding && trustcarePolicyApproved
           ? "green"
           : hasManifestBinding
             ? "yellow"
@@ -342,9 +342,13 @@ async function verifyQrUnsafe(
         },
         {
           key: "maker_checker",
-          label: "ผ่าน Maker/Checker ของ TrustCare",
-          ok: makerCheckerApproved,
-          detail: certification.status ? String(certification.status) : "-",
+          label: "ผ่าน TrustCare Manifest policy",
+          ok: trustcarePolicyApproved,
+          detail: trustcarePolicyApproved
+            ? "approved"
+            : certification.status
+              ? "pending_manifest_policy"
+              : "-",
         },
         {
           key: "document_reference",
@@ -359,9 +363,9 @@ async function verifyQrUnsafe(
               "SHL นี้มี passcode/access policy; verifier ต้องบังคับใช้นโยบายก่อนดึงไฟล์",
             ]
           : []),
-        ...(!makerCheckerApproved
+        ...(!trustcarePolicyApproved
           ? [
-              "พบ TrustCare Manifest VP/VC แต่ยังไม่นับเป็น TrustCare verified จนกว่าเจ้าของข้อมูลและ Maker/Checker จะยืนยันครบ",
+              "พบ TrustCare Manifest VP/VC แต่ยังไม่นับเป็น TrustCare verified จนกว่าจะตรวจผู้ถือเอกสาร แหล่งที่มา และ Manifest policy ครบ",
             ]
           : []),
         ...(JSON.stringify(jsonPayload).includes("pending:trustcare")
@@ -410,7 +414,7 @@ async function verifyQrUnsafe(
       warnings:
         parsed.kind === "shlink"
           ? [
-              "อ่าน Standard SHL สำเร็จ โดย Manifest VP/VC เป็นส่วนขยายของ TrustCare และจะเชื่อถือได้หลังเจ้าของข้อมูลกับ Maker/Checker ยืนยันครบเท่านั้น",
+              "อ่าน Standard SHL สำเร็จ โดย Manifest VP/VC เป็นส่วนขยายของ TrustCare และจะเชื่อถือได้หลังตรวจผู้ถือเอกสาร แหล่งที่มา และ Manifest policy ครบเท่านั้น",
             ]
           : parsed.kind === "vp-url" || parsed.kind === "presentation-id"
             ? [
@@ -838,10 +842,10 @@ async function verifyResolvedVpPayload(
           ? `ES256 / ${resolved.jwtVerification?.kid ?? "-"}`
           : dataIntegrity.verified
             ? `${dataIntegrity.cryptosuite ?? "Data Integrity"} / ${dataIntegrity.verificationMethod ?? "-"}`
-          : dataIntegrity.present
-            ? dataIntegrity.errors?.join(" ") ||
-              `${dataIntegrity.summary} present but not cryptographically verified`
-            : "missing",
+            : dataIntegrity.present
+              ? dataIntegrity.errors?.join(" ") ||
+                `${dataIntegrity.summary} present but not cryptographically verified`
+              : "missing",
       },
       {
         key: "data_integrity",

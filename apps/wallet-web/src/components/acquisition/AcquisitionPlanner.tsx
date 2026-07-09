@@ -130,7 +130,7 @@ export function AcquisitionPlanner({
           <p>
             เอกสารที่ผู้ใช้ให้มาเองจะยังไม่ถือว่า verified จนกว่า trusted issuer
             จะลงนาม ส่วน Certified SHL ต้องมี Manifest VP และ Holder VC หลังผ่าน
-            TrustCare Maker/Checker
+            TrustCare verification policy
           </p>
         </div>
         <div className="acquisition-message-stack">

@@ -95,7 +95,7 @@ export function verifyShlManifestTrust(
       ],
       warnings: [
         trustLayerStatus === "pending_manifest_vp"
-          ? "SHL นี้กำลังรอ TrustCare Maker/Checker และยังไม่เป็น TrustCare-certified."
+          ? "SHL นี้กำลังรอ TrustCare Manifest verification และยังไม่เป็น TrustCare-certified."
           : "SHL นี้เป็น Standard SMART Health Link ที่อ่านได้ แต่ยังไม่เป็น TrustCare-certified.",
       ],
       errors: [],
@@ -156,9 +156,14 @@ export function verifyShlManifestTrust(
     },
     {
       key: "maker_checker",
-      label: "ผ่าน Maker/Checker ของ TrustCare",
+      label: "ผ่าน TrustCare Manifest policy",
       ok: trustcare.makerCheckerStatus === "approved",
-      detail: String(trustcare.makerCheckerStatus ?? "-"),
+      detail:
+        trustcare.makerCheckerStatus === "approved"
+          ? "approved"
+          : trustcare.makerCheckerStatus === "pending_maker_checker"
+            ? "pending_manifest_policy"
+            : String(trustcare.makerCheckerStatus ?? "-"),
     },
     {
       key: "access_policy",
@@ -181,7 +186,7 @@ export function verifyShlManifestTrust(
     warnings: certifiedOk
       ? []
       : [
-          "พบ TrustCare SHL extension แต่ยังตรวจ binding/hash/Holder/Maker-Checker ไม่ครบ จึงยังไม่ให้ green badge.",
+          "พบ TrustCare SHL extension แต่ยังตรวจ binding/hash/Holder/Manifest policy ไม่ครบ จึงยังไม่ให้ green badge.",
         ],
     errors: certifiedChecks
       .filter((item) => !item.ok)

@@ -488,7 +488,7 @@ function formatDisabledReason(
   }
   if (format === "certified_shl_manifest") {
     if (source !== "trustcare_portal") {
-      return "Certified SHL ต้องผ่าน TrustCare Portal หรือโรงพยาบาลในเครือข่ายที่ทำ Maker/Checker";
+      return "Certified SHL ต้องมาจาก TrustCare Portal หรือโรงพยาบาลในเครือข่ายที่ออก Manifest VP/VC ได้";
     }
     if (scope !== "document_bundle") {
       return "Manifest VP เหมาะกับชุดเอกสารหลายรายการ";

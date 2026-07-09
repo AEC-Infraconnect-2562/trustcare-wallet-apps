@@ -73,7 +73,7 @@ const trustStateCopy: Record<TrustUiState, UxCopy> = {
   trustcare_pending: {
     label: "รอ TrustCare รับรอง",
     description:
-      "SHL ใช้งานแบบมาตรฐานได้ แต่ยังไม่ได้ผ่าน Maker/Checker เพื่อใช้เป็น Certified SHL",
+      "SHL ใช้งานแบบมาตรฐานได้ แต่ยังต้องตรวจ Manifest VP/VC และ Holder binding ก่อนใช้เป็น Certified SHL",
     tone: "yellow",
   },
 };

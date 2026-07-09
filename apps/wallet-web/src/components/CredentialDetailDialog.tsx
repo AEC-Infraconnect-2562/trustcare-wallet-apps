@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
+  CheckCircle2,
   Clipboard,
   Download,
   Eye,
@@ -214,6 +215,11 @@ export function CredentialDetailDialog({
               ประวัติ
             </button>
           </nav>
+          <CredentialProofSummary
+            card={card}
+            envelope={envelope}
+            presentation={presentation}
+          />
 
           <section className="tab-panel credential-tab-panel">
             {tab === "preview" && (
@@ -277,6 +283,109 @@ export function CredentialDetailDialog({
           onClose={() => setQrPopupOpen(false)}
         />
       ) : null}
+    </div>
+  );
+}
+
+function CredentialProofSummary({
+  card,
+  envelope,
+  presentation,
+}: {
+  card: WalletCard;
+  envelope: PortablePresentationEnvelope;
+  presentation: WalletPresentationResponse | null;
+}) {
+  const checklist = new Map(
+    envelope.trust.checklist.map((item) => [item.key, item]),
+  );
+  const issuer = checklist.get("issuer");
+  const holder = checklist.get("holder");
+  const proof = checklist.get("proof");
+  const status = checklist.get("status");
+  const proofFormat =
+    card.credentialProof?.format ??
+    presentation?.format ??
+    (card.credentialJwt ? "vc+jwt" : (proof?.detail ?? "proof missing"));
+  const selectedFields = presentation?.selectedFields?.length ?? 0;
+  const proofTone = proof?.ok ? "green" : "yellow";
+  const statusTone = status?.ok ? "green" : "yellow";
+  const standards: Array<{ label: string; tone: "blue" | "green" | "yellow" }> =
+    [
+      {
+        label: envelope.kind === "presentation" ? "W3C VP" : "W3C VC",
+        tone: "blue",
+      },
+      { label: proofFormat, tone: proofTone },
+      ...(selectedFields
+        ? [{ label: `SD ${selectedFields} fields`, tone: "green" as const }]
+        : []),
+    ];
+
+  return (
+    <section
+      className="credential-proof-strip"
+      aria-label="Credential proof and disclosure summary"
+    >
+      <div className="credential-proof-heading">
+        <span>
+          <ShieldCheck size={18} />
+          Proof & standards
+        </span>
+        <div className="credential-standard-badges">
+          {standards.map((standard) => (
+            <Badge
+              key={`${standard.label}-${standard.tone}`}
+              tone={standard.tone}
+              className="credential-standard-badge"
+            >
+              {standard.label}
+            </Badge>
+          ))}
+        </div>
+      </div>
+      <div className="credential-proof-grid">
+        <ProofMiniCard
+          label="Issuer DID"
+          value={envelope.issuer?.did ?? issuer?.detail ?? "-"}
+          ok={Boolean(issuer?.ok)}
+        />
+        <ProofMiniCard
+          label="Holder binding"
+          value={envelope.holder?.did ?? holder?.detail ?? "-"}
+          ok={Boolean(holder?.ok)}
+        />
+        <ProofMiniCard
+          label="Proof format"
+          value={proofFormat}
+          ok={Boolean(proof?.ok)}
+        />
+        <ProofMiniCard
+          label="Status / expiry"
+          value={status?.detail ?? card.expiresAt ?? card.credentialStatus}
+          ok={statusTone === "green"}
+        />
+      </div>
+    </section>
+  );
+}
+
+function ProofMiniCard({
+  label,
+  value,
+  ok,
+}: {
+  label: string;
+  value: string;
+  ok: boolean;
+}) {
+  return (
+    <div className={`credential-proof-card ${ok ? "ok" : "warn"}`}>
+      <CheckCircle2 size={16} />
+      <span>
+        <small>{label}</small>
+        <strong className="mono">{value || "-"}</strong>
+      </span>
     </div>
   );
 }
@@ -390,18 +499,27 @@ function QrPopup({
             : "กำลังสร้าง QR Code สำหรับ VP..."}
         </p>
         {presentation ? (
-          <dl className="qr-popup-meta">
-            <div>
-              <dt>VP ID</dt>
-              <dd className="mono">{presentation.presentationId}</dd>
+          <>
+            <div className="qr-disclosure-summary">
+              <span>
+                <Eye size={16} />
+                เปิดเผย {presentation.selectedFields.length || "ทุก"} ฟิลด์
+              </span>
+              <span>{presentation.format}</span>
             </div>
-            <div>
-              <dt>หมดอายุ</dt>
-              <dd>
-                {new Date(presentation.expiresAt).toLocaleString("th-TH")}
-              </dd>
-            </div>
-          </dl>
+            <dl className="qr-popup-meta">
+              <div>
+                <dt>VP ID</dt>
+                <dd className="mono">{presentation.presentationId}</dd>
+              </div>
+              <div>
+                <dt>หมดอายุ</dt>
+                <dd>
+                  {new Date(presentation.expiresAt).toLocaleString("th-TH")}
+                </dd>
+              </div>
+            </dl>
+          </>
         ) : null}
         <div className="qr-popup-actions">
           <Button

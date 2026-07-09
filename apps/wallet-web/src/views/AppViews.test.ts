@@ -3,7 +3,10 @@ import { getDemoUser, getDemoWalletCards } from "@trustcare/wallet-core";
 import {
   avatarUrlCandidatesForUser,
   extractScannablePayload,
+  getShlTrustProfile,
   scanPayloadFromHash,
+  trustcareBindingLabel,
+  trustcareCertificationStatusLabel,
 } from "./AppViews";
 
 describe("scan URL payload parsing", () => {
@@ -31,9 +34,9 @@ describe("login user photos", () => {
       "https://trustcarehealth.live/manus-storage/patient_john_williams_b4e9e7f3.jpg",
       "https://trustcarehealth.live/api/storage-proxy/patient_john_williams_b4e9e7f3.jpg",
     ]);
-    expect(candidates.some((candidate) => candidate.includes("wallet-native"))).toBe(
-      false,
-    );
+    expect(
+      candidates.some((candidate) => candidate.includes("wallet-native")),
+    ).toBe(false);
   });
 
   it("keeps wallet-generated photos for wallet-native users", () => {
@@ -44,5 +47,30 @@ describe("login user photos", () => {
     );
 
     expect(candidates).toContain("/assets/users/wallet-native-02.png");
+  });
+});
+
+describe("TrustCare Manifest wallet copy", () => {
+  it("does not expose portal approval workflow labels in wallet trust states", () => {
+    const pendingProfile = getShlTrustProfile({
+      manifestCredentialId: "manifest-vc-1",
+      presentationId: "holder-vp-1",
+      documentBundle: { documents: [{ id: "doc-1" }] },
+      trustcareCertification: { status: "pending_maker_checker" },
+    } as any);
+
+    const visibleCopy = [
+      trustcareBindingLabel("pending_manifest_vp"),
+      trustcareCertificationStatusLabel("pending_maker_checker"),
+      pendingProfile.label,
+      pendingProfile.description,
+    ].join(" ");
+
+    const forbiddenPortalRoleCopy = new RegExp(
+      `${"Mak"}${"er"}|${"Check"}${"er"}`,
+    );
+
+    expect(visibleCopy).not.toMatch(forbiddenPortalRoleCopy);
+    expect(visibleCopy).toContain("TrustCare Manifest");
   });
 });

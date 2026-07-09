@@ -2723,8 +2723,8 @@ export function DocumentFlowControls({
         <div className="document-flow-control-panel">
           <strong>TrustCare Certification</strong>
           <p>
-            ต้องผ่าน Maker/Checker จาก TrustCare Portal ก่อน SHL จึงจะกลายเป็น
-            Certified SHL+Manifest VP
+            ต้องมี Manifest VP/VC, Holder VC และ issuer attestation ที่ verifier
+            ตรวจสอบได้ก่อน SHL จึงจะกลายเป็น Certified SHL+Manifest VP
           </p>
         </div>
       )}
@@ -3564,7 +3564,7 @@ export function ShlManifestViewer({
             <span className="eyebrow">{trustProfile.label}</span>
             <h3>
               {trustProfile.kind === "trustcare-pending"
-                ? "รอการยืนยัน Maker/Checker"
+                ? "รอการยืนยัน TrustCare Manifest"
                 : "SHL มาตรฐานที่ไม่มี Manifest VP/VC"}
             </h3>
             <p>{trustProfile.description}</p>
@@ -3592,10 +3592,11 @@ export function ShlManifestViewer({
             </strong>
           </div>
           <div>
-            <span>Maker/Checker</span>
+            <span>TrustCare proof</span>
             <strong>
-              {shl.trustcareCertification?.status ??
-                "ไม่เกี่ยวข้องกับ TrustCare"}
+              {trustcareCertificationStatusLabel(
+                shl.trustcareCertification?.status,
+              )}
             </strong>
           </div>
         </div>
@@ -3626,10 +3627,11 @@ export function ShlManifestViewer({
           <strong className="mono">{shl.presentationId ?? "-"}</strong>
         </div>
         <div>
-          <span>Maker/Checker</span>
+          <span>TrustCare attestation</span>
           <strong>
-            {shl.trustcareCertification?.makerName ?? "-"} →{" "}
-            {shl.trustcareCertification?.checkerName ?? "-"}
+            {shl.trustcareCertification?.ownerConfirmed
+              ? "ยืนยันผู้ถือเอกสารแล้ว"
+              : "รอตรวจผู้ถือเอกสาร"}
           </strong>
         </div>
         <div>
@@ -3655,9 +3657,8 @@ export function ShlManifestViewer({
             <span className="eyebrow">Manifest VP Verification QR</span>
             <h4>สแกนเพื่อตรวจ TrustCare Manifest VP/VC</h4>
             <p>
-              ใช้กับ TrustCare verifier เพื่อตรวจ Manifest VC, Holder VP,
-              Maker/Checker approval และ DocumentReference evidence ของเอกสารใน
-              SHL นี้
+              ใช้กับ TrustCare verifier เพื่อตรวจ Manifest VC, Holder VP, issuer
+              attestation และ DocumentReference evidence ของเอกสารใน SHL นี้
             </p>
           </div>
         </div>
@@ -4018,7 +4019,7 @@ export function ScanResponseDialog({
               </h3>
               <p>
                 {descriptor?.payloadKind === "shl"
-                  ? "Wallet เก็บ canonical SHL เดิมไว้เพื่อ compatibility และสร้าง TrustCare Manifest VP binding เป็นสถานะรอ Maker/Checker ก่อนใช้เป็นหลักฐาน TrustCare."
+                  ? "Wallet เก็บ canonical SHL เดิมไว้เพื่อ compatibility และผูก TrustCare Manifest VP/VC สำหรับให้ verifier ตรวจผู้ถือเอกสาร แหล่งที่มา และความครบถ้วนของ manifest."
                   : "Payload ถูกบันทึกตาม protocol ที่ตรวจพบ และต้องตรวจสอบความน่าเชื่อถือก่อนนำไปใช้ต่อ."}
               </p>
             </div>
@@ -4366,11 +4367,21 @@ export function trustcareBindingLabel(
     NonNullable<ScanPayloadDescriptor["trustcareBinding"]>,
     string
   > = {
-    pending_manifest_vp: "รอ Maker/Checker",
+    pending_manifest_vp: "รอ TrustCare Manifest",
     certified_manifest_vp: "TrustCare Manifest VP",
     standard_only: "SHL มาตรฐาน",
   };
   return binding ? labels[binding] : "-";
+}
+
+export function trustcareCertificationStatusLabel(status?: string): string {
+  const labels: Record<string, string> = {
+    maker_checker_approved: "ผ่าน TrustCare Manifest policy",
+    pending_maker_checker: "รอ TrustCare Manifest policy",
+    approved: "ผ่าน TrustCare Manifest policy",
+    pending: "รอ TrustCare Manifest policy",
+  };
+  return status ? (labels[status] ?? status) : "ไม่เกี่ยวข้องกับ TrustCare";
 }
 
 export function shortPayload(value: string, maxLength = 520): string {
@@ -4617,28 +4628,28 @@ export function getShlTrustProfile(shl: ShlPackageDetail | null | undefined): {
     shl?.documentBundle?.documents?.length,
   );
   const certification = shl?.trustcareCertification;
-  const makerCheckerApproved = Boolean(
+  const trustcareCertificationReady = Boolean(
     certification?.status === "maker_checker_approved" &&
     certification.ownerConfirmed &&
     certification.makerApprovedAt &&
     certification.checkerApprovedAt,
   );
-  if (hasManifestBinding && makerCheckerApproved) {
+  if (hasManifestBinding && trustcareCertificationReady) {
     return {
       kind: "trustcare-certified",
       label: "TrustCare Verified SHL",
       tone: "green",
       description:
-        "ผ่านการยืนยันเจ้าของข้อมูลและ Maker/Checker ของโรงพยาบาลในเครือข่าย TrustCare แล้ว",
+        "ผ่านการยืนยันผู้ถือเอกสาร แหล่งที่มา และ Manifest VP/VC ของ TrustCare แล้ว",
     };
   }
   if (hasManifestBinding) {
     return {
       kind: "trustcare-pending",
-      label: "รอ Maker/Checker",
+      label: "รอ TrustCare Manifest",
       tone: "yellow",
       description:
-        "พบ Manifest VP/VC แต่ยังไม่ผ่านขั้นตอน Maker/Checker จึงใช้เป็น SHL มาตรฐานเท่านั้น",
+        "พบ Manifest VP/VC แต่ยังต้องตรวจผู้ถือเอกสาร แหล่งที่มา และหลักฐานความครบถ้วนก่อนใช้เป็น TrustCare verified package",
     };
   }
   return {
@@ -4871,13 +4882,8 @@ export function UserAvatarImage({
       })),
     [candidates],
   );
-  const {
-    candidate,
-    imageSrc,
-    isLoaded,
-    markFailed,
-    markLoaded,
-  } = useLoadedPhotoCandidate(photoCandidates);
+  const { candidate, imageSrc, isLoaded, markFailed, markLoaded } =
+    useLoadedPhotoCandidate(photoCandidates);
   const initials = initialsFromName(user.nameEn || user.nameTh);
 
   return (
