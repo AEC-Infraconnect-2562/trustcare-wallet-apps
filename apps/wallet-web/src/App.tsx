@@ -102,6 +102,7 @@ import {
   LoginView,
   NavButton,
   PrepareView,
+  PublicVerifierView,
   ReceiveView,
   ScanResponseDialog,
   SettingsView,
@@ -210,9 +211,14 @@ export default function App() {
   );
   const [scanOutcome, setScanOutcome] = useState<ScanOutcome | null>(null);
   const [scanResponseOpen, setScanResponseOpen] = useState(false);
+  const [publicVerifyOutcome, setPublicVerifyOutcome] =
+    useState<ScanOutcome | null>(null);
+  const [publicVerifyBusy, setPublicVerifyBusy] = useState(false);
+  const [publicVerifyError, setPublicVerifyError] = useState("");
   const [pendingScanPayload, setPendingScanPayload] = useState(() =>
     readScanPayloadFromLocation(),
   );
+  const lastPublicVerifyPayload = useRef("");
   const [readinessContext, setReadinessContext] =
     useState<ReadinessContext>("opd_visit");
   const [readiness, setReadiness] = useState<any>(null);
@@ -787,6 +793,89 @@ export default function App() {
     ],
   );
 
+  const verifyPublicScan = useCallback(async (value: string) => {
+    const descriptor = describeScannablePayload(value);
+    const payload = descriptor.canonicalPayload;
+    setPublicVerifyBusy(true);
+    setPublicVerifyError("");
+    try {
+      let manifestFetch: ShlManifestFetchResult | undefined;
+      if (descriptor.payloadKind === "shl") {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 4500);
+        try {
+          manifestFetch = await fetchShlManifest(payload, {
+            recipient: "TrustCare public verifier",
+            signal: controller.signal,
+          });
+        } finally {
+          window.clearTimeout(timeout);
+        }
+      }
+      const verifier = await verifierApi.verifyQr(
+        {
+          ...baseApiOptions,
+          demoMode: true,
+        },
+        payload,
+      );
+      const outcome = {
+        id: `public_scan_${Date.now().toString(36)}`,
+        userId: "public-verifier",
+        context: "qr_scan",
+        raw: value,
+        payload,
+        descriptor,
+        manifestFetch,
+        verifier: {
+          ...verifier,
+          warnings: [
+            ...(verifier.warnings ?? []),
+            ...(manifestFetch?.warnings ?? []),
+          ],
+          errors: [
+            ...(verifier.errors ?? []),
+            ...(manifestFetch?.errors ?? []),
+          ],
+        },
+        importResult: {
+          ok: verifier.verified,
+          format:
+            descriptor.payloadKind === "vp"
+              ? "trustcare-vp-json"
+              : descriptor.payloadKind === "shl"
+                ? "shl-link"
+                : descriptor.payloadKind === "oid4vci"
+                  ? "oid4vci-offer"
+                  : descriptor.payloadKind === "oid4vp"
+                    ? "oid4vp-request"
+                    : "unknown",
+          protocol:
+            descriptor.payloadKind === "shl"
+              ? "shl"
+              : descriptor.payloadKind === "oid4vci"
+                ? "oid4vci"
+                : descriptor.payloadKind === "oid4vp"
+                  ? "oid4vp"
+                  : "trustcare",
+          warnings: [],
+          errors: [],
+        },
+        scannedAt: new Date().toISOString(),
+      } satisfies ScanOutcome;
+      setPublicVerifyOutcome(outcome);
+    } catch (error) {
+      setPublicVerifyError(
+        error instanceof Error
+          ? error.message
+          : "Public verifier could not verify this QR payload.",
+      );
+      setPublicVerifyOutcome(null);
+    } finally {
+      setPublicVerifyBusy(false);
+    }
+  }, []);
+
   const changeReadinessContext = useCallback((context: ReadinessContext) => {
     setReadinessContext(context);
     setImportJob(null);
@@ -933,6 +1022,13 @@ export default function App() {
     verifyScan,
   ]);
 
+  useEffect(() => {
+    if (isAuthenticated || !pendingScanPayload) return;
+    if (lastPublicVerifyPayload.current === pendingScanPayload) return;
+    lastPublicVerifyPayload.current = pendingScanPayload;
+    void verifyPublicScan(pendingScanPayload);
+  }, [isAuthenticated, pendingScanPayload, verifyPublicScan]);
+
   const loginAs = useCallback(
     (userId: string) => {
       writeStringStorage(walletSessionKey, userId);
@@ -1007,6 +1103,36 @@ export default function App() {
   };
 
   if (!isAuthenticated) {
+    if (pendingScanPayload) {
+      return (
+        <>
+          <PublicVerifierView
+            payload={pendingScanPayload}
+            outcome={publicVerifyOutcome}
+            busy={publicVerifyBusy}
+            error={publicVerifyError}
+            onRetry={() => void verifyPublicScan(pendingScanPayload)}
+            onCopy={copyText}
+            onOpenScanner={() => setScannerOpen(true)}
+            onOpenWallet={() => loginAs(selectedUserId)}
+          />
+          <Suspense fallback={<DialogLoadingFallback />}>
+            {scannerOpen && (
+              <QrScannerDialog
+                open={scannerOpen}
+                onClose={() => setScannerOpen(false)}
+                onScan={(value) => {
+                  const payload = extractScannablePayload(value);
+                  lastPublicVerifyPayload.current = "";
+                  setPendingScanPayload(payload);
+                  window.location.hash = `scan=${encodeURIComponent(payload)}`;
+                }}
+              />
+            )}
+          </Suspense>
+        </>
+      );
+    }
     return (
       <>
         <LoginView

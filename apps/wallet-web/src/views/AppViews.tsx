@@ -3959,6 +3959,157 @@ export function ScanOutcomePanel({ outcome }: { outcome: ScanOutcome }) {
   );
 }
 
+export function PublicVerifierView({
+  payload,
+  outcome,
+  busy,
+  error,
+  onRetry,
+  onCopy,
+  onOpenScanner,
+  onOpenWallet,
+}: {
+  payload: string;
+  outcome: ScanOutcome | null;
+  busy: boolean;
+  error: string;
+  onRetry: () => void;
+  onCopy: (value: string) => void | Promise<void>;
+  onOpenScanner: () => void;
+  onOpenWallet: () => void;
+}) {
+  const descriptor = describeScannablePayload(payload);
+  const originLabel =
+    descriptor.transport === "wallet_scan_url"
+      ? "Wallet scan URL"
+      : descriptor.transport === "standard_shl"
+        ? "SMART Health Link"
+        : descriptor.transport === "shl_web_viewer"
+          ? "SHL web viewer"
+          : "Verifier payload";
+  const statusTone = outcome?.verifier.verified
+    ? "green"
+    : error
+      ? "red"
+      : "yellow";
+  const statusText = outcome?.verifier.verified
+    ? "Proof verified"
+    : busy
+      ? "Verifying"
+      : error
+        ? "Verification failed"
+        : "Waiting";
+  const checklist = Array.isArray(outcome?.verifier.verificationChecklist)
+    ? outcome.verifier.verificationChecklist
+    : [];
+  return (
+    <main className="public-verifier-shell">
+      <section className="public-verifier-card">
+        <header className="public-verifier-header">
+          <div className="brand-mark">TC</div>
+          <div>
+            <span className="eyebrow">TrustCare Public Verifier</span>
+            <h1>ตรวจสอบ VC/VP จาก QR สาธารณะ</h1>
+            <p>
+              เปิดจาก Public URL ได้โดยไม่ต้องใช้ session ของ Wallet เดิม ระบบจะ
+              fetch resolver, ตรวจ signature, issuer key, nested VC และ expiry
+              ก่อนให้ผลผ่าน
+            </p>
+          </div>
+          <Badge tone={statusTone}>{statusText}</Badge>
+        </header>
+
+        <div className="public-verifier-grid">
+          <Surface className="public-verifier-summary">
+            <div className="portal-card-header">
+              <div className="portal-card-title">
+                <Globe2 size={22} />
+                <span>Public resolver</span>
+              </div>
+              <Badge tone="blue">{descriptor.payloadKind}</Badge>
+            </div>
+            <dl className="details-grid compact">
+              <div>
+                <dt>Transport</dt>
+                <dd>{originLabel}</dd>
+              </div>
+              <div>
+                <dt>Public URL</dt>
+                <dd>{payload.startsWith("http") ? "yes" : "payload"}</dd>
+              </div>
+              <div>
+                <dt>Localhost</dt>
+                <dd>
+                  {/localhost|127\.0\.0\.1/.test(payload) ? "พบ" : "ไม่พบ"}
+                </dd>
+              </div>
+              <div>
+                <dt>Protocol</dt>
+                <dd>{outcome?.verifier.protocol ?? "-"}</dd>
+              </div>
+            </dl>
+            <p className="mono public-verifier-payload">{payload}</p>
+            <div className="button-row">
+              <Button onClick={() => void onCopy(payload)}>
+                <Copy size={18} /> คัดลอก URL
+              </Button>
+              <Button className="secondary" onClick={onRetry} disabled={busy}>
+                <RefreshCw size={18} className={busy ? "spin-icon" : ""} />
+                ตรวจอีกครั้ง
+              </Button>
+              <Button className="secondary" onClick={onOpenScanner}>
+                <Camera size={18} /> สแกน QR
+              </Button>
+            </div>
+          </Surface>
+
+          <Surface className="public-verifier-summary">
+            <div className="portal-card-header">
+              <div className="portal-card-title">
+                <ShieldCheck size={22} />
+                <span>W3C proof checks</span>
+              </div>
+            </div>
+            {busy && <p className="muted">กำลังตรวจ resolver และ proof...</p>}
+            {error && <p className="error-text">{error}</p>}
+            {!busy && !error && outcome && (
+              <>
+                <h2>
+                  {outcome.verifier.verified
+                    ? "ตรวจสอบผ่าน"
+                    : "ต้องตรวจสอบเพิ่มเติม"}
+                </h2>
+                <p>
+                  {outcome.verifier.requestSummary ??
+                    "Verifier result is available."}
+                </p>
+                {!!checklist.length && (
+                  <TrustChecklist title="ผลตรวจ VC/VP" items={checklist} />
+                )}
+              </>
+            )}
+            {!busy && !error && !outcome && (
+              <p className="muted">รอ payload สำหรับตรวจสอบ</p>
+            )}
+          </Surface>
+        </div>
+
+        {outcome && <ScanOutcomePanel outcome={outcome} />}
+
+        <footer className="public-verifier-footer">
+          <span>
+            Public verifier mode ไม่อ่านข้อมูลจาก Wallet ในเครื่องนี้ และไม่ต้อง
+            login ก่อนตรวจ proof
+          </span>
+          <Button className="secondary" onClick={onOpenWallet}>
+            <Wallet size={18} /> เปิด Wallet demo
+          </Button>
+        </footer>
+      </section>
+    </main>
+  );
+}
+
 export function ScanResponseDialog({
   open,
   outcome,

@@ -10796,6 +10796,82 @@ body {
   border-radius: var(--trust-item-radius);
 }
 
+.public-verifier-shell {
+  min-height: 100vh;
+  padding: 42px;
+  background:
+    radial-gradient(
+      circle at 16% 10%,
+      rgba(74, 111, 165, 0.14),
+      transparent 30%
+    ),
+    linear-gradient(135deg, #f8faf7 0%, #fbf7ec 46%, #eef5f2 100%);
+  color: var(--foreground);
+}
+
+.public-verifier-card {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 28px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, #b7974c 20%);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--card) 94%, #fff9e8 6%);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+}
+
+.public-verifier-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 18px;
+  align-items: start;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.public-verifier-header h1 {
+  margin: 3px 0 6px;
+  font-size: 2.2rem;
+  line-height: 1.1;
+}
+
+.public-verifier-header p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.public-verifier-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.78fr);
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.public-verifier-summary {
+  min-width: 0;
+}
+
+.public-verifier-payload {
+  max-height: 104px;
+  margin: 16px 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.public-verifier-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-top: 18px;
+  color: var(--muted-foreground);
+}
+
 .credential-proof-strip {
   display: grid;
   gap: 12px;
@@ -11121,6 +11197,25 @@ body {
     width: auto;
     min-width: 44px;
     padding-inline: 12px;
+  }
+
+  .public-verifier-shell {
+    padding: 16px;
+  }
+
+  .public-verifier-card {
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .public-verifier-header,
+  .public-verifier-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .public-verifier-footer {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 
