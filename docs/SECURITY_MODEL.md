@@ -24,13 +24,25 @@
 
 The browser wallet must not hold production signing private keys. When Wallet creates a share package, it publishes the VP request to a Share Gateway. The gateway signs the VP as `vp+JWT` with ES256 or EdDSA, persists the artifact, and returns a resolver URL for QR display.
 
-Local development and the Railway demo use a backend-shaped share gateway simulator: it generates an ephemeral ES256 key in Node, exposes `/api/share-gateway/.well-known/jwks.json`, signs W3C `vp+jwt` artifacts with enveloped nested `vc+jwt` credentials, and stores artifacts in memory. This is suitable for demo verification and cross-device QR testing but not for production persistence, revocation, or KMS-backed trust.
+Local development can use a backend-shaped share gateway with a process-local
+ES256 key and in-memory artifacts. Railway production must not use that mode:
+it fails startup unless `TRUSTCARE_GATEWAY_SIGNING_KEY_JWK` and `DATABASE_URL`
+are configured. Production exposes stable JWKS at
+`/api/share-gateway/.well-known/jwks.json`, a DID document at
+`/.well-known/did.json`, signs W3C `vp+jwt` artifacts with enveloped nested
+`vc+jwt` credentials, and persists artifacts in Postgres.
 
-Green verification requires verifier-side signature validation against JWKS plus nested VC verification. Payload metadata such as `signingStatus: verified` is never sufficient proof.
+Green verification requires verifier-side signature validation against JWKS,
+nested VC verification for VP JWT artifacts, or cryptographic W3C Data
+Integrity proof verification for supported JCS suites. Payload metadata such as
+`signingStatus: verified` is never sufficient proof.
 
 ## Shared Standards Layer
 
-Claims, proof, JWT parsing, VC/VP payload unwrapping, proof usability, issuer/type extraction, DID Web JWKS discovery, and `kid` matching live in `packages/wallet-core/src/credentialProof.ts`.
+Claims, proof, JWT parsing, VC/VP payload unwrapping, proof usability,
+issuer/type extraction, DID Web JWKS discovery, Data Integrity JCS
+verification, and `kid` matching live in
+`packages/wallet-core/src/credentialProof.ts`.
 
 Gateway and API-client verifier code may fetch artifacts, call Portal endpoints, and compose user-facing verification results, but must not redefine proof/claim/JWKS validation primitives locally.
 

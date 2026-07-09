@@ -6,12 +6,15 @@ import {
   calculateJwkThumbprint,
   exportJWK,
   generateKeyPair,
+  importJWK,
 } from "../packages/wallet-core/node_modules/jose/dist/webapi/index.js";
 
 const root = resolve("apps/wallet-web/dist");
 const port = Number(process.env.PORT ?? 3000);
-const artifacts = new Map();
 const signingContexts = new Map();
+const productionGateway = isProductionGatewayRuntime();
+const configuredSigningKey = await loadConfiguredSigningKey();
+const artifactStore = await createArtifactStore();
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -56,6 +59,14 @@ const server = createServer(async (request, response) => {
       json(response, 200, publicJwksForContext(context));
       return;
     }
+    if (
+      requestUrl.pathname === "/.well-known/did.json" ||
+      requestUrl.pathname === "/api/share-gateway/did.json"
+    ) {
+      const context = await getSigningContext(requestOrigin(request));
+      json(response, 200, didDocumentForContext(context));
+      return;
+    }
 
     if (requestUrl.pathname.startsWith("/api/share-gateway")) {
       await handleShareGatewayRequest(request, response, requestUrl);
@@ -88,6 +99,21 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
   const pathname =
     requestUrl.pathname.replace(/^\/api\/share-gateway/, "") || "/";
 
+  if (request.method === "GET" && pathname === "/health") {
+    const context = await getSigningContext(origin);
+    json(response, 200, {
+      ok: true,
+      mode: gatewayModeLabel(),
+      storage: artifactStore.kind,
+      persistent: artifactStore.persistent,
+      issuer: context.issuerDid,
+      jwksUrl: context.jku,
+      didUrl: `${origin}/.well-known/did.json`,
+      keySource: context.keySource,
+    });
+    return;
+  }
+
   if (request.method === "POST" && pathname === "/artifacts") {
     const body = await readJsonBody(request);
     const artifactId = stringValue(body.artifactId);
@@ -101,9 +127,11 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
     }
 
     const now = new Date();
-    const warnings = [
-      "Railway demo gateway signs artifacts with an ephemeral ES256 key and in-memory storage. Use TrustCare Portal/KMS for production.",
-    ];
+    const warnings = artifactStore.persistent
+      ? []
+      : [
+          "Local development gateway uses process-local artifact storage. Railway production requires DATABASE_URL-backed storage.",
+        ];
     let payload = body.payload;
     let contentType = stringValue(body.contentType) || "application/json";
 
@@ -121,19 +149,20 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
       warnings.push(...signed.warnings);
     }
 
-    artifacts.set(artifactKey(kind, artifactId), {
+    await artifactStore.set({
       artifactId,
       kind,
       contentType,
       payload,
       sourcePayload: body.payload,
       createdAt: now.toISOString(),
+      expiresAt: stringValue(body.expiresAt) || undefined,
     });
 
     const publicUrl = `${origin}${publicArtifactPath(kind, artifactId)}`;
     json(response, 201, {
       ok: true,
-      mode: "railway_demo_gateway",
+      mode: gatewayModeLabel(),
       artifactId,
       kind,
       publicUrl,
@@ -152,8 +181,8 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
   if (manifestMatch) {
     const artifactId = decodeURIComponent(manifestMatch[1]);
     const stored =
-      artifacts.get(artifactKey("certified_shl_manifest", artifactId)) ??
-      artifacts.get(artifactKey("standard_shl_manifest", artifactId));
+      (await artifactStore.get("certified_shl_manifest", artifactId)) ??
+      (await artifactStore.get("standard_shl_manifest", artifactId));
     if (!stored) {
       json(response, 404, { ok: false, errors: ["SHL manifest not found."] });
       return;
@@ -164,8 +193,9 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
 
   const artifactRoute = matchArtifactRoute(pathname);
   if (artifactRoute) {
-    const stored = artifacts.get(
-      artifactKey(artifactRoute.kind, artifactRoute.artifactId),
+    const stored = await artifactStore.get(
+      artifactRoute.kind,
+      artifactRoute.artifactId,
     );
     if (!stored) {
       json(response, 404, {
@@ -193,7 +223,9 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
       resourceType: "Bundle",
       id: `${publicationId}:${fileId}`,
       type: "document",
-      note: "Railway wallet demo gateway returns plaintext FHIR-like content for demo verification. Production must return encrypted SHL file content.",
+      note: productionGateway
+        ? "TrustCare Wallet share gateway does not publish SHL file payloads here. Use the Portal SHL backend for encrypted file delivery."
+        : "Local wallet gateway returns plaintext FHIR-like content for development verification only.",
     });
     return;
   }
@@ -342,24 +374,31 @@ async function getSigningContext(origin) {
   const normalizedOrigin = origin.replace(/\/+$/, "");
   const cached = signingContexts.get(normalizedOrigin);
   if (cached) return cached;
-  const { publicKey, privateKey } = await generateKeyPair("ES256", {
-    extractable: true,
-  });
-  const publicJwk = await exportJWK(publicKey);
-  const thumbprint = await calculateJwkThumbprint(publicJwk, "sha256");
   const issuerDid = didWebFromOrigin(normalizedOrigin);
-  const kid = `${issuerDid}#wallet-demo-signing-key-${thumbprint.slice(0, 12)}`;
+  const keyMaterial =
+    configuredSigningKey ?? (await createLocalDevelopmentSigningKey());
+  const publicJwk = sanitizePublicJwk(keyMaterial.publicJwk);
+  const thumbprint = await calculateJwkThumbprint(publicJwk, "sha256");
+  const effectiveIssuerDid =
+    stringValue(process.env.TRUSTCARE_GATEWAY_ISSUER_DID) || issuerDid;
+  const kid =
+    stringValue(process.env.TRUSTCARE_GATEWAY_SIGNING_KID) ||
+    stringValue(publicJwk.kid) ||
+    `${effectiveIssuerDid}#wallet-signing-key-${thumbprint.slice(0, 12)}`;
   const context = {
-    issuerDid,
+    issuerDid: effectiveIssuerDid,
     kid,
-    jku: `${normalizedOrigin}/api/share-gateway/.well-known/jwks.json`,
-    privateKey,
+    jku:
+      stringValue(process.env.TRUSTCARE_GATEWAY_JWKS_URL) ||
+      `${normalizedOrigin}/api/share-gateway/.well-known/jwks.json`,
+    privateKey: keyMaterial.privateKey,
     publicJwk: sanitizePublicJwk({
       ...publicJwk,
       alg: "ES256",
       kid,
       use: "sig",
     }),
+    keySource: keyMaterial.source,
   };
   signingContexts.set(normalizedOrigin, context);
   return context;
@@ -370,7 +409,30 @@ function publicJwksForContext(context) {
     keys: [context.publicJwk],
     issuer: context.issuerDid,
     updated: new Date().toISOString(),
-    mode: "railway_demo_gateway",
+    mode: gatewayModeLabel(),
+    storage: artifactStore.kind,
+    persistent: artifactStore.persistent,
+    keySource: context.keySource,
+  };
+}
+
+function didDocumentForContext(context) {
+  return {
+    "@context": [
+      "https://www.w3.org/ns/did/v1",
+      "https://w3id.org/security/jwk/v1",
+    ],
+    id: context.issuerDid,
+    verificationMethod: [
+      {
+        id: context.kid,
+        type: "JsonWebKey",
+        controller: context.issuerDid,
+        publicKeyJwk: context.publicJwk,
+      },
+    ],
+    assertionMethod: [context.kid],
+    authentication: [context.kid],
   };
 }
 
@@ -384,8 +446,8 @@ function buildGatewayIssuedCredentialAttestation(
     ...credential,
     issuer: {
       id: context.issuerDid,
-      name: "TrustCare Wallet Railway Demo Gateway",
-      trustDomain: "wallet-demo",
+      name: "TrustCare Wallet Share Gateway",
+      trustDomain: "wallet-share-gateway",
       country: "TH",
     },
     validUntil: credential.validUntil ?? expiresAt,
@@ -412,7 +474,7 @@ function sanitizeCredential(credential, context, expiresAt) {
     type: ensureArray(cleaned.type, "VerifiableCredential"),
     issuer: cleaned.issuer ?? {
       id: context.issuerDid,
-      name: "TrustCare Wallet Railway Demo Gateway",
+      name: "TrustCare Wallet Share Gateway",
     },
     validFrom:
       cleaned.validFrom ?? cleaned.issuedAt ?? new Date().toISOString(),
@@ -509,6 +571,215 @@ function publicArtifactPath(kind, artifactId) {
 
 function artifactKey(kind, artifactId) {
   return `${kind}:${artifactId}`;
+}
+
+async function loadConfiguredSigningKey() {
+  const raw = process.env.TRUSTCARE_GATEWAY_SIGNING_KEY_JWK;
+  if (!raw) {
+    if (productionGateway) {
+      throw new Error(
+        "TRUSTCARE_GATEWAY_SIGNING_KEY_JWK is required for the Railway production share gateway.",
+      );
+    }
+    return null;
+  }
+  let privateJwk;
+  try {
+    privateJwk = JSON.parse(raw);
+  } catch {
+    throw new Error("TRUSTCARE_GATEWAY_SIGNING_KEY_JWK must be valid JSON.");
+  }
+  if (
+    !isRecord(privateJwk) ||
+    privateJwk.kty !== "EC" ||
+    privateJwk.crv !== "P-256" ||
+    typeof privateJwk.d !== "string"
+  ) {
+    throw new Error(
+      "TRUSTCARE_GATEWAY_SIGNING_KEY_JWK must be a private P-256 JWK for ES256 signing.",
+    );
+  }
+  return {
+    source: "env_persistent_jwk",
+    privateKey: await importJWK(privateJwk, "ES256"),
+    publicJwk: sanitizePublicJwk(privateJwk),
+  };
+}
+
+async function createLocalDevelopmentSigningKey() {
+  const { publicKey, privateKey } = await generateKeyPair("ES256", {
+    extractable: true,
+  });
+  return {
+    source: "local_ephemeral_jwk",
+    privateKey,
+    publicJwk: await exportJWK(publicKey),
+  };
+}
+
+async function createArtifactStore() {
+  if (process.env.DATABASE_URL) {
+    return createPostgresArtifactStore(process.env.DATABASE_URL);
+  }
+  if (productionGateway) {
+    throw new Error(
+      "DATABASE_URL is required for the Railway production share gateway.",
+    );
+  }
+  return createMemoryArtifactStore();
+}
+
+function createMemoryArtifactStore() {
+  const artifacts = new Map();
+  return {
+    kind: "memory",
+    persistent: false,
+    async set(artifact) {
+      artifacts.set(artifactKey(artifact.kind, artifact.artifactId), artifact);
+    },
+    async get(kind, artifactId) {
+      return artifacts.get(artifactKey(kind, artifactId)) ?? null;
+    },
+  };
+}
+
+async function createPostgresArtifactStore(connectionString) {
+  const pgModule = await import("pg");
+  const Pool = pgModule.Pool ?? pgModule.default?.Pool;
+  if (!Pool) {
+    throw new Error("pg Pool constructor was not available.");
+  }
+  const pool = new Pool({
+    connectionString,
+    max: Number(process.env.TRUSTCARE_GATEWAY_DB_POOL_MAX ?? 5),
+    ssl:
+      process.env.PGSSLMODE === "require"
+        ? { rejectUnauthorized: false }
+        : undefined,
+  });
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS trustcare_wallet_share_artifacts (
+      artifact_key text PRIMARY KEY,
+      artifact_id text NOT NULL,
+      kind text NOT NULL,
+      content_type text NOT NULL,
+      payload_json jsonb,
+      payload_text text,
+      source_payload_json jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      expires_at timestamptz
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS trustcare_wallet_share_artifacts_kind_id_idx
+    ON trustcare_wallet_share_artifacts(kind, artifact_id)
+  `);
+  return {
+    kind: "postgres",
+    persistent: true,
+    async set(artifact) {
+      const payloadIsText = typeof artifact.payload === "string";
+      await pool.query(
+        `
+          INSERT INTO trustcare_wallet_share_artifacts (
+            artifact_key,
+            artifact_id,
+            kind,
+            content_type,
+            payload_json,
+            payload_text,
+            source_payload_json,
+            created_at,
+            expires_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          ON CONFLICT (artifact_key) DO UPDATE SET
+            content_type = EXCLUDED.content_type,
+            payload_json = EXCLUDED.payload_json,
+            payload_text = EXCLUDED.payload_text,
+            source_payload_json = EXCLUDED.source_payload_json,
+            created_at = EXCLUDED.created_at,
+            expires_at = EXCLUDED.expires_at
+        `,
+        [
+          artifactKey(artifact.kind, artifact.artifactId),
+          artifact.artifactId,
+          artifact.kind,
+          artifact.contentType,
+          payloadIsText ? null : JSON.stringify(artifact.payload ?? null),
+          payloadIsText ? artifact.payload : null,
+          artifact.sourcePayload === undefined
+            ? null
+            : JSON.stringify(artifact.sourcePayload),
+          artifact.createdAt,
+          validIsoDateOrNull(artifact.expiresAt),
+        ],
+      );
+    },
+    async get(kind, artifactId) {
+      const result = await pool.query(
+        `
+          SELECT artifact_id, kind, content_type, payload_json, payload_text,
+                 source_payload_json, created_at, expires_at
+          FROM trustcare_wallet_share_artifacts
+          WHERE artifact_key = $1
+          LIMIT 1
+        `,
+        [artifactKey(kind, artifactId)],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      return {
+        artifactId: row.artifact_id,
+        kind: row.kind,
+        contentType: row.content_type,
+        payload:
+          row.payload_text !== null
+            ? row.payload_text
+            : deserializeJson(row.payload_json),
+        sourcePayload: deserializeJson(row.source_payload_json),
+        createdAt:
+          row.created_at instanceof Date
+            ? row.created_at.toISOString()
+            : String(row.created_at),
+        expiresAt:
+          row.expires_at instanceof Date
+            ? row.expires_at.toISOString()
+            : row.expires_at
+              ? String(row.expires_at)
+              : undefined,
+      };
+    },
+  };
+}
+
+function deserializeJson(value) {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function validIsoDateOrNull(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function isProductionGatewayRuntime() {
+  const explicitMode = String(process.env.TRUSTCARE_GATEWAY_MODE ?? "")
+    .trim()
+    .toLowerCase();
+  if (explicitMode === "local" || explicitMode === "development") return false;
+  if (explicitMode === "production") return true;
+  return Boolean(process.env.RAILWAY_ENVIRONMENT_NAME);
+}
+
+function gatewayModeLabel() {
+  return productionGateway
+    ? "trustcare_production_gateway"
+    : "trustcare_local_development_gateway";
 }
 
 async function readJsonBody(request) {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Buffer } from "node:buffer";
 import {
   createDemoResolverUrl,
+  createDataIntegrityProof,
   createEphemeralEs256SigningKey,
   extractCredentialJwt,
   parseJwtPayload,
@@ -86,6 +87,76 @@ describe("verifyQr VP resolver behavior", () => {
     expect(result.trustLevel).toBe("yellow");
     expect(result.warnings?.join(" ")).toContain("Data Integrity proof");
     expect(result.warnings?.join(" ")).toContain("cryptosuite");
+  });
+
+  it("returns green for a resolver VP with a valid ecdsa-jcs-2019 Data Integrity proof", async () => {
+    const { privateKey, publicKey } = await crypto.subtle.generateKey(
+      { name: "ECDSA", namedCurve: "P-256" },
+      true,
+      ["sign", "verify"],
+    );
+    const privateJwk = await crypto.subtle.exportKey("jwk", privateKey);
+    const publicJwk = await crypto.subtle.exportKey("jwk", publicKey);
+    const verificationMethod = "did:web:issuer.example#wallet-key-1";
+    const proof = await createDataIntegrityProof(unsignedVp, {
+      privateKeyJwk: {
+        ...privateJwk,
+        alg: "ES256",
+        kid: verificationMethod,
+      },
+      verificationMethod,
+      proofPurpose: "authentication",
+      created: "2026-07-09T00:00:00.000Z",
+    });
+    const signedVp = { ...unsignedVp, proof };
+    const presentationUrl =
+      "https://wallet.example/api/share-gateway/presentations/vp-test-001.json";
+    const result = await verifyQr(
+      {
+        url: "https://trustcare.example.com/trpc",
+        fetchImpl: async (input) => {
+          const url = String(input);
+          if (url === presentationUrl) {
+            return new Response(JSON.stringify(signedVp), {
+              headers: { "content-type": "application/vp+json" },
+            });
+          }
+          if (url === "https://issuer.example/.well-known/did.json") {
+            return new Response(
+              JSON.stringify({
+                id: "did:web:issuer.example",
+                verificationMethod: [
+                  {
+                    id: verificationMethod,
+                    type: "JsonWebKey",
+                    controller: "did:web:issuer.example",
+                    publicKeyJwk: {
+                      ...publicJwk,
+                      alg: "ES256",
+                      kid: verificationMethod,
+                    },
+                  },
+                ],
+                authentication: [verificationMethod],
+              }),
+              { headers: { "content-type": "application/json" } },
+            );
+          }
+          return new Response("not found", { status: 404 });
+        },
+      },
+      presentationUrl,
+    );
+
+    expect(result.protocol).toBe("trustcare-vp");
+    expect(result.verified).toBe(true);
+    expect(result.trustLevel).toBe("green");
+    expect(JSON.stringify(result.verificationChecklist)).toContain(
+      "Data Integrity proof",
+    );
+    expect(JSON.stringify(result.verificationChecklist)).toContain(
+      "ecdsa-jcs-2019",
+    );
   });
 
   it("keeps legacy embedded demo VP URLs out of green trust", async () => {

@@ -4,6 +4,7 @@ import {
   assessDataIntegrityProof,
   buildTrustCareJwksCandidateResult,
   buildTrustCareJwksCandidates,
+  createDataIntegrityProof,
   credentialIssuerName,
   documentTypesFromCredentials,
   envelopedVerifiableCredentialFromJwt,
@@ -17,6 +18,7 @@ import {
   proofSummary,
   splitJwtToken,
   unwrapVpPayload,
+  verifyDataIntegrityProof,
   walletCardHasCryptographicProof,
 } from "./index";
 import type { WalletCard } from "./models";
@@ -215,6 +217,108 @@ describe("credential proof standards layer", () => {
         }),
       }),
     ).toBe(true);
+  });
+
+  it("cryptographically verifies ecdsa-jcs-2019 Data Integrity proofs", async () => {
+    const { privateKey, publicKey } = await crypto.subtle.generateKey(
+      { name: "ECDSA", namedCurve: "P-256" },
+      true,
+      ["sign", "verify"],
+    );
+    const privateJwk = await crypto.subtle.exportKey("jwk", privateKey);
+    const publicJwk = await crypto.subtle.exportKey("jwk", publicKey);
+    const verificationMethod = "did:web:issuer.example#wallet-key-1";
+    const document = {
+      "@context": ["https://www.w3.org/ns/credentials/v2"],
+      id: "vp-di-001",
+      type: ["VerifiablePresentation"],
+      holder: "did:key:zPatient",
+      verifiableCredential: [
+        {
+          "@context": ["https://www.w3.org/ns/credentials/v2"],
+          id: "vc-di-001",
+          type: ["VerifiableCredential", "PatientIdentityCredential"],
+          issuer: "did:web:issuer.example",
+          credentialSubject: { id: "did:key:zPatient", familyName: "Jaidee" },
+        },
+      ],
+    };
+    const proof = await createDataIntegrityProof(document, {
+      privateKeyJwk: {
+        ...privateJwk,
+        alg: "ES256",
+        kid: verificationMethod,
+      },
+      verificationMethod,
+      proofPurpose: "authentication",
+      created: "2026-07-09T00:00:00.000Z",
+    });
+    const signed = { ...document, proof };
+    const fetcher = async () =>
+      new Response(
+        JSON.stringify({
+          id: "did:web:issuer.example",
+          verificationMethod: [
+            {
+              id: verificationMethod,
+              type: "JsonWebKey",
+              controller: "did:web:issuer.example",
+              publicKeyJwk: {
+                ...publicJwk,
+                alg: "ES256",
+                kid: verificationMethod,
+              },
+            },
+          ],
+          authentication: [verificationMethod],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+
+    await expect(verifyDataIntegrityProof(signed, { fetcher })).resolves
+      .toMatchObject({
+        present: true,
+        verified: true,
+        cryptosuite: "ecdsa-jcs-2019",
+        verificationMethod,
+      });
+
+    await expect(
+      verifyDataIntegrityProof(
+        {
+          ...signed,
+          holder: "did:key:zAttacker",
+        },
+        { fetcher },
+      ),
+    ).resolves.toMatchObject({
+      present: true,
+      verified: false,
+    });
+  });
+
+  it("rejects RDF canonicalization suites until TrustCare ships RDF Dataset Canonicalization", async () => {
+    await expect(
+      verifyDataIntegrityProof({
+        "@context": ["https://www.w3.org/ns/credentials/v2"],
+        id: "vp-rdfc-001",
+        type: ["VerifiablePresentation"],
+        proof: {
+          type: "DataIntegrityProof",
+          cryptosuite: "ecdsa-rdfc-2019",
+          proofPurpose: "authentication",
+          verificationMethod: "did:web:issuer.example#key-1",
+          proofValue: "zProof",
+        },
+      }),
+    ).resolves.toMatchObject({
+      present: true,
+      verified: false,
+      cryptosuite: "ecdsa-rdfc-2019",
+    });
   });
 });
 

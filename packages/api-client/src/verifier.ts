@@ -29,6 +29,7 @@ import {
   unwrapVcPayload,
   unwrapVpPayload,
   validateOid4vpBinding,
+  verifyDataIntegrityProof,
   verifyShlManifestTrust,
   type VerifierResult,
 } from "@trustcare/wallet-core";
@@ -127,18 +128,21 @@ async function verifyQrUnsafe(
     options.fetchImpl ?? fetch,
   );
   if (resolvedVp) {
-    return verifyResolvedVpPayload(resolvedVp);
+    return verifyResolvedVpPayload(resolvedVp, options.fetchImpl ?? fetch);
   }
   const demoReferencePayload = resolveDemoVpReferencePayload(qrData);
   if (demoReferencePayload?.kind === "vp") {
-    return verifyResolvedVpPayload({
-      id: demoReferencePayload.id,
-      payload: demoReferencePayload.payload,
-      sourceUrl: qrData,
-      warnings: [
-        "Resolved deterministic TrustCare demo VP reference from the wallet seed dataset.",
-      ],
-    });
+    return verifyResolvedVpPayload(
+      {
+        id: demoReferencePayload.id,
+        payload: demoReferencePayload.payload,
+        sourceUrl: qrData,
+        warnings: [
+          "Resolved deterministic TrustCare demo VP reference from the wallet seed dataset.",
+        ],
+      },
+      options.fetchImpl ?? fetch,
+    );
   }
   const demoPayload = resolveDemoResolverPayload(qrData);
   if (demoPayload?.kind === "vp") {
@@ -585,18 +589,21 @@ async function verifyDirectJwtQr(
       fetcher,
       "inline-jwt",
     );
-    return verifyResolvedVpPayload({
-      id: stringValue(vp.id, verification.credentialId ?? "inline-vp-jwt"),
-      payload: vp,
-      sourceUrl: "inline-jwt",
-      jwt,
-      jwtVerification: verification,
-      nestedCredentialResults,
-      warnings: [
-        ...verification.warnings,
-        ...nestedCredentialResults.flatMap((result) => result.warnings),
-      ],
-    });
+    return verifyResolvedVpPayload(
+      {
+        id: stringValue(vp.id, verification.credentialId ?? "inline-vp-jwt"),
+        payload: vp,
+        sourceUrl: "inline-jwt",
+        jwt,
+        jwtVerification: verification,
+        nestedCredentialResults,
+        warnings: [
+          ...verification.warnings,
+          ...nestedCredentialResults.flatMap((result) => result.warnings),
+        ],
+      },
+      fetcher,
+    );
   }
 
   const directVc = unwrapVcPayload(decodedPayload);
@@ -767,7 +774,10 @@ function buildDirectVcVerifierResult(
   };
 }
 
-function verifyResolvedVpPayload(resolved: ResolvedVpPayload): VerifierResult {
+async function verifyResolvedVpPayload(
+  resolved: ResolvedVpPayload,
+  fetcher: typeof fetch,
+): Promise<VerifierResult> {
   const payload = resolved.payload;
   const rawCredentials = Array.isArray(payload.verifiableCredential)
     ? payload.verifiableCredential
@@ -789,8 +799,8 @@ function verifyResolvedVpPayload(resolved: ResolvedVpPayload): VerifierResult {
   const nestedCredentialVerified =
     nestedResults.length > 0 &&
     nestedResults.every((result) => result.verified);
-  const dataIntegrity = assessDataIntegrityProof(payload);
-  const hasVerifiedProof = jwtVerified;
+  const dataIntegrity = await verifyDataIntegrityProof(payload, { fetcher });
+  const hasVerifiedProof = jwtVerified || dataIntegrity.verified;
   const notExpired =
     !payload.validUntil ||
     new Date(String(payload.validUntil)).getTime() >= Date.now();
@@ -823,11 +833,14 @@ function verifyResolvedVpPayload(resolved: ResolvedVpPayload): VerifierResult {
       {
         key: "signature",
         label: "Signature status",
-        ok: jwtVerified,
+        ok: hasVerifiedProof,
         detail: jwtVerified
           ? `ES256 / ${resolved.jwtVerification?.kid ?? "-"}`
+          : dataIntegrity.verified
+            ? `${dataIntegrity.cryptosuite ?? "Data Integrity"} / ${dataIntegrity.verificationMethod ?? "-"}`
           : dataIntegrity.present
-            ? `${dataIntegrity.summary} present but not cryptographically verified`
+            ? dataIntegrity.errors?.join(" ") ||
+              `${dataIntegrity.summary} present but not cryptographically verified`
             : "missing",
       },
       {
@@ -835,16 +848,20 @@ function verifyResolvedVpPayload(resolved: ResolvedVpPayload): VerifierResult {
         label: "Data Integrity proof",
         ok: dataIntegrity.verified,
         detail: dataIntegrity.present
-          ? "present; cryptosuite verification required"
+          ? dataIntegrity.verified
+            ? `verified via ${dataIntegrity.jwksUrl ?? dataIntegrity.verificationMethod ?? "-"}`
+            : dataIntegrity.errors?.join(" ") || "not verified"
           : "not present",
       },
       {
         key: "issuer_key",
         label: "Issuer key resolved",
-        ok: jwtVerified,
+        ok: jwtVerified || dataIntegrity.verified,
         detail:
           resolved.jwtVerification?.jwksUrl ??
           resolved.jwtVerification?.jku ??
+          dataIntegrity.jwksUrl ??
+          dataIntegrity.verificationMethod ??
           "-",
       },
       {
@@ -904,11 +921,7 @@ function verifyResolvedVpPayload(resolved: ResolvedVpPayload): VerifierResult {
         ),
       ),
       ...dataIntegrity.warnings,
-      ...(dataIntegrity.present && !jwtVerified
-        ? [
-            "พบ Data Integrity proof แต่ระบบยังไม่ถือว่า verified จนกว่าจะ verify cryptosuite/key material ตาม W3C Data Integrity ได้จริง.",
-          ]
-        : []),
+      ...(dataIntegrity.errors ?? []),
       ...(!hasVerifiedProof
         ? [
             "VP resolver ดึง payload ได้แล้ว แต่ยังไม่มี ES256/EdDSA/Data Integrity proof ที่ตรวจสอบได้ จึงยังไม่ให้ green badge.",

@@ -20,5 +20,8 @@
     "prettier": "^3.5.3",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "pg": "^8.22.0"
   }
 }

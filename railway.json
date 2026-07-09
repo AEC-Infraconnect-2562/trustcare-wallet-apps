@@ -2,7 +2,17 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "pnpm build:web"
+    "buildCommand": "pnpm build:web",
+    "watchPatterns": [
+      "apps/wallet-web/**",
+      "packages/**",
+      "scripts/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "tsconfig.base.json",
+      "railway.json"
+    ]
   },
   "deploy": {
     "startCommand": "node scripts/serve-wallet-web.mjs",

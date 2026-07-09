@@ -14,6 +14,29 @@ export type DataIntegrityProofStatus = {
   verified: boolean;
   summary: string;
   warnings: string[];
+  errors?: string[];
+  cryptosuite?: string;
+  proofPurpose?: string;
+  verificationMethod?: string;
+  jwksUrl?: string;
+};
+
+export type DataIntegrityProofVerificationOptions = {
+  fetcher?: typeof fetch;
+  expectedProofPurpose?: string;
+};
+
+type SupportedDataIntegrityCryptosuite = "ecdsa-jcs-2019" | "eddsa-jcs-2022";
+
+type DataIntegrityProofInput = {
+  cryptosuite?: SupportedDataIntegrityCryptosuite;
+  created?: string;
+  expires?: string;
+  verificationMethod: string;
+  proofPurpose?: string;
+  domain?: string;
+  challenge?: string;
+  privateKeyJwk: JWK;
 };
 
 export const TRUSTCARE_STANDARD_JWKS_ORIGINS = [
@@ -372,6 +395,521 @@ export function assessDataIntegrityProof(
         ]
       : [],
   };
+}
+
+export async function verifyDataIntegrityProof(
+  value: JsonRecord,
+  options: DataIntegrityProofVerificationOptions = {},
+): Promise<DataIntegrityProofStatus> {
+  const proofs = dataIntegrityProofEntries(value.proof);
+  if (!proofs.length) {
+    return {
+      present: false,
+      verified: false,
+      summary: "not present",
+      warnings: [],
+      errors: [],
+    };
+  }
+
+  const attempts: DataIntegrityProofStatus[] = [];
+  for (const proof of proofs) {
+    attempts.push(await verifySingleDataIntegrityProof(value, proof, options));
+  }
+  const verified = attempts.find((attempt) => attempt.verified);
+  if (verified) return verified;
+
+  return {
+    present: true,
+    verified: false,
+    summary:
+      attempts.map((attempt) => attempt.summary).filter(Boolean)[0] ??
+      "DataIntegrityProof",
+    cryptosuite: attempts.find((attempt) => attempt.cryptosuite)?.cryptosuite,
+    proofPurpose: attempts.find((attempt) => attempt.proofPurpose)
+      ?.proofPurpose,
+    verificationMethod: attempts.find((attempt) => attempt.verificationMethod)
+      ?.verificationMethod,
+    warnings: uniqueStrings(attempts.flatMap((attempt) => attempt.warnings)),
+    errors: uniqueStrings(attempts.flatMap((attempt) => attempt.errors ?? [])),
+  };
+}
+
+export async function createDataIntegrityProof(
+  document: JsonRecord,
+  input: DataIntegrityProofInput,
+): Promise<JsonRecord> {
+  const cryptosuite = input.cryptosuite ?? "ecdsa-jcs-2019";
+  const proof = stripUndefinedRecord({
+    type: "DataIntegrityProof",
+    cryptosuite,
+    created: input.created ?? new Date().toISOString(),
+    expires: input.expires,
+    verificationMethod: input.verificationMethod,
+    proofPurpose: input.proofPurpose ?? "assertionMethod",
+    domain: input.domain,
+    challenge: input.challenge,
+    "@context": document["@context"],
+  });
+  const signingData = await buildJcsDataIntegritySigningData(document, proof);
+  const signature = await signDataIntegrityBytes(
+    signingData,
+    input.privateKeyJwk,
+    cryptosuite,
+  );
+  return {
+    ...proof,
+    proofValue: `z${base58Encode(signature)}`,
+  };
+}
+
+async function verifySingleDataIntegrityProof(
+  document: JsonRecord,
+  proof: JsonRecord,
+  options: DataIntegrityProofVerificationOptions,
+): Promise<DataIntegrityProofStatus> {
+  const cryptosuite = stringOrUndefined(proof.cryptosuite);
+  const proofPurpose = stringOrUndefined(proof.proofPurpose);
+  const verificationMethod = stringOrUndefined(proof.verificationMethod);
+  const summary = `${stringOrUndefined(proof.type) ?? "DataIntegrityProof"} / ${cryptosuite ?? "unknown cryptosuite"}`;
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  const supportedCryptosuite = isSupportedDataIntegrityCryptosuite(cryptosuite)
+    ? cryptosuite
+    : undefined;
+
+  if (proof.type !== "DataIntegrityProof") {
+    errors.push("Proof type is not DataIntegrityProof.");
+  }
+  if (!supportedCryptosuite) {
+    errors.push(
+      cryptosuite
+        ? `Unsupported Data Integrity cryptosuite ${cryptosuite}. TrustCare currently verifies ecdsa-jcs-2019 and eddsa-jcs-2022.`
+        : "Data Integrity proof is missing cryptosuite.",
+    );
+  }
+  if (
+    options.expectedProofPurpose &&
+    proofPurpose !== options.expectedProofPurpose
+  ) {
+    errors.push(
+      `Data Integrity proofPurpose ${proofPurpose ?? "-"} does not match ${options.expectedProofPurpose}.`,
+    );
+  }
+  const proofValue = stringOrUndefined(proof.proofValue);
+  if (!proofValue) errors.push("Data Integrity proof is missing proofValue.");
+  if (!verificationMethod) {
+    errors.push("Data Integrity proof is missing verificationMethod.");
+  }
+  if (
+    errors.length ||
+    !supportedCryptosuite ||
+    !proofValue ||
+    !verificationMethod
+  ) {
+    return {
+      present: true,
+      verified: false,
+      summary,
+      cryptosuite,
+      proofPurpose,
+      verificationMethod,
+      warnings,
+      errors,
+    };
+  }
+
+  try {
+    const signature = decodeMultibaseBase58Btc(proofValue);
+    const signingData = await buildJcsDataIntegritySigningData(document, proof);
+    const resolved = await resolveDataIntegrityVerificationMethod(
+      verificationMethod,
+      options,
+    );
+    if (!resolved) {
+      return {
+        present: true,
+        verified: false,
+        summary,
+        cryptosuite,
+        proofPurpose,
+        verificationMethod,
+        warnings,
+        errors: [
+          `Could not resolve Data Integrity verificationMethod ${verificationMethod}.`,
+        ],
+      };
+    }
+    const verified = await verifyDataIntegrityBytes(
+      signingData,
+      signature,
+      resolved.jwk,
+      supportedCryptosuite,
+    );
+    return {
+      present: true,
+      verified,
+      summary,
+      cryptosuite,
+      proofPurpose,
+      verificationMethod,
+      jwksUrl: resolved.sourceUrl,
+      warnings,
+      errors: verified
+        ? []
+        : ["Data Integrity signature did not verify against the resolved key."],
+    };
+  } catch (error) {
+    return {
+      present: true,
+      verified: false,
+      summary,
+      cryptosuite,
+      proofPurpose,
+      verificationMethod,
+      warnings,
+      errors: [
+        error instanceof Error
+          ? error.message
+          : "Data Integrity verification failed.",
+      ],
+    };
+  }
+}
+
+async function buildJcsDataIntegritySigningData(
+  document: JsonRecord,
+  proof: JsonRecord,
+): Promise<Uint8Array> {
+  const unsecuredDocument = stripProofForDataIntegrity(document);
+  const proofConfig = stripUndefinedRecord({ ...proof });
+  delete proofConfig.proofValue;
+  delete proofConfig.jws;
+  if (proofConfig["@context"]) {
+    unsecuredDocument["@context"] = proofConfig["@context"];
+  }
+  const proofConfigHash = await sha256Bytes(
+    new TextEncoder().encode(jcsCanonicalize(proofConfig)),
+  );
+  const documentHash = await sha256Bytes(
+    new TextEncoder().encode(jcsCanonicalize(unsecuredDocument)),
+  );
+  return concatBytes(proofConfigHash, documentHash);
+}
+
+async function resolveDataIntegrityVerificationMethod(
+  verificationMethod: string,
+  options: DataIntegrityProofVerificationOptions,
+): Promise<{ jwk: JWK; sourceUrl?: string } | null> {
+  const fetcher = options.fetcher ?? globalThis.fetch;
+  if (typeof fetcher !== "function") return null;
+
+  const parsedUrl = parseUrl(verificationMethod);
+  const directUrl =
+    parsedUrl?.protocol === "https:" || parsedUrl?.protocol === "http:"
+      ? parsedUrl
+      : null;
+  const candidates = directUrl
+    ? [removeUrlHash(directUrl)]
+    : didWebDocumentCandidates(verificationMethod);
+  for (const url of candidates) {
+    const payload = await fetchJsonObject(url, fetcher);
+    if (!payload) continue;
+    const jwk = jwkFromVerificationDocument(payload, verificationMethod);
+    if (jwk) return { jwk, sourceUrl: url };
+  }
+
+  for (const url of didWebJwksCandidates(didFromVerificationMethodId(verificationMethod))) {
+    const payload = await fetchJsonObject(url, fetcher);
+    if (!payload) continue;
+    const jwk = jwksToKeys(payload).find((key) =>
+      keyMatchesKid(key, verificationMethod),
+    );
+    if (jwk) return { jwk, sourceUrl: url };
+  }
+  return null;
+}
+
+function jwkFromVerificationDocument(
+  payload: JsonRecord,
+  verificationMethod: string,
+): JWK | null {
+  const directJwk = payload.kty ? (payload as JWK) : null;
+  if (directJwk) {
+    return {
+      ...directJwk,
+      kid: stringOrUndefined(directJwk.kid) ?? verificationMethod,
+    };
+  }
+  const keys = jwksToKeys(payload);
+  return (
+    keys.find((key) => keyMatchesKid(key, verificationMethod)) ??
+    jwkFromDidVerificationMethod(payload, verificationMethod)
+  );
+}
+
+function jwkFromDidVerificationMethod(
+  payload: JsonRecord,
+  verificationMethod: string,
+): JWK | null {
+  const methods = Array.isArray(payload.verificationMethod)
+    ? payload.verificationMethod
+    : [];
+  for (const method of methods) {
+    const object = jsonRecord(method);
+    if (!object) continue;
+    const id = stringOrUndefined(object.id);
+    if (!id || !keyMatchesKid({ kid: id }, verificationMethod)) continue;
+    const jwk = jsonRecord(object.publicKeyJwk);
+    if (!jwk) continue;
+    return {
+      ...(jwk as JWK),
+      kid: stringOrUndefined(jwk.kid) ?? id,
+    };
+  }
+  return null;
+}
+
+async function fetchJsonObject(
+  url: string,
+  fetcher: typeof fetch,
+): Promise<JsonRecord | null> {
+  try {
+    const response = await fetcher(url, { headers: { accept: "application/json" } });
+    if (!response.ok) return null;
+    return jsonRecord(await response.json());
+  } catch {
+    return null;
+  }
+}
+
+function didWebDocumentCandidates(verificationMethod: string): string[] {
+  const did = didFromVerificationMethodId(verificationMethod);
+  if (!did?.startsWith("did:web:")) return [];
+  const parts = did
+    .slice("did:web:".length)
+    .split(":")
+    .map(decodeURIComponent);
+  const host = parts[0];
+  if (!host) return [];
+  const pathParts = parts.slice(1).filter(Boolean);
+  if (!pathParts.length) return [`https://${host}/.well-known/did.json`];
+  return [`https://${host}/${pathParts.join("/")}/did.json`];
+}
+
+function didFromVerificationMethodId(id: string): string | undefined {
+  if (!id.startsWith("did:")) return undefined;
+  return id.split("#")[0];
+}
+
+function removeUrlHash(url: URL): string {
+  const copy = new URL(url.href);
+  copy.hash = "";
+  return copy.href;
+}
+
+async function signDataIntegrityBytes(
+  data: Uint8Array,
+  privateKeyJwk: JWK,
+  cryptosuite: SupportedDataIntegrityCryptosuite,
+): Promise<Uint8Array> {
+  const key = await importDataIntegrityKey(privateKeyJwk, cryptosuite, [
+    "sign",
+  ]);
+  const signature = await globalThis.crypto.subtle.sign(
+    dataIntegrityAlgorithm(cryptosuite),
+    key,
+    strictUint8Array(data),
+  );
+  return new Uint8Array(signature);
+}
+
+async function verifyDataIntegrityBytes(
+  data: Uint8Array,
+  signature: Uint8Array,
+  publicKeyJwk: JWK,
+  cryptosuite: SupportedDataIntegrityCryptosuite,
+): Promise<boolean> {
+  const key = await importDataIntegrityKey(publicKeyJwk, cryptosuite, [
+    "verify",
+  ]);
+  return globalThis.crypto.subtle.verify(
+    dataIntegrityAlgorithm(cryptosuite),
+    key,
+    strictUint8Array(signature),
+    strictUint8Array(data),
+  );
+}
+
+async function importDataIntegrityKey(
+  jwk: JWK,
+  cryptosuite: SupportedDataIntegrityCryptosuite,
+  usages: KeyUsage[],
+): Promise<CryptoKey> {
+  if (cryptosuite === "ecdsa-jcs-2019") {
+    return globalThis.crypto.subtle.importKey(
+      "jwk",
+      jwk as JsonWebKey,
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      usages,
+    );
+  }
+  return globalThis.crypto.subtle.importKey(
+    "jwk",
+    jwk as JsonWebKey,
+    { name: "Ed25519" },
+    false,
+    usages,
+  );
+}
+
+function dataIntegrityAlgorithm(
+  cryptosuite: SupportedDataIntegrityCryptosuite,
+): AlgorithmIdentifier | EcdsaParams {
+  return cryptosuite === "ecdsa-jcs-2019"
+    ? { name: "ECDSA", hash: "SHA-256" }
+    : { name: "Ed25519" };
+}
+
+async function sha256Bytes(bytes: Uint8Array): Promise<Uint8Array> {
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    strictUint8Array(bytes),
+  );
+  return new Uint8Array(digest);
+}
+
+function strictUint8Array(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+  const output = new Uint8Array(bytes.byteLength);
+  output.set(bytes);
+  return output;
+}
+
+function concatBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
+  const output = new Uint8Array(left.length + right.length);
+  output.set(left, 0);
+  output.set(right, left.length);
+  return output;
+}
+
+function stripProofForDataIntegrity(value: JsonRecord): JsonRecord {
+  const copy = deepJsonClone(value);
+  delete copy.proof;
+  return copy;
+}
+
+function deepJsonClone(value: JsonRecord): JsonRecord {
+  return JSON.parse(JSON.stringify(value)) as JsonRecord;
+}
+
+function stripUndefinedRecord(value: JsonRecord): JsonRecord {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined),
+  );
+}
+
+function jcsCanonicalize(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error("JCS cannot canonicalize non-finite numbers.");
+    }
+    return JSON.stringify(value);
+  }
+  if (typeof value === "string" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => jcsCanonicalize(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as JsonRecord)
+      .filter(([, item]) => item !== undefined)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+    return `{${entries
+      .map(([key, item]) => `${JSON.stringify(key)}:${jcsCanonicalize(item)}`)
+      .join(",")}}`;
+  }
+  throw new Error(`JCS cannot canonicalize ${typeof value}.`);
+}
+
+function dataIntegrityProofEntries(proof: unknown): JsonRecord[] {
+  const proofs = Array.isArray(proof) ? proof : proof ? [proof] : [];
+  return proofs
+    .map(jsonRecord)
+    .filter((entry): entry is JsonRecord =>
+      Boolean(entry && proofLooksUsable(entry)),
+    );
+}
+
+function isSupportedDataIntegrityCryptosuite(
+  cryptosuite: string | undefined,
+): cryptosuite is SupportedDataIntegrityCryptosuite {
+  return cryptosuite === "ecdsa-jcs-2019" || cryptosuite === "eddsa-jcs-2022";
+}
+
+function decodeMultibaseBase58Btc(value: string): Uint8Array {
+  if (!value.startsWith("z")) {
+    throw new Error("Data Integrity proofValue must use base58btc multibase.");
+  }
+  return base58Decode(value.slice(1));
+}
+
+const BASE58_BTC_ALPHABET =
+  "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+function base58Encode(bytes: Uint8Array): string {
+  if (!bytes.length) return "";
+  const digits = [0];
+  for (const byte of bytes) {
+    let carry = byte;
+    for (let index = 0; index < digits.length; index += 1) {
+      const value = digits[index] * 256 + carry;
+      digits[index] = value % 58;
+      carry = Math.floor(value / 58);
+    }
+    while (carry > 0) {
+      digits.push(carry % 58);
+      carry = Math.floor(carry / 58);
+    }
+  }
+  for (const byte of bytes) {
+    if (byte === 0) digits.push(0);
+    else break;
+  }
+  return digits
+    .reverse()
+    .map((digit) => BASE58_BTC_ALPHABET[digit])
+    .join("");
+}
+
+function base58Decode(value: string): Uint8Array {
+  if (!value.length) return new Uint8Array();
+  const bytes = [0];
+  for (const char of value) {
+    const digit = BASE58_BTC_ALPHABET.indexOf(char);
+    if (digit < 0) throw new Error("Invalid base58btc proofValue.");
+    let carry = digit;
+    for (let index = 0; index < bytes.length; index += 1) {
+      const item = bytes[index] * 58 + carry;
+      bytes[index] = item & 0xff;
+      carry = item >> 8;
+    }
+    while (carry > 0) {
+      bytes.push(carry & 0xff);
+      carry >>= 8;
+    }
+  }
+  for (const char of value) {
+    if (char === "1") bytes.push(0);
+    else break;
+  }
+  return new Uint8Array(bytes.reverse());
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 export function proofSummary(value: JsonRecord): string {
