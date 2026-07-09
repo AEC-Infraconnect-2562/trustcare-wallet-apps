@@ -61,6 +61,7 @@ const server = createServer(async (request, response) => {
     }
     if (
       requestUrl.pathname === "/.well-known/did.json" ||
+      requestUrl.pathname === "/api/share-gateway/.well-known/did.json" ||
       requestUrl.pathname === "/api/share-gateway/did.json"
     ) {
       const context = await getSigningContext(requestOrigin(request));
