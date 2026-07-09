@@ -27,6 +27,7 @@ describe("scan URL payload parsing", () => {
       "https://wallet.example/api/share-gateway/presentations/vp_abc.jwt";
     const webScanUrl = createScannableWebUrl(resolverUrl);
 
+    expect(webScanUrl).toContain("?verify=public#scan=");
     expect(webScanUrl).toContain("#scan=");
     expect(extractScannablePayload(webScanUrl)).toBe(resolverUrl);
     expect(createScannableWebUrl(webScanUrl)).toBe(webScanUrl);

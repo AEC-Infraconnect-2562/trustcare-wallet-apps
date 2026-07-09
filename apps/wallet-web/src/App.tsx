@@ -121,6 +121,7 @@ import {
   extractScannablePayload,
   friendlyPortalSyncError,
   friendlyWalletRuntimeError,
+  isPublicVerifierScanLocation,
   readScanPayloadFromLocation,
   shortDid,
 } from "./views/AppViews";
@@ -1098,6 +1099,7 @@ export default function App() {
 
   useEffect(() => {
     if (!isAuthenticated || !pendingScanPayload || !allCards.length) return;
+    if (isPublicVerifierScanLocation()) return;
     if (
       allCards.some(
         (card) => card.ownerUserId && card.ownerUserId !== selectedUserId,
@@ -1122,6 +1124,13 @@ export default function App() {
     lastPublicVerifyPayload.current = pendingScanPayload;
     void verifyPublicScan(pendingScanPayload);
   }, [isAuthenticated, pendingScanPayload, verifyPublicScan]);
+
+  useEffect(() => {
+    if (!pendingScanPayload || !isPublicVerifierScanLocation()) return;
+    if (lastPublicVerifyPayload.current === pendingScanPayload) return;
+    lastPublicVerifyPayload.current = pendingScanPayload;
+    void verifyPublicScan(pendingScanPayload);
+  }, [pendingScanPayload, verifyPublicScan]);
 
   const loginAs = useCallback(
     (userId: string) => {
@@ -1196,37 +1205,41 @@ export default function App() {
     setDocumentsTab(tab);
   };
 
+  if (
+    pendingScanPayload &&
+    (!isAuthenticated || isPublicVerifierScanLocation())
+  ) {
+    return (
+      <>
+        <PublicVerifierView
+          payload={pendingScanPayload}
+          outcome={publicVerifyOutcome}
+          busy={publicVerifyBusy}
+          error={publicVerifyError}
+          onRetry={() => void verifyPublicScan(pendingScanPayload)}
+          onCopy={copyText}
+          onOpenScanner={() => setScannerOpen(true)}
+          onOpenWallet={() => loginAs(selectedUserId)}
+        />
+        <Suspense fallback={<DialogLoadingFallback />}>
+          {scannerOpen && (
+            <QrScannerDialog
+              open={scannerOpen}
+              onClose={() => setScannerOpen(false)}
+              onScan={(value) => {
+                const payload = extractScannablePayload(value);
+                lastPublicVerifyPayload.current = "";
+                setPendingScanPayload(payload);
+                window.location.hash = `scan=${encodeURIComponent(payload)}`;
+              }}
+            />
+          )}
+        </Suspense>
+      </>
+    );
+  }
+
   if (!isAuthenticated) {
-    if (pendingScanPayload) {
-      return (
-        <>
-          <PublicVerifierView
-            payload={pendingScanPayload}
-            outcome={publicVerifyOutcome}
-            busy={publicVerifyBusy}
-            error={publicVerifyError}
-            onRetry={() => void verifyPublicScan(pendingScanPayload)}
-            onCopy={copyText}
-            onOpenScanner={() => setScannerOpen(true)}
-            onOpenWallet={() => loginAs(selectedUserId)}
-          />
-          <Suspense fallback={<DialogLoadingFallback />}>
-            {scannerOpen && (
-              <QrScannerDialog
-                open={scannerOpen}
-                onClose={() => setScannerOpen(false)}
-                onScan={(value) => {
-                  const payload = extractScannablePayload(value);
-                  lastPublicVerifyPayload.current = "";
-                  setPendingScanPayload(payload);
-                  window.location.hash = `scan=${encodeURIComponent(payload)}`;
-                }}
-              />
-            )}
-          </Suspense>
-        </>
-      );
-    }
     return (
       <>
         <LoginView

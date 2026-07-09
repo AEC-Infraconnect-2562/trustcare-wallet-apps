@@ -4611,7 +4611,7 @@ export function createScannableWebUrl(payload: string): string {
     // Raw VC/VP payloads are wrapped below so another device can open this web app.
   }
   const encoded = encodeURIComponent(payload);
-  return `${currentAppShareRootUrl()}#scan=${encoded}`;
+  return `${currentAppShareRootUrl()}?verify=public#scan=${encoded}`;
 }
 
 export function getObjectScanPayload(object: WalletStoredObject): string {
@@ -4901,6 +4901,15 @@ export function readScanPayloadFromLocation(): string {
   if (hashShl) return hashShl.raw;
   const payload = url.searchParams.get("scan");
   return payload ? extractScannablePayload(payload) : "";
+}
+
+export function isPublicVerifierScanLocation(): boolean {
+  if (typeof window === "undefined") return false;
+  const url = new URL(window.location.href);
+  return (
+    url.searchParams.get("verify") === "public" ||
+    url.searchParams.get("publicVerifier") === "1"
+  );
 }
 
 export function scanPayloadFromHash(hash: string): string {
