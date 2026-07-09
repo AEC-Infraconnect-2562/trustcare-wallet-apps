@@ -32,6 +32,12 @@ are configured. Production exposes stable JWKS at
 `/.well-known/did.json`, signs W3C `vp+jwt` artifacts with enveloped nested
 `vc+jwt` credentials, and persists artifacts in Postgres.
 
+The production share gateway keeps resolver reads public for cross-device QR
+verification, but restricts browser-origin artifact publishing to the service
+origin and `TRUSTCARE_GATEWAY_ALLOWED_ORIGINS`. It rejects non-JSON publish
+requests, caps JSON body size, returns `410 Gone` for expired artifacts, and
+sets no-store/security headers on API responses.
+
 Green verification requires verifier-side signature validation against JWKS,
 nested VC verification for VP JWT artifacts, or cryptographic W3C Data
 Integrity proof verification for supported JCS suites. Payload metadata such as
@@ -51,4 +57,6 @@ Gateway and API-client verifier code may fetch artifacts, call Portal endpoints,
 - Offline data is a convenience cache, not clinical source of truth.
 - Offline QR can be displayed only before expiry.
 - Logout must clear local secrets and cache.
+- Web local storage keys are versioned and read defensively so stale or blocked
+  storage cannot corrupt runtime state.
 - Mobile refresh tokens must use SecureStore, not AsyncStorage.

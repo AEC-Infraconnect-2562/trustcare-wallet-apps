@@ -1,7 +1,13 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import type { WalletStoredObject } from "@trustcare/wallet-core";
+import {
+  isRecordOfArrays,
+  readJsonStorage,
+  writeJsonStorage,
+} from "../utils/storage";
 
-const storedExtrasStorageKey = "trustcare-wallet-store-extras";
+const storedExtrasStorageKey = "trustcare-wallet-store-extras:v1";
+const legacyStoredExtrasStorageKey = "trustcare-wallet-store-extras";
 
 export type UseStoredExtrasResult = {
   storedExtras: WalletStoredObject[];
@@ -28,18 +34,16 @@ export function useStoredExtras(selectedUserId: string): UseStoredExtrasResult {
 }
 
 function readStoredExtras(): Record<string, WalletStoredObject[]> {
-  if (typeof window === "undefined") return {};
-  try {
-    const value = window.localStorage.getItem(storedExtrasStorageKey);
-    return value
-      ? (JSON.parse(value) as Record<string, WalletStoredObject[]>)
-      : {};
-  } catch {
-    return {};
-  }
+  return readJsonStorage<Record<string, WalletStoredObject[]>>(
+    storedExtrasStorageKey,
+    {
+      fallback: {},
+      legacyKeys: [legacyStoredExtrasStorageKey],
+      validate: isRecordOfArrays,
+    },
+  );
 }
 
 function writeStoredExtras(value: Record<string, WalletStoredObject[]>) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(storedExtrasStorageKey, JSON.stringify(value));
+  writeJsonStorage(storedExtrasStorageKey, value);
 }

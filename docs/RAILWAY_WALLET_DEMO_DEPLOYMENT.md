@@ -46,6 +46,13 @@ Optional variables:
   issuer.
 - `TRUSTCARE_GATEWAY_SIGNING_KID`: override the generated key id.
 - `TRUSTCARE_GATEWAY_JWKS_URL`: override the JWKS URL in JWT headers.
+- `TRUSTCARE_GATEWAY_ALLOWED_ORIGINS`: comma-separated browser origins allowed
+  to publish new share artifacts with `POST /api/share-gateway/artifacts`.
+  Leave unset for same-origin Railway Wallet only; add the GitHub Pages or
+  Portal origin when that frontend must publish to this gateway.
+- `TRUSTCARE_GATEWAY_MAX_BODY_BYTES`: maximum JSON publish body size. Defaults
+  to `1000000`.
+- `TRUSTCARE_GATEWAY_DB_POOL_MAX`: maximum Postgres pool size. Defaults to `5`.
 - `PGSSLMODE=require`: enable TLS verification mode for external Postgres
   connections.
 - `VITE_TRUSTCARE_SHARE_GATEWAY_URL`: override the browser wallet gateway base
@@ -71,3 +78,9 @@ Production should report:
 - `storage=postgres`
 - `persistent=true`
 - `keySource=env_persistent_jwk`
+
+The gateway keeps resolver reads public so QR payloads can be fetched by
+cross-device verifiers, but browser-origin artifact publishing is limited to
+the service origin plus `TRUSTCARE_GATEWAY_ALLOWED_ORIGINS`. Published
+artifacts are returned with `Cache-Control: no-store`, expired artifacts return
+`410 Gone`, and oversized JSON publish requests return `413`.

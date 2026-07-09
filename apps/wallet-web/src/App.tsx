@@ -89,6 +89,11 @@ import { useStoredExtras } from "./hooks/useStoredExtras";
 import { useWebAuthn } from "./hooks/useWebAuthn";
 import { toQrDataUrl } from "./utils/qrCode";
 import {
+  readStringStorage,
+  removeStorageValue,
+  writeStringStorage,
+} from "./utils/storage";
+import {
   DialogLoadingFallback,
   DocumentFlowDialog,
   DocumentsHubView,
@@ -168,9 +173,14 @@ const isStaticStandaloneRuntime =
     window.location.hostname === "127.0.0.1" ||
     window.location.hostname.endsWith("github.io"));
 
-const walletSessionKey = "trustcare-wallet-active-user";
+const walletSessionKey = "trustcare-wallet-active-user:v1";
+const legacyWalletSessionKey = "trustcare-wallet-active-user";
 const defaultLoginUserId = "demo-patient-001";
 const walletRuntimeRelease = "w3c-vc-jwt-railway-gateway";
+
+function readWalletSessionUserId() {
+  return readStringStorage(walletSessionKey, [legacyWalletSessionKey]);
+}
 
 export default function App() {
   const { lang, setLang, t } = useLanguage();
@@ -180,12 +190,10 @@ export default function App() {
   const [documentsTab, setDocumentsTab] = useState<DocumentsTab>("cards");
   const [developerMode, setDeveloperMode] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>(() => {
-    if (typeof window === "undefined") return defaultLoginUserId;
-    return window.localStorage.getItem(walletSessionKey) ?? defaultLoginUserId;
+    return readWalletSessionUserId() ?? defaultLoginUserId;
   });
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return Boolean(window.localStorage.getItem(walletSessionKey));
+    return Boolean(readWalletSessionUserId());
   });
   const [grouped, setGrouped] = useState<WalletCardsByCategory>({});
   const [history, setHistory] = useState<PresentationHistoryItem[]>([]);
@@ -927,7 +935,7 @@ export default function App() {
 
   const loginAs = useCallback(
     (userId: string) => {
-      window.localStorage.setItem(walletSessionKey, userId);
+      writeStringStorage(walletSessionKey, userId);
       setSelectedUserId(userId);
       setIsAuthenticated(true);
       setViewHistory([]);
@@ -937,7 +945,7 @@ export default function App() {
   );
 
   const logout = useCallback(() => {
-    window.localStorage.removeItem(walletSessionKey);
+    removeStorageValue(walletSessionKey, [legacyWalletSessionKey]);
     setIsAuthenticated(false);
     setViewHistory([]);
     setView("home");

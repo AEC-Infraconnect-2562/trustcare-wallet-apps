@@ -1,6 +1,12 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  isRecordOfArrays,
+  readJsonStorage,
+  writeJsonStorage,
+} from "../utils/storage";
 
-const scanHistoryStorageKey = "trustcare-wallet-scan-history";
+const scanHistoryStorageKey = "trustcare-wallet-scan-history:v1";
+const legacyScanHistoryStorageKey = "trustcare-wallet-scan-history";
 
 export type UseScanHistoryResult<TScanOutcome> = {
   scanHistory: TScanOutcome[];
@@ -29,16 +35,16 @@ export function useScanHistory<TScanOutcome>(
 }
 
 function readScanHistory<TScanOutcome>(): Record<string, TScanOutcome[]> {
-  if (typeof window === "undefined") return {};
-  try {
-    const value = window.localStorage.getItem(scanHistoryStorageKey);
-    return value ? (JSON.parse(value) as Record<string, TScanOutcome[]>) : {};
-  } catch {
-    return {};
-  }
+  return readJsonStorage<Record<string, TScanOutcome[]>>(
+    scanHistoryStorageKey,
+    {
+      fallback: {},
+      legacyKeys: [legacyScanHistoryStorageKey],
+      validate: isRecordOfArrays,
+    },
+  );
 }
 
 function writeScanHistory<TScanOutcome>(value: Record<string, TScanOutcome[]>) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(scanHistoryStorageKey, JSON.stringify(value));
+  writeJsonStorage(scanHistoryStorageKey, value);
 }

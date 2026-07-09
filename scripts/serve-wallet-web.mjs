@@ -10,7 +10,11 @@ import {
 } from "../packages/wallet-core/node_modules/jose/dist/webapi/index.js";
 
 const root = resolve("apps/wallet-web/dist");
-const port = Number(process.env.PORT ?? 3000);
+const port = positiveIntegerFromEnv("PORT", 3000);
+const maxJsonBodyBytes = positiveIntegerFromEnv(
+  "TRUSTCARE_GATEWAY_MAX_BODY_BYTES",
+  1_000_000,
+);
 const signingContexts = new Map();
 const productionGateway = isProductionGatewayRuntime();
 const configuredSigningKey = await loadConfiguredSigningKey();
@@ -42,15 +46,20 @@ function resolveAssetPath(pathname) {
 }
 
 const server = createServer(async (request, response) => {
-  setCorsHeaders(response);
-  if (request.method === "OPTIONS") {
-    response.writeHead(204);
-    response.end();
-    return;
-  }
-
+  setSecurityHeaders(response);
   try {
     const requestUrl = new URL(request.url ?? "/", requestOrigin(request));
+    if (handleCorsPreflight(request, response, requestUrl)) return;
+    setCorsHeaders(request, response, requestUrl);
+
+    if (!isRequestOriginAllowed(request, requestUrl)) {
+      json(response, 403, {
+        ok: false,
+        errors: ["Origin is not allowed to mutate the share gateway."],
+      });
+      return;
+    }
+
     if (
       requestUrl.pathname === "/.well-known/jwks.json" ||
       requestUrl.pathname === "/api/share-gateway/.well-known/jwks.json"
@@ -88,9 +97,10 @@ const server = createServer(async (request, response) => {
     );
     createReadStream(filePath).pipe(response);
   } catch (error) {
-    json(response, 500, {
+    const status = httpStatusFromError(error);
+    json(response, status, {
       ok: false,
-      errors: [error instanceof Error ? error.message : "Wallet server error."],
+      errors: [safeErrorMessage(error, status)],
     });
   }
 });
@@ -116,6 +126,14 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
   }
 
   if (request.method === "POST" && pathname === "/artifacts") {
+    if (!isJsonRequest(request)) {
+      json(response, 415, {
+        ok: false,
+        errors: ["Content-Type must be application/json."],
+      });
+      return;
+    }
+
     const body = await readJsonBody(request);
     const artifactId = stringValue(body.artifactId);
     const kind = stringValue(body.kind);
@@ -188,6 +206,7 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
       json(response, 404, { ok: false, errors: ["SHL manifest not found."] });
       return;
     }
+    if (respondIfArtifactExpired(response, stored)) return;
     json(response, 200, stored.payload);
     return;
   }
@@ -205,6 +224,7 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
       });
       return;
     }
+    if (respondIfArtifactExpired(response, stored)) return;
     if (
       artifactRoute.extension === "jwt" ||
       stored.contentType.includes("jwt")
@@ -652,7 +672,7 @@ async function createPostgresArtifactStore(connectionString) {
   }
   const pool = new Pool({
     connectionString,
-    max: Number(process.env.TRUSTCARE_GATEWAY_DB_POOL_MAX ?? 5),
+    max: positiveIntegerFromEnv("TRUSTCARE_GATEWAY_DB_POOL_MAX", 5),
     ssl:
       process.env.PGSSLMODE === "require"
         ? { rejectUnauthorized: false }
@@ -785,11 +805,26 @@ function gatewayModeLabel() {
 
 async function readJsonBody(request) {
   const chunks = [];
-  for await (const chunk of request)
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  let receivedBytes = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    receivedBytes += buffer.byteLength;
+    if (receivedBytes > maxJsonBodyBytes) {
+      throw httpError(
+        413,
+        `JSON request body exceeds ${maxJsonBodyBytes} bytes.`,
+      );
+    }
+    chunks.push(buffer);
+  }
   if (!chunks.length) return {};
   const raw = Buffer.concat(chunks).toString("utf8");
-  return raw.trim() ? JSON.parse(raw) : {};
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw httpError(400, "Request body must be valid JSON.");
+  }
 }
 
 async function buildDisclosureDigests(claims) {
@@ -919,6 +954,13 @@ function stringValue(value, fallback = "") {
   return typeof value === "string" && value.length > 0 ? value : fallback;
 }
 
+function positiveIntegerFromEnv(name, fallback) {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function requestOrigin(request) {
   const host = request.headers.host ?? `127.0.0.1:${port}`;
   const proto =
@@ -930,23 +972,173 @@ function requestOrigin(request) {
   return `${proto}://${host}`;
 }
 
-function setCorsHeaders(response) {
-  response.setHeader("Access-Control-Allow-Origin", "*");
+function handleCorsPreflight(request, response, requestUrl) {
+  if (request.method !== "OPTIONS") return false;
+  setCorsHeaders(request, response, requestUrl);
+  if (!isRequestOriginAllowed(request, requestUrl)) {
+    json(response, 403, {
+      ok: false,
+      errors: ["Origin is not allowed to mutate the share gateway."],
+    });
+    return true;
+  }
+  response.writeHead(204);
+  response.end();
+  return true;
+}
+
+function setCorsHeaders(request, response, requestUrl) {
+  const allowedOrigin = corsAllowedOrigin(request, requestUrl);
+  if (allowedOrigin) {
+    response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+    if (allowedOrigin !== "*") appendVaryHeader(response, "Origin");
+  }
   response.setHeader(
     "Access-Control-Allow-Headers",
     "content-type, accept, authorization",
   );
-  response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  response.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, HEAD, POST, OPTIONS",
+  );
+  response.setHeader("Access-Control-Max-Age", "600");
+}
+
+function corsAllowedOrigin(request, requestUrl) {
+  const origin = stringValue(request.headers.origin);
+  if (!origin || isPublicReadRequest(request, requestUrl)) return "*";
+  return trustedMutationOrigins(request).has(normalizeOrigin(origin))
+    ? origin
+    : "";
+}
+
+function isRequestOriginAllowed(request, requestUrl) {
+  const origin = stringValue(request.headers.origin);
+  if (!origin || !isGatewayMutationRequest(request, requestUrl)) return true;
+  return trustedMutationOrigins(request).has(normalizeOrigin(origin));
+}
+
+function trustedMutationOrigins(request) {
+  return new Set(
+    [
+      requestOrigin(request),
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      ...String(process.env.TRUSTCARE_GATEWAY_ALLOWED_ORIGINS ?? "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ].map(normalizeOrigin),
+  );
+}
+
+function normalizeOrigin(origin) {
+  try {
+    return new URL(origin).origin;
+  } catch {
+    return origin.replace(/\/+$/, "");
+  }
+}
+
+function isGatewayMutationRequest(request, requestUrl) {
+  const method = effectiveCorsMethod(request);
+  return (
+    method === "POST" && requestUrl.pathname === "/api/share-gateway/artifacts"
+  );
+}
+
+function isPublicReadRequest(request, requestUrl) {
+  const method = effectiveCorsMethod(request);
+  return (
+    (method === "GET" || method === "HEAD") &&
+    (requestUrl.pathname === "/.well-known/jwks.json" ||
+      requestUrl.pathname === "/.well-known/did.json" ||
+      requestUrl.pathname.startsWith("/api/share-gateway"))
+  );
+}
+
+function effectiveCorsMethod(request) {
+  if (request.method !== "OPTIONS") return request.method;
+  return stringValue(
+    request.headers["access-control-request-method"],
+    request.method,
+  ).toUpperCase();
+}
+
+function appendVaryHeader(response, value) {
+  const existing = response.getHeader("Vary");
+  if (!existing) {
+    response.setHeader("Vary", value);
+    return;
+  }
+  const values = String(existing)
+    .split(",")
+    .map((item) => item.trim().toLowerCase());
+  if (!values.includes(value.toLowerCase())) {
+    response.setHeader("Vary", `${existing}, ${value}`);
+  }
+}
+
+function isJsonRequest(request) {
+  const contentType = stringValue(
+    request.headers["content-type"],
+  ).toLowerCase();
+  return contentType.startsWith("application/json");
+}
+
+function respondIfArtifactExpired(response, artifact) {
+  if (!isArtifactExpired(artifact)) return false;
+  json(response, 410, {
+    ok: false,
+    errors: [`${artifact.kind} has expired.`],
+  });
+  return true;
+}
+
+function isArtifactExpired(artifact) {
+  if (!artifact.expiresAt) return false;
+  const expiresAt = Date.parse(artifact.expiresAt);
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now();
+}
+
+function setSecurityHeaders(response) {
+  response.setHeader("X-Content-Type-Options", "nosniff");
+  response.setHeader("Referrer-Policy", "no-referrer");
+  response.setHeader("X-Frame-Options", "DENY");
+  response.setHeader(
+    "Permissions-Policy",
+    "camera=(self), geolocation=(), microphone=(), payment=(), usb=(), serial=()",
+  );
+}
+
+function httpError(status, message) {
+  const error = new Error(message);
+  error.statusCode = status;
+  return error;
+}
+
+function httpStatusFromError(error) {
+  const status = Number(error?.statusCode);
+  return Number.isSafeInteger(status) && status >= 400 && status < 600
+    ? status
+    : 500;
+}
+
+function safeErrorMessage(error, status) {
+  if (status >= 500 && productionGateway) return "Wallet server error.";
+  return error instanceof Error ? error.message : "Wallet server error.";
 }
 
 function json(response, status, payload) {
   response.statusCode = status;
+  response.setHeader("Cache-Control", "no-store");
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.end(JSON.stringify(payload));
 }
 
 function text(response, status, payload, contentType) {
   response.statusCode = status;
+  response.setHeader("Cache-Control", "no-store");
   response.setHeader(
     "Content-Type",
     contentType.includes(";") ? contentType : `${contentType}; charset=utf-8`,

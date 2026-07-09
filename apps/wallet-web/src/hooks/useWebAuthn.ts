@@ -1,4 +1,9 @@
 import { useCallback, useState } from "react";
+import {
+  readStringStorage,
+  removeStorageValue,
+  writeStringStorage,
+} from "../utils/storage";
 
 export type WebAuthnState = {
   isSupported: boolean;
@@ -7,7 +12,8 @@ export type WebAuthnState = {
   error: string | null;
 };
 
-const storageKey = "trustcare_wallet_webauthn_credential_id";
+const storageKey = "trustcare_wallet_webauthn_credential_id:v1";
+const legacyStorageKey = "trustcare_wallet_webauthn_credential_id";
 
 function bufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -28,9 +34,7 @@ export function useWebAuthn() {
   const [state, setState] = useState<WebAuthnState>({
     isSupported:
       typeof window !== "undefined" && Boolean(window.PublicKeyCredential),
-    isRegistered:
-      typeof localStorage !== "undefined" &&
-      Boolean(localStorage.getItem(storageKey)),
+    isRegistered: Boolean(readStoredCredentialId()),
     isAuthenticating: false,
     error: null,
   });
@@ -72,7 +76,7 @@ export function useWebAuthn() {
         },
       })) as PublicKeyCredential | null;
       if (!credential) throw new Error("Registration failed");
-      localStorage.setItem(storageKey, bufferToBase64(credential.rawId));
+      writeStringStorage(storageKey, bufferToBase64(credential.rawId));
       setState((previous) => ({
         ...previous,
         isRegistered: true,
@@ -92,7 +96,7 @@ export function useWebAuthn() {
 
   const authenticate = useCallback(async () => {
     if (!window.PublicKeyCredential) return true;
-    const stored = localStorage.getItem(storageKey);
+    const stored = readStoredCredentialId();
     if (!stored) return true;
     setState((previous) => ({
       ...previous,
@@ -129,9 +133,13 @@ export function useWebAuthn() {
   }, []);
 
   const unregister = useCallback(() => {
-    localStorage.removeItem(storageKey);
+    removeStorageValue(storageKey, [legacyStorageKey]);
     setState((previous) => ({ ...previous, isRegistered: false }));
   }, []);
 
   return { ...state, register, authenticate, unregister };
+}
+
+function readStoredCredentialId() {
+  return readStringStorage(storageKey, [legacyStorageKey]);
 }
