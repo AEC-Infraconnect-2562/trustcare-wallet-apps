@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { completeWalletSeedCards } from "./completeSeedData";
 import {
   groupWalletDocumentsV2ByEpisode,
+  isWalletDocumentTrustVerified,
   mergeWalletDocumentRecordsV2,
+  walletDocumentTrustPresentation,
   walletDocumentRecordV2FromCard,
   walletDocumentRecordV2FromMhd,
 } from "./walletDocumentV2";
@@ -16,23 +18,31 @@ describe("WalletDocumentRecordV2 migration", () => {
     );
 
     expect(records).toHaveLength(25);
-    expect(records.every((record) => record.schemaVersion === "2.0")).toBe(true);
+    expect(records.every((record) => record.schemaVersion === "2.0")).toBe(
+      true,
+    );
     expect(records.every((record) => Boolean(record.owner.id))).toBe(true);
     expect(
       records
         .filter((record) => record.documentType !== "staff_identity")
         .every((record) => record.owner.id === "demo-patient-complete-001"),
     ).toBe(true);
-    expect(records.every((record) => record.trust.state !== "verified")).toBe(true);
+    expect(records.every((record) => record.trust.state !== "verified")).toBe(
+      true,
+    );
   });
 
   it("maps DocumentReference attachments, record time and privacy explicitly", () => {
     const record = walletDocumentRecordV2FromCard(
-      completeWalletSeedCards.find((card) => card.cardType === "patient_summary")!,
+      completeWalletSeedCards.find(
+        (card) => card.cardType === "patient_summary",
+      )!,
       { now, availableOffline: true, cachedAt: now },
     );
 
-    expect(record.content.documentReference.resourceType).toBe("DocumentReference");
+    expect(record.content.documentReference.resourceType).toBe(
+      "DocumentReference",
+    );
     expect(record.content.originalAttachments[0]?.contentType).toBeTruthy();
     expect(record.clinicalContext.recordTime).toBeTruthy();
     expect(record.privacy.defaultDisclosure).toBe("ask");
@@ -77,7 +87,7 @@ describe("WalletDocumentRecordV2 migration", () => {
     expect(record.trust.state).toBe("patient_provided_unverified");
   });
 
-  it("requires proof, issuer, holder, status, expiry and policy checks before verified", () => {
+  it("does not promote an unbound legacy verification summary to verified", () => {
     const seed = completeWalletSeedCards.find(
       (card) => card.cardType === "patient_identity",
     )!;
@@ -100,9 +110,36 @@ describe("WalletDocumentRecordV2 migration", () => {
       { now },
     );
 
-    expect(record.trust.state).toBe("verified");
+    expect(record.trust.state).toBe("issuer_signed_untrusted");
     expect(record.trust.checks).toHaveLength(6);
-    expect(record.trust.checks.every((check) => check.status === "passed")).toBe(true);
+    expect(isWalletDocumentTrustVerified(record)).toBe(false);
+  });
+
+  it("downgrades a malformed verified state when a required check is pending", () => {
+    const base = walletDocumentRecordV2FromCard(completeWalletSeedCards[0], {
+      now,
+    });
+    const record = {
+      ...base,
+      trust: {
+        state: "verified" as const,
+        verifiedAt: now,
+        checks: ["proof", "issuer", "status", "expiry", "holder", "policy"].map(
+          (key) => ({
+            key,
+            status:
+              key === "status" ? ("pending" as const) : ("passed" as const),
+            checkedAt: now,
+          }),
+        ),
+      },
+    };
+
+    expect(isWalletDocumentTrustVerified(record)).toBe(false);
+    expect(walletDocumentTrustPresentation(record)).toMatchObject({
+      state: "pending",
+      tone: "yellow",
+    });
   });
 
   it("is idempotent for the same version and rejects content mutation without a version change", () => {
@@ -111,9 +148,10 @@ describe("WalletDocumentRecordV2 migration", () => {
     });
     expect(mergeWalletDocumentRecordsV2([record], [record])).toEqual([record]);
     expect(() =>
-      mergeWalletDocumentRecordsV2([record], [
-        { ...record, title: { ...record.title, th: "mutated" } },
-      ]),
+      mergeWalletDocumentRecordsV2(
+        [record],
+        [{ ...record, title: { ...record.title, th: "mutated" } }],
+      ),
     ).toThrow(/without a new versionId/);
   });
 
@@ -131,9 +169,10 @@ describe("WalletDocumentRecordV2 migration", () => {
       "episode-1": [second],
     });
     expect(() =>
-      mergeWalletDocumentRecordsV2([first], [
-        { ...second, owner: { id: "different-owner" } },
-      ]),
+      mergeWalletDocumentRecordsV2(
+        [first],
+        [{ ...second, owner: { id: "different-owner" } }],
+      ),
     ).toThrow(/different owners/);
   });
 });

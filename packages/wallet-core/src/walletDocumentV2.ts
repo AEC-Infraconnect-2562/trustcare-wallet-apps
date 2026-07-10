@@ -5,7 +5,6 @@ import {
   type CanonicalDocumentType,
   type WalletDocumentRecord,
 } from "./canonicalDocuments";
-import { walletCardHasCryptographicProof } from "./credentialProof";
 import {
   recordFromMhdDocumentReference,
   type FhirDocumentReferenceLike,
@@ -157,6 +156,130 @@ export type WalletDocumentRecordV2 = {
   };
 };
 
+export const REQUIRED_WALLET_DOCUMENT_TRUST_CHECKS = [
+  "proof",
+  "issuer",
+  "status",
+  "expiry",
+  "holder",
+  "policy",
+] as const;
+
+export type WalletDocumentTrustPresentation = {
+  state: WalletDocumentTrustState;
+  labelTh: string;
+  labelEn: string;
+  tone: "neutral" | "green" | "yellow" | "red" | "blue";
+};
+
+export function isWalletDocumentTrustVerified(
+  record: WalletDocumentRecordV2,
+  now = new Date(),
+): boolean {
+  if (record.trust.state !== "verified") return false;
+  if (
+    [
+      "superseded",
+      "entered_in_error",
+      "expired",
+      "suspended",
+      "revoked",
+    ].includes(record.lifecycle.status)
+  ) {
+    return false;
+  }
+  if (
+    record.lifecycle.expiresAt &&
+    (!Number.isFinite(Date.parse(record.lifecycle.expiresAt)) ||
+      Date.parse(record.lifecycle.expiresAt) <= now.getTime())
+  ) {
+    return false;
+  }
+  const verifiedAt = record.trust.verifiedAt
+    ? Date.parse(record.trust.verifiedAt)
+    : Number.NaN;
+  if (!Number.isFinite(verifiedAt) || verifiedAt > now.getTime()) return false;
+
+  return REQUIRED_WALLET_DOCUMENT_TRUST_CHECKS.every((key) =>
+    record.trust.checks.some((check) => {
+      const checkedAt = check.checkedAt
+        ? Date.parse(check.checkedAt)
+        : Number.NaN;
+      return (
+        check.key === key &&
+        check.status === "passed" &&
+        Number.isFinite(checkedAt) &&
+        checkedAt <= now.getTime()
+      );
+    }),
+  );
+}
+
+export function effectiveWalletDocumentTrustState(
+  record: WalletDocumentRecordV2,
+  now = new Date(),
+): WalletDocumentTrustState {
+  if (record.lifecycle.status === "revoked") return "revoked";
+  if (record.lifecycle.status === "entered_in_error") return "invalid";
+  if (
+    record.lifecycle.status === "expired" ||
+    (record.lifecycle.expiresAt &&
+      Number.isFinite(Date.parse(record.lifecycle.expiresAt)) &&
+      Date.parse(record.lifecycle.expiresAt) <= now.getTime())
+  ) {
+    return "expired";
+  }
+  if (record.trust.state === "verified") {
+    return isWalletDocumentTrustVerified(record, now) ? "verified" : "pending";
+  }
+  return record.trust.state;
+}
+
+export function walletDocumentTrustPresentation(
+  record: WalletDocumentRecordV2,
+  now = new Date(),
+): WalletDocumentTrustPresentation {
+  const state = effectiveWalletDocumentTrustState(record, now);
+  const presentations: Record<
+    WalletDocumentTrustState,
+    Omit<WalletDocumentTrustPresentation, "state">
+  > = {
+    verified: {
+      labelTh: "ตรวจสอบครบแล้ว",
+      labelEn: "Fully verified",
+      tone: "green",
+    },
+    issuer_signed_untrusted: {
+      labelTh: "มีลายเซ็น แต่ยังตรวจไม่ครบ",
+      labelEn: "Signed; trust checks incomplete",
+      tone: "yellow",
+    },
+    transport_valid: {
+      labelTh: "เปิดรับส่งได้ ยังไม่ยืนยันเนื้อหา",
+      labelEn: "Transport valid; content unverified",
+      tone: "blue",
+    },
+    patient_provided_unverified: {
+      labelTh: "ผู้ใช้เพิ่มเอง ยังไม่ยืนยัน",
+      labelEn: "Patient provided; unverified",
+      tone: "yellow",
+    },
+    pending: {
+      labelTh: "อยู่ระหว่างตรวจสอบ",
+      labelEn: "Verification pending",
+      tone: "yellow",
+    },
+    expired: { labelTh: "หมดอายุ", labelEn: "Expired", tone: "red" },
+    revoked: { labelTh: "ถูกเพิกถอน", labelEn: "Revoked", tone: "red" },
+    invalid: {
+      labelTh: "ตรวจพบว่าไม่ถูกต้อง",
+      labelEn: "Invalid",
+      tone: "red",
+    },
+  };
+  return { state, ...presentations[state] };
+}
+
 export type WalletDocumentV2MigrationOptions = {
   now?: string;
   availableOffline?: boolean;
@@ -289,7 +412,9 @@ export function mergeWalletDocumentRecordsV2(
     [...existing, ...incoming].map((record) => record.owner.id),
   );
   if (owners.size > 1) {
-    throw new Error("Wallet document merge rejected records from different owners.");
+    throw new Error(
+      "Wallet document merge rejected records from different owners.",
+    );
   }
 
   const records = new Map(existing.map((record) => [record.id, record]));
@@ -340,23 +465,51 @@ function trustFromLegacy(
     return terminalTrust("expired", now);
 
   const card = record.walletCard;
-  const proofVerified = card ? walletCardHasCryptographicProof(card) : false;
+  // A legacy card only carries proof material and an unbound verification
+  // summary. Migration must not turn that summary into fresh proof/status/
+  // policy evidence. The verifier pipeline can promote the V2 record later.
+  const proofVerified = false;
   const proofPresent = Boolean(
     card?.credentialProof?.jwt ??
-      card?.credentialJwt ??
-      card?.credentialProof?.type,
+    card?.credentialJwt ??
+    card?.credentialProof?.type,
   );
   const issuerPresent = Boolean(record.issuerDid);
   const patientProvided =
     record.trustStatus === "patient_provided_unverified" ||
     sourceKindFromLegacy(record) === "patient_upload";
   const checks: TrustCheck[] = [
-    check("proof", proofVerified, proofPresent ? "Proof is present but not cryptographically verified." : "Cryptographic proof is missing.", now),
-    check("issuer", issuerPresent, issuerPresent ? record.issuerDid ?? undefined : "Issuer DID is missing.", now),
+    check(
+      "proof",
+      proofVerified,
+      proofPresent
+        ? "Proof is present but not cryptographically verified."
+        : "Cryptographic proof is missing.",
+      now,
+    ),
+    check(
+      "issuer",
+      issuerPresent,
+      issuerPresent
+        ? (record.issuerDid ?? undefined)
+        : "Issuer DID is missing.",
+      now,
+    ),
     check("status", true, lifecycle, now),
     check("expiry", true, record.expiresAt ?? "No expiry declared.", now),
-    check("holder", Boolean(record.holderDid || record.patientId), "Owner/patient binding", now),
-    check("policy", Boolean(card?.portalVerification?.verified), card?.portalVerification?.message ?? "Policy verification has not completed.", now),
+    check(
+      "holder",
+      Boolean(record.holderDid || record.patientId),
+      "Owner/patient binding",
+      now,
+    ),
+    check(
+      "policy",
+      Boolean(card?.portalVerification?.verified),
+      card?.portalVerification?.message ??
+        "Policy verification has not completed.",
+      now,
+    ),
   ];
 
   if (patientProvided) {
@@ -471,10 +624,7 @@ function normalizeCredentialFormat(
 }
 
 function normalizeClinicalPeriod(
-  value:
-    | { start?: string | null; end?: string | null }
-    | null
-    | undefined,
+  value: { start?: string | null; end?: string | null } | null | undefined,
 ): { start?: string; end?: string } | undefined {
   if (!value) return undefined;
   return {
@@ -502,7 +652,10 @@ function documentProfile(reference: FhirDocumentReferenceLike) {
   if (!coding || typeof coding !== "object") return undefined;
   const system = (coding as Record<string, unknown>).system;
   const code = (coding as Record<string, unknown>).code;
-  return [system, code].filter((value) => typeof value === "string").join("|") || undefined;
+  return (
+    [system, code].filter((value) => typeof value === "string").join("|") ||
+    undefined
+  );
 }
 
 function isExpired(expiresAt: string | null | undefined, now: string) {

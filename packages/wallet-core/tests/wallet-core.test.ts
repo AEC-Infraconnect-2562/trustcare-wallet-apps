@@ -595,8 +595,23 @@ describe("wallet-core", () => {
         "certified_manifest_vp",
       );
       const trust = verifyShlManifestTrust(fetched.manifest);
-      expect(trust.status).toBe("trustcare_certified");
-      expect(trust.verified).toBe(true);
+      expect(trust.status).toBe("trustcare_pending");
+      expect(trust.verified).toBe(false);
+      const cryptographicallyVerified = verifyShlManifestTrust(
+        fetched.manifest,
+        new Date(),
+        {
+          manifestCredentialSignatureVerified: true,
+          holderAuthorizationSignatureVerified: true,
+          manifestVpSignatureVerified: true,
+          issuerTrusted: true,
+          credentialStatusValid: true,
+          policyVerified: true,
+          verifiedAt: new Date().toISOString(),
+        },
+      );
+      expect(cryptographicallyVerified.status).toBe("trustcare_certified");
+      expect(cryptographicallyVerified.verified).toBe(true);
     }
   });
 

@@ -9,6 +9,7 @@ import {
   publicJwksForSigningKey,
   signTrustCareCredentialJwt,
   signTrustCarePresentationJwt,
+  type VerificationEvidenceProvider,
 } from "@trustcare/wallet-core";
 import { verifyQr } from "./verifier";
 
@@ -29,6 +30,31 @@ const unsignedVp = {
 };
 
 describe("verifyQr VP resolver behavior", () => {
+  it("never promotes an internal SHL planning JSON object to verified", async () => {
+    const result = await verifyQr(
+      {
+        url: "https://trustcare.example.com/trpc",
+        runtimeEnvironment: "demo",
+      },
+      JSON.stringify({
+        type: "TrustCareShlManifestVP",
+        manifestCredentialId: "manifest-vc-1",
+        holderPresentationId: "holder-vp-1",
+        documents: [{ manifestCredentialId: "document-vc-1" }],
+        trustcareCertification: {
+          status: "maker_checker_approved",
+          ownerConfirmed: true,
+          makerApprovedAt: "2026-07-10T00:00:00.000Z",
+          checkerApprovedAt: "2026-07-10T00:01:00.000Z",
+        },
+      }),
+    );
+
+    expect(result.verified).toBe(false);
+    expect(result.trustLevel).not.toBe("green");
+    expect(result.warnings?.join(" ")).toContain("verifier artifact");
+  });
+
   it("resolves deterministic demo VP references without promoting them to verified trust", async () => {
     const result = await verifyQr(
       { url: "https://trustcare.example.com/trpc" },
@@ -37,7 +63,7 @@ describe("verifyQr VP resolver behavior", () => {
 
     expect(result.protocol).toBe("trustcare-vp");
     expect(result.verified).toBe(false);
-    expect(result.trustLevel).toBe("yellow");
+    expect(result.trustLevel).toBe("red");
     expect(result.credentials?.length).toBe(1);
     expect(JSON.stringify(result.credentials)).toContain(
       "InsuranceEligibilityCredential",
@@ -84,12 +110,12 @@ describe("verifyQr VP resolver behavior", () => {
     );
 
     expect(result.verified).toBe(false);
-    expect(result.trustLevel).toBe("yellow");
+    expect(result.trustLevel).toBe("red");
     expect(result.warnings?.join(" ")).toContain("Data Integrity proof");
     expect(result.warnings?.join(" ")).toContain("cryptosuite");
   });
 
-  it("returns green for a resolver VP with a valid ecdsa-jcs-2019 Data Integrity proof", async () => {
+  it("does not return green from a VP signature without holder, status and policy evidence", async () => {
     const { privateKey, publicKey } = await crypto.subtle.generateKey(
       { name: "ECDSA", namedCurve: "P-256" },
       true,
@@ -149,13 +175,13 @@ describe("verifyQr VP resolver behavior", () => {
     );
 
     expect(result.protocol).toBe("trustcare-vp");
-    expect(result.verified).toBe(true);
-    expect(result.trustLevel).toBe("green");
+    expect(result.verified).toBe(false);
+    expect(result.trustLevel).not.toBe("green");
     expect(JSON.stringify(result.verificationChecklist)).toContain(
       "Data Integrity proof",
     );
     expect(JSON.stringify(result.verificationChecklist)).toContain(
-      "ecdsa-jcs-2019",
+      "controller does not match",
     );
   });
 
@@ -186,7 +212,7 @@ describe("verifyQr VP resolver behavior", () => {
     expect(result.warnings?.join(" ")).toContain("tc_payload");
   });
 
-  it("returns green for ES256 vp+jwt when the public key resolves from JWKS", async () => {
+  it("keeps ES256 vp+jwt pending without holder-bound external evidence", async () => {
     const jwksUrl = "https://wallet.example/.well-known/jwks.json";
     const signingKey = await createEphemeralEs256SigningKey({
       issuerDid: "did:web:wallet.example",
@@ -245,8 +271,8 @@ describe("verifyQr VP resolver behavior", () => {
     );
 
     expect(result.protocol).toBe("trustcare-vp");
-    expect(result.verified).toBe(true);
-    expect(result.trustLevel).toBe("green");
+    expect(result.verified).toBe(false);
+    expect(result.trustLevel).not.toBe("green");
     expect(JSON.stringify(result.verificationChecklist)).toContain(
       "Signature status",
     );
@@ -254,7 +280,7 @@ describe("verifyQr VP resolver behavior", () => {
       "Data Integrity proof",
     );
     expect(JSON.stringify(result.verificationChecklist)).toContain(
-      "verified via",
+      "did:web:wallet.example",
     );
   });
 
@@ -303,8 +329,8 @@ describe("verifyQr VP resolver behavior", () => {
     );
 
     expect(result.protocol).toBe("trustcare-vp");
-    expect(result.verified).toBe(true);
-    expect(result.trustLevel).toBe("green");
+    expect(result.verified).toBe(false);
+    expect(result.trustLevel).not.toBe("green");
     expect(fetchedUrls).not.toContain(evilJwksUrl);
     expect(result.warnings?.join(" ")).toContain("jku");
     expect(result.warnings?.join(" ")).toContain("rejected");
@@ -353,11 +379,11 @@ describe("verifyQr VP resolver behavior", () => {
     );
 
     expect(result.verified).toBe(false);
-    expect(result.trustLevel).toBe("yellow");
+    expect(result.trustLevel).toBe("red");
     expect(result.warnings?.join(" ")).toContain("signature");
   });
 
-  it("verifies a Portal-signed VC JWT through hospital JWKS and Portal status check", async () => {
+  it("verifies a Portal-signed VC only with hospital proof, Portal status and independent policy evidence", async () => {
     const signingKey = await createEphemeralEs256SigningKey({
       issuerDid: "did:web:trustcare.network:hospital:tcc",
       kidPrefix: "did:web:trustcare.network:hospital:tcc",
@@ -395,6 +421,7 @@ describe("verifyQr VP resolver behavior", () => {
       {
         url: "https://trustcare.example.com/trpc",
         portalOrigin: "https://trustcarehealth.live",
+        verificationEvidenceProvider: completeEvidenceProvider,
         fetchImpl: async (input, init) => {
           const url = String(input);
           if (url === hospitalJwksUrl) {
@@ -430,7 +457,7 @@ describe("verifyQr VP resolver behavior", () => {
     );
   });
 
-  it("does not fallback to a single JWKS key when the JWT kid does not match", async () => {
+  it("does not treat a network-root key as hospital issuer proof", async () => {
     const signingKey = await createEphemeralEs256SigningKey({
       issuerDid: "did:web:trustcare.network:hospital:tcc",
       kidPrefix: "did:web:trustcare.network",
@@ -469,6 +496,7 @@ describe("verifyQr VP resolver behavior", () => {
       {
         url: "https://trustcare.example.com/trpc",
         portalOrigin: "https://trustcarehealth.live",
+        verificationEvidenceProvider: completeEvidenceProvider,
         fetchImpl: async (input, init) => {
           const url = String(input);
           if (url === hospitalJwksUrl) {
@@ -503,9 +531,11 @@ describe("verifyQr VP resolver behavior", () => {
     );
 
     expect(result.protocol).toBe("trustcare-vc");
-    expect(result.verified).toBe(true);
-    expect(result.trustLevel).toBe("green");
-    expect(JSON.stringify(result.verificationChecklist)).toContain(rootJwksUrl);
+    expect(result.verified).toBe(false);
+    expect(result.trustLevel).not.toBe("green");
+    expect(JSON.stringify(result.verificationChecklist)).toContain(
+      "key controller does not match",
+    );
   });
 
   it("verifies a Portal SD-JWT-VC QR while preserving disclosures for Portal cross-check", async () => {
@@ -547,6 +577,7 @@ describe("verifyQr VP resolver behavior", () => {
       {
         url: "https://trustcare.example.com/trpc",
         portalOrigin: "https://trustcarehealth.live",
+        verificationEvidenceProvider: completeEvidenceProvider,
         fetchImpl: async (input, init) => {
           const url = String(input);
           if (url === hospitalJwksUrl) {
@@ -594,3 +625,31 @@ function tamperJwtPayload(
   );
   return `${header}.${nextPayload}.${signature}`;
 }
+
+const completeEvidenceProvider: VerificationEvidenceProvider = {
+  async evaluate(request) {
+    const checkedAt = request.now;
+    const expiresAt = new Date(Date.parse(checkedAt) + 60_000).toISOString();
+    const subjectDigests = request.subjects.map((subject) => subject.digest);
+    return {
+      version: "1",
+      providerId: "contract-hub:test",
+      packageDigest: request.packageDigest,
+      contextDigest: request.contextDigest,
+      subjects: request.subjects,
+      policy: { id: "test-verifier-policy", version: "1" },
+      checkedAt,
+      expiresAt,
+      checks: ["proof", "issuer", "status", "expiry", "policy", "binding"].map(
+        (key) => ({
+          key: key as
+            "proof" | "issuer" | "status" | "expiry" | "policy" | "binding",
+          state: "pass" as const,
+          subjectDigests,
+          checkedAt,
+          authority: "contract-hub:test",
+        }),
+      ),
+    };
+  },
+};

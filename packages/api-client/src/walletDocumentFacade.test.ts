@@ -54,7 +54,7 @@ describe("wallet API document facade", () => {
     expect(record.documentReference.id).toBe("external-lab-001");
   });
 
-  it("creates resolver-backed VP and certified SHL packages from the same canonical documents", async () => {
+  it("creates resolver-backed VP and SHL manifest candidates from the same canonical documents", async () => {
     const documents = await walletApi.listDocuments(options);
     const selectedCardIds = documents
       .slice(0, 3)
@@ -90,7 +90,8 @@ describe("wallet API document facade", () => {
       const imported = await walletApi.importFromShl(options, {
         payload: certifiedShl.shl.qrPayload,
       });
-      expect(imported.trust?.status).toBe("trustcare_certified");
+      expect(imported.trust?.status).toBe("trustcare_pending");
+      expect(imported.trust?.verified).toBe(false);
     }
   });
 
@@ -112,7 +113,8 @@ describe("wallet API document facade", () => {
     const cardsByCategory = await walletApi.cardsByCategory({
       ...options,
       userId: "demo-patient-003",
-      shareGatewayUrl: "https://wallet-web-production-6a00.up.railway.app/api/share-gateway",
+      shareGatewayUrl:
+        "https://wallet-web-production-6a00.up.railway.app/api/share-gateway",
       fetchImpl: async (url) => {
         signingRequests.push(String(url));
         return new Response(

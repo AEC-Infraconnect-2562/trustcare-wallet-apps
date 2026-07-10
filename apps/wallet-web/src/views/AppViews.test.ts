@@ -101,6 +101,31 @@ describe("login user photos", () => {
 });
 
 describe("TrustCare Manifest wallet copy", () => {
+  it("does not show green from manifest metadata or an imported boolean", () => {
+    const metadataOnly = {
+      manifestCredentialId: "manifest-vc-1",
+      presentationId: "holder-vp-1",
+      documentBundle: { documents: [{ id: "doc-1" }] },
+      trustcareCertification: {
+        status: "maker_checker_approved",
+        ownerConfirmed: true,
+        makerApprovedAt: "2026-07-10T00:00:00.000Z",
+        checkerApprovedAt: "2026-07-10T00:01:00.000Z",
+      },
+    } as any;
+
+    expect(getShlTrustProfile(metadataOnly).tone).toBe("yellow");
+    expect(
+      getShlTrustProfile({
+        ...metadataOnly,
+        trustVerification: {
+          verified: true,
+          checkedAt: "2026-07-10T00:02:00.000Z",
+        },
+      } as any).tone,
+    ).toBe("yellow");
+  });
+
   it("does not expose portal approval workflow labels in wallet trust states", () => {
     const pendingProfile = getShlTrustProfile({
       manifestCredentialId: "manifest-vc-1",

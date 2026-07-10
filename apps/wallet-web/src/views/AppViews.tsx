@@ -87,6 +87,8 @@ import {
   normalizePhotoUrl,
   normalizePhotoUrlCandidates,
   parseShlLink,
+  walletDocumentRecordV2FromCard,
+  walletDocumentTrustPresentation,
   photoCandidatesForCard,
   readinessContextLabels,
   readinessContextValues,
@@ -270,7 +272,9 @@ export function LoginView({
             </p>
           </div>
           <Badge
-            tone={selectedUser.source === "trustcare_portal" ? "green" : "blue"}
+            tone={
+              selectedUser.source === "trustcare_portal" ? "blue" : "neutral"
+            }
           >
             {selectedUser.role === "staff"
               ? "ขอบเขตเจ้าหน้าที่"
@@ -421,7 +425,9 @@ export function HomeView({
           <h2>{user.nameEn}</h2>
           <p>{user.persona}</p>
           <div className="passport-chip-row">
-            <Badge tone={user.source === "trustcare_portal" ? "green" : "blue"}>
+            <Badge
+              tone={user.source === "trustcare_portal" ? "blue" : "neutral"}
+            >
               {user.sourceLabel}
             </Badge>
             <Badge tone="neutral">{user.hospitalCode}</Badge>
@@ -607,20 +613,23 @@ export function HomeView({
             </button>
           </div>
           <div className="compact-list">
-            {recentCards.map((card) => (
-              <button
-                key={card.id}
-                type="button"
-                onClick={() => onOpenCard(card)}
-              >
-                <FileText size={18} />
-                <span>
-                  <strong>{card.displayNameEn ?? card.displayName}</strong>
-                  <small>{categoryLabel(card.documentCategory)}</small>
-                </span>
-                <Badge tone="green">ตรวจสอบแล้ว</Badge>
-              </button>
-            ))}
+            {recentCards.map((card) => {
+              const trust = homeCardTrust(card);
+              return (
+                <button
+                  key={card.id}
+                  type="button"
+                  onClick={() => onOpenCard(card)}
+                >
+                  <FileText size={18} />
+                  <span>
+                    <strong>{card.displayNameEn ?? card.displayName}</strong>
+                    <small>{categoryLabel(card.documentCategory)}</small>
+                  </span>
+                  <Badge tone={trust.tone}>{trust.label}</Badge>
+                </button>
+              );
+            })}
           </div>
         </Surface>
         <Surface>
@@ -1017,7 +1026,7 @@ export function ReceiveView({
                 : "ใช้ payload ตัวอย่างด้านล่างเพื่อทดสอบการเชื่อม Wallet นี้กลับไปที่ Portal"}
             </p>
           </div>
-          <Badge tone={user.source === "trustcare_portal" ? "green" : "blue"}>
+          <Badge tone={user.source === "trustcare_portal" ? "blue" : "neutral"}>
             {user.sourceLabel}
           </Badge>
         </Surface>
@@ -1247,7 +1256,7 @@ export function WalletView({
               ผู้ใช้ที่กำลังใช้งาน
             </p>
           </div>
-          <Badge tone={user.source === "trustcare_portal" ? "green" : "blue"}>
+          <Badge tone={user.source === "trustcare_portal" ? "blue" : "neutral"}>
             {user.sourceLabel}
           </Badge>
         </div>
@@ -3397,7 +3406,6 @@ export function StoredObjectDialog({
   onExport: (result: WalletExportResult) => void;
 }) {
   const [qrDataUrl, setQrDataUrl] = useState("");
-  const [manifestQrDataUrl, setManifestQrDataUrl] = useState("");
   const [selectedManifestDocId, setSelectedManifestDocId] = useState("");
   const payloadText = useMemo(
     () => JSON.stringify(object?.payload ?? {}, null, 2),
@@ -3416,13 +3424,6 @@ export function StoredObjectDialog({
     ) ??
     manifestDocuments[0] ??
     null;
-  const hasManifestExtension = Boolean(
-    shlDetail && hasTrustCareShlManifestExtension(shlDetail),
-  );
-  const manifestScanPayload =
-    shlDetail && hasManifestExtension
-      ? createScannableWebUrl(buildShlManifestVerificationPayload(shlDetail))
-      : "";
   const rawShlPayload = shlDetail?.qrPayload ?? shlDetail?.shlUrl ?? "";
   const storedPass = useMemo(
     () => (object ? describeStoredObjectPass(object, user) : null),
@@ -3440,20 +3441,6 @@ export function StoredObjectDialog({
       cancelled = true;
     };
   }, [object, scanPayload]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setManifestQrDataUrl("");
-    if (!manifestScanPayload) return;
-    void toQrDataUrl(manifestScanPayload, { margin: 1, width: 220 }).then(
-      (value) => {
-        if (!cancelled) setManifestQrDataUrl(value);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [manifestScanPayload]);
 
   useEffect(() => {
     setSelectedManifestDocId("");
@@ -3555,7 +3542,6 @@ export function StoredObjectDialog({
               documents={manifestDocuments}
               selectedDocument={selectedManifestDoc}
               onSelectDocument={setSelectedManifestDocId}
-              manifestQrDataUrl={manifestQrDataUrl}
             />
           )}
           <div className="credential-action-grid">
@@ -3572,14 +3558,6 @@ export function StoredObjectDialog({
                 onClick={() => void copyText(rawShlPayload)}
               >
                 <Link2 size={18} /> คัดลอก SHL ดิบ
-              </Button>
-            )}
-            {hasManifestExtension && (
-              <Button
-                className="secondary"
-                onClick={() => void copyText(manifestScanPayload)}
-              >
-                <ShieldCheck size={18} /> คัดลอก Manifest VP QR
               </Button>
             )}
             <Button
@@ -3607,16 +3585,14 @@ export function ShlManifestViewer({
   documents,
   selectedDocument,
   onSelectDocument,
-  manifestQrDataUrl,
 }: {
   shl: ShlPackageDetail;
   documents: ShlManifestDocument[];
   selectedDocument: ShlManifestDocument | null;
   onSelectDocument: (id: string) => void;
-  manifestQrDataUrl?: string;
 }) {
   const trustProfile = getShlTrustProfile(shl);
-  const hasManifestExtension = trustProfile.kind === "trustcare-certified";
+  const hasManifestExtension = hasTrustCareShlManifestExtension(shl);
   if (!hasManifestExtension) {
     return (
       <section className="shl-manifest-viewer standard-shl-viewer">
@@ -3676,7 +3652,7 @@ export function ShlManifestViewer({
             และ FHIR DocumentReference ของแต่ละเอกสาร
           </p>
         </div>
-        <Badge tone="green">TrustCare Verified SHL</Badge>
+        <Badge tone={trustProfile.tone}>{trustProfile.label}</Badge>
       </div>
       <div className="manifest-trust-grid">
         <div>
@@ -3709,21 +3685,6 @@ export function ShlManifestViewer({
           </strong>
         </div>
       </div>
-      {manifestQrDataUrl && (
-        <div className="manifest-vp-qr-panel">
-          <div className="qr-inline large">
-            <img src={manifestQrDataUrl} alt="Manifest VP verification QR" />
-          </div>
-          <div>
-            <span className="eyebrow">Manifest VP Verification QR</span>
-            <h4>สแกนเพื่อตรวจ TrustCare Manifest VP/VC</h4>
-            <p>
-              ใช้กับ TrustCare verifier เพื่อตรวจ Manifest VC, Holder VP, issuer
-              attestation และ DocumentReference evidence ของเอกสารใน SHL นี้
-            </p>
-          </div>
-        </div>
-      )}
       <div className="manifest-layout">
         <div className="manifest-doc-list" aria-label="Manifest documents">
           {documents.map((document) => (
@@ -4501,6 +4462,16 @@ export function buildTimelineItems(
     );
 }
 
+function homeCardTrust(card: WalletCard): {
+  label: string;
+  tone: "neutral" | "green" | "yellow" | "red" | "blue";
+} {
+  const presentation = walletDocumentTrustPresentation(
+    walletDocumentRecordV2FromCard(card),
+  );
+  return { label: presentation.labelTh, tone: presentation.tone };
+}
+
 export function contextLabel(context: ScanOutcome["context"]): string {
   if (context in readinessContextLabels) {
     return readinessContextLabels[context as ReadinessContext].th;
@@ -4839,29 +4810,13 @@ export function getShlTrustProfile(shl: ShlPackageDetail | null | undefined): {
     shl?.presentationId &&
     shl?.documentBundle?.documents?.length,
   );
-  const certification = shl?.trustcareCertification;
-  const trustcareCertificationReady = Boolean(
-    certification?.status === "maker_checker_approved" &&
-    certification.ownerConfirmed &&
-    certification.makerApprovedAt &&
-    certification.checkerApprovedAt,
-  );
-  if (hasManifestBinding && trustcareCertificationReady) {
-    return {
-      kind: "trustcare-certified",
-      label: "TrustCare Verified SHL",
-      tone: "green",
-      description:
-        "ผ่านการยืนยันผู้ถือเอกสาร แหล่งที่มา และ Manifest VP/VC ของ TrustCare แล้ว",
-    };
-  }
   if (hasManifestBinding) {
     return {
       kind: "trustcare-pending",
       label: "รอ TrustCare Manifest",
       tone: "yellow",
       description:
-        "พบ Manifest VP/VC แต่ยังต้องตรวจผู้ถือเอกสาร แหล่งที่มา และหลักฐานความครบถ้วนก่อนใช้เป็น TrustCare verified package",
+        "พบ Manifest VP/VC แต่ยังต้องตรวจลายเซ็น ผู้ออก สถานะ ผู้ถือเอกสาร และนโยบายให้ครบก่อนใช้เป็น TrustCare verified package",
     };
   }
   return {
@@ -4876,59 +4831,11 @@ export function getShlTrustProfile(shl: ShlPackageDetail | null | undefined): {
 export function hasTrustCareShlManifestExtension(
   shl: ShlPackageDetail,
 ): boolean {
-  return getShlTrustProfile(shl).kind === "trustcare-certified";
-}
-
-export function buildShlManifestVerificationPayload(
-  shl: ShlPackageDetail,
-): string {
-  const trustProfile = getShlTrustProfile(shl);
-  const documents = shl.documentBundle?.documents ?? [];
-  return JSON.stringify({
-    type: "TrustCareShlManifestVP",
-    trustProfile: trustProfile.kind,
-    trustProfileLabel: trustProfile.label,
-    protocol: "shl",
-    id: `shl-manifest-vp:${shl.id}`,
-    shlId: shl.id,
-    label: shl.label,
-    purpose: shl.purpose,
-    context: shl.context,
-    status: shl.status,
-    shlUrl: shl.shlUrl,
-    qrPayload: shl.qrPayload,
-    viewerUrl: shl.viewerUrl,
-    manifestCredentialId: shl.manifestCredentialId,
-    holderPresentationId: shl.presentationId,
-    expiresAt: shl.expiresAt,
-    passcodeRequired: shl.passcodeRequired,
-    trustcareCertification: shl.trustcareCertification,
-    access: {
-      current: shl.currentAccessCount ?? 0,
-      max: shl.maxAccessCount ?? null,
-    },
-    source: shl.documentBundle?.source,
-    bindingModel: shl.documentBundle?.bindingModel,
-    standards: shl.documentBundle?.standards ?? [
-      "SMART Health Links",
-      "W3C VC/VP",
-      "HL7 FHIR R4 DocumentReference",
-    ],
-    documents: documents.map((document) => ({
-      id: document.id,
-      sequence: document.sequence,
-      title: document.title,
-      documentType: document.documentType,
-      category: document.category,
-      status: document.status,
-      fhirResource: document.fhirResource,
-      contentType: document.contentType,
-      manifestFileId: document.manifestFileId,
-      hash: document.hash,
-      manifestCredentialId: document.vcBinding?.manifestCredentialId,
-      presentationId: document.vcBinding?.presentationId,
-    })),
-  });
+  return Boolean(
+    shl.manifestCredentialId &&
+    shl.presentationId &&
+    shl.documentBundle?.documents?.length,
+  );
 }
 
 export function extractScannablePayload(value: string): string {

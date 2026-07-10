@@ -79,7 +79,7 @@ describe("portable presentation envelope", () => {
     );
   });
 
-  it("turns issuer proof green only after a cryptographic verification result", () => {
+  it("keeps issuer proof yellow until status and policy evidence also pass", () => {
     const card = {
       ...completeWalletSeedCards.find(
         (item) => item.cardType === "patient_identity",
@@ -103,7 +103,7 @@ describe("portable presentation envelope", () => {
     const envelope = presentationEnvelopeFromWalletCard(card);
 
     expect(classifyPortableTrustStatus(card)).toBe("issuer_signed");
-    expect(envelope.trust.badge).toBe("green");
+    expect(envelope.trust.badge).toBe("yellow");
     expect(envelope.trust.checklist).toContainEqual(
       expect.objectContaining({ key: "proof", ok: true }),
     );
@@ -144,7 +144,7 @@ describe("portable presentation envelope", () => {
     expect(envelope.trust.warnings).toContain("portal_issuer_proof_missing");
   });
 
-  it("accepts an explicit verifier signature result for a VP", () => {
+  it("does not promote a VP from a signature-only checklist", () => {
     const card = completeWalletSeedCards.find(
       (item) => item.cardType === "patient_identity",
     )!;
@@ -167,7 +167,7 @@ describe("portable presentation envelope", () => {
     });
 
     expect(envelope.trust.status).toBe("issuer_signed");
-    expect(envelope.trust.badge).toBe("green");
+    expect(envelope.trust.badge).toBe("yellow");
   });
 
   it("keeps trust artifacts out of clinical readiness proof semantics", () => {

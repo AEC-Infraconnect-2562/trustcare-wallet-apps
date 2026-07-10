@@ -48,3 +48,4 @@ export * from "./payer";
 export * from "./serviceInterfaces";
 export * from "./demoWalletRepository";
 export * from "./walletDocumentV2";
+export * from "./verificationEvidence";

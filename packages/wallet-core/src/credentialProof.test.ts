@@ -246,7 +246,7 @@ describe("credential proof standards layer", () => {
       "@context": ["https://www.w3.org/ns/credentials/v2"],
       id: "vp-di-001",
       type: ["VerifiablePresentation"],
-      holder: "did:key:zPatient",
+      holder: "did:web:issuer.example",
       verifiableCredential: [
         {
           "@context": ["https://www.w3.org/ns/credentials/v2"],
@@ -292,13 +292,19 @@ describe("credential proof standards layer", () => {
         },
       );
 
-    await expect(verifyDataIntegrityProof(signed, { fetcher })).resolves
-      .toMatchObject({
-        present: true,
-        verified: true,
-        cryptosuite: "ecdsa-jcs-2019",
-        verificationMethod,
-      });
+    await expect(
+      verifyDataIntegrityProof(signed, {
+        fetcher,
+        expectedProofPurpose: "authentication",
+        expectedControllerDid: "did:web:issuer.example",
+        now: new Date("2026-07-10T00:00:00.000Z"),
+      }),
+    ).resolves.toMatchObject({
+      present: true,
+      verified: true,
+      cryptosuite: "ecdsa-jcs-2019",
+      verificationMethod,
+    });
 
     await expect(
       verifyDataIntegrityProof(
@@ -306,12 +312,26 @@ describe("credential proof standards layer", () => {
           ...signed,
           holder: "did:key:zAttacker",
         },
-        { fetcher },
+        {
+          fetcher,
+          expectedProofPurpose: "authentication",
+          expectedControllerDid: "did:web:issuer.example",
+          now: new Date("2026-07-10T00:00:00.000Z"),
+        },
       ),
     ).resolves.toMatchObject({
       present: true,
       verified: false,
     });
+
+    await expect(
+      verifyDataIntegrityProof(signed, {
+        fetcher,
+        expectedProofPurpose: "authentication",
+        expectedControllerDid: "did:web:another.example",
+        now: new Date("2026-07-10T00:00:00.000Z"),
+      }),
+    ).resolves.toMatchObject({ present: true, verified: false });
   });
 
   it("rejects RDF canonicalization suites until TrustCare ships RDF Dataset Canonicalization", async () => {

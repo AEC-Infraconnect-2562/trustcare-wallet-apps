@@ -24,6 +24,10 @@ export type DataIntegrityProofStatus = {
 export type DataIntegrityProofVerificationOptions = {
   fetcher?: typeof fetch;
   expectedProofPurpose?: string;
+  expectedControllerDid?: string;
+  expectedDomain?: string;
+  expectedChallenge?: string;
+  now?: Date;
 };
 
 type SupportedDataIntegrityCryptosuite = "ecdsa-jcs-2019" | "eddsa-jcs-2022";
@@ -496,6 +500,49 @@ async function verifySingleDataIntegrityProof(
       `Data Integrity proofPurpose ${proofPurpose ?? "-"} does not match ${options.expectedProofPurpose}.`,
     );
   }
+  if (
+    options.expectedControllerDid &&
+    verificationMethod &&
+    didFromVerificationMethodId(verificationMethod) !==
+      options.expectedControllerDid
+  ) {
+    errors.push(
+      `Data Integrity verificationMethod controller does not match ${options.expectedControllerDid}.`,
+    );
+  }
+  if (
+    options.expectedDomain &&
+    stringOrUndefined(proof.domain) !== options.expectedDomain
+  ) {
+    errors.push(
+      "Data Integrity proof domain does not match the expected domain.",
+    );
+  }
+  if (
+    options.expectedChallenge &&
+    stringOrUndefined(proof.challenge) !== options.expectedChallenge
+  ) {
+    errors.push(
+      "Data Integrity proof challenge does not match the expected challenge.",
+    );
+  }
+  const now = options.now ?? new Date();
+  const created = stringOrUndefined(proof.created);
+  if (created) {
+    const createdAt = Date.parse(created);
+    if (!Number.isFinite(createdAt) || createdAt > now.getTime()) {
+      errors.push(
+        "Data Integrity proof created time is invalid or in the future.",
+      );
+    }
+  }
+  const expires = stringOrUndefined(proof.expires);
+  if (expires) {
+    const expiresAt = Date.parse(expires);
+    if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime()) {
+      errors.push("Data Integrity proof is expired or has an invalid expiry.");
+    }
+  }
   const proofValue = stringOrUndefined(proof.proofValue);
   if (!proofValue) errors.push("Data Integrity proof is missing proofValue.");
   if (!verificationMethod) {
@@ -619,7 +666,9 @@ async function resolveDataIntegrityVerificationMethod(
     if (jwk) return { jwk, sourceUrl: url };
   }
 
-  for (const url of didWebJwksCandidates(didFromVerificationMethodId(verificationMethod))) {
+  for (const url of didWebJwksCandidates(
+    didFromVerificationMethodId(verificationMethod),
+  )) {
     const payload = await fetchJsonObject(url, fetcher);
     if (!payload) continue;
     const jwk = jwksToKeys(payload).find((key) =>
@@ -675,7 +724,9 @@ async function fetchJsonObject(
   fetcher: typeof fetch,
 ): Promise<JsonRecord | null> {
   try {
-    const response = await fetcher(url, { headers: { accept: "application/json" } });
+    const response = await fetcher(url, {
+      headers: { accept: "application/json" },
+    });
     if (!response.ok) return null;
     return jsonRecord(await response.json());
   } catch {
@@ -686,10 +737,7 @@ async function fetchJsonObject(
 function didWebDocumentCandidates(verificationMethod: string): string[] {
   const did = didFromVerificationMethodId(verificationMethod);
   if (!did?.startsWith("did:web:")) return [];
-  const parts = did
-    .slice("did:web:".length)
-    .split(":")
-    .map(decodeURIComponent);
+  const parts = did.slice("did:web:".length).split(":").map(decodeURIComponent);
   const host = parts[0];
   if (!host) return [];
   const pathParts = parts.slice(1).filter(Boolean);

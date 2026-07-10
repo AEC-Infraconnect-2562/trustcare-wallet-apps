@@ -24,9 +24,20 @@ export type ShlTrustVerificationResult = {
   errors: string[];
 };
 
+export type ShlCryptographicVerificationEvidence = {
+  manifestCredentialSignatureVerified: boolean;
+  holderAuthorizationSignatureVerified: boolean;
+  manifestVpSignatureVerified: boolean;
+  issuerTrusted: boolean;
+  credentialStatusValid: boolean;
+  policyVerified: boolean;
+  verifiedAt?: string;
+};
+
 export function verifyShlManifestTrust(
   manifest: unknown,
   now = new Date(),
+  cryptographicEvidence?: ShlCryptographicVerificationEvidence,
 ): ShlTrustVerificationResult {
   const object = objectValue(manifest);
   if (!object) {
@@ -172,6 +183,42 @@ export function verifyShlManifestTrust(
         access.expiresAt && typeof access.maxAccessCount === "number",
       ),
       detail: `${access.maxAccessCount ?? "-"} / ${access.expiresAt ?? "-"}`,
+    },
+    {
+      key: "manifest_vc_signature",
+      label: "ตรวจลายเซ็น Manifest Credential",
+      ok: cryptographicEvidence?.manifestCredentialSignatureVerified === true,
+      detail: cryptographicEvidence?.verifiedAt ?? "not_verified",
+    },
+    {
+      key: "holder_vc_signature",
+      label: "ตรวจลายเซ็น Holder Authorization Credential",
+      ok: cryptographicEvidence?.holderAuthorizationSignatureVerified === true,
+      detail: cryptographicEvidence?.verifiedAt ?? "not_verified",
+    },
+    {
+      key: "manifest_vp_signature",
+      label: "ตรวจลายเซ็น Manifest VP",
+      ok: cryptographicEvidence?.manifestVpSignatureVerified === true,
+      detail: cryptographicEvidence?.verifiedAt ?? "not_verified",
+    },
+    {
+      key: "issuer_trust",
+      label: "ตรวจความน่าเชื่อถือของผู้ออก",
+      ok: cryptographicEvidence?.issuerTrusted === true,
+      detail: cryptographicEvidence ? "checked" : "not_checked",
+    },
+    {
+      key: "credential_status",
+      label: "ตรวจสถานะ Credential",
+      ok: cryptographicEvidence?.credentialStatusValid === true,
+      detail: cryptographicEvidence ? "checked" : "not_checked",
+    },
+    {
+      key: "verification_policy",
+      label: "ตรวจนโยบายผู้รับและการเข้าถึง",
+      ok: cryptographicEvidence?.policyVerified === true,
+      detail: cryptographicEvidence ? "checked" : "not_checked",
     },
   ];
   const certifiedOk =

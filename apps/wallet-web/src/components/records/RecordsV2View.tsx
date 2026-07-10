@@ -4,8 +4,8 @@ import { Badge, Button, Surface } from "@trustcare/ui-web";
 import type {
   RuntimeEnvironment,
   WalletDocumentRecordV2,
-  WalletDocumentTrustState,
 } from "@trustcare/wallet-core";
+import { walletDocumentTrustPresentation } from "@trustcare/wallet-core";
 import { useWalletDocuments } from "../../hooks/useWalletDocuments";
 
 export function RecordsV2View({
@@ -44,9 +44,7 @@ export function RecordsV2View({
   );
 
   if (selectedRecord) {
-    return (
-      <RecordV2Detail record={selectedRecord} onBack={onCloseRecord} />
-    );
+    return <RecordV2Detail record={selectedRecord} onBack={onCloseRecord} />;
   }
 
   if (selectedRecordId && !loading && !error) {
@@ -73,8 +71,8 @@ export function RecordsV2View({
           <span className="eyebrow">กระเป๋าเอกสารสุขภาพส่วนตัว</span>
           <h2>เอกสารสุขภาพของคุณ</h2>
           <p>
-            ค้นหาเอกสารจากชื่อ โรงพยาบาล หรือประเภทเอกสาร
-            พร้อมดูวันที่ สถานะ และความน่าเชื่อถือก่อนนำไปใช้
+            ค้นหาเอกสารจากชื่อ โรงพยาบาล หรือประเภทเอกสาร พร้อมดูวันที่ สถานะ
+            และความน่าเชื่อถือก่อนนำไปใช้
           </p>
         </div>
         <div className="trust-chip-row">
@@ -136,7 +134,7 @@ export function RecordsV2View({
       {!loading && !error && records.length > 0 && (
         <section className="record-v2-list" aria-label="เอกสารสุขภาพ">
           {records.map((record) => {
-            const trust = recordTrustPresentation(record.trust.state);
+            const trust = recordTrustPresentation(record);
             return (
               <button
                 key={record.id}
@@ -155,7 +153,8 @@ export function RecordsV2View({
                       sourceLabel(record.provenance.sourceKind)}
                   </small>
                   <small>
-                    {recordDate(record)} · {lifecycleLabel(record.lifecycle.status)}
+                    {recordDate(record)} ·{" "}
+                    {lifecycleLabel(record.lifecycle.status)}
                   </small>
                 </span>
                 <span className="record-v2-status">
@@ -180,7 +179,7 @@ function RecordV2Detail({
   record: WalletDocumentRecordV2;
   onBack: () => void;
 }) {
-  const trust = recordTrustPresentation(record.trust.state);
+  const trust = recordTrustPresentation(record);
   return (
     <div className="view-stack records-v2-view">
       <Button className="secondary record-v2-back" onClick={onBack}>
@@ -191,13 +190,19 @@ function RecordV2Detail({
         <h2>{record.title.th || record.title.en}</h2>
         <div className="trust-chip-row">
           <Badge tone={trust.tone}>{trust.label}</Badge>
-          <Badge tone="neutral">{lifecycleLabel(record.lifecycle.status)}</Badge>
+          <Badge tone="neutral">
+            {lifecycleLabel(record.lifecycle.status)}
+          </Badge>
           <Badge tone="blue">{sourceLabel(record.provenance.sourceKind)}</Badge>
         </div>
         <dl className="details-grid compact">
           <div>
             <dt>ผู้ออกเอกสาร</dt>
-            <dd>{record.provenance.issuerName ?? record.provenance.issuerDid ?? "-"}</dd>
+            <dd>
+              {record.provenance.issuerName ??
+                record.provenance.issuerDid ??
+                "-"}
+            </dd>
           </div>
           <div>
             <dt>วันที่ข้อมูลทางคลินิก</dt>
@@ -227,27 +232,12 @@ function RecordV2Detail({
   );
 }
 
-export function recordTrustPresentation(state: WalletDocumentTrustState): {
+export function recordTrustPresentation(record: WalletDocumentRecordV2): {
   label: string;
   tone: "neutral" | "green" | "yellow" | "red" | "blue";
 } {
-  const values: Record<
-    WalletDocumentTrustState,
-    { label: string; tone: "neutral" | "green" | "yellow" | "red" | "blue" }
-  > = {
-    verified: { label: "ตรวจสอบแล้ว", tone: "green" },
-    issuer_signed_untrusted: {
-      label: "มีลายเซ็น รอตรวจผู้ออก",
-      tone: "yellow",
-    },
-    transport_valid: { label: "การรับส่งถูกต้อง", tone: "blue" },
-    patient_provided_unverified: { label: "ผู้ป่วยนำเข้า ยังไม่ตรวจ", tone: "yellow" },
-    pending: { label: "รอตรวจสอบ", tone: "yellow" },
-    expired: { label: "หมดอายุ", tone: "red" },
-    revoked: { label: "ถูกเพิกถอน", tone: "red" },
-    invalid: { label: "ไม่ถูกต้อง", tone: "red" },
-  };
-  return values[state];
+  const presentation = walletDocumentTrustPresentation(record);
+  return { label: presentation.labelTh, tone: presentation.tone };
 }
 
 export function recordDate(record: WalletDocumentRecordV2): string {
@@ -281,7 +271,9 @@ function lifecycleLabel(value: WalletDocumentRecordV2["lifecycle"]["status"]) {
   )[value];
 }
 
-function sourceLabel(value: WalletDocumentRecordV2["provenance"]["sourceKind"]) {
+function sourceLabel(
+  value: WalletDocumentRecordV2["provenance"]["sourceKind"],
+) {
   return (
     {
       trustcare_portal: "TrustCare Portal",
@@ -297,15 +289,17 @@ function sourceLabel(value: WalletDocumentRecordV2["provenance"]["sourceKind"]) 
 
 function trustCheckLabel(key: string): string {
   return (
-    {
-      proof: "ลายเซ็นดิจิทัล",
-      issuer: "ผู้ออกเอกสาร",
-      status: "สถานะเอกสาร",
-      expiry: "วันหมดอายุ",
-      holder: "ผู้ถือเอกสาร",
-      policy: "เงื่อนไขการใช้งาน",
-    } as Record<string, string>
-  )[key] ?? "การตรวจสอบเพิ่มเติม";
+    (
+      {
+        proof: "ลายเซ็นดิจิทัล",
+        issuer: "ผู้ออกเอกสาร",
+        status: "สถานะเอกสาร",
+        expiry: "วันหมดอายุ",
+        holder: "ผู้ถือเอกสาร",
+        policy: "เงื่อนไขการใช้งาน",
+      } as Record<string, string>
+    )[key] ?? "การตรวจสอบเพิ่มเติม"
+  );
 }
 
 function trustCheckStatusLabel(

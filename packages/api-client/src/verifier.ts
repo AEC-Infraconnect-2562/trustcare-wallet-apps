@@ -1,6 +1,7 @@
 import { assertVerifierResult } from "@trustcare/contracts";
 import {
   audienceSummary,
+  assessVerificationEvidence,
   assessDataIntegrityProof,
   buildTrustCareJwksCandidateResult,
   credentialIssuerName as issuerName,
@@ -20,6 +21,7 @@ import {
   parseShlLink,
   parseUrl,
   parseTrustCareQr,
+  sha256Hex,
   fetchShlManifest,
   resolveDemoResolverPayload,
   resolveDemoVpReferencePayload,
@@ -31,6 +33,16 @@ import {
   validateOid4vpBinding,
   verifyDataIntegrityProof,
   verifyShlManifestTrust,
+  verificationEvidenceCheckPassed,
+  type LocallyVerifiedProof,
+  type ShlCryptographicVerificationEvidence,
+  type VerificationArtifactRole,
+  type VerificationCheckKey,
+  type VerificationContext,
+  type VerificationEvidenceAssessment,
+  type VerificationEvidenceProvider,
+  type VerificationEvidenceV1,
+  type VerificationSubject,
   type VerifierResult,
 } from "@trustcare/wallet-core";
 import {
@@ -50,6 +62,7 @@ import {
 
 export type VerifierApiOptions = TrustCareClientOptions & {
   portalOrigin?: string;
+  verificationEvidenceProvider?: VerificationEvidenceProvider;
 };
 
 type ResolvedVpPayload = {
@@ -96,7 +109,7 @@ async function verifyQrUnsafe(
   const oid4vci = parseOid4vcCredentialOffer(qrData);
   if (oid4vci) {
     return {
-      verified: true,
+      verified: false,
       trustLevel: "yellow",
       protocol: "oid4vci",
       issuer: oid4vci.issuer ?? oid4vci.credentialOfferUri ?? "OID4VCI issuer",
@@ -111,7 +124,7 @@ async function verifyQrUnsafe(
   if (oid4vp) {
     const binding = validateOid4vpBinding(oid4vp);
     return {
-      verified: binding.ok,
+      verified: false,
       trustLevel: binding.ok ? "yellow" : "red",
       protocol: "oid4vp",
       issuer: oid4vp.verifier ?? "OID4VP verifier",
@@ -128,7 +141,7 @@ async function verifyQrUnsafe(
     options.fetchImpl ?? fetch,
   );
   if (resolvedVp) {
-    return verifyResolvedVpPayload(resolvedVp, options.fetchImpl ?? fetch);
+    return verifyResolvedVpPayload(resolvedVp, options);
   }
   const demoReferencePayload = resolveDemoVpReferencePayload(qrData);
   if (demoReferencePayload?.kind === "vp") {
@@ -141,7 +154,7 @@ async function verifyQrUnsafe(
           "Resolved deterministic TrustCare demo VP reference from the wallet seed dataset.",
         ],
       },
-      options.fetchImpl ?? fetch,
+      options,
     );
   }
   const demoPayload = resolveDemoResolverPayload(qrData);
@@ -223,10 +236,21 @@ async function verifyQrUnsafe(
   const shl = parseShlLink(qrData);
   if (shl) {
     const fetched = await fetchShlManifest(qrData);
-    const trustResult = fetched.ok
-      ? verifyShlManifestTrust(fetched.manifest)
-      : null;
     const trustcare = objectValue(fetched.manifest?.trustcare) ?? {};
+    const cryptographicEvidence = fetched.ok
+      ? await verifyShlCryptographicEvidence(
+          trustcare,
+          fetched.manifest ?? {},
+          options,
+        )
+      : undefined;
+    const trustResult = fetched.ok
+      ? verifyShlManifestTrust(
+          fetched.manifest,
+          new Date(),
+          cryptographicEvidence,
+        )
+      : null;
     const manifestVp = objectValue(trustcare.manifestVp);
     const passcodeMissing = shl.passcodeRequired && !fetched.ok;
     return {
@@ -305,10 +329,10 @@ async function verifyQrUnsafe(
       !String(jsonPayload.holderPresentationId).startsWith("pending:trustcare"),
     );
     return {
-      verified: Boolean(hasManifestBinding && trustcarePolicyApproved),
+      verified: false,
       trustLevel:
         hasManifestBinding && trustcarePolicyApproved
-          ? "green"
+          ? "yellow"
           : hasManifestBinding
             ? "yellow"
             : "red",
@@ -356,8 +380,15 @@ async function verifyQrUnsafe(
           ok: documentCount > 0,
           detail: `เอกสารที่ผูกไว้ ${documentCount} รายการ`,
         },
+        {
+          key: "cryptographic_proof",
+          label: "ตรวจลายเซ็นและผู้ออกจริง",
+          ok: false,
+          detail: "internal_json_is_not_a_verifier_artifact",
+        },
       ],
       warnings: [
+        "JSON นี้เป็นข้อมูลสรุปภายใน ไม่ใช่ verifier artifact ต้องเปิด resolver-backed VP หรือ canonical SHL แล้วตรวจ proof จริง.",
         ...(jsonPayload.passcodeRequired
           ? [
               "SHL นี้มี passcode/access policy; verifier ต้องบังคับใช้นโยบายก่อนดึงไฟล์",
@@ -385,7 +416,7 @@ async function verifyQrUnsafe(
     const parsed = parseTrustCareQr(qrData);
     const isStandardShl = parsed.kind === "shlink";
     return {
-      verified: isStandardShl,
+      verified: false,
       trustLevel: isStandardShl
         ? "blue"
         : parsed.kind === "unknown"
@@ -431,6 +462,298 @@ async function verifyQrUnsafe(
     qrData,
     source: "camera",
   });
+}
+
+async function verifyShlCryptographicEvidence(
+  trustcare: Record<string, unknown>,
+  manifest: Record<string, unknown>,
+  options: VerifierApiOptions,
+): Promise<ShlCryptographicVerificationEvidence> {
+  const fetcher = options.fetchImpl ?? fetch;
+  const manifestCredential = objectValue(trustcare.manifestCredential);
+  const holderAuthorizationCredential = objectValue(
+    trustcare.holderAuthorizationCredential,
+  );
+  const manifestVp = objectValue(trustcare.manifestVp);
+  const manifestIssuer = artifactIssuerDid(manifestCredential);
+  const holderAuthorizationIssuer = artifactIssuerDid(
+    holderAuthorizationCredential,
+  );
+  const manifestHolder = stringOrUndefined(manifestVp?.holder);
+  const [manifestCredentialProof, holderAuthorizationProof, manifestVpProof] =
+    await Promise.all([
+      verifyDataIntegrityProof(manifestCredential ?? {}, {
+        fetcher,
+        expectedProofPurpose: "assertionMethod",
+        expectedControllerDid: manifestIssuer,
+      }),
+      verifyDataIntegrityProof(holderAuthorizationCredential ?? {}, {
+        fetcher,
+        expectedProofPurpose: "assertionMethod",
+        expectedControllerDid: holderAuthorizationIssuer,
+      }),
+      verifyDataIntegrityProof(manifestVp ?? {}, {
+        fetcher,
+        expectedProofPurpose: "authentication",
+        expectedControllerDid: manifestHolder,
+      }),
+    ]);
+  const manifestCredentialLocalProof = localDataIntegrityProof(
+    manifestCredentialProof,
+    manifestIssuer,
+    "assertionMethod",
+  );
+  const holderAuthorizationLocalProof = localDataIntegrityProof(
+    holderAuthorizationProof,
+    holderAuthorizationIssuer,
+    "assertionMethod",
+  );
+  const manifestVpLocalProof = localDataIntegrityProof(
+    manifestVpProof,
+    manifestHolder,
+    "authentication",
+  );
+  const access = objectValue(manifest.access);
+  const evaluation = await evaluateArtifactTrust(
+    options,
+    [
+      {
+        role: "manifest_vc",
+        artifact: manifestCredential ?? {},
+        issuerDid: manifestIssuer,
+        holderDid: artifactSubjectDid(manifestCredential),
+        validUntil: artifactValidUntil(manifestCredential),
+        statusReference: manifestCredential?.credentialStatus,
+        localProof: manifestCredentialLocalProof,
+      },
+      {
+        role: "holder_authorization_vc",
+        artifact: holderAuthorizationCredential ?? {},
+        issuerDid: holderAuthorizationIssuer,
+        holderDid: artifactSubjectDid(holderAuthorizationCredential),
+        validUntil: artifactValidUntil(holderAuthorizationCredential),
+        statusReference: holderAuthorizationCredential?.credentialStatus,
+        localProof: holderAuthorizationLocalProof,
+      },
+      {
+        role: "manifest_vp",
+        artifact: manifestVp ?? {},
+        holderDid: manifestHolder,
+        validUntil: artifactValidUntil(manifestVp),
+        localProof: manifestVpLocalProof,
+      },
+    ],
+    {
+      recipient: stringOrUndefined(manifest.receiver),
+      purpose: stringOrUndefined(manifest.purpose),
+      policyVersion: stringOrUndefined(trustcare.contractHubVersion),
+      access,
+    },
+  );
+
+  return {
+    manifestCredentialSignatureVerified: Boolean(manifestCredentialLocalProof),
+    holderAuthorizationSignatureVerified: Boolean(
+      holderAuthorizationLocalProof,
+    ),
+    manifestVpSignatureVerified: Boolean(manifestVpLocalProof),
+    issuerTrusted: verificationEvidenceCheckPassed(
+      evaluation.assessment,
+      "issuer",
+    ),
+    credentialStatusValid: verificationEvidenceCheckPassed(
+      evaluation.assessment,
+      "status",
+    ),
+    policyVerified: verificationEvidenceCheckPassed(
+      evaluation.assessment,
+      "policy",
+    ),
+    verifiedAt: evaluation.evidenceCheckedAt,
+  };
+}
+
+type ArtifactTrustInput = {
+  role: VerificationArtifactRole;
+  artifact: Record<string, unknown>;
+  issuerDid?: string;
+  holderDid?: string;
+  validUntil?: string;
+  statusReference?: unknown;
+  localProof?: Omit<LocallyVerifiedProof, "subjectDigest">;
+};
+
+type ArtifactTrustEvaluation = {
+  assessment: VerificationEvidenceAssessment;
+  subjects: VerificationSubject[];
+  locallyVerifiedProofs: LocallyVerifiedProof[];
+  evidenceCheckedAt?: string;
+};
+
+async function evaluateArtifactTrust(
+  options: VerifierApiOptions,
+  artifacts: ArtifactTrustInput[],
+  context: VerificationContext,
+): Promise<ArtifactTrustEvaluation> {
+  const subjects: VerificationSubject[] = await Promise.all(
+    artifacts.map(async (artifact) => ({
+      role: artifact.role,
+      digest: await sha256Digest(artifact.artifact),
+      issuerDid: artifact.issuerDid,
+      holderDid: artifact.holderDid,
+      validUntil: artifact.validUntil,
+      statusReference: artifact.statusReference,
+    })),
+  );
+  const locallyVerifiedProofs = artifacts.flatMap((artifact, index) =>
+    artifact.localProof
+      ? [
+          {
+            ...artifact.localProof,
+            subjectDigest: subjects[index].digest,
+          },
+        ]
+      : [],
+  );
+  const packageDigest = await sha256Digest(
+    subjects.map(({ role, digest, issuerDid, holderDid, validUntil }) => ({
+      role,
+      digest,
+      issuerDid,
+      holderDid,
+      validUntil,
+    })),
+  );
+  const contextDigest = await sha256Digest(context);
+  let evidence: VerificationEvidenceV1 | null = null;
+  let providerWarning: string | undefined;
+  if (options.verificationEvidenceProvider) {
+    try {
+      evidence = await options.verificationEvidenceProvider.evaluate({
+        subjects,
+        packageDigest,
+        contextDigest,
+        context,
+        locallyVerifiedProofs,
+        now: new Date().toISOString(),
+      });
+    } catch (error) {
+      providerWarning =
+        error instanceof Error
+          ? `Verification evidence provider failed: ${error.message}`
+          : "Verification evidence provider failed.";
+    }
+  }
+  const assessed = assessVerificationEvidence({
+    evidence,
+    packageDigest,
+    contextDigest,
+    subjects,
+    locallyVerifiedProofs,
+  });
+  return {
+    assessment: providerWarning
+      ? { ...assessed, warnings: [...assessed.warnings, providerWarning] }
+      : assessed,
+    subjects,
+    locallyVerifiedProofs,
+    evidenceCheckedAt: evidence?.checkedAt,
+  };
+}
+
+async function sha256Digest(value: unknown) {
+  return `sha256:${await sha256Hex(value)}` as const;
+}
+
+function localDataIntegrityProof(
+  proof:
+    | {
+        verified: boolean;
+        verificationMethod?: string;
+        proofPurpose?: string;
+      }
+    | undefined,
+  expectedControllerDid: string | undefined,
+  proofPurpose: "assertionMethod" | "authentication",
+): Omit<LocallyVerifiedProof, "subjectDigest"> | undefined {
+  if (
+    !proof?.verified ||
+    !proof.verificationMethod ||
+    !expectedControllerDid ||
+    proof.proofPurpose !== proofPurpose ||
+    controllerDid(proof.verificationMethod) !== expectedControllerDid
+  ) {
+    return undefined;
+  }
+  return {
+    verificationMethod: proof.verificationMethod,
+    controllerDid: expectedControllerDid,
+    proofPurpose,
+  };
+}
+
+function evidenceChecklistItem(
+  assessment: VerificationEvidenceAssessment,
+  key: VerificationCheckKey,
+  label: string,
+) {
+  const passed = verificationEvidenceCheckPassed(assessment, key);
+  return {
+    key: `evidence_${key}`,
+    label,
+    ok: passed,
+    detail: passed
+      ? "verified by independent evidence provider"
+      : (assessment.errors.find((error) => error.includes(key)) ??
+        assessment.warnings.find((warning) => warning.includes(key)) ??
+        "independent verification evidence unavailable"),
+  };
+}
+
+function localJwtProof(
+  verification: JwtVerificationResult | undefined,
+  expectedControllerDid: string | undefined,
+  proofPurpose: "assertionMethod" | "authentication",
+): Omit<LocallyVerifiedProof, "subjectDigest"> | undefined {
+  if (
+    !verification?.verified ||
+    !verification.kid ||
+    !expectedControllerDid ||
+    controllerDid(verification.kid) !== expectedControllerDid
+  ) {
+    return undefined;
+  }
+  return {
+    verificationMethod: verification.kid,
+    controllerDid: expectedControllerDid,
+    proofPurpose,
+  };
+}
+
+function controllerDid(verificationMethod: string): string | undefined {
+  return verificationMethod.startsWith("did:")
+    ? verificationMethod.split("#")[0]
+    : undefined;
+}
+
+function artifactIssuerDid(
+  artifact: Record<string, unknown> | null | undefined,
+): string | undefined {
+  if (!artifact) return undefined;
+  if (typeof artifact.issuer === "string") return artifact.issuer;
+  return stringOrUndefined(objectValue(artifact.issuer)?.id);
+}
+
+function artifactSubjectDid(
+  artifact: Record<string, unknown> | null | undefined,
+): string | undefined {
+  return stringOrUndefined(objectValue(artifact?.credentialSubject)?.id);
+}
+
+function artifactValidUntil(
+  artifact: Record<string, unknown> | null | undefined,
+): string | undefined {
+  return stringOrUndefined(artifact?.validUntil ?? artifact?.expirationDate);
 }
 
 async function resolvePublishedVp(
@@ -606,7 +929,7 @@ async function verifyDirectJwtQr(
           ...nestedCredentialResults.flatMap((result) => result.warnings),
         ],
       },
-      fetcher,
+      options,
     );
   }
 
@@ -624,7 +947,13 @@ async function verifyDirectJwtQr(
     jwt,
     verification,
   );
-  return buildDirectVcVerifierResult(jwt, vc, verification, portalStatus);
+  return buildDirectVcVerifierResult(
+    jwt,
+    vc,
+    verification,
+    portalStatus,
+    options,
+  );
 }
 
 async function verifyPortalStatusIfTrustCare(
@@ -660,22 +989,53 @@ async function verifyPortalStatusIfTrustCare(
   }
 }
 
-function buildDirectVcVerifierResult(
+async function buildDirectVcVerifierResult(
   jwt: string,
   vc: Record<string, any>,
   verification: JwtVerificationResult,
   portalStatus: PortalCredentialVerifyResponse | null,
-): VerifierResult {
-  const expiresAt = stringOrUndefined(vc.validUntil);
-  const notExpired = !expiresAt || new Date(expiresAt).getTime() >= Date.now();
+  options: VerifierApiOptions,
+): Promise<VerifierResult> {
+  const expiresAt = artifactValidUntil(vc);
+  const notExpired = !expiresAt || Date.parse(expiresAt) > Date.now();
   const portalChecked = Boolean(portalStatus);
   const portalOk = !portalStatus || Boolean(portalStatus.verified);
-  const verified = verification.verified && portalOk && notExpired;
+  const issuerDid = artifactIssuerDid(vc) ?? verification.issuer;
+  const holderDid = artifactSubjectDid(vc) ?? verification.subject;
+  const localProof = localJwtProof(verification, issuerDid, "assertionMethod");
+  const evidence = await evaluateArtifactTrust(
+    options,
+    [
+      {
+        role: "vc",
+        artifact: vc,
+        issuerDid,
+        holderDid,
+        validUntil: expiresAt,
+        statusReference: vc.credentialStatus,
+        localProof,
+      },
+    ],
+    {
+      recipient: stringOrUndefined(vc.recipient),
+      purpose: stringOrUndefined(vc.purpose),
+      audience: verification.audience,
+      policyVersion: stringOrUndefined(
+        objectValue(vc.trustcare)?.policyVersion,
+      ),
+    },
+  );
+  const verified =
+    Boolean(localProof) &&
+    portalOk &&
+    notExpired &&
+    evidence.assessment.verified;
   const trustLevel = verified
     ? "green"
-    : !verification.verified ||
+    : !localProof ||
         portalStatus?.trustLevel === "red" ||
-        !notExpired
+        !notExpired ||
+        evidence.assessment.trustLevel === "red"
       ? "red"
       : "yellow";
   const portalError =
@@ -715,10 +1075,12 @@ function buildDirectVcVerifierResult(
       {
         key: "signature",
         label: "Signature status",
-        ok: verification.verified,
-        detail: verification.verified
+        ok: Boolean(localProof),
+        detail: localProof
           ? `verified via ${verification.jwksUrl ?? verification.jku ?? "-"}`
-          : verification.errors.join(" "),
+          : verification.verified
+            ? "Signature is valid but the key controller does not match the declared issuer."
+            : verification.errors.join(" "),
       },
       {
         key: "portal_status",
@@ -746,6 +1108,18 @@ function buildDirectVcVerifierResult(
         ok: notExpired,
         detail: expiresAt ?? "-",
       },
+      evidenceChecklistItem(evidence.assessment, "issuer", "ตรวจผู้ออกเอกสาร"),
+      evidenceChecklistItem(evidence.assessment, "status", "ตรวจสถานะล่าสุด"),
+      evidenceChecklistItem(
+        evidence.assessment,
+        "policy",
+        "ตรวจนโยบายการใช้งาน",
+      ),
+      evidenceChecklistItem(
+        evidence.assessment,
+        "binding",
+        "ตรวจผู้รับและวัตถุประสงค์",
+      ),
     ],
     warnings: [
       ...verification.warnings,
@@ -760,28 +1134,32 @@ function buildDirectVcVerifierResult(
           ]
         : []),
       ...(!notExpired ? ["VC หมดอายุแล้ว"] : []),
+      ...evidence.assessment.warnings,
     ],
     errors: [
-      ...(!verification.verified ? verification.errors : []),
+      ...(!localProof ? verification.errors : []),
       ...(portalError ? [portalError] : []),
       ...(!notExpired ? ["VC หมดอายุแล้ว"] : []),
+      ...evidence.assessment.errors,
     ],
     verificationPayload: {
       trustLevel,
       verified,
       issuer,
-      holderDid: stringOrUndefined(subject?.id) ?? verification.subject,
+      holderDid,
       credentials: [vc],
       jwt,
       portalStatus,
+      evidenceAssessment: evidence.assessment,
     },
   };
 }
 
 async function verifyResolvedVpPayload(
   resolved: ResolvedVpPayload,
-  fetcher: typeof fetch,
+  options: VerifierApiOptions,
 ): Promise<VerifierResult> {
+  const fetcher = options.fetchImpl ?? fetch;
   const payload = resolved.payload;
   const rawCredentials = Array.isArray(payload.verifiableCredential)
     ? payload.verifiableCredential
@@ -799,20 +1177,108 @@ async function verifyResolvedVpPayload(
         .filter(Boolean)
     : rawCredentials;
   const credentialCount = credentials.length;
-  const jwtVerified = Boolean(resolved.jwtVerification?.verified);
+  const holderDid = stringOrUndefined(payload.holder);
+  const dataIntegrity = await verifyDataIntegrityProof(payload, {
+    fetcher,
+    expectedProofPurpose: "authentication",
+    expectedControllerDid: holderDid,
+  });
+  const vpLocalProof =
+    localJwtProof(resolved.jwtVerification, holderDid, "authentication") ??
+    localDataIntegrityProof(dataIntegrity, holderDid, "authentication");
+  const credentialArtifacts = credentials.map(
+    (credential) => objectValue(credential) ?? { id: String(credential) },
+  );
+  const credentialDataIntegrity = nestedResults.length
+    ? []
+    : await Promise.all(
+        credentialArtifacts.map((credential) =>
+          verifyDataIntegrityProof(credential, {
+            fetcher,
+            expectedProofPurpose: "assertionMethod",
+            expectedControllerDid: artifactIssuerDid(credential),
+          }),
+        ),
+      );
+  const credentialInputs: ArtifactTrustInput[] = credentialArtifacts.map(
+    (credential, index) => {
+      const issuerDid =
+        artifactIssuerDid(credential) ?? nestedResults[index]?.issuer;
+      const localProof = nestedResults.length
+        ? localJwtProof(nestedResults[index], issuerDid, "assertionMethod")
+        : localDataIntegrityProof(
+            credentialDataIntegrity[index],
+            issuerDid,
+            "assertionMethod",
+          );
+      return {
+        role: "vc",
+        artifact: credential,
+        issuerDid,
+        holderDid: artifactSubjectDid(credential),
+        validUntil: artifactValidUntil(credential),
+        statusReference: credential.credentialStatus,
+        localProof,
+      };
+    },
+  );
   const nestedCredentialVerified =
-    nestedResults.length > 0 &&
-    nestedResults.every((result) => result.verified);
-  const dataIntegrity = await verifyDataIntegrityProof(payload, { fetcher });
-  const hasVerifiedProof = jwtVerified || dataIntegrity.verified;
+    credentialInputs.length > 0 &&
+    credentialInputs.every((credential) => Boolean(credential.localProof));
+  const purpose = stringOrUndefined(payload.purpose);
+  const recipient = stringOrUndefined(payload.recipient);
+  const audience = resolved.jwtVerification?.audience;
+  const purposeBound = Boolean(purpose && (recipient || audience));
+  const evidence = await evaluateArtifactTrust(
+    options,
+    [
+      {
+        role: "vp",
+        artifact: payload,
+        holderDid,
+        validUntil: artifactValidUntil(payload),
+        localProof: vpLocalProof,
+      },
+      ...credentialInputs,
+    ],
+    {
+      recipient,
+      purpose,
+      audience,
+      selectedClaims: Array.isArray(payload.selectedFields)
+        ? payload.selectedFields.map(String)
+        : undefined,
+      policyVersion: stringOrUndefined(
+        objectValue(payload.trustcare)?.policyVersion,
+      ),
+    },
+  );
+  const hasVerifiedProof = Boolean(vpLocalProof);
   const notExpired =
-    !payload.validUntil ||
-    new Date(String(payload.validUntil)).getTime() >= Date.now();
+    !payload.validUntil || Date.parse(String(payload.validUntil)) > Date.now();
   const verified =
     credentialCount > 0 &&
     hasVerifiedProof &&
-    (!resolved.jwt || nestedCredentialVerified) &&
-    notExpired;
+    nestedCredentialVerified &&
+    notExpired &&
+    purposeBound &&
+    evidence.assessment.verified;
+  const explicitProofFailure = Boolean(
+    (resolved.jwt && !resolved.jwtVerification?.verified) ||
+    (dataIntegrity.present && !dataIntegrity.verified) ||
+    nestedResults.some((result) => !result.verified) ||
+    credentialDataIntegrity.some(
+      (result) => result.present && !result.verified,
+    ),
+  );
+  const trustLevel = verified
+    ? "green"
+    : credentialCount === 0 ||
+        !notExpired ||
+        explicitProofFailure ||
+        evidence.assessment.trustLevel === "red"
+      ? "red"
+      : "yellow";
   const issuer =
     firstIssuer(credentials) ??
     resolved.jwtVerification?.issuer ??
@@ -821,10 +1287,10 @@ async function verifyResolvedVpPayload(
       : "TrustCare VP resolver");
   return {
     verified,
-    trustLevel: verified ? "green" : credentialCount > 0 ? "yellow" : "red",
+    trustLevel,
     protocol: "trustcare-vp",
     issuer,
-    holderDid: typeof payload.holder === "string" ? payload.holder : undefined,
+    holderDid,
     requestSummary: `VP ${resolved.id} / เอกสาร ${credentialCount} รายการ`,
     credentials,
     verificationChecklist: [
@@ -838,7 +1304,7 @@ async function verifyResolvedVpPayload(
         key: "signature",
         label: "Signature status",
         ok: hasVerifiedProof,
-        detail: jwtVerified
+        detail: resolved.jwtVerification?.verified
           ? `ES256 / ${resolved.jwtVerification?.kid ?? "-"}`
           : dataIntegrity.verified
             ? `${dataIntegrity.cryptosuite ?? "Data Integrity"} / ${dataIntegrity.verificationMethod ?? "-"}`
@@ -860,7 +1326,7 @@ async function verifyResolvedVpPayload(
       {
         key: "issuer_key",
         label: "Issuer key resolved",
-        ok: jwtVerified || dataIntegrity.verified,
+        ok: hasVerifiedProof,
         detail:
           resolved.jwtVerification?.jwksUrl ??
           resolved.jwtVerification?.jku ??
@@ -883,10 +1349,8 @@ async function verifyResolvedVpPayload(
       {
         key: "nested_vc",
         label: "ตรวจ nested VC JWT",
-        ok: !resolved.jwt || nestedCredentialVerified,
-        detail: nestedResults.length
-          ? `${nestedResults.filter((result) => result.verified).length}/${nestedResults.length}`
-          : "json-vp",
+        ok: nestedCredentialVerified,
+        detail: `${credentialInputs.filter((credential) => credential.localProof).length}/${credentialInputs.length}`,
       },
       {
         key: "expiry",
@@ -903,15 +1367,23 @@ async function verifyResolvedVpPayload(
       {
         key: "purpose",
         label: "Consent and audience",
-        ok: Boolean(
-          payload.purpose ||
-          payload.recipient ||
-          resolved.jwtVerification?.audience,
-        ),
+        ok: purposeBound,
         detail: String(
           payload.purpose ?? resolved.jwtVerification?.audience ?? "-",
         ),
       },
+      evidenceChecklistItem(evidence.assessment, "issuer", "ตรวจผู้ออกเอกสาร"),
+      evidenceChecklistItem(evidence.assessment, "status", "ตรวจสถานะล่าสุด"),
+      evidenceChecklistItem(
+        evidence.assessment,
+        "policy",
+        "ตรวจนโยบายการใช้งาน",
+      ),
+      evidenceChecklistItem(
+        evidence.assessment,
+        "binding",
+        "ตรวจผู้รับและวัตถุประสงค์",
+      ),
     ],
     warnings: [
       ...resolved.warnings,
@@ -937,8 +1409,23 @@ async function verifyResolvedVpPayload(
           ]
         : []),
       ...(!notExpired ? ["VP หมดอายุแล้ว"] : []),
+      ...(!purposeBound
+        ? ["VP ยังไม่มีวัตถุประสงค์และผู้รับ/audience ที่ผูกอยู่ในหลักฐาน."]
+        : []),
+      ...evidence.assessment.warnings,
     ],
-    errors: credentialCount > 0 ? [] : ["VP ไม่มี verifiableCredential"],
+    errors: [
+      ...(credentialCount > 0 ? [] : ["VP ไม่มี verifiableCredential"]),
+      ...(!notExpired ? ["VP หมดอายุแล้ว"] : []),
+      ...evidence.assessment.errors,
+    ],
+    verificationPayload: {
+      trustLevel,
+      verified,
+      holderDid,
+      credentials,
+      evidenceAssessment: evidence.assessment,
+    },
   };
 }
 

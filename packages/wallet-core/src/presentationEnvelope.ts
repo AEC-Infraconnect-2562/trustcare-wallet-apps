@@ -754,16 +754,6 @@ export function classifyPortableTrustStatus(
     if (card.portalVerification?.status === "metadata_only")
       return "metadata_only";
     if (
-      card.portalVerification?.verified &&
-      String(card.portalVerification.trustLevel ?? "").toLowerCase() ===
-        "green" &&
-      walletCardHasCryptographicProof(card) &&
-      card.issuerDid &&
-      card.holderDid
-    ) {
-      return "trustcare_certified";
-    }
-    if (
       walletCardHasCryptographicProof(card) &&
       card.issuerDid &&
       card.holderDid
@@ -799,15 +789,10 @@ export function classifyPortableTrustStatus(
     const shl = input;
     if (shl.trustLayerStatus === "pending_manifest_vp")
       return "trustcare_pending";
-    if (shl.trustLayerStatus === "certified_manifest_vp") {
-      const certified = Boolean(
-        shl.manifest.trustcare.manifestCredential &&
-        shl.manifest.trustcare.holderAuthorizationCredential &&
-        shl.manifest.trustcare.manifestVp &&
-        shl.manifest.trustcare.manifestVpHash,
-      );
-      return certified ? "trustcare_certified" : "trustcare_pending";
-    }
+    // A gateway publication is the artifact under review, not independent
+    // evidence. Manifest object presence and hashes alone never certify it.
+    if (shl.trustLayerStatus === "certified_manifest_vp")
+      return "trustcare_pending";
     return "transport_valid";
   }
   return "proof_missing";
@@ -816,9 +801,9 @@ export function classifyPortableTrustStatus(
 export function portableTrustBadge(
   status: PortableTrustStatus,
 ): "green" | "yellow" | "red" | "neutral" {
-  if (status === "trustcare_certified" || status === "issuer_signed")
-    return "green";
+  if (status === "trustcare_certified") return "green";
   if (
+    status === "issuer_signed" ||
     status === "transport_valid" ||
     status === "trustcare_pending" ||
     status === "patient_provided_unverified" ||
@@ -1257,10 +1242,10 @@ function isWalletPresentationResponseLike(
   const record = portalRecord(value);
   return Boolean(
     typeof record.presentationId === "string" &&
-      typeof record.format === "string" &&
-      typeof record.mode === "string" &&
-      typeof record.expiresAt === "string" &&
-      typeof record.qrData === "string",
+    typeof record.format === "string" &&
+    typeof record.mode === "string" &&
+    typeof record.expiresAt === "string" &&
+    typeof record.qrData === "string",
   );
 }
 
