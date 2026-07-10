@@ -41,7 +41,12 @@ export function buildClaimEvidencePackage(
         input.payerId,
         input.patientId,
         input.context,
-        records.map((record) => record.credentialId).join("|"),
+        input.consentReceiptId,
+        expiresAt,
+        records.map((record) => ({
+          credentialId: record.credentialId,
+          credentialData: record.credentialData,
+        })),
       ])}`,
     payerId: input.payerId,
     patientId: input.patientId,

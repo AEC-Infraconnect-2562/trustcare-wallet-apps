@@ -69,6 +69,7 @@ export const mockPayerProfiles: PayerProfile[] = [
 export function discoverMockCoverage(
   input: CoverageDiscoveryInput,
 ): CoverageDiscoveryResult {
+  assertConsentReceipt(input.consentReceiptId);
   const selectedProfiles = input.payerId
     ? mockPayerProfiles.filter((item) => item.payerId === input.payerId)
     : mockPayerProfiles.filter((item) => item.payerType !== "self_pay");
@@ -97,15 +98,23 @@ export function discoverMockCoverage(
 }
 
 export function createMockPayerAdapter(profile: PayerProfile): PayerAdapter {
+  const submittedClaims = new Set<string>();
   return {
     profile,
     async discoverCoverage(input) {
       return discoverMockCoverage(input);
     },
     async verifyEligibility(input) {
-      return decisionForEligibility(profile, input.serviceCode, input.context);
+      assertConsentReceipt(input.consentReceiptId);
+      return decisionForEligibility(
+        profile,
+        input.patientId,
+        input.serviceCode,
+        input.context,
+      );
     },
     async requestPreAuth(input) {
+      assertConsentReceipt(input.consentReceiptId);
       const procedureCodes =
         input.procedureCodes ?? (input.serviceCode ? [input.serviceCode] : []);
       const preAuthCaseId =
@@ -125,13 +134,35 @@ export function createMockPayerAdapter(profile: PayerProfile): PayerAdapter {
       );
     },
     async submitClaimPackage(input) {
+      assertConsentReceipt(input.consentReceiptId);
+      if (!input.evidencePackageId.trim()) {
+        throw new Error("Claim submission requires an evidence package ID.");
+      }
+      submittedClaims.add(input.claimCaseId);
       return receiptForClaim(profile, input.claimCaseId, input.claimType);
     },
     async getClaimStatus(input) {
+      if (!submittedClaims.has(input.claimCaseId)) {
+        return {
+          claimCaseId: input.claimCaseId,
+          status: "draft",
+          payerStatusCode: "NOT_SUBMITTED",
+          payerStatusText:
+            "No demo submission receipt exists for this claim case.",
+          updatedAt: demoNow,
+        };
+      }
       return statusForClaim(input.claimCaseId, input.payerId);
     },
     async requestGuaranteeLetter(input) {
+      assertConsentReceipt(input.consentReceiptId);
       if (profile.payerType === "international_tpa") {
+        if (!input.quotationCredentialId && !input.evidencePackageId) {
+          return {
+            guaranteeCaseId: input.guaranteeCaseId,
+            status: "need_more_evidence",
+          };
+        }
         return {
           guaranteeCaseId: input.guaranteeCaseId,
           status: "approved",
@@ -154,6 +185,7 @@ export function createMockPayerAdapter(profile: PayerProfile): PayerAdapter {
       };
     },
     async submitAdditionalEvidence(input) {
+      assertConsentReceipt(input.consentReceiptId);
       return {
         claimCaseId: input.claimCaseId,
         requestId: input.requestId,
@@ -175,6 +207,7 @@ export function createMockPayerAdapter(profile: PayerProfile): PayerAdapter {
 
 function decisionForEligibility(
   profile: PayerProfile,
+  patientId: string | number,
   serviceCode: string | undefined,
   context: string,
 ): EligibilityDecision {
@@ -184,7 +217,7 @@ function decisionForEligibility(
     serviceCode?.toLowerCase().includes("surgery");
   if (profile.payerType === "self_pay") {
     return {
-      eligibilityCheckId: `elig_${stableSuffix(`${profile.payerId}:${context}`)}`,
+      eligibilityCheckId: `elig_${stableSuffix(`${profile.payerId}:${patientId}:${context}`)}`,
       payerId: profile.payerId,
       status: "unknown",
       benefitSummary:
@@ -195,7 +228,7 @@ function decisionForEligibility(
     };
   }
   return {
-    eligibilityCheckId: `elig_${stableSuffix(`${profile.payerId}:${context}:${serviceCode ?? ""}`)}`,
+    eligibilityCheckId: `elig_${stableSuffix(`${profile.payerId}:${patientId}:${context}:${serviceCode ?? ""}`)}`,
     payerId: profile.payerId,
     status: requiresPreAuth ? "requires_preauth" : "eligible",
     benefitSummary:
@@ -206,7 +239,7 @@ function decisionForEligibility(
     guaranteeLetterAvailable: profile.payerType === "international_tpa",
     validUntil: demoValidUntil,
     sourceResponseRef: `mock:${profile.payerId}:eligibility`,
-    credentialId: `eligcred_${stableSuffix(profile.payerId)}`,
+    credentialId: `eligcred_${stableSuffix(`${profile.payerId}:${patientId}:${context}:${serviceCode ?? ""}`)}`,
     warnings: profile.payerType === "public" ? publicPayerWarnings() : [],
   };
 }
@@ -316,6 +349,14 @@ function publicPayerWarnings(): string[] {
   return [
     "No real NHSO endpoint is configured. This is a mock e-Claim adapter response.",
   ];
+}
+
+function assertConsentReceipt(value: string): void {
+  if (!value.trim()) {
+    throw new Error(
+      "Payer adapter request requires an explicit consent receipt ID.",
+    );
+  }
 }
 
 function maskSeed(value: string | number): string {

@@ -2,8 +2,10 @@ import {
   buildClaimEvidencePackage,
   createMockPayerRegistry,
   discoverMockCoverage,
+  executePayerLifecycle as executeCorePayerLifecycle,
   getDemoWalletCards,
   listMockPayerProfiles,
+  walletDemoUsers,
   type AdditionalEvidenceReceipt,
   type AdditionalEvidenceSubmission,
   type ClaimEvidencePackage,
@@ -19,6 +21,8 @@ import {
   type GuaranteeLetterDecision,
   type GuaranteeLetterRequest,
   type PayerAdapter,
+  type PayerLifecycleInput,
+  type PayerLifecycleResult,
   type PayerProfile,
   type PaymentReconciliationRequest,
   type PaymentReconciliationResult,
@@ -27,10 +31,12 @@ import {
 } from "@trustcare/wallet-core";
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
+import { issuePayerCredentialWithShareGateway } from "./shareGatewayClient";
 
 export type PayerApiOptions = TrustCareClientOptions & {
   demoMode?: boolean;
   userId?: string | number;
+  shareGatewayUrl?: string;
 };
 
 export type WalletClaimEvidencePackageInput = Omit<
@@ -40,6 +46,17 @@ export type WalletClaimEvidencePackageInput = Omit<
   patientId?: string | number;
   selectedCardIds?: Array<number | string>;
 };
+
+export type WalletPayerLifecycleInput = Omit<
+  PayerLifecycleInput,
+  "cards" | "patientId" | "ownerUserId" | "holderDid"
+> & {
+  cards?: PayerLifecycleInput["cards"];
+  patientId?: string | number;
+  requireSignedArtifacts?: boolean;
+};
+
+const demoPayerRegistry = createMockPayerRegistry();
 
 export async function listPayers(
   options: PayerApiOptions,
@@ -96,10 +113,11 @@ export async function createClaimEvidencePackage(
 ): Promise<ClaimEvidencePackage> {
   if (options.demoMode ?? true) {
     const patientId = input.patientId ?? options.userId ?? "demo-patient-001";
+    const user = requireDemoUser(patientId);
     return buildClaimEvidencePackage({
       ...input,
-      patientId: String(patientId),
-      cards: getDemoWalletCards(patientId),
+      patientId: String(user.id),
+      cards: getDemoWalletCards(user.id),
     });
   }
   return callTrpcProcedure<ClaimEvidencePackage>(
@@ -107,6 +125,70 @@ export async function createClaimEvidencePackage(
     "payer.createClaimEvidencePackage",
     input,
   );
+}
+
+export async function runPayerLifecycle(
+  options: PayerApiOptions,
+  input: WalletPayerLifecycleInput,
+): Promise<PayerLifecycleResult> {
+  if (!(options.demoMode ?? true)) {
+    const {
+      cards: _cards,
+      requireSignedArtifacts: _required,
+      ...request
+    } = input;
+    return callTrpcProcedure<PayerLifecycleResult>(
+      options,
+      "payer.runLifecycle",
+      request,
+    );
+  }
+
+  const user = requireDemoUser(input.patientId ?? options.userId);
+  const payerId = payerIdForContext(input.context);
+  const adapter = demoAdapter(payerId);
+  const result = await executeCorePayerLifecycle(adapter, {
+    ...input,
+    patientId: user.id,
+    ownerUserId: user.id,
+    holderDid: user.holderDid,
+    cards: input.cards ?? getDemoWalletCards(user.id),
+  });
+
+  const requireSignedArtifacts = input.requireSignedArtifacts ?? false;
+  if (!options.shareGatewayUrl) {
+    if (requireSignedArtifacts) {
+      throw new Error(
+        "A configured demo payer issuer is required before payer artifacts can be stored or shared.",
+      );
+    }
+    return {
+      ...result,
+      warnings: [
+        ...result.warnings,
+        "Payer artifacts remain pending because no demo payer issuer URL was configured.",
+      ],
+    };
+  }
+
+  const signedCards = await Promise.all(
+    result.artifactCards.map((card) =>
+      issueDemoPayerCredential(options, result.profile, card),
+    ),
+  );
+  const signedById = new Map(
+    signedCards.map((card) => [String(card.id), card] as const),
+  );
+  return {
+    ...result,
+    artifactCards: signedCards,
+    evidencePackage: {
+      ...result.evidencePackage,
+      cards: result.evidencePackage.cards.map(
+        (card) => signedById.get(String(card.id)) ?? card,
+      ),
+    },
+  };
 }
 
 export async function submitClaimPackage(
@@ -184,7 +266,73 @@ export async function reconcilePayment(
 }
 
 function demoAdapter(payerId: string): PayerAdapter {
-  const adapter = createMockPayerRegistry().getAdapter(payerId);
+  const adapter = demoPayerRegistry.getAdapter(payerId);
   if (!adapter) throw new Error(`Unknown payer adapter: ${payerId}`);
   return adapter;
+}
+
+function requireDemoUser(userId: string | number | undefined) {
+  if (userId === undefined || userId === null || String(userId).trim() === "") {
+    throw new Error(
+      "A known demo wallet user is required for payer orchestration.",
+    );
+  }
+  const user = walletDemoUsers.find(
+    (candidate) =>
+      String(candidate.id) === String(userId) ||
+      String(candidate.patientId) === String(userId),
+  );
+  if (!user) {
+    throw new Error(`Unknown demo wallet user: ${String(userId)}`);
+  }
+  return user;
+}
+
+function payerIdForContext(
+  context: WalletPayerLifecycleInput["context"],
+): string {
+  return context === "insurance_claim"
+    ? "global_care_insurance_demo"
+    : "international_tpa_mock";
+}
+
+async function issueDemoPayerCredential(
+  options: PayerApiOptions,
+  profile: PayerLifecycleResult["profile"],
+  card: PayerLifecycleResult["artifactCards"][number],
+) {
+  const baseUrl = options.shareGatewayUrl?.replace(/\/+$/, "");
+  if (!baseUrl) throw new Error("Demo payer issuer URL is not configured.");
+  const payload = await issuePayerCredentialWithShareGateway({
+    gatewayBaseUrl: baseUrl,
+    fetchImpl: options.fetchImpl,
+    payerId: profile.payerId,
+    credential: card.credentialData ?? {},
+    credentialType: card.credentialType,
+    holderDid: card.holderDid,
+    expiresAt: card.expiresAt,
+    audience: "https://trustcare.network/verifier",
+    sourceSystem: card.sourceSystem,
+  });
+  if (
+    !payload.ok ||
+    !payload.credentialJwt ||
+    !payload.issuerDid ||
+    !payload.signedCredential
+  ) {
+    const detail = payload.errors?.join(" ") || "invalid issuer response";
+    throw new Error(`Demo payer credential issuance failed: ${detail}`);
+  }
+  return {
+    ...card,
+    credentialStatus: "active",
+    credentialJwt: payload.credentialJwt,
+    credentialProof: {
+      ...payload.credentialProof,
+      source: "payer_adapter_issuer",
+    },
+    issuerDid: payload.issuerDid,
+    credentialData: payload.signedCredential,
+    scopeLabel: `${profile.payerNameEn ?? profile.payerName} · explicit demo payer issuer`,
+  };
 }

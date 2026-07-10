@@ -141,10 +141,26 @@ function draftDocumentsFromReadiness(
   lockedIds: Set<string>,
 ): ShareDraftDocument[] {
   const documents: ShareDraftDocument[] = [];
+  const documentsByCardId = new Map<string, ShareDraftDocument>();
   for (const requirement of readiness.ready) {
     for (const card of requirement.matchedCards) {
+      const cardId = String(card.id);
+      const existing = documentsByCardId.get(cardId);
+      if (existing) {
+        existing.required = existing.required || requirement.required;
+        existing.locked = existing.locked || lockedIds.has(cardId);
+        if (existing.locked) existing.status = "locked";
+        existing.selected = existing.selected || selectedIds.has(cardId);
+        if (!existing.label.split(" / ").includes(requirement.label)) {
+          existing.label = `${existing.label} / ${requirement.label}`;
+        }
+        if (!existing.labelEn.split(" / ").includes(requirement.labelEn)) {
+          existing.labelEn = `${existing.labelEn} / ${requirement.labelEn}`;
+        }
+        continue;
+      }
       const documentType = normalizeDocumentType(card.cardType);
-      documents.push({
+      const document: ShareDraftDocument = {
         key: `${requirement.key}:${card.id}`,
         requirementKey: requirement.key,
         label: requirement.label,
@@ -159,7 +175,9 @@ function draftDocumentsFromReadiness(
         sourceHint: requirement.sourceHint,
         card,
         cardId: card.id,
-      });
+      };
+      documents.push(document);
+      documentsByCardId.set(cardId, document);
     }
   }
 

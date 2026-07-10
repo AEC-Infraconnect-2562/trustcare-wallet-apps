@@ -104,6 +104,7 @@ import {
   type DocumentRequestReturnChannel,
   type DocumentRequestSource,
   type PresentationHistoryItem,
+  type PayerLifecycleResult,
   type ReadinessContext,
   type ReadinessRequirement,
   type ShlManifestDocument,
@@ -1352,6 +1353,7 @@ export function ShareView({
   cards,
   user,
   initialPurpose,
+  initialSelectedCardIds,
   shlPackages,
   verifierResult,
   scanOutcome,
@@ -1364,6 +1366,7 @@ export function ShareView({
   cards: WalletCard[];
   user: WalletDemoUser;
   initialPurpose?: ReadinessContext;
+  initialSelectedCardIds?: number[];
   shlPackages: ShlPackage[];
   verifierResult: VerifierResult | null;
   scanOutcome: ScanOutcome | null;
@@ -1425,14 +1428,23 @@ export function ShareView({
     [purpose, shareableCards],
   );
   const purposeSelectedKey = purposeReadiness.selectedCardIds.join("|");
+  const initialSelectedKey = (initialSelectedCardIds ?? []).join("|");
 
   useEffect(() => {
-    const recommendedIds = purposeReadiness.selectedCardIds.length
-      ? purposeReadiness.selectedCardIds
-      : shareableCards
-          .filter((card) => card.pinned || criticalCardTypes.has(card.cardType))
-          .slice(0, 3)
-          .map((card) => card.id);
+    const availableIds = new Set(shareableCards.map((card) => card.id));
+    const routedIds = (initialSelectedCardIds ?? []).filter((id) =>
+      availableIds.has(id),
+    );
+    const recommendedIds = routedIds.length
+      ? routedIds
+      : purposeReadiness.selectedCardIds.length
+        ? purposeReadiness.selectedCardIds
+        : shareableCards
+            .filter(
+              (card) => card.pinned || criticalCardTypes.has(card.cardType),
+            )
+            .slice(0, 3)
+            .map((card) => card.id);
     setSelectedCardIds(recommendedIds);
     setSelectedFields(shareProfile.fields.map((field) => field.key));
     setRecipient(shareProfile.recipient);
@@ -1444,7 +1456,14 @@ export function ShareView({
     setShareExportPayload("");
     setShareQrDataUrl("");
     setSharePublication({ state: "idle", message: "", warnings: [] });
-  }, [purpose, purposeSelectedKey, shareProfile, shareableCards]);
+  }, [
+    initialSelectedCardIds,
+    initialSelectedKey,
+    purpose,
+    purposeSelectedKey,
+    shareProfile,
+    shareableCards,
+  ]);
 
   const selectedCards = useMemo(() => {
     if (!selectedCardIds.length) return [];
@@ -2785,6 +2804,7 @@ export function PrepareView({
   importJob,
   onContext,
   onPrepareAll,
+  onRunPayerLifecycle,
   onRequestMissing,
   onImportMissing,
 }: {
@@ -2797,7 +2817,12 @@ export function PrepareView({
   requests: WalletDocumentRequest[];
   importJob: WalletImportJob | null;
   onContext: (context: ReadinessContext) => void;
-  onPrepareAll: () => void;
+  onPrepareAll: (selectedCardIds?: number[]) => void;
+  onRunPayerLifecycle: (input: {
+    context: "insurance_claim" | "cross_border" | "medical_tourist";
+    selectedCardIds: number[];
+    consentReceiptId: string;
+  }) => Promise<PayerLifecycleResult>;
   onRequestMissing: (requirements?: ReadinessRequirement[]) => void;
   onImportMissing: (requirements?: ReadinessRequirement[]) => void;
 }) {
@@ -3068,8 +3093,8 @@ export function PrepareView({
         cards={cards}
         readiness={readinessResult}
         packetCards={packetContents}
-        canCreateFullPacket={canCreateFullPacket}
         onPrepareAll={onPrepareAll}
+        onRunLifecycle={onRunPayerLifecycle}
       />
 
       <Surface className="bundle-dashboard service-output-panel">
@@ -3090,7 +3115,7 @@ export function PrepareView({
         <div className="prep-primary-row">
           <Button
             className={canCreateFullPacket ? "purple" : "secondary"}
-            onClick={onPrepareAll}
+            onClick={() => onPrepareAll()}
             disabled={!canCreateFullPacket}
           >
             <Send size={18} /> ไปหน้าแชร์เอกสาร

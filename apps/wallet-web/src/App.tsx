@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import {
   portalSyncApi,
+  payerApi,
   shareGatewayApi,
   shlApi,
   verifierApi,
@@ -58,6 +59,7 @@ import {
   parseShlLink,
   fetchShlManifest,
   mergePortalSyncedCards,
+  mergePayerArtifactCards,
   mergeWalletObjects,
   normalizePhotoUrl,
   readinessContextLabels,
@@ -243,6 +245,10 @@ export default function App() {
   const lastPublicVerifyPayload = useRef("");
   const [readinessContext, setReadinessContext] =
     useState<ReadinessContext>("opd_visit");
+  const [payerShareSelection, setPayerShareSelection] = useState<{
+    context: ReadinessContext;
+    cardIds: number[];
+  } | null>(null);
   const [readiness, setReadiness] = useState<any>(null);
   const [contractHub, setContractHub] = useState<ContractHubCatalog | null>(
     null,
@@ -373,6 +379,7 @@ export default function App() {
     setScanResponseOpen(false);
     setImportJob(null);
     setLastImportMessage("");
+    setPayerShareSelection(null);
     return () => {
       cancelled = true;
     };
@@ -532,6 +539,44 @@ export default function App() {
       }));
     },
     [selectedUserId],
+  );
+
+  const runActivePayerLifecycle = useCallback(
+    async (input: {
+      context: "insurance_claim" | "cross_border" | "medical_tourist";
+      selectedCardIds: number[];
+      consentReceiptId: string;
+    }) => {
+      const result = await payerApi.runPayerLifecycle(apiOptions, {
+        ...input,
+        patientId: activeUser.id,
+        cards: allCards,
+        createdAt: new Date().toISOString(),
+        requireSignedArtifacts: true,
+      });
+      if (
+        result.artifactCards.some(
+          (card) =>
+            card.ownerUserId !== activeUser.id ||
+            card.sourceSystem !== "payer_adapter" ||
+            card.credentialStatus !== "active" ||
+            !card.credentialJwt ||
+            !card.issuerDid?.startsWith("did:web:"),
+        )
+      ) {
+        throw new Error(
+          "Demo payer issuer returned an unsigned artifact or another wallet user's data.",
+        );
+      }
+      const mergedCards = mergePayerArtifactCards(
+        allCards,
+        result.artifactCards,
+      );
+      setGrouped(groupCardsByCategory(mergedCards));
+      await offlineWallet.syncCards(mergedCards);
+      return result;
+    },
+    [activeUser.id, allCards, apiOptions, offlineWallet],
   );
 
   const syncActiveWalletFromPortal = useCallback(async () => {
@@ -976,6 +1021,7 @@ export default function App() {
 
   const changeReadinessContext = useCallback((context: ReadinessContext) => {
     setReadinessContext(context);
+    setPayerShareSelection(null);
     setImportJob(null);
     setLastImportMessage("");
   }, []);
@@ -1611,6 +1657,11 @@ export default function App() {
             cards={allCards}
             user={activeUser}
             initialPurpose={readinessContext}
+            initialSelectedCardIds={
+              payerShareSelection?.context === readinessContext
+                ? payerShareSelection.cardIds
+                : undefined
+            }
             shlPackages={shlPackages}
             verifierResult={verifierResult}
             scanOutcome={scanOutcome}
@@ -1634,7 +1685,15 @@ export default function App() {
             requests={documentRequests}
             importJob={importJob}
             onContext={changeReadinessContext}
-            onPrepareAll={() => navigateTo("share")}
+            onPrepareAll={(selectedCardIds) => {
+              setPayerShareSelection(
+                selectedCardIds?.length
+                  ? { context: readinessContext, cardIds: selectedCardIds }
+                  : null,
+              );
+              navigateTo("share");
+            }}
+            onRunPayerLifecycle={runActivePayerLifecycle}
             onRequestMissing={(requirements) =>
               openDocumentFlow("request", requirements)
             }

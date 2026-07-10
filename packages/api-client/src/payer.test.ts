@@ -32,9 +32,7 @@ describe("payer API facade", () => {
       requestedAt: "2026-07-10T00:00:00.000Z",
     });
 
-    expect(coverage.candidates[0]?.payerId).toBe(
-      "global_care_insurance_demo",
-    );
+    expect(coverage.candidates[0]?.payerId).toBe("global_care_insurance_demo");
     expect(eligibility.status).toBe("eligible");
   });
 
@@ -67,6 +65,106 @@ describe("payer API facade", () => {
     expect(receipt.status).toBe("manual_followup_required");
     expect(receipt.manualFollowUpRequired).toBe(true);
     expect(receipt.warnings?.join(" ")).toContain("No real NHSO");
+  });
+
+  it("runs the ordered demo lifecycle and stores only explicitly payer-issued JWT artifacts", async () => {
+    const issuerCalls: Array<Record<string, unknown>> = [];
+    const fetchImpl: typeof fetch = vi.fn(async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      issuerCalls.push(body);
+      const credential = body.credential as Record<string, unknown>;
+      const payerId = String(body.payerId);
+      const issuerDid = `did:web:wallet.example:payer:${payerId}`;
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          payerId,
+          credentialId: String(credential.id),
+          credentialJwt: `eyJhbGciOiJFUzI1NiJ9.${payerId}.signature`,
+          credentialProof: {
+            type: "W3C VC JWT",
+            format: "vc+jwt",
+            jwt: `eyJhbGciOiJFUzI1NiJ9.${payerId}.signature`,
+            alg: "ES256",
+            kid: `${issuerDid}#payer-key-1`,
+            source: "trustcare_demo_payer_integration_issuer",
+          },
+          issuerDid,
+          jwksUrl: `https://wallet.example/payer/${payerId}/jwks.json`,
+          signedCredential: {
+            ...credential,
+            issuer: { id: issuerDid, name: "Configured demo payer issuer" },
+          },
+          warnings: [],
+          errors: [],
+        }),
+        { status: 201, headers: { "content-type": "application/json" } },
+      );
+    });
+
+    const result = await payerApi.runPayerLifecycle(
+      {
+        ...options,
+        shareGatewayUrl: "https://wallet.example/api/share-gateway",
+        fetchImpl,
+      },
+      {
+        context: "insurance_claim",
+        selectedCardIds: [1001, 1005, 1008],
+        consentReceiptId: "consent-api-lifecycle",
+        patientId: "demo-patient-001",
+        createdAt: "2026-07-10T08:00:00.000Z",
+        requireSignedArtifacts: true,
+      },
+    );
+
+    expect(result.steps.map((step) => step.key)).toEqual([
+      "eligibility",
+      "package",
+      "submission",
+      "status",
+    ]);
+    expect(issuerCalls).toHaveLength(result.artifactCards.length);
+    expect(
+      issuerCalls.every(
+        (call) =>
+          call.issuerServiceOperation === "demo_payer_integration_issue" &&
+          call.sourceAuthority === "payer_adapter" &&
+          call.sourceSystem === "payer_adapter",
+      ),
+    ).toBe(true);
+    expect(
+      result.artifactCards.every(
+        (card) =>
+          card.credentialStatus === "active" &&
+          card.sourceSystem === "payer_adapter" &&
+          card.credentialProof?.source === "payer_adapter_issuer" &&
+          card.credentialJwt?.startsWith("eyJ"),
+      ),
+    ).toBe(true);
+  });
+
+  it("fails closed for unknown users instead of falling back to another patient's cards", async () => {
+    await expect(
+      payerApi.createClaimEvidencePackage(options, {
+        payerId: "global_care_insurance_demo",
+        patientId: "unknown-patient",
+        context: "insurance_claim",
+        consentReceiptId: "consent-unknown",
+      }),
+    ).rejects.toThrow("Unknown demo wallet user");
+  });
+
+  it("does not mark payer artifacts active when no explicit payer issuer is configured", async () => {
+    await expect(
+      payerApi.runPayerLifecycle(options, {
+        context: "insurance_claim",
+        selectedCardIds: [1001, 1005, 1008],
+        consentReceiptId: "consent-requires-issuer",
+        patientId: "demo-patient-001",
+        requireSignedArtifacts: true,
+      }),
+    ).rejects.toThrow("configured demo payer issuer");
   });
 
   it("routes non-demo calls to configured procedure contracts only", async () => {

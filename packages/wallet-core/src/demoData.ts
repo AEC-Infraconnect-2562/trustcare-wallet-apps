@@ -888,6 +888,8 @@ function buildPatientCards(user: WalletDemoUser): WalletCard[] {
     user.tags.includes("medical_tourist")
   )
     cards.push(travelCard(user));
+  if (user.tags.includes("cross_border")) cards.push(consentReceiptCard(user));
+  if (user.tags.includes("medical_tourist")) cards.push(quotationCard(user));
   return cards;
 }
 
@@ -1253,6 +1255,56 @@ function travelCard(user: WalletDemoUser): WalletCard {
         visaType: user.passport ? "Medical tourist" : "Domestic patient",
         expiryDate: "2030-12-31T00:00:00.000Z",
         nationality: user.passport ? "international" : "THA",
+      },
+    },
+  });
+}
+
+function consentReceiptCard(user: WalletDemoUser): WalletCard {
+  return baseCard(user, {
+    offset: 10,
+    cardType: "consent_receipt",
+    displayName: "หลักฐานความยินยอมสำหรับส่งต่อข้ามแดน",
+    displayNameEn: "Cross-border disclosure consent receipt",
+    documentCategory: "identity_and_access",
+    credentialType: "ConsentReceiptCredential",
+    expiresAt: "2026-12-31T09:30:00.000Z",
+    subject: {
+      patient: patientSubject(user),
+      consent: {
+        receiptId: `consent-${user.id}-cross-border`,
+        purpose: "cross_border",
+        recipientClass: "cross_border_receiving_provider",
+        status: "active",
+        grantedAt: "2026-07-01T09:30:00.000Z",
+        expiresAt: "2026-12-31T09:30:00.000Z",
+      },
+    },
+  });
+}
+
+function quotationCard(user: WalletDemoUser): WalletCard {
+  return baseCard(user, {
+    offset: 11,
+    cardType: "quotation",
+    displayName: "ใบเสนอราคาแพ็กเกจรักษา (Demo)",
+    displayNameEn: "Medical tourist treatment quotation (Demo)",
+    documentCategory: "medical_tourism",
+    credentialType: "QuotationCredential",
+    expiresAt: "2026-09-30T09:30:00.000Z",
+    subject: {
+      patient: patientSubject(user),
+      quotation: {
+        quotationNo: `QT-${user.hospitalCode}-${user.cardBase}-DEMO`,
+        packageName: "International patient pre-arrival review",
+        currency: "THB",
+        lineItems: [
+          { description: "Specialist consultation", amount: 2500 },
+          { description: "Pre-arrival clinical review", amount: 1500 },
+        ],
+        estimatedTotal: 4000,
+        validUntil: "2026-09-30",
+        exclusions: ["Emergency admission", "Unplanned procedures"],
       },
     },
   });

@@ -7,12 +7,14 @@ import {
   claimSubmissionReceiptCredential,
   claimSubmissionToFhir,
   createMockPayerRegistry,
+  createShareDraftFromPrepare,
   eligibilityDecisionToFhir,
   eligibilityRequestToFhir,
   eligibilityResultCredential,
   getDemoUser,
   getDemoWalletCards,
   getMockPayerAdapter,
+  executePayerLifecycle,
   listMockPayerProfiles,
   normalizePayerEvidenceDocumentType,
   preAuthDecisionCredential,
@@ -290,5 +292,111 @@ describe("payer orchestration foundation", () => {
     expect(sharePackage.payload).toMatchObject({
       type: "CertifiedSHLManifestPackage",
     });
+  });
+
+  it.each([
+    {
+      context: "insurance_claim" as const,
+      userId: "demo-patient-001",
+      payerId: "global_care_insurance_demo",
+      expectedDecisionStep: "eligibility",
+    },
+    {
+      context: "cross_border" as const,
+      userId: "partner-patient-001",
+      payerId: "international_tpa_mock",
+      expectedDecisionStep: "preauth",
+    },
+    {
+      context: "medical_tourist" as const,
+      userId: "demo-patient-003",
+      payerId: "international_tpa_mock",
+      expectedDecisionStep: "guarantee",
+    },
+  ])(
+    "runs the ordered $context demo lifecycle and creates payer-owned Store artifacts",
+    async ({ context, userId, payerId, expectedDecisionStep }) => {
+      const user = getDemoUser(userId);
+      const cards = getDemoWalletCards(userId);
+      const readiness = assessLocalReadiness(cards, context);
+      const adapter = getMockPayerAdapter(payerId);
+      expect(adapter).not.toBeNull();
+
+      const result = await executePayerLifecycle(adapter!, {
+        patientId: user.id,
+        ownerUserId: user.id,
+        holderDid: user.holderDid,
+        context,
+        cards,
+        selectedCardIds: readiness.selectedCardIds,
+        consentReceiptId: `consent-${user.id}-${context}`,
+        createdAt: "2026-07-10T08:00:00.000Z",
+      });
+
+      expect(result.steps.map((step) => step.key)).toEqual(
+        expect.arrayContaining([
+          "eligibility",
+          expectedDecisionStep,
+          "package",
+          "submission",
+          "status",
+        ]),
+      );
+      expect(result.steps.at(-1)?.key).toBe("status");
+      expect(result.claimStatus.status).toBe("accepted");
+      expect(result.artifactCards.length).toBeGreaterThanOrEqual(4);
+      expect(
+        result.artifactCards.every(
+          (card) =>
+            card.sourceSystem === "payer_adapter" &&
+            card.ownerUserId === user.id &&
+            card.issuerDid === adapter!.profile.trustedIssuerDid &&
+            card.credentialStatus === "pending",
+        ),
+      ).toBe(true);
+      expect(new Set(result.shareCardIds).size).toBe(
+        result.evidencePackage.cards.length,
+      );
+      expect(result.warnings.join(" ")).toContain("demo payer");
+    },
+  );
+
+  it("keeps the medical-tourist Share draft to one entry per selected card", () => {
+    const user = getDemoUser("demo-patient-complete-001");
+    const cards = getDemoWalletCards(user.id);
+    const readiness = assessLocalReadiness(cards, "medical_tourist");
+    const draft = createShareDraftFromPrepare({
+      context: "medical_tourist",
+      cards,
+      readiness,
+      selectedCardIds: readiness.selectedCardIds,
+      ownerUserId: user.id,
+      holderDid: user.holderDid,
+      now: "2026-07-10T08:00:00.000Z",
+    });
+    const selectedCardIds = draft.documents
+      .filter((document) => document.selected && document.cardId)
+      .map((document) => document.cardId);
+
+    expect(selectedCardIds).toHaveLength(new Set(selectedCardIds).size);
+    expect(selectedCardIds).toHaveLength(readiness.selectedCardIds.length);
+  });
+
+  it("rejects an empty consent before any payer decision is requested", async () => {
+    const user = getDemoUser("demo-patient-001");
+    const cards = getDemoWalletCards(user.id);
+    const adapter = getMockPayerAdapter("global_care_insurance_demo");
+
+    await expect(
+      executePayerLifecycle(adapter!, {
+        patientId: user.id,
+        ownerUserId: user.id,
+        holderDid: user.holderDid,
+        context: "insurance_claim",
+        cards,
+        selectedCardIds: cards.map((card) => card.id),
+        consentReceiptId: " ",
+      }),
+    ).rejects.toThrow("consent receipt ID");
   });
 });
