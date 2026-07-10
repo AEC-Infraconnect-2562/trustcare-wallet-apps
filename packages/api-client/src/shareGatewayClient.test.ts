@@ -9,6 +9,7 @@ import {
   createShareGatewayClient,
   issuePayerCredentialWithShareGateway,
   publishCertifiedShlTrustArtifacts,
+  publishShareArtifact,
   publishVpSharePackage,
   requestBodyForShareGateway,
   shareGatewayJwksUrl,
@@ -175,6 +176,33 @@ describe("shareGatewayClient", () => {
     );
   });
 
+  it("surfaces gateway error details before validating the success contract", async () => {
+    const fetchImpl = async () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          errors: ["JSON request body exceeds 1000000 bytes."],
+        }),
+        {
+          status: 413,
+          headers: { "content-type": "application/json" },
+        },
+      );
+
+    await expect(
+      publishShareArtifact({
+        gatewayBaseUrl,
+        fetchImpl: fetchImpl as typeof fetch,
+        request: {
+          artifactId: "vp-too-large",
+          kind: "vp",
+          contentType: "application/vp+json",
+          payload: { type: ["VerifiablePresentation"] },
+        },
+      }),
+    ).rejects.toThrow("JSON request body exceeds 1000000 bytes.");
+  });
+
   it("requests issuer-profile VC signing from the share gateway", async () => {
     const card = cards[0]!;
     const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
@@ -255,8 +283,7 @@ describe("shareGatewayClient", () => {
         payerId: body.payerId,
         credentialId: "payer-vc-001",
         credentialJwt: "payer.signed.jwt",
-        issuerDid:
-          "did:web:wallet.example:payer:international_tpa_mock",
+        issuerDid: "did:web:wallet.example:payer:international_tpa_mock",
         jwksUrl:
           "https://wallet.example/payer/international_tpa_mock/jwks.json",
         signedCredential: body.credential,
@@ -284,9 +311,7 @@ describe("shareGatewayClient", () => {
       sourceSystem: "payer_adapter",
     });
 
-    expect(requests[0]?.url).toBe(
-      `${gatewayBaseUrl}/payer/credentials/issue`,
-    );
+    expect(requests[0]?.url).toBe(`${gatewayBaseUrl}/payer/credentials/issue`);
     expect(requests[0]?.body).toMatchObject({
       issuerServiceOperation: "demo_payer_integration_issue",
       sourceAuthority: "payer_adapter",

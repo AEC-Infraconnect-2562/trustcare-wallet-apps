@@ -292,16 +292,37 @@ export async function publishShareArtifact(input: {
     },
   );
   const payload = await response.json().catch(() => null);
-  const gatewayPayload = payload
-    ? assertShareGatewayPublicationResponse(payload)
-    : null;
-  if (!response.ok || !gatewayPayload?.ok) {
-    const errors = gatewayPayload?.errors?.length
-      ? gatewayPayload.errors.join(" ")
-      : response.statusText;
-    throw new Error(`Share Gateway publish failed: ${errors}`);
+  const failure = shareGatewayFailureMessage(payload);
+  if (!response.ok || failure) {
+    const fallback = [response.status, response.statusText]
+      .filter(Boolean)
+      .join(" ");
+    throw new Error(
+      `Share Gateway publish failed: ${failure || fallback || "Unknown error"}`,
+    );
   }
-  return gatewayPayload as ShareGatewayPublicationResponse;
+  const gatewayPayload = assertShareGatewayPublicationResponse(payload);
+  return gatewayPayload;
+}
+
+function shareGatewayFailureMessage(payload: unknown): string | null {
+  const object = recordValue(payload);
+  if (!object) return null;
+  const errors = Array.isArray(object.errors)
+    ? object.errors.filter(
+        (error): error is string =>
+          typeof error === "string" && Boolean(error.trim()),
+      )
+    : [];
+  if (errors.length) return errors.join(" ");
+  if (object.ok === false) {
+    for (const key of ["detail", "message", "title"] as const) {
+      const value = object[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+    return "Gateway rejected the publication request.";
+  }
+  return null;
 }
 
 export async function signCredentialWithShareGateway(
