@@ -17,6 +17,9 @@ run. Create a separate Railway project/service for this repository.
 - Health check for gateway configuration: `/api/share-gateway/health`
 - JWKS: `/api/share-gateway/.well-known/jwks.json`
 - DID document: `/.well-known/did.json`
+- Demo payer integration issuance: `/api/share-gateway/payer/credentials/issue`
+- Demo payer DID/JWKS: `/payer/<allowlisted-payer-id>/did.json` and
+  `/payer/<allowlisted-payer-id>/jwks.json`
 
 `railway.json` uses `build.watchPatterns` so Railway redeploys when the wallet
 app, shared packages, gateway script, lockfile, or Railway config changes.
@@ -50,6 +53,10 @@ Optional variables:
   to publish new share artifacts with `POST /api/share-gateway/artifacts`.
   Leave unset for same-origin Railway Wallet only; add the GitHub Pages or
   Portal origin when that frontend must publish to this gateway.
+- `TRUSTCARE_GATEWAY_SERVICE_TOKEN`: bearer token for trusted non-browser
+  callers that cannot send an `Origin` header. Production rejects mutation
+  requests with neither a trusted Origin nor this token. Never ship this token
+  in web or mobile client bundles.
 - `TRUSTCARE_GATEWAY_MAX_BODY_BYTES`: maximum JSON publish body size. Defaults
   to `1000000`.
 - `TRUSTCARE_GATEWAY_DB_POOL_MAX`: maximum Postgres pool size. Defaults to `5`.
@@ -78,6 +85,21 @@ Production should report:
 - `storage=postgres`
 - `persistent=true`
 - `keySource=env_persistent_jwk`
+
+The health response also exposes `revision` (`RAILWAY_GIT_COMMIT_SHA`),
+`branch`, `deploymentId`, and `runtimeNodeVersion` so a deployed commit and the
+required Node 22.x runtime can be verified without guessing from asset hashes.
+
+Production VP publication accepts existing issuer-signed `vc+jwt` credentials
+only. It rejects unsigned Portal, payer, and other raw credentials instead of
+re-signing them with the Wallet gateway. `/credentials/sign` is limited to an
+explicit allowlisted demo hospital issuer operation. Demo payer artifacts use
+the separate allowlisted payer integration issuer endpoint; this endpoint is
+not a claim decision engine and does not represent a real payer connection.
+
+Every VP sharing event receives a cryptographically random artifact ID.
+Published artifact IDs are immutable: an exact request retry is idempotent,
+while a different request using an existing ID returns `409 Conflict`.
 
 The gateway keeps resolver reads public so QR payloads can be fetched by
 cross-device verifiers, but browser-origin artifact publishing is limited to

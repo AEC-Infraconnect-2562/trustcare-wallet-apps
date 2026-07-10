@@ -4,6 +4,8 @@ import {
   normalizeShareGatewayBaseUrl,
   readinessContextLabels,
   type BuiltSharePackage,
+  type CredentialSigningOwner,
+  type CredentialSourceAuthority,
   type ReadinessContext,
   type ShareGatewayPublicationRequest,
   type ShareGatewayPublicationResponse,
@@ -37,6 +39,10 @@ export type PublishShlSharePackageInput = {
 };
 
 export type SignCredentialWithGatewayInput = {
+  issuerServiceOperation: "demo_issuer_reissue";
+  sourceAuthority: CredentialSourceAuthority;
+  signingOwner: CredentialSigningOwner;
+  sourceSystem?: string | null;
   cardId?: string | number;
   credentialId?: string | number;
   credential: Record<string, unknown>;
@@ -64,6 +70,21 @@ export type SignCredentialWithGatewayResponse = {
   warnings: string[];
   errors: string[];
 };
+
+export type IssuePayerCredentialWithGatewayInput = {
+  payerId: string;
+  credential: Record<string, unknown>;
+  credentialType?: string | null;
+  holderDid?: string | null;
+  expiresAt?: string | null;
+  audience?: string;
+  sourceSystem?: string | null;
+};
+
+export type IssuePayerCredentialWithGatewayResponse =
+  SignCredentialWithGatewayResponse & {
+    payerId: string;
+  };
 
 export type ShareGatewayClient = {
   publishVp(
@@ -296,6 +317,10 @@ export async function signCredentialWithShareGateway(
         accept: "application/json",
       },
       body: JSON.stringify({
+        issuerServiceOperation: input.issuerServiceOperation,
+        sourceAuthority: input.sourceAuthority,
+        signingOwner: input.signingOwner,
+        sourceSystem: input.sourceSystem,
         cardId: input.cardId,
         credentialId: input.credentialId,
         credential: input.credential,
@@ -314,6 +339,44 @@ export async function signCredentialWithShareGateway(
       ? payload.errors.join(" ")
       : response.statusText;
     throw new Error(`Share Gateway credential signing failed: ${errors}`);
+  }
+  return payload;
+}
+
+export async function issuePayerCredentialWithShareGateway(
+  input: IssuePayerCredentialWithGatewayInput & ShareGatewayClientOptions,
+): Promise<IssuePayerCredentialWithGatewayResponse> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const response = await fetchImpl(
+    `${normalizeShareGatewayBaseUrl(input.gatewayBaseUrl)}/payer/credentials/issue`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({
+        issuerServiceOperation: "demo_payer_integration_issue",
+        sourceAuthority: "payer_adapter",
+        signingOwner: "payer_adapter",
+        sourceSystem: input.sourceSystem ?? "payer_adapter",
+        payerId: input.payerId,
+        credential: input.credential,
+        credentialType: input.credentialType,
+        holderDid: input.holderDid,
+        expiresAt: input.expiresAt,
+        audience: input.audience,
+      }),
+    },
+  );
+  const payload = (await response
+    .json()
+    .catch(() => null)) as IssuePayerCredentialWithGatewayResponse | null;
+  if (!response.ok || !payload?.ok || !payload.credentialJwt) {
+    const errors = payload?.errors?.length
+      ? payload.errors.join(" ")
+      : response.statusText;
+    throw new Error(`Demo payer credential issuance failed: ${errors}`);
   }
   return payload;
 }

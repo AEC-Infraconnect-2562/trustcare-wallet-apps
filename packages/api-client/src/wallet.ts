@@ -782,8 +782,13 @@ async function hydrateIssuerSignedCredentials(
   const signedCards = new Map<string | number, WalletCard>();
   await Promise.all(
     signableCards.map(async (card) => {
+      const lifecycle = evaluateCredentialLifecycle({ card });
       const signed = await signCredentialWithShareGateway({
         gatewayBaseUrl,
+        issuerServiceOperation: "demo_issuer_reissue",
+        sourceAuthority: lifecycle.sourceAuthority,
+        signingOwner: lifecycle.signingOwner,
+        sourceSystem: card.sourceSystem,
         credential: card.credentialData ?? {},
         cardId: card.id,
         credentialId: card.credentialId,

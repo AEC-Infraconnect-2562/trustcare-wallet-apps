@@ -12,7 +12,8 @@
     "dev:mobile": "pnpm --filter wallet-mobile start",
     "build:web": "pnpm --filter wallet-web build",
     "check": "pnpm -r check",
-    "test": "pnpm -r test",
+    "test": "pnpm -r test && pnpm test:gateway",
+    "test:gateway": "node --test scripts/share-gateway-policy.test.mjs",
     "format": "prettier --write ."
   },
   "devDependencies": {

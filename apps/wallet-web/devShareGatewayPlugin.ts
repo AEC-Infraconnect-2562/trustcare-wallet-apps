@@ -6,6 +6,11 @@ import {
   signTrustCarePresentationJwt,
   type TrustCareSigningKey,
 } from "../../packages/wallet-core/src/trustcareJwt.ts";
+import {
+  DEMO_PAYER_ISSUER_PROFILES,
+  validateDemoPayerIssuanceRequest,
+  validateIssuerSigningRequest,
+} from "../../scripts/share-gateway-policy.mjs";
 import type { Plugin } from "vite";
 
 type StoredArtifact = {
@@ -106,6 +111,24 @@ export function devShareGatewayPlugin(): Plugin {
         );
         return;
       }
+      const payerDocumentRoute = matchPayerIssuerDidRoute(url.pathname);
+      if (payerDocumentRoute) {
+        const baseSigningKey = await localSigningKey(signingKeyPromise, "");
+        signingKeyPromise = Promise.resolve(baseSigningKey);
+        const payerKey = issuerSigningKeyForProfile(
+          baseSigningKey,
+          requestOrigin(req),
+          { kind: "payer", payerId: payerDocumentRoute.payerId },
+        );
+        json(
+          res,
+          200,
+          payerDocumentRoute.kind === "jwks"
+            ? publicJwksForSigningKey(payerKey)
+            : didDocumentForSigningKey(payerKey),
+        );
+        return;
+      }
       if (!url.pathname.startsWith("/api/share-gateway")) {
         next();
         return;
@@ -167,6 +190,22 @@ async function handleGatewayRequest(
     );
     return;
   }
+  const payerDocumentRoute = matchPayerIssuerDidRoute(pathname);
+  if (req.method === "GET" && payerDocumentRoute) {
+    const payerKey = issuerSigningKeyForProfile(
+      await getSigningKey(),
+      origin,
+      { kind: "payer", payerId: payerDocumentRoute.payerId },
+    );
+    json(
+      res,
+      200,
+      payerDocumentRoute.kind === "jwks"
+        ? publicJwksForSigningKey(payerKey)
+        : didDocumentForSigningKey(payerKey),
+    );
+    return;
+  }
 
   if (req.method === "GET" && pathname === "/.well-known/jwks.json") {
     const signingKey = issuerSigningKeyForProfile(
@@ -197,7 +236,26 @@ async function handleGatewayRequest(
       });
       return;
     }
+    const signingPolicy = validateIssuerSigningRequest(body, credential);
+    if (!signingPolicy.ok) {
+      json(res, signingPolicy.status, {
+        ok: false,
+        sourceAuthority: signingPolicy.source.authority,
+        errors: [signingPolicy.message],
+      });
+      return;
+    }
     const issuerProfile = issuerProfileFromCredential(credential);
+    if (issuerProfile.kind !== "hospital") {
+      json(res, 422, {
+        ok: false,
+        sourceAuthority: signingPolicy.source.authority,
+        errors: [
+          "The demo issuer service only re-issues credentials for an explicit hospital issuer profile.",
+        ],
+      });
+      return;
+    }
     const baseSigningKey = await getSigningKey();
     const signingKey = issuerSigningKeyForProfile(
       baseSigningKey,
@@ -240,6 +298,74 @@ async function handleGatewayRequest(
       jwksUrl: signingKey.jku,
       signedCredential: signed.credential,
       warnings: [],
+      errors: [],
+    });
+    return;
+  }
+
+  if (
+    req.method === "POST" &&
+    pathname === "/payer/credentials/issue"
+  ) {
+    const body = await readJsonBody(req);
+    const credential = isRecord(body.credential) ? body.credential : null;
+    if (!credential) {
+      json(res, 400, {
+        ok: false,
+        errors: ["credential is required."],
+      });
+      return;
+    }
+    const issuancePolicy = validateDemoPayerIssuanceRequest(body, credential);
+    if (!issuancePolicy.ok) {
+      json(res, issuancePolicy.status, {
+        ok: false,
+        sourceAuthority: issuancePolicy.source.authority,
+        errors: [issuancePolicy.message],
+      });
+      return;
+    }
+    const signingKey = issuerSigningKeyForProfile(
+      await getSigningKey(),
+      origin,
+      { kind: "payer", payerId: issuancePolicy.payerId },
+    );
+    const expiresAt =
+      stringValue(body.expiresAt) ||
+      stringValue(credential.validUntil) ||
+      new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString();
+    const signed = await signTrustCareCredentialJwt({
+      credential: buildPayerIssuerSignedCredential(
+        credential,
+        signingKey,
+        issuancePolicy.profile,
+        expiresAt,
+      ),
+      signingKey,
+      credentialType: stringValue(body.credentialType) || undefined,
+      subject: stringValue(body.holderDid) || undefined,
+      audience: stringValue(body.audience) || undefined,
+      expiresAt,
+    });
+    json(res, 201, {
+      ok: true,
+      payerId: issuancePolicy.payerId,
+      credentialId: signed.credentialId,
+      credentialJwt: signed.jwt,
+      credentialProof: {
+        type: "W3C VC JWT",
+        format: "vc+jwt",
+        jwt: signed.jwt,
+        alg: "ES256",
+        kid: signingKey.kid,
+        source: "trustcare_demo_payer_integration_issuer",
+      },
+      issuerDid: signingKey.issuerDid,
+      jwksUrl: signingKey.jku,
+      signedCredential: signed.credential,
+      warnings: [
+        "Demo payer integration issuer only; this is not a real payer adjudication or production payer endpoint.",
+      ],
       errors: [],
     });
     return;
@@ -419,7 +545,10 @@ function publicArtifactPath(kind: string, artifactId: string): string {
 function issuerSigningKeyForProfile(
   baseSigningKey: TrustCareSigningKey,
   origin: string,
-  profile: { kind: "system" } | { kind: "hospital"; code: string },
+  profile:
+    | { kind: "system" }
+    | { kind: "hospital"; code: string }
+    | { kind: "payer"; payerId: string },
 ): TrustCareSigningKey {
   const baseOrigin = issuerDidBaseOrigin(origin);
   if (profile.kind === "system") {
@@ -429,6 +558,16 @@ function issuerSigningKeyForProfile(
       issuerDid,
       kid: `${issuerDid}#wallet-signing-key`,
       jku: `${baseOrigin}/api/share-gateway/.well-known/jwks.json`,
+    });
+  }
+  if (profile.kind === "payer") {
+    const payerId = normalizePayerId(profile.payerId);
+    const issuerDid = didWebFromPath(baseOrigin, ["payer", payerId]);
+    return withSigningKeyIdentity({
+      ...baseSigningKey,
+      issuerDid,
+      kid: `${issuerDid}#payer-integration-signing-key`,
+      jku: `${baseOrigin}/payer/${payerId}/jwks.json`,
     });
   }
   const code = normalizeHospitalCode(profile.code);
@@ -532,6 +671,51 @@ function buildIssuerSignedCredential(
   });
 }
 
+function buildPayerIssuerSignedCredential(
+  credential: Record<string, unknown>,
+  signingKey: TrustCareSigningKey,
+  payerProfile: {
+    payerId: string;
+    name: string;
+    payerType: string;
+  },
+  expiresAt: string,
+): Record<string, unknown> {
+  const originalIssuer = credential.issuer;
+  return stripUndefined({
+    ...credential,
+    issuer: {
+      id: signingKey.issuerDid,
+      name: payerProfile.name,
+      trustDomain: "payer-integration",
+      payerId: payerProfile.payerId,
+      payerType: payerProfile.payerType,
+      demo: true,
+    },
+    validUntil: credential.validUntil ?? expiresAt,
+    evidence: [
+      ...arrayValue(credential.evidence),
+      {
+        type: "PayerAdapterIssuance",
+        payerId: payerProfile.payerId,
+        sourceIssuer: originalIssuer,
+        signingIssuer: signingKey.issuerDid,
+        demo: true,
+      },
+    ],
+    trustcare: {
+      ...(objectValue(credential.trustcare) ?? {}),
+      sourceAuthority: "payer_adapter",
+      signingOwner: "payer_adapter",
+      payerId: payerProfile.payerId,
+      originalIssuer,
+      signingIssuerDid: signingKey.issuerDid,
+      signingJwksUrl: signingKey.jku,
+      demoPayerIntegrationIssuer: true,
+    },
+  });
+}
+
 function issuerProfileFromCredential(
   credential: Record<string, unknown>,
 ): { kind: "system" } | { kind: "hospital"; code: string } {
@@ -572,6 +756,22 @@ function matchIssuerDidRoute(
   return {
     code,
     kind: pathname.endsWith("/jwks.json") ? "jwks" : "did",
+  };
+}
+
+function matchPayerIssuerDidRoute(
+  pathname: string,
+): { payerId: string; kind: "did" | "jwks" } | null {
+  const match =
+    /^(?:\/api\/share-gateway)?\/payer\/([^/]+)\/(did\.json|jwks\.json)$/.exec(
+      pathname,
+    );
+  if (!match) return null;
+  const payerId = normalizePayerId(decodeURIComponent(match[1] ?? ""));
+  if (!payerId || !DEMO_PAYER_ISSUER_PROFILES[payerId]) return null;
+  return {
+    payerId,
+    kind: match[2] === "jwks.json" ? "jwks" : "did",
   };
 }
 
@@ -623,6 +823,13 @@ function hospitalCodeFromName(value: string): string {
 }
 
 function normalizeHospitalCode(value: string): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "");
+}
+
+function normalizePayerId(value: string): string {
   return String(value || "")
     .trim()
     .toLowerCase()

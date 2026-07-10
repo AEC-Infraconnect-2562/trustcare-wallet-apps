@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import {
   assessLocalReadiness,
   buildSharePackage,
+  createSharingEventArtifactId,
   createShareDraft,
   createShareDraftFromPrepare,
   createSharePolicy,
@@ -15,6 +16,15 @@ import {
 } from "./index";
 
 describe("premium share flow policy and validation", () => {
+  it("creates a cryptographically random artifact id for each sharing event", () => {
+    const first = createSharingEventArtifactId("vp");
+    const second = createSharingEventArtifactId("vp");
+
+    expect(first).toMatch(/^vp_[0-9a-f]{32}$/);
+    expect(second).toMatch(/^vp_[0-9a-f]{32}$/);
+    expect(second).not.toBe(first);
+  });
+
   it("uses Purpose VP by default for OPD readiness even when all OPD documents are selected", () => {
     const cards = cardsFor("opd_visit");
     const readiness = assessLocalReadiness(cards, "opd_visit");
@@ -399,6 +409,15 @@ describe("premium share flow policy and validation", () => {
       }),
     ]);
     expect(extractCredentialJwt(credentials[0])).toBe(signedPortalJwt);
+    expect(credentials[1]).toMatchObject({
+      trustcare: {
+        shareSource: {
+          authority: "portal_synced",
+          signingOwner: "source_issuer",
+          sourceSystem: "trustcare_portal",
+        },
+      },
+    });
     expect(sharePackage.payload.trustcare).toMatchObject({
       credentialJwtCount: 1,
       context: "opd_visit",

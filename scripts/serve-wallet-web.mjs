@@ -8,6 +8,16 @@ import {
   generateKeyPair,
   importJWK,
 } from "../packages/wallet-core/node_modules/jose/dist/webapi/index.js";
+import {
+  DEMO_PAYER_ISSUER_PROFILES,
+  SUPPORTED_SHARE_ARTIFACT_KINDS,
+  authorizeGatewayMutation,
+  immutableArtifactDecision,
+  publicationRequestDigest,
+  unsignedCredentialPublicationPolicy,
+  validateDemoPayerIssuanceRequest,
+  validateIssuerSigningRequest,
+} from "./share-gateway-policy.mjs";
 
 const root = resolve("apps/wallet-web/dist");
 const port = positiveIntegerFromEnv("PORT", 3000);
@@ -17,6 +27,7 @@ const maxJsonBodyBytes = positiveIntegerFromEnv(
 );
 const signingContexts = new Map();
 const issuerSigningContexts = new Map();
+const payerIssuerSigningContexts = new Map();
 const productionGateway = isProductionGatewayRuntime();
 const configuredSigningKey = await loadConfiguredSigningKey();
 const artifactStore = await createArtifactStore();
@@ -89,7 +100,9 @@ const server = createServer(async (request, response) => {
     if (!isRequestOriginAllowed(request, requestUrl)) {
       json(response, 403, {
         ok: false,
-        errors: ["Origin is not allowed to mutate the share gateway."],
+        errors: [
+          "A trusted Origin or valid Share Gateway service token is required for this mutation.",
+        ],
       });
       return;
     }
@@ -121,6 +134,21 @@ const server = createServer(async (request, response) => {
         response,
         200,
         issuerDocumentRoute.kind === "jwks"
+          ? publicJwksForContext(context)
+          : didDocumentForContext(context),
+      );
+      return;
+    }
+    const payerDocumentRoute = matchPayerIssuerDidRoute(requestUrl.pathname);
+    if (payerDocumentRoute) {
+      const context = await getPayerIssuerSigningContext(
+        requestOrigin(request),
+        payerDocumentRoute.payerId,
+      );
+      json(
+        response,
+        200,
+        payerDocumentRoute.kind === "jwks"
           ? publicJwksForContext(context)
           : didDocumentForContext(context),
       );
@@ -174,6 +202,21 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
     );
     return;
   }
+  const payerDocumentRoute = matchPayerIssuerDidRoute(pathname);
+  if (request.method === "GET" && payerDocumentRoute) {
+    const context = await getPayerIssuerSigningContext(
+      origin,
+      payerDocumentRoute.payerId,
+    );
+    json(
+      response,
+      200,
+      payerDocumentRoute.kind === "jwks"
+        ? publicJwksForContext(context)
+        : didDocumentForContext(context),
+    );
+    return;
+  }
 
   if (request.method === "GET" && pathname === "/health") {
     const context = await getSigningContext(origin);
@@ -196,7 +239,27 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
           };
         },
       ),
+      payerIntegrationIssuerProfiles: Object.values(
+        DEMO_PAYER_ISSUER_PROFILES,
+      ).map((profile) => {
+        const didBaseOrigin = issuerDidBaseOrigin(origin);
+        return {
+          payerId: profile.payerId,
+          name: profile.name,
+          did: didWebFromPath(didBaseOrigin, ["payer", profile.payerId]),
+          didUrl: `${didBaseOrigin}/payer/${encodeURIComponent(
+            profile.payerId,
+          )}/did.json`,
+          jwksUrl: `${didBaseOrigin}/payer/${encodeURIComponent(
+            profile.payerId,
+          )}/jwks.json`,
+        };
+      }),
       keySource: context.keySource,
+      revision: stringValue(process.env.RAILWAY_GIT_COMMIT_SHA) || null,
+      branch: stringValue(process.env.RAILWAY_GIT_BRANCH) || null,
+      deploymentId: stringValue(process.env.RAILWAY_DEPLOYMENT_ID) || null,
+      runtimeNodeVersion: process.version,
     });
     return;
   }
@@ -220,7 +283,27 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
       return;
     }
 
+    const signingPolicy = validateIssuerSigningRequest(body, credential);
+    if (!signingPolicy.ok) {
+      json(response, signingPolicy.status, {
+        ok: false,
+        sourceAuthority: signingPolicy.source.authority,
+        errors: [signingPolicy.message],
+      });
+      return;
+    }
+
     const issuerProfile = issuerProfileFromCredential(credential);
+    if (issuerProfile.kind !== "hospital") {
+      json(response, 422, {
+        ok: false,
+        sourceAuthority: signingPolicy.source.authority,
+        errors: [
+          "The demo issuer service only re-issues credentials for an explicit hospital issuer profile.",
+        ],
+      });
+      return;
+    }
     const context = await getCredentialIssuerSigningContext(
       origin,
       issuerProfile,
@@ -266,6 +349,82 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
     return;
   }
 
+  if (
+    request.method === "POST" &&
+    pathname === "/payer/credentials/issue"
+  ) {
+    if (!isJsonRequest(request)) {
+      json(response, 415, {
+        ok: false,
+        errors: ["Content-Type must be application/json."],
+      });
+      return;
+    }
+
+    const body = await readJsonBody(request);
+    const credential = isRecord(body.credential) ? body.credential : null;
+    if (!credential) {
+      json(response, 400, {
+        ok: false,
+        errors: ["credential is required."],
+      });
+      return;
+    }
+    const issuancePolicy = validateDemoPayerIssuanceRequest(body, credential);
+    if (!issuancePolicy.ok) {
+      json(response, issuancePolicy.status, {
+        ok: false,
+        sourceAuthority: issuancePolicy.source.authority,
+        errors: [issuancePolicy.message],
+      });
+      return;
+    }
+
+    const context = await getPayerIssuerSigningContext(
+      origin,
+      issuancePolicy.payerId,
+    );
+    const expiresAt =
+      stringValue(body.expiresAt) ||
+      stringValue(credential.validUntil) ||
+      new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString();
+    const signed = await signCredentialJwt({
+      credential: buildPayerIssuerSignedCredential(
+        credential,
+        context,
+        issuancePolicy.profile,
+        expiresAt,
+      ),
+      context,
+      audience:
+        stringValue(body.audience) || "https://trustcare.network/verifier",
+      expiresAt,
+    });
+
+    json(response, 201, {
+      ok: true,
+      payerId: issuancePolicy.payerId,
+      credentialId: signed.credentialId,
+      credentialJwt: signed.jwt,
+      credentialProof: {
+        type: "W3C VC JWT",
+        format: "vc+jwt",
+        jwt: signed.jwt,
+        alg: "ES256",
+        kid: context.kid,
+        source: "trustcare_demo_payer_integration_issuer",
+      },
+      issuerDid: context.issuerDid,
+      jwksUrl: context.jku,
+      signedCredential: signed.credential,
+      warnings: [
+        "Demo payer integration issuer only; this is not a real payer adjudication or production payer endpoint.",
+      ],
+      errors: [],
+    });
+    return;
+  }
+
   if (request.method === "POST" && pathname === "/artifacts") {
     if (!isJsonRequest(request)) {
       json(response, 415, {
@@ -282,6 +441,65 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
       json(response, 400, {
         ok: false,
         errors: ["artifactId and kind are required."],
+      });
+      return;
+    }
+    if (!SUPPORTED_SHARE_ARTIFACT_KINDS.has(kind)) {
+      json(response, 400, {
+        ok: false,
+        errors: [`Unsupported share artifact kind: ${kind}.`],
+      });
+      return;
+    }
+    if (!Object.hasOwn(body, "payload")) {
+      json(response, 400, {
+        ok: false,
+        errors: ["payload is required."],
+      });
+      return;
+    }
+    if (
+      body.expiresAt !== undefined &&
+      (typeof body.expiresAt !== "string" ||
+        !validIsoDateOrNull(body.expiresAt))
+    ) {
+      json(response, 400, {
+        ok: false,
+        errors: ["expiresAt must be a valid ISO date string."],
+      });
+      return;
+    }
+    if (kind === "vp" && !isRecord(body.payload)) {
+      json(response, 400, {
+        ok: false,
+        errors: ["VP payload must be a JSON object."],
+      });
+      return;
+    }
+
+    const requestDigest = publicationRequestDigest(body);
+    const existing = await artifactStore.get(kind, artifactId);
+    const existingDecision = immutableArtifactDecision(
+      existing,
+      requestDigest,
+    );
+    if (existingDecision.status === "conflict") {
+      json(response, 409, {
+        ok: false,
+        artifactId,
+        kind,
+        errors: [
+          "artifactId already exists with different content; create a new sharing-event artifactId.",
+        ],
+      });
+      return;
+    }
+    if (existingDecision.status === "idempotent") {
+      sendArtifactPublicationResponse(response, 200, {
+        origin,
+        artifactId,
+        kind,
+        warnings: ["Idempotent retry returned the existing immutable artifact."],
       });
       return;
     }
@@ -310,31 +528,36 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
       warnings.push(...signed.warnings);
     }
 
-    await artifactStore.set({
+    const writeResult = await artifactStore.set({
       artifactId,
       kind,
       contentType,
       payload,
       sourcePayload: body.payload,
+      requestDigest,
       createdAt: now.toISOString(),
       expiresAt: stringValue(body.expiresAt) || undefined,
     });
+    if (writeResult.status === "conflict") {
+      json(response, 409, {
+        ok: false,
+        artifactId,
+        kind,
+        errors: [
+          "artifactId was concurrently published with different content; create a new sharing-event artifactId.",
+        ],
+      });
+      return;
+    }
+    if (writeResult.status === "idempotent") {
+      warnings.push("Idempotent retry returned the existing immutable artifact.");
+    }
 
-    const publicUrl = `${origin}${publicArtifactPath(kind, artifactId)}`;
-    json(response, 201, {
-      ok: true,
-      mode: gatewayModeLabel(),
-      artifactId,
-      kind,
-      publicUrl,
-      qrPayload: publicUrl,
-      jwksUrl:
-        kind === "vp"
-          ? `${origin}/api/share-gateway/.well-known/jwks.json`
-          : undefined,
-      warnings,
-      errors: [],
-    });
+    sendArtifactPublicationResponse(
+      response,
+      writeResult.status === "idempotent" ? 200 : 201,
+      { origin, artifactId, kind, warnings },
+    );
     return;
   }
 
@@ -415,8 +638,17 @@ async function signPresentationJwt(input) {
       continue;
     }
     if (!isRecord(credential)) {
-      warnings.push("Skipped non-object credential without a JWT envelope.");
-      continue;
+      throw httpError(
+        422,
+        "Every VP credential must be an issuer-signed vc+jwt envelope or a source-aware JSON credential.",
+      );
+    }
+    const unsignedPolicy = unsignedCredentialPublicationPolicy({
+      production: productionGateway,
+      credential,
+    });
+    if (!unsignedPolicy.ok) {
+      throw httpError(422, unsignedPolicy.message);
     }
     const issuerProfile = issuerProfileFromCredential(credential);
     const credentialSigningContext = await getCredentialIssuerSigningContext(
@@ -668,6 +900,45 @@ async function getCredentialIssuerSigningContext(origin, profile) {
   return context;
 }
 
+async function getPayerIssuerSigningContext(origin, payerIdInput) {
+  const payerId = normalizePayerId(payerIdInput);
+  const profile = DEMO_PAYER_ISSUER_PROFILES[payerId];
+  if (!profile) {
+    throw httpError(404, "Unknown demo payer integration issuer profile.");
+  }
+  const normalizedOrigin = origin.replace(/\/+$/, "");
+  const cacheKey = `${normalizedOrigin}:payer:${payerId}`;
+  const cached = payerIssuerSigningContexts.get(cacheKey);
+  if (cached) return cached;
+
+  const didBaseOrigin = issuerDidBaseOrigin(normalizedOrigin);
+  const issuerDid = didWebFromPath(didBaseOrigin, ["payer", payerId]);
+  const keyMaterial =
+    configuredSigningKey ?? (await createLocalDevelopmentSigningKey());
+  const publicJwk = sanitizePublicJwk(keyMaterial.publicJwk);
+  const thumbprint = await calculateJwkThumbprint(publicJwk, "sha256");
+  const kid = `${issuerDid}#payer-integration-signing-key-${thumbprint.slice(
+    0,
+    12,
+  )}`;
+  const context = {
+    issuerDid,
+    kid,
+    jku: `${didBaseOrigin}/payer/${encodeURIComponent(payerId)}/jwks.json`,
+    privateKey: keyMaterial.privateKey,
+    publicJwk: sanitizePublicJwk({
+      ...publicJwk,
+      alg: "ES256",
+      kid,
+      use: "sig",
+    }),
+    keySource: `${keyMaterial.source}:demo-payer-integration:${payerId}`,
+    payerProfile: profile,
+  };
+  payerIssuerSigningContexts.set(cacheKey, context);
+  return context;
+}
+
 function publicJwksForContext(context) {
   return {
     keys: [context.publicJwk],
@@ -750,6 +1021,47 @@ function buildIssuerSignedCredential(
       originalIssuer,
       signingIssuerDid: context.issuerDid,
       signingJwksUrl: context.jku,
+    },
+  });
+}
+
+function buildPayerIssuerSignedCredential(
+  credential,
+  context,
+  payerProfile,
+  expiresAt,
+) {
+  const originalIssuer = credential.issuer;
+  return stripUndefined({
+    ...credential,
+    issuer: {
+      id: context.issuerDid,
+      name: payerProfile.name,
+      trustDomain: "payer-integration",
+      payerId: payerProfile.payerId,
+      payerType: payerProfile.payerType,
+      demo: true,
+    },
+    validUntil: credential.validUntil ?? expiresAt,
+    evidence: [
+      ...arrayValue(credential.evidence),
+      {
+        type: "PayerAdapterIssuance",
+        payerId: payerProfile.payerId,
+        sourceIssuer: originalIssuer,
+        signingIssuer: context.issuerDid,
+        demo: true,
+      },
+    ],
+    trustcare: {
+      ...objectValue(credential.trustcare),
+      sourceAuthority: "payer_adapter",
+      signingOwner: "payer_adapter",
+      payerId: payerProfile.payerId,
+      originalIssuer,
+      signingIssuerDid: context.issuerDid,
+      signingJwksUrl: context.jku,
+      demoPayerIntegrationIssuer: true,
     },
   });
 }
@@ -860,6 +1172,27 @@ function publicArtifactPath(kind, artifactId) {
   }
 }
 
+function sendArtifactPublicationResponse(response, status, input) {
+  const publicUrl = `${input.origin}${publicArtifactPath(
+    input.kind,
+    input.artifactId,
+  )}`;
+  json(response, status, {
+    ok: true,
+    mode: gatewayModeLabel(),
+    artifactId: input.artifactId,
+    kind: input.kind,
+    publicUrl,
+    qrPayload: publicUrl,
+    jwksUrl:
+      input.kind === "vp"
+        ? `${input.origin}/api/share-gateway/.well-known/jwks.json`
+        : undefined,
+    warnings: input.warnings ?? [],
+    errors: [],
+  });
+}
+
 function artifactKey(kind, artifactId) {
   return `${kind}:${artifactId}`;
 }
@@ -926,7 +1259,16 @@ function createMemoryArtifactStore() {
     kind: "memory",
     persistent: false,
     async set(artifact) {
+      const existing = artifacts.get(
+        artifactKey(artifact.kind, artifact.artifactId),
+      );
+      const decision = immutableArtifactDecision(
+        existing,
+        artifact.requestDigest,
+      );
+      if (decision.status !== "create") return decision;
       artifacts.set(artifactKey(artifact.kind, artifact.artifactId), artifact);
+      return { status: "created", artifact };
     },
     async get(kind, artifactId) {
       return artifacts.get(artifactKey(kind, artifactId)) ?? null;
@@ -957,20 +1299,62 @@ async function createPostgresArtifactStore(connectionString) {
       payload_json jsonb,
       payload_text text,
       source_payload_json jsonb,
+      request_digest text,
       created_at timestamptz NOT NULL DEFAULT now(),
       expires_at timestamptz
     )
   `);
   await pool.query(`
+    ALTER TABLE trustcare_wallet_share_artifacts
+    ADD COLUMN IF NOT EXISTS request_digest text
+  `);
+  await pool.query(`
     CREATE INDEX IF NOT EXISTS trustcare_wallet_share_artifacts_kind_id_idx
     ON trustcare_wallet_share_artifacts(kind, artifact_id)
   `);
+
+  const readArtifact = async (kind, artifactId) => {
+    const result = await pool.query(
+      `
+        SELECT artifact_id, kind, content_type, payload_json, payload_text,
+               source_payload_json, request_digest, created_at, expires_at
+        FROM trustcare_wallet_share_artifacts
+        WHERE artifact_key = $1
+        LIMIT 1
+      `,
+      [artifactKey(kind, artifactId)],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      artifactId: row.artifact_id,
+      kind: row.kind,
+      contentType: row.content_type,
+      payload:
+        row.payload_text !== null
+          ? row.payload_text
+          : deserializeJson(row.payload_json),
+      sourcePayload: deserializeJson(row.source_payload_json),
+      requestDigest: row.request_digest ? String(row.request_digest) : null,
+      createdAt:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at),
+      expiresAt:
+        row.expires_at instanceof Date
+          ? row.expires_at.toISOString()
+          : row.expires_at
+            ? String(row.expires_at)
+            : undefined,
+    };
+  };
+
   return {
     kind: "postgres",
     persistent: true,
     async set(artifact) {
       const payloadIsText = typeof artifact.payload === "string";
-      await pool.query(
+      const insertResult = await pool.query(
         `
           INSERT INTO trustcare_wallet_share_artifacts (
             artifact_key,
@@ -980,16 +1364,12 @@ async function createPostgresArtifactStore(connectionString) {
             payload_json,
             payload_text,
             source_payload_json,
+            request_digest,
             created_at,
             expires_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-          ON CONFLICT (artifact_key) DO UPDATE SET
-            content_type = EXCLUDED.content_type,
-            payload_json = EXCLUDED.payload_json,
-            payload_text = EXCLUDED.payload_text,
-            source_payload_json = EXCLUDED.source_payload_json,
-            created_at = EXCLUDED.created_at,
-            expires_at = EXCLUDED.expires_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          ON CONFLICT (artifact_key) DO NOTHING
+          RETURNING artifact_key
         `,
         [
           artifactKey(artifact.kind, artifact.artifactId),
@@ -1001,44 +1381,25 @@ async function createPostgresArtifactStore(connectionString) {
           artifact.sourcePayload === undefined
             ? null
             : JSON.stringify(artifact.sourcePayload),
+          artifact.requestDigest,
           artifact.createdAt,
           validIsoDateOrNull(artifact.expiresAt),
         ],
       );
+      if (insertResult.rowCount === 1) {
+        return { status: "created", artifact };
+      }
+      const existing = await readArtifact(artifact.kind, artifact.artifactId);
+      const decision = immutableArtifactDecision(
+        existing,
+        artifact.requestDigest,
+      );
+      return decision.status === "idempotent"
+        ? decision
+        : { status: "conflict", artifact: existing };
     },
     async get(kind, artifactId) {
-      const result = await pool.query(
-        `
-          SELECT artifact_id, kind, content_type, payload_json, payload_text,
-                 source_payload_json, created_at, expires_at
-          FROM trustcare_wallet_share_artifacts
-          WHERE artifact_key = $1
-          LIMIT 1
-        `,
-        [artifactKey(kind, artifactId)],
-      );
-      const row = result.rows[0];
-      if (!row) return null;
-      return {
-        artifactId: row.artifact_id,
-        kind: row.kind,
-        contentType: row.content_type,
-        payload:
-          row.payload_text !== null
-            ? row.payload_text
-            : deserializeJson(row.payload_json),
-        sourcePayload: deserializeJson(row.source_payload_json),
-        createdAt:
-          row.created_at instanceof Date
-            ? row.created_at.toISOString()
-            : String(row.created_at),
-        expiresAt:
-          row.expires_at instanceof Date
-            ? row.expires_at.toISOString()
-            : row.expires_at
-              ? String(row.expires_at)
-              : undefined,
-      };
+      return readArtifact(kind, artifactId);
     },
   };
 }
@@ -1284,6 +1645,20 @@ function matchIssuerDidRoute(pathname) {
   return code ? { code, kind } : null;
 }
 
+function matchPayerIssuerDidRoute(pathname) {
+  const match =
+    /^(?:\/api\/share-gateway)?\/payer\/([^/]+)\/(did\.json|jwks\.json)$/.exec(
+      pathname,
+    );
+  if (!match) return null;
+  const payerId = normalizePayerId(decodeURIComponent(match[1]));
+  if (!payerId || !DEMO_PAYER_ISSUER_PROFILES[payerId]) return null;
+  return {
+    payerId,
+    kind: match[2] === "jwks.json" ? "jwks" : "did",
+  };
+}
+
 function issuerProfileFromCredential(credential) {
   const trustcare = objectValue(credential.trustcare);
   const issuer = credential.issuer;
@@ -1333,6 +1708,13 @@ function hospitalCodeFromName(value) {
 }
 
 function normalizeHospitalCode(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "");
+}
+
+function normalizePayerId(value) {
   return String(value || "")
     .trim()
     .toLowerCase()
@@ -1426,7 +1808,9 @@ function handleCorsPreflight(request, response, requestUrl) {
   if (!isRequestOriginAllowed(request, requestUrl)) {
     json(response, 403, {
       ok: false,
-      errors: ["Origin is not allowed to mutate the share gateway."],
+      errors: [
+        "A trusted Origin or valid Share Gateway service token is required for this mutation.",
+      ],
     });
     return true;
   }
@@ -1461,9 +1845,17 @@ function corsAllowedOrigin(request, requestUrl) {
 }
 
 function isRequestOriginAllowed(request, requestUrl) {
-  const origin = stringValue(request.headers.origin);
-  if (!origin || !isGatewayMutationRequest(request, requestUrl)) return true;
-  return trustedMutationOrigins(request).has(normalizeOrigin(origin));
+  return authorizeGatewayMutation({
+    method: effectiveCorsMethod(request),
+    pathname: requestUrl.pathname,
+    production: productionGateway,
+    origin: stringValue(request.headers.origin),
+    trustedOrigins: trustedMutationOrigins(request),
+    authorization: stringValue(request.headers.authorization),
+    configuredServiceToken: stringValue(
+      process.env.TRUSTCARE_GATEWAY_SERVICE_TOKEN,
+    ),
+  }).ok;
 }
 
 function trustedMutationOrigins(request) {
@@ -1487,13 +1879,6 @@ function normalizeOrigin(origin) {
   } catch {
     return origin.replace(/\/+$/, "");
   }
-}
-
-function isGatewayMutationRequest(request, requestUrl) {
-  const method = effectiveCorsMethod(request);
-  return (
-    method === "POST" && requestUrl.pathname === "/api/share-gateway/artifacts"
-  );
 }
 
 function isPublicReadRequest(request, requestUrl) {

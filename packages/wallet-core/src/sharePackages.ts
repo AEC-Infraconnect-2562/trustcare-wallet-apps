@@ -14,6 +14,7 @@ import {
   envelopedVerifiableCredentialFromJwt,
   looksLikeJwt,
 } from "./credentialProof";
+import { credentialLifecyclePolicy } from "./credentialLifecycle";
 import { assertPrimaryVerifierQrPayload } from "./qrContracts";
 import { shareGatewayArtifactUrl } from "./shareGateway";
 import { createTrustCareShlGatewayPublication } from "./shlGateway";
@@ -128,18 +129,13 @@ export function buildSharePackage(
       const jwt = card.credentialProof?.jwt ?? card.credentialJwt;
       if (jwt && looksLikeJwt(jwt))
         return envelopedVerifiableCredentialFromJwt(jwt);
-      return records[index]?.credentialData;
+      const credentialData = records[index]?.credentialData;
+      return credentialData
+        ? credentialPayloadForShare(card, credentialData)
+        : undefined;
     })
     .filter((value): value is Record<string, unknown> => Boolean(value));
-  const presentationId = `vp_${stableId({
-    mode: input.mode,
-    context: input.context,
-    cards: records.map((record) => record.credentialId),
-    recipient: input.recipient,
-    purpose,
-    selectedFields: input.selectedFields,
-    expiresAt,
-  })}`;
+  const presentationId = createSharingEventArtifactId("vp");
   const holderDid =
     input.holderDid ??
     selectedCards.find((card) => card.holderDid)?.holderDid ??
@@ -238,10 +234,40 @@ function filterSelectedCards(
   return cards.filter((card) => selected.has(String(card.id)));
 }
 
-function stableId(value: unknown): string {
-  return hashJson(value)
-    .replace(/^sha256:/, "")
-    .slice(0, 16);
+export function createSharingEventArtifactId(prefix = "vp"): string {
+  if (!globalThis.crypto?.getRandomValues) {
+    throw new Error(
+      "Web Crypto getRandomValues is required to create a secure sharing-event ID.",
+    );
+  }
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const randomId = Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  return `${prefix.replace(/[^a-zA-Z0-9_-]/g, "_")}_${randomId}`;
+}
+
+function credentialPayloadForShare(
+  card: WalletCard,
+  credentialData: Record<string, unknown>,
+): Record<string, unknown> {
+  const lifecycle = credentialLifecyclePolicy(card);
+  const trustcare = recordValue(credentialData.trustcare);
+  return {
+    ...credentialData,
+    trustcare: {
+      ...trustcare,
+      shareSource: {
+        authority: lifecycle.sourceAuthority,
+        signingOwner: lifecycle.signingOwner,
+        sourceSystem: card.sourceSystem ?? undefined,
+        credentialId: String(card.credentialId),
+      },
+    },
+  };
 }
 
 function validJwtOrNull(value: string | null | undefined): string | null {
@@ -253,4 +279,10 @@ function isEnvelopedCredentialJwt(value: Record<string, unknown>): boolean {
     typeof value.id === "string" &&
     value.id.startsWith("data:application/vc+jwt,")
   );
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }

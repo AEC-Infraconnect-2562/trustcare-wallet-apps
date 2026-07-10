@@ -38,6 +38,14 @@ origin and `TRUSTCARE_GATEWAY_ALLOWED_ORIGINS`. It rejects non-JSON publish
 requests, caps JSON body size, returns `410 Gone` for expired artifacts, and
 sets no-store/security headers on API responses.
 
+Production mutations require either a trusted browser `Origin` or a configured
+backend bearer token. VP publication preserves existing nested `vc+jwt`
+credentials and fails closed on unsigned raw credentials. Portal-synced VC
+proofs must come from the original Portal/hospital issuer, and payer artifacts
+must come from the allowlisted payer/integration issuer operation. Artifact IDs
+are random per sharing event and immutable after first publication; only an
+identical request digest may be retried under the same ID.
+
 Green verification requires verifier-side signature validation against JWKS,
 nested VC verification for VP JWT artifacts, or cryptographic W3C Data
 Integrity proof verification for supported JCS suites. Payload metadata such as

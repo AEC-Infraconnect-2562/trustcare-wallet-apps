@@ -7,6 +7,7 @@ import {
 } from "@trustcare/wallet-core";
 import {
   createShareGatewayClient,
+  issuePayerCredentialWithShareGateway,
   publishCertifiedShlTrustArtifacts,
   publishVpSharePackage,
   requestBodyForShareGateway,
@@ -210,6 +211,10 @@ describe("shareGatewayClient", () => {
     const response = await signCredentialWithShareGateway({
       gatewayBaseUrl,
       fetchImpl: fetchImpl as typeof fetch,
+      issuerServiceOperation: "demo_issuer_reissue",
+      sourceAuthority: "issuer_signed",
+      signingOwner: "source_issuer",
+      sourceSystem: card.sourceSystem,
       cardId: card.id,
       credentialId: card.credentialId,
       credential: card.credentialData ?? {},
@@ -221,6 +226,10 @@ describe("shareGatewayClient", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]?.url).toBe(`${gatewayBaseUrl}/credentials/sign`);
     expect(requests[0]?.body).toMatchObject({
+      issuerServiceOperation: "demo_issuer_reissue",
+      sourceAuthority: "issuer_signed",
+      signingOwner: "source_issuer",
+      sourceSystem: card.sourceSystem,
       cardId: card.id,
       credentialId: card.credentialId,
       credentialType: card.credentialType,
@@ -229,6 +238,63 @@ describe("shareGatewayClient", () => {
     expect(response.issuerDid).toBe("did:web:wallet.example:hospital:tcc");
     expect(response.credentialProof.source).toBe(
       "trustcare_hospital_issuer_profile",
+    );
+  });
+
+  it("issues payer artifacts only through the explicit demo payer integration endpoint", async () => {
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const fetchImpl = async (url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<
+        string,
+        unknown
+      >;
+      requests.push({ url: String(url), body });
+      return jsonResponse({
+        ok: true,
+        mode: "portal_backend",
+        payerId: body.payerId,
+        credentialId: "payer-vc-001",
+        credentialJwt: "payer.signed.jwt",
+        issuerDid:
+          "did:web:wallet.example:payer:international_tpa_mock",
+        jwksUrl:
+          "https://wallet.example/payer/international_tpa_mock/jwks.json",
+        signedCredential: body.credential,
+        credentialProof: {
+          type: "W3C VC JWT",
+          format: "vc+jwt",
+          jwt: "payer.signed.jwt",
+          alg: "ES256",
+          kid: "did:web:wallet.example:payer:international_tpa_mock#key-1",
+          source: "trustcare_demo_payer_integration_issuer",
+        },
+        warnings: [],
+        errors: [],
+      });
+    };
+
+    const response = await issuePayerCredentialWithShareGateway({
+      gatewayBaseUrl,
+      fetchImpl: fetchImpl as typeof fetch,
+      payerId: "international_tpa_mock",
+      credential: {
+        type: ["VerifiableCredential", "GuaranteeLetterCredential"],
+        credentialSubject: { payerId: "international_tpa_mock" },
+      },
+      sourceSystem: "payer_adapter",
+    });
+
+    expect(requests[0]?.url).toBe(
+      `${gatewayBaseUrl}/payer/credentials/issue`,
+    );
+    expect(requests[0]?.body).toMatchObject({
+      issuerServiceOperation: "demo_payer_integration_issue",
+      sourceAuthority: "payer_adapter",
+      signingOwner: "payer_adapter",
+      payerId: "international_tpa_mock",
+    });
+    expect(response.credentialProof.source).toBe(
+      "trustcare_demo_payer_integration_issuer",
     );
   });
 
