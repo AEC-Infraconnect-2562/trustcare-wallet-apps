@@ -7,12 +7,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import {
   getDemoUser,
   walletDemoUsers,
   type WalletDemoUser,
 } from "@trustcare/wallet-core";
+import { env } from "../env";
 
 const activeUserStorageKey = "trustcare_wallet_mobile_active_user";
 const defaultUserId = "demo-patient-complete-001";
@@ -34,22 +36,34 @@ export function MobileWalletSessionProvider({
 }: {
   children: ReactNode;
 }) {
-  const [userId, setUserId] = useState(defaultUserId);
+  if (env.runtimeEnvironment !== "demo") {
+    return <DemoSessionDisabledBoundary />;
+  }
+  return <HydratedDemoWalletSession>{children}</HydratedDemoWalletSession>;
+}
+
+function HydratedDemoWalletSession({ children }: { children: ReactNode }) {
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     void SecureStore.getItemAsync(activeUserStorageKey)
       .then((storedUserId) => {
-        if (
+        if (cancelled) return;
+        const knownStoredUser =
           storedUserId &&
-          walletDemoUsers.some((user) => user.id === storedUserId)
-        ) {
-          setUserId(storedUserId);
-        }
+          walletDemoUsers.some((user) => user.id === storedUserId);
+        setUserId(knownStoredUser ? storedUserId : defaultUserId);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!cancelled) setUserId(defaultUserId);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const user = useMemo(() => getDemoUser(userId), [userId]);
+  const user = useMemo(() => (userId ? getDemoUser(userId) : null), [userId]);
 
   const setActiveUserId = useCallback(async (nextUserId: string) => {
     if (!walletDemoUsers.some((item) => item.id === nextUserId)) return;
@@ -64,21 +78,49 @@ export function MobileWalletSessionProvider({
     await SecureStore.deleteItemAsync(activeUserStorageKey);
   }, []);
 
-  const value = useMemo<MobileWalletSession>(
-    () => ({
-      user,
-      userId: user.id,
-      users: walletDemoUsers,
-      setActiveUserId,
-      resetActiveUser,
-    }),
+  const value = useMemo<MobileWalletSession | null>(
+    () =>
+      user
+        ? {
+            user,
+            userId: user.id,
+            users: walletDemoUsers,
+            setActiveUserId,
+            resetActiveUser,
+          }
+        : null,
     [resetActiveUser, setActiveUserId, user],
   );
+
+  if (!value) return <SessionHydrationBoundary />;
 
   return (
     <MobileWalletSessionContext.Provider value={value}>
       {children}
     </MobileWalletSessionContext.Provider>
+  );
+}
+
+function SessionHydrationBoundary() {
+  return (
+    <View style={styles.boundary} accessibilityRole="progressbar">
+      <ActivityIndicator color="#365f91" size="large" />
+      <Text style={styles.boundaryTitle}>กำลังเปิด Wallet ของคุณ</Text>
+      <Text style={styles.boundaryBody}>
+        ระบบกำลังตรวจสอบเจ้าของ Wallet ก่อนแสดงเอกสาร
+      </Text>
+    </View>
+  );
+}
+
+function DemoSessionDisabledBoundary() {
+  return (
+    <View style={styles.boundary} accessibilityRole="alert">
+      <Text style={styles.boundaryTitle}>ไม่เปิดข้อมูลสาธิตในโหมดนี้</Text>
+      <Text style={styles.boundaryBody}>
+        ต้องเชื่อมต่อระบบเข้าสู่ระบบจริงก่อนจึงจะแสดงเอกสารได้
+      </Text>
+    </View>
   );
 }
 
@@ -91,3 +133,26 @@ export function useActiveWalletUser() {
   }
   return session;
 }
+
+const styles = StyleSheet.create({
+  boundary: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f4f7f9",
+    padding: 28,
+    gap: 10,
+  },
+  boundaryTitle: {
+    color: "#182230",
+    fontSize: 20,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  boundaryBody: {
+    color: "#667085",
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center",
+  },
+});

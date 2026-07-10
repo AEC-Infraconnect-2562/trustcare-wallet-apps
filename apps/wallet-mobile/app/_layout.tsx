@@ -1,12 +1,6 @@
 import { Tabs } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
-import {
-  Activity,
-  FileText,
-  Home,
-  QrCode,
-  Send,
-} from "lucide-react-native";
+import { Activity, FileText, Home, QrCode, Send } from "lucide-react-native";
 import { NativeLanguageProvider } from "@trustcare/i18n/src/provider.native";
 import { MobileWalletSessionProvider } from "../src/hooks/useActiveWalletUser";
 import {
@@ -37,7 +31,9 @@ function ProductionRuntimeBoundary() {
         <Text style={styles.runtimeEyebrow}>
           {env.environmentBanner.labelTh}
         </Text>
-        <Text style={styles.runtimeTitle}>ยังไม่ได้เชื่อมต่อระบบเข้าสู่ระบบ</Text>
+        <Text style={styles.runtimeTitle}>
+          ยังไม่ได้เชื่อมต่อระบบเข้าสู่ระบบ
+        </Text>
         <Text style={styles.runtimeBody}>
           Wallet จะไม่เปิดข้อมูลสาธิตแทนข้อมูลจริง ต้องตั้งค่าระบบเข้าสู่ระบบ
           คลังเอกสารที่ปลอดภัย และการเชื่อมต่อ TrustCare Portal ก่อนใช้งาน
@@ -104,6 +100,7 @@ function WalletTabs() {
       <Tabs.Screen name="settings" options={{ href: null }} />
       <Tabs.Screen name="history" options={{ href: null }} />
       <Tabs.Screen name="credential/[id]" options={{ href: null }} />
+      <Tabs.Screen name="document/[id]" options={{ href: null }} />
     </Tabs>
   );
 }

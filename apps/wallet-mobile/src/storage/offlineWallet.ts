@@ -1,11 +1,17 @@
 import * as SQLite from "expo-sqlite";
 import type { WalletCard, WalletStoredObject } from "@trustcare/wallet-core";
+import { createRetryableAsyncLoader } from "../utils/retryableAsyncLoader";
 
-let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
+const openDatabase = createRetryableAsyncLoader(() =>
+  SQLite.openDatabaseAsync("trustcare_wallet.db"),
+);
 
 function db() {
-  dbPromise ??= SQLite.openDatabaseAsync("trustcare_wallet.db");
-  return dbPromise;
+  return openDatabase();
+}
+
+export function openOfflineWalletDatabase() {
+  return db();
 }
 
 export async function initOfflineWallet() {

@@ -1,3 +1,3 @@
-import { StoreScreen } from "../src/screens/StoreScreen";
+import { RecordsScreen } from "../src/screens/RecordsScreen";
 
-export default StoreScreen;
+export default RecordsScreen;

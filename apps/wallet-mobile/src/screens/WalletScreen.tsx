@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Image,
   Pressable,
@@ -17,62 +17,31 @@ import {
   Wallet,
 } from "lucide-react-native";
 import { router } from "expo-router";
-import { MobileWalletCard } from "@trustcare/ui-mobile";
 import {
-  canPresentCredential,
-  flattenCardsByCategory,
-  getDemoCardsByCategory,
-  walletCardHasCryptographicProof,
-  type WalletCard,
+  isWalletDocumentTrustVerified,
+  type WalletDocumentRecordV2,
 } from "@trustcare/wallet-core";
-import { env } from "../env";
+import { WalletDocumentListItem } from "../components/WalletDocumentListItem";
+import { RuntimeEnvironmentBanner } from "../components/RuntimeEnvironmentBanner";
+import { isCurrentPatientDocument } from "../documents/patientDocumentPresentation";
 import { useActiveWalletUser } from "../hooks/useActiveWalletUser";
+import { useMobileWalletDocuments } from "../hooks/useMobileWalletDocuments";
 import { useMobileSecuritySettings } from "../hooks/useMobileSecuritySettings";
-import {
-  cacheCards,
-  loadCards,
-  loadLastCardSync,
-} from "../storage/offlineWallet";
 
 export function WalletScreen() {
   const { user } = useActiveWalletUser();
   const security = useMobileSecuritySettings();
-  const [cached, setCached] = useState<WalletCard[]>([]);
-  const [lastSync, setLastSync] = useState<string | null>(null);
+  const { documents, isLoading, error, refresh } = useMobileWalletDocuments();
   const online = useNetworkState();
-  const cards = useMemo(
-    () => flattenCardsByCategory(getDemoCardsByCategory(user.id)),
-    [user.id],
+  const currentDocuments = documents.filter(isCurrentPatientDocument);
+  const verifiedDocuments = documents.filter((document) =>
+    isWalletDocumentTrustVerified(document),
   );
-
-  useEffect(() => {
-    void cacheCards(cards, user.id);
-    void loadCards(user.id)
-      .then(setCached)
-      .catch(() => undefined);
-    void loadLastCardSync(user.id)
-      .then(setLastSync)
-      .catch(() => undefined);
-  }, [cards, user.id]);
-
-  const displayCards = cached.length ? cached : cards;
-  const activeCards = displayCards.filter((card) => canPresentCredential(card));
-  const cryptographicallyVerifiedCards = displayCards.filter((card) =>
-    walletCardHasCryptographicProof(card),
-  );
+  const latestReceivedAt = latestDocumentTimestamp(documents);
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      {env.environmentBanner.bannerVisible ? (
-        <View style={styles.environmentBanner} accessibilityRole="summary">
-          <Text style={styles.environmentBannerTitle}>
-            {env.environmentBanner.labelTh}
-          </Text>
-          <Text style={styles.environmentBannerBody}>
-            {env.environmentBanner.descriptionTh}
-          </Text>
-        </View>
-      ) : null}
+      <RuntimeEnvironmentBanner />
       <View style={styles.header}>
         <View>
           <Text style={styles.kicker}>TrustCare Wallet</Text>
@@ -100,25 +69,28 @@ export function WalletScreen() {
         <View style={styles.statLeft}>
           <Wallet color="#4f67f2" size={22} />
           <View>
-            <Text style={styles.statText}>{displayCards.length} เอกสาร</Text>
+            <Text style={styles.statText}>{documents.length} เอกสาร</Text>
             <Text style={styles.statSub}>
-              {activeCards.length} รายการพร้อมใช้
+              {currentDocuments.length} รายการเป็นฉบับปัจจุบัน
             </Text>
           </View>
         </View>
         <Text style={styles.archive}>
-          <Archive size={16} color="#4f67f2" /> เก็บในเครื่อง {cached.length} รายการ
+          <Archive size={16} color="#4f67f2" /> อยู่ในคลังบนอุปกรณ์{" "}
+          {documents.length} รายการ
         </Text>
       </View>
 
       <View style={styles.trustRow}>
         <View style={styles.trustChip}>
-          <ShieldCheck color="#0f7c55" size={16} />
+          <ShieldCheck color="#365f91" size={16} />
           <Text style={styles.trustText}>
-            ตรวจ proof แล้ว {cryptographicallyVerifiedCards.length} รายการ
+            ตรวจสอบครบแล้ว {verifiedDocuments.length} รายการ
           </Text>
         </View>
-        <Text style={styles.scopeText}>อ้างอิงจากผลตรวจล่าสุดของแต่ละเอกสาร</Text>
+        <Text style={styles.scopeText}>
+          อ้างอิงจากผลตรวจล่าสุดของแต่ละเอกสาร
+        </Text>
       </View>
       <View style={styles.stateGrid}>
         <StateChip
@@ -130,7 +102,7 @@ export function WalletScreen() {
             )
           }
           label={online ? "ออนไลน์" : "ออฟไลน์"}
-          value={online ? "sync พร้อมใช้" : "ใช้ cache ในเครื่อง"}
+          value={online ? "พร้อมรับข้อมูลใหม่" : "ใช้เอกสารที่เก็บไว้ในเครื่อง"}
         />
         <StateChip
           icon={
@@ -139,32 +111,63 @@ export function WalletScreen() {
               size={16}
             />
           }
-          label="Biometric"
-          value={security.biometricEnabled ? "เปิดใช้งาน" : "ปิดอยู่"}
+          label="การล็อกด้วยลายนิ้วมือหรือใบหน้า"
+          value={security.biometricEnabled ? "เปิดใช้งาน" : "ยังไม่ได้เปิด"}
         />
         <StateChip
           icon={<Archive color="#4f67f2" size={16} />}
-          label="Last sync"
+          label="รับเอกสารล่าสุด"
           value={
-            lastSync
-              ? new Date(lastSync).toLocaleString("th-TH")
-              : "ยังไม่ sync"
+            latestReceivedAt
+              ? new Date(latestReceivedAt).toLocaleString("th-TH")
+              : "ยังไม่มีเอกสาร"
           }
         />
       </View>
 
+      {error ? (
+        <Pressable style={styles.loadError} onPress={refresh}>
+          <Text style={styles.loadErrorTitle}>เปิดคลังเอกสารไม่สำเร็จ</Text>
+          <Text style={styles.loadErrorBody}>
+            {error} · แตะเพื่อลองอีกครั้ง
+          </Text>
+        </Pressable>
+      ) : null}
+      {isLoading ? (
+        <Text style={styles.loadingText}>กำลังเปิดเอกสารของคุณ…</Text>
+      ) : null}
       <View style={styles.stack}>
-        {displayCards.slice(0, 8).map((card, index) => (
-          <MobileWalletCard
-            key={card.id}
-            card={card}
-            stacked={index > 0}
-            onPress={() => router.push(`/credential/${card.id}`)}
+        {documents.slice(0, 5).map((document) => (
+          <WalletDocumentListItem
+            key={document.id}
+            document={document}
+            onPress={() =>
+              router.push({
+                pathname: "/document/[id]",
+                params: { id: document.id },
+              })
+            }
           />
         ))}
       </View>
     </ScrollView>
   );
+}
+
+function latestDocumentTimestamp(
+  documents: readonly WalletDocumentRecordV2[],
+): string | null {
+  let latest: string | null = null;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const document of documents) {
+    const value = document.provenance.receivedAt;
+    const time = Date.parse(value);
+    if (Number.isFinite(time) && time > latestTime) {
+      latest = value;
+      latestTime = time;
+    }
+  }
+  return latest;
 }
 
 function StateChip({
@@ -218,24 +221,6 @@ function useNetworkState() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#f4f6fa" },
   content: { padding: 20, paddingBottom: 120 },
-  environmentBanner: {
-    borderWidth: 1,
-    borderColor: "#bfdbfe",
-    borderRadius: 12,
-    backgroundColor: "#eff6ff",
-    padding: 12,
-    gap: 3,
-  },
-  environmentBannerTitle: {
-    color: "#1e3a5f",
-    fontSize: 13,
-    fontWeight: "800",
-  },
-  environmentBannerBody: {
-    color: "#365773",
-    fontSize: 12,
-    lineHeight: 18,
-  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -292,11 +277,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     borderRadius: 999,
-    backgroundColor: "#dff8e9",
+    backgroundColor: "#eaf2fb",
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  trustText: { color: "#0b6b42", fontSize: 12, fontWeight: "700" },
+  trustText: { color: "#365f91", fontSize: 12, fontWeight: "700" },
   scopeText: { color: "#667085", fontSize: 11 },
   stateGrid: { gap: 8, marginTop: 14 },
   stateChip: {
@@ -312,5 +297,17 @@ const styles = StyleSheet.create({
   },
   stateLabel: { color: "#111827", fontSize: 12, fontWeight: "800" },
   stateValue: { color: "#647084", fontSize: 11.5, marginTop: 2 },
-  stack: { paddingTop: 22 },
+  loadError: {
+    marginTop: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#f4c7c3",
+    backgroundColor: "#fff5f4",
+    padding: 14,
+    gap: 4,
+  },
+  loadErrorTitle: { color: "#b42318", fontSize: 14, fontWeight: "800" },
+  loadErrorBody: { color: "#7a271a", fontSize: 12, lineHeight: 18 },
+  loadingText: { color: "#667085", fontSize: 13, marginTop: 18 },
+  stack: { paddingTop: 22, gap: 10 },
 });
