@@ -161,6 +161,21 @@ describe("credential lifecycle policy", () => {
     expect(summary.partnerWallet).toBe(1);
     expect(summary.patientProvided).toBe(1);
   });
+
+  it("does not classify a provider-issued claim document as payer authority by type alone", () => {
+    const providerClaim = walletCard({
+      cardType: "claim_package",
+      credentialType: "ClaimPackageCredential",
+      sourceSystem: "trustcare_demo_issuer",
+      issuerDid: "did:web:trustcare.network:hospital:tcc",
+      credentialProof: undefined,
+      credentialJwt: undefined,
+    });
+
+    const summary = summarizeCredentialSources([providerClaim]);
+    expect(summary.payerAdapter).toBe(0);
+    expect(summary.issuerSigned).toBe(1);
+  });
 });
 
 function walletCard(overrides: Partial<WalletCard> = {}): WalletCard {

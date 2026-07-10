@@ -1422,7 +1422,16 @@ async function verifyResolvedVpPayload(
     verificationPayload: {
       trustLevel,
       verified,
+      presentationId: resolved.id,
       holderDid,
+      purpose,
+      recipient,
+      audience,
+      validFrom: stringOrUndefined(payload.validFrom),
+      validUntil: stringOrUndefined(payload.validUntil),
+      selectedFields: Array.isArray(payload.selectedFields)
+        ? payload.selectedFields.map(String)
+        : undefined,
       credentials,
       evidenceAssessment: evidence.assessment,
     },

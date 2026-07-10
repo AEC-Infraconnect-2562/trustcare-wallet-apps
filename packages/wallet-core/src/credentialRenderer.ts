@@ -1,4 +1,5 @@
 import type { WalletCard } from "./models";
+import type { WalletDocumentRecordV2 } from "./walletDocumentV2";
 import {
   isTrustArtifactDocumentType,
   normalizeDocumentType,
@@ -43,9 +44,63 @@ export type CredentialRenderNarrative = {
 };
 
 export type ClaimReceiptRenderKind =
-  | "payment_receipt"
-  | "submission_receipt"
-  | "claim_status";
+  "payment_receipt" | "submission_receipt" | "claim_status";
+
+export type CredentialPaperSectionKind =
+  "fields" | "table" | "note" | "alert" | "letter";
+
+export type CredentialPaperTableColumn = {
+  key: string;
+  label: string;
+  labelEn?: string;
+  align?: "start" | "center" | "end";
+};
+
+export type CredentialPaperSection = {
+  key: string;
+  title: string;
+  titleEn?: string;
+  kind: CredentialPaperSectionKind;
+  fields?: CredentialRenderField[];
+  columns?: CredentialPaperTableColumn[];
+  rows?: CredentialRenderItem[];
+  body?: unknown;
+  tone?: "neutral" | "info" | "warning" | "critical";
+  sourcePath?: string;
+};
+
+export type CredentialPaperSignatory = {
+  name?: string;
+  role?: string;
+  licenseNo?: string;
+  organization?: string;
+  signedAt?: string;
+};
+
+export type CredentialPaperModel = {
+  letterhead: {
+    nameTh?: string;
+    nameEn?: string;
+    code?: string;
+    identifier?: string;
+    address?: string;
+    phone?: string;
+    logoUrl?: string;
+    did?: string;
+  };
+  title: {
+    th: string;
+    en?: string;
+  };
+  patientFields: CredentialRenderField[];
+  metadataFields: CredentialRenderField[];
+  sections: CredentialPaperSection[];
+  signatories: CredentialPaperSignatory[];
+  evidence: CredentialRenderItem[];
+  watermark?: string;
+  issuerRole?: string;
+  generic: boolean;
+};
 
 export type CredentialRenderPayloads = {
   labReport: CredentialRenderItem;
@@ -88,6 +143,7 @@ export type CredentialRenderModel = {
   fields: CredentialRenderField[];
   sections: CredentialRenderSection[];
   narrative: CredentialRenderNarrative;
+  paper: CredentialPaperModel;
   claimReceiptKind?: ClaimReceiptRenderKind;
 };
 
@@ -386,13 +442,21 @@ export function credentialRenderModelFromCard(
   const rawSubject = getObject(credential, "credentialSubject") ?? credential;
   const subject = normalizePortalRenderSubject(rawSubject, credential);
   const renderData = extractPortalRenderData(rawSubject);
-  const patient = firstRecord(
-    getObject(renderData, "patient"),
-    getObject(subject, "patient"),
-    getObject(subject, "holder"),
-    getObject(subject, "staff"),
-    getObject(subject, "student"),
-  );
+  const documentType = normalizeDocumentType(card.cardType) ?? card.cardType;
+  const patient =
+    documentType === "staff_identity"
+      ? firstRecord(
+          getObject(subject, "staff"),
+          getObject(renderData, "patient"),
+          getObject(subject, "patient"),
+        )
+      : firstRecord(
+          getObject(renderData, "patient"),
+          getObject(subject, "patient"),
+          getObject(subject, "holder"),
+          getObject(subject, "staff"),
+          getObject(subject, "student"),
+        );
   const hospital = firstRecord(
     getObject(renderData, "hospital"),
     getObject(subject, "hospital"),
@@ -404,7 +468,6 @@ export function credentialRenderModelFromCard(
     getObject(subject, "document"),
   );
   const issuer = firstRecord(getObject(credential, "issuer"), hospital);
-  const documentType = normalizeDocumentType(card.cardType) ?? card.cardType;
   const payloads = credentialRenderPayloads(subject);
   const claimReceiptKind =
     documentType === "claim_receipt"
@@ -426,6 +489,13 @@ export function credentialRenderModelFromCard(
     document,
     fields,
   );
+  const narrative = credentialDocumentNarrative(
+    card,
+    documentType,
+    subject,
+    patient,
+    claimReceiptKind,
+  );
 
   return {
     documentType,
@@ -444,15 +514,1177 @@ export function credentialRenderModelFromCard(
     payloads,
     fields,
     sections,
-    narrative: credentialDocumentNarrative(
+    narrative,
+    paper: credentialPaperModelFromCard(
       card,
       documentType,
+      credential,
       subject,
       patient,
+      hospital,
+      issuer,
+      document,
+      payloads,
+      fields,
       claimReceiptKind,
     ),
     claimReceiptKind,
   };
+}
+
+/**
+ * Creates an ephemeral renderer input from a VC that has already been verified
+ * by the caller. This adapter does not persist the credential and deliberately
+ * does not infer a verification result.
+ */
+export function walletCardForCredentialRendering(
+  value: unknown,
+  index = 0,
+): WalletCard | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const credential = value as CredentialRenderItem;
+  const rawSubject = getObject(credential, "credentialSubject");
+  if (!rawSubject) return null;
+  const documentType = credentialDocumentType(credential, rawSubject);
+  if (!documentType) return null;
+
+  const subject = normalizePortalRenderSubject(rawSubject, credential);
+  const renderData = extractPortalRenderData(rawSubject);
+  const humanDocument = getObject(rawSubject, "humanDocument") ?? {};
+  const document = firstRecord(
+    getObject(renderData, "document"),
+    getObject(subject, "document"),
+  );
+  const patient = firstRecord(
+    getObject(renderData, "patient"),
+    getObject(subject, "patient"),
+    getObject(subject, "holder"),
+    getObject(subject, "staff"),
+  );
+  const trustcare = getObject(credential, "trustcare") ?? {};
+  const trustcareDisplay = getObject(trustcare, "display") ?? {};
+  const issuerObject = getObject(credential, "issuer");
+  const credentialTypes = credentialTypeValues(credential);
+  const credentialType = credentialTypes.find(
+    (type) => type !== "VerifiableCredential",
+  );
+  const issuedAt = firstText(
+    getText(document, "issuedAt"),
+    getText(humanDocument, "issuedAt"),
+    getText(credential, "validFrom"),
+    getText(credential, "issuanceDate"),
+  );
+  const expiresAt = firstText(
+    getText(document, "expiresAt"),
+    getText(humanDocument, "expiresAt"),
+    getText(credential, "validUntil"),
+    getText(credential, "expirationDate"),
+  );
+  const displayName = firstText(
+    getText(renderData, "titleTh"),
+    getText(humanDocument, "titleTh"),
+    getText(document, "titleTh"),
+    getText(trustcareDisplay, "patientFacingTitleTh"),
+    getText(credential, "name"),
+    credentialType,
+    getText(trustcare, "documentType"),
+  );
+  if (!displayName) return null;
+
+  const issuerValue = getText(credential, "issuer");
+  const credentialStatus = getObject(credential, "credentialStatus");
+  return {
+    id: index + 1,
+    cardType: documentType,
+    displayName,
+    displayNameEn: firstText(
+      getText(renderData, "titleEn"),
+      getText(humanDocument, "titleEn"),
+      getText(document, "titleEn"),
+      getText(trustcareDisplay, "patientFacingTitleEn"),
+    ),
+    documentCategory:
+      firstText(
+        getText(trustcare, "documentCategory"),
+        getText(subject, "documentCategory"),
+        getText(document, "category"),
+      ) ?? "",
+    credentialId: firstText(getText(credential, "id")) ?? "",
+    credentialStatus:
+      firstText(
+        getText(document, "status"),
+        getText(credentialStatus, "status"),
+      ) ?? "",
+    credentialData: credential,
+    credentialType,
+    issuerHospitalName: firstText(
+      getText(issuerObject, "nameTh"),
+      getText(issuerObject, "name"),
+      getText(issuerObject, "nameEn"),
+    ),
+    issuerDid: firstText(getText(issuerObject, "id"), issuerValue),
+    holderDid: getText(subject, "id"),
+    patientAvatarUrl: firstText(
+      getText(patient, "photoUrl"),
+      getText(patient, "avatarUrl"),
+      getText(patient, "imageUrl"),
+    ),
+    sourceSystem: firstText(
+      getText(renderData, "sourceSystem"),
+      getText(humanDocument, "sourceSystem"),
+      getText(trustcare, "sourceSystem"),
+    ),
+    issuedAt,
+    expiresAt,
+    createdAt: firstText(getText(credential, "createdAt"), issuedAt) ?? "",
+  };
+}
+
+/**
+ * Rendering adapter for the Constitution V3 document model. It preserves the
+ * exact source credential payload when available and maps only canonical
+ * record metadata otherwise; it does not infer trust or clinical claims.
+ */
+export function walletCardForDocumentRendering(
+  record: WalletDocumentRecordV2,
+): WalletCard {
+  const credentialPayload = getRecord(record.content.credentialPayload);
+  const credentialId = record.credential.credentialId ?? "";
+  const fallbackSubject: CredentialRenderItem = {
+    id: record.owner.holderDid ?? record.owner.id,
+    document: {
+      titleTh: record.title.th,
+      titleEn: record.title.en,
+      status: record.lifecycle.status,
+      issuedAt: record.lifecycle.issuedAt,
+      expiresAt: record.lifecycle.expiresAt,
+    },
+  };
+  const renderPayload = Object.keys(credentialPayload).length
+    ? credentialPayload
+    : {
+        ...(credentialId ? { id: credentialId } : {}),
+        type: [
+          "VerifiableCredential",
+          record.credential.credentialType ?? record.documentType,
+        ],
+        issuer: {
+          id: record.provenance.issuerDid,
+          name: record.provenance.issuerName,
+        },
+        validFrom: record.lifecycle.issuedAt,
+        validUntil: record.lifecycle.expiresAt,
+        credentialSubject: fallbackSubject,
+      };
+
+  return {
+    id: 0,
+    cardType: record.documentType,
+    displayName: record.title.th || record.title.en || record.documentType,
+    displayNameEn: record.title.en,
+    documentCategory: record.category,
+    credentialId,
+    credentialStatus: record.lifecycle.status,
+    credentialData: renderPayload,
+    credentialJwt: record.credential.jwt,
+    credentialProof:
+      record.credential.proof && typeof record.credential.proof === "object"
+        ? (record.credential.proof as WalletCard["credentialProof"])
+        : undefined,
+    credentialType: record.credential.credentialType,
+    issuerHospitalName: record.provenance.issuerName,
+    issuerDid: record.provenance.issuerDid,
+    holderDid: record.owner.holderDid,
+    ownerUserId: record.owner.id,
+    patientId: record.owner.patientId,
+    sourceSystem: record.provenance.sourceKind,
+    issuedAt: record.lifecycle.issuedAt,
+    expiresAt: record.lifecycle.expiresAt,
+    createdAt: record.provenance.receivedAt,
+    pinned: record.local.pinned,
+  };
+}
+
+export function credentialPaperModelFromCard(
+  card: WalletCard,
+  documentType: string,
+  credential: CredentialRenderItem,
+  subject: CredentialRenderItem,
+  patient: CredentialRenderItem,
+  hospital: CredentialRenderItem,
+  issuer: CredentialRenderItem,
+  document: CredentialRenderItem,
+  payloads: CredentialRenderPayloads,
+  fields: CredentialRenderField[],
+  claimReceiptKind?: ClaimReceiptRenderKind,
+): CredentialPaperModel {
+  const humanDocument = getObject(subject, "humanDocument") ?? {};
+  const renderData = getObject(humanDocument, "renderData") ?? humanDocument;
+  const declaredIssuer = firstRecord(
+    getObject(renderData, "issuer"),
+    getObject(humanDocument, "issuer"),
+  );
+  const letterheadSource = firstRecord(
+    declaredIssuer,
+    issuer,
+    getObject(renderData, "hospital"),
+    hospital,
+  );
+  const titleTh = firstText(
+    getText(renderData, "titleTh"),
+    getText(humanDocument, "titleTh"),
+    getText(document, "titleTh"),
+    card.displayName,
+  );
+  const paperSections = paperSectionsForCredential(
+    documentType,
+    subject,
+    fields,
+    payloads,
+    claimReceiptKind,
+  );
+
+  return {
+    letterhead: {
+      nameTh: firstText(
+        getText(letterheadSource, "nameTh"),
+        getText(letterheadSource, "hospitalNameTh"),
+      ),
+      nameEn: firstText(
+        getText(letterheadSource, "nameEn"),
+        getText(letterheadSource, "name"),
+        getText(letterheadSource, "hospitalNameEn"),
+      ),
+      code: getText(letterheadSource, "code"),
+      identifier: firstText(
+        getText(letterheadSource, "identifier"),
+        getText(letterheadSource, "licenseNo"),
+      ),
+      address: getText(letterheadSource, "address"),
+      phone: getText(letterheadSource, "phone"),
+      logoUrl: firstText(
+        getText(letterheadSource, "logoUrl"),
+        getText(letterheadSource, "logo"),
+      ),
+      did: firstText(
+        getText(letterheadSource, "did"),
+        getText(letterheadSource, "id"),
+        getText(issuer, "id"),
+      ),
+    },
+    title: {
+      th: titleTh ?? "",
+      en: firstText(
+        getText(renderData, "titleEn"),
+        getText(humanDocument, "titleEn"),
+        getText(document, "titleEn"),
+        card.displayNameEn,
+      ),
+    },
+    patientFields: paperPatientFields(subject, patient),
+    metadataFields: paperMetadataFields(
+      card,
+      documentType,
+      credential,
+      document,
+      issuer,
+    ),
+    sections: paperSections.sections,
+    signatories: paperSignatories(subject, payloads),
+    evidence: credentialEvidence(credential),
+    watermark: explicitCredentialWatermark(credential, humanDocument),
+    issuerRole: firstText(
+      getText(credential, "issuerRole"),
+      getText(issuer, "role"),
+      getText(humanDocument, "issuerRole"),
+      getText(declaredIssuer, "role"),
+      getText(getObject(credential, "trustcare"), "issuerRole"),
+    ),
+    generic: paperSections.generic,
+  };
+}
+
+type PaperColumnSpec = CredentialPaperTableColumn & {
+  aliases: string[];
+};
+
+function credentialDocumentType(
+  credential: CredentialRenderItem,
+  subject: CredentialRenderItem,
+): string | null {
+  const trustcare = getObject(credential, "trustcare");
+  const humanDocument = getObject(subject, "humanDocument");
+  const renderData = getObject(humanDocument, "renderData") ?? humanDocument;
+  const document = firstRecord(
+    getObject(renderData, "document"),
+    getObject(subject, "document"),
+  );
+  const candidates = [
+    getText(trustcare, "documentType"),
+    getText(subject, "documentType"),
+    getText(document, "type"),
+    ...credentialTypeValues(credential),
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const withoutSuffix = candidate
+      .replace(/Credential$/i, "")
+      .replace(/VC$/i, "");
+    const values = [
+      candidate,
+      withoutSuffix,
+      withoutSuffix.replace(/([a-z0-9])([A-Z])/g, "$1_$2"),
+    ];
+    for (const value of values) {
+      const normalized = normalizeDocumentType(value);
+      if (normalized) return normalized;
+    }
+  }
+  return null;
+}
+
+function credentialTypeValues(credential: CredentialRenderItem): string[] {
+  const value = credential.type;
+  if (Array.isArray(value))
+    return value.filter((item): item is string => typeof item === "string");
+  return typeof value === "string" ? [value] : [];
+}
+
+function paperPatientFields(
+  subject: CredentialRenderItem,
+  patient: CredentialRenderItem,
+): CredentialRenderField[] {
+  return [
+    field(
+      "ชื่อ-นามสกุล",
+      firstText(
+        getText(patient, "fullNameTh"),
+        getText(patient, "nameTh"),
+        getText(subject, "nameTh"),
+        getText(subject, "name"),
+      ),
+      "credentialSubject.patient.fullNameTh",
+      true,
+    ),
+    field(
+      "Name",
+      firstText(
+        getText(patient, "fullNameEn"),
+        getText(patient, "nameEn"),
+        getText(subject, "nameEn"),
+      ),
+      "credentialSubject.patient.fullNameEn",
+      true,
+    ),
+    field("HN", getText(patient, "hn"), "credentialSubject.patient.hn", true),
+    field(
+      "CarePass ID",
+      getText(patient, "carepassId"),
+      "credentialSubject.patient.carepassId",
+      false,
+    ),
+    field(
+      "วันเกิด",
+      formatDate(getText(patient, "birthDate")),
+      "credentialSubject.patient.birthDate",
+      false,
+    ),
+    field(
+      "เพศ",
+      getText(patient, "gender"),
+      "credentialSubject.patient.gender",
+      false,
+    ),
+    field(
+      "สัญชาติ",
+      getText(patient, "nationality"),
+      "credentialSubject.patient.nationality",
+      false,
+    ),
+    field(
+      "เลขประจำตัว",
+      firstText(
+        getText(patient, "nationalId"),
+        getText(patient, "thaiIdMasked"),
+        getText(subject, "nationalId"),
+        getText(subject, "idCardNo"),
+      ),
+      "credentialSubject.patient.nationalId",
+      false,
+    ),
+  ].filter(isFieldWithValue);
+}
+
+function paperMetadataFields(
+  card: WalletCard,
+  documentType: string,
+  credential: CredentialRenderItem,
+  document: CredentialRenderItem,
+  issuer: CredentialRenderItem,
+): CredentialRenderField[] {
+  const credentialStatus = getObject(credential, "credentialStatus");
+  return [
+    field("ประเภทเอกสาร", documentType, "document.type", true),
+    field(
+      "วันที่ออก",
+      formatDate(
+        firstText(
+          getText(document, "issuedAt"),
+          getText(credential, "validFrom"),
+          getText(credential, "issuanceDate"),
+          card.issuedAt,
+        ),
+      ),
+      "document.issuedAt",
+      false,
+    ),
+    field(
+      "หมดอายุ",
+      formatDate(
+        firstText(
+          getText(document, "expiresAt"),
+          getText(credential, "validUntil"),
+          getText(credential, "expirationDate"),
+          card.expiresAt,
+        ),
+      ),
+      "document.expiresAt",
+      false,
+    ),
+    field(
+      "สถานะเอกสาร",
+      firstText(
+        getText(document, "status"),
+        getText(credentialStatus, "status"),
+        card.credentialStatus,
+      ),
+      "document.status",
+      false,
+    ),
+    field("Credential ID", getText(credential, "id"), "credential.id", false),
+    field(
+      "Issuer DID",
+      firstText(getText(issuer, "id"), getText(credential, "issuer")),
+      "credential.issuer",
+      false,
+    ),
+  ].filter(isFieldWithValue);
+}
+
+function credentialEvidence(
+  credential: CredentialRenderItem,
+): CredentialRenderItem[] {
+  const value = credential.evidence;
+  if (Array.isArray(value))
+    return value
+      .filter(
+        (item): item is CredentialRenderItem =>
+          Boolean(item) && typeof item === "object" && !Array.isArray(item),
+      )
+      .map((item) => ({ ...item }));
+  if (value && typeof value === "object")
+    return [{ ...(value as CredentialRenderItem) }];
+  return [];
+}
+
+function explicitCredentialWatermark(
+  credential: CredentialRenderItem,
+  humanDocument: CredentialRenderItem,
+): string | undefined {
+  const trustcare = getObject(credential, "trustcare");
+  const display = getObject(trustcare, "display");
+  const visualHints = getObject(humanDocument, "visualHints");
+  const renderData = getObject(humanDocument, "renderData");
+  const renderDocument = getObject(renderData, "document");
+  return firstText(
+    getText(display, "watermark"),
+    getText(humanDocument, "watermark"),
+    getText(visualHints, "watermark"),
+    getText(renderData, "watermark"),
+    getText(renderDocument, "watermark"),
+  );
+}
+
+function paperSectionsForCredential(
+  documentType: string,
+  subject: CredentialRenderItem,
+  fields: CredentialRenderField[],
+  payloads: CredentialRenderPayloads,
+  claimReceiptKind?: ClaimReceiptRenderKind,
+): { sections: CredentialPaperSection[]; generic: boolean } {
+  const sections: CredentialPaperSection[] = [];
+  const prescription = mergeDocumentPayload(subject, [
+    "prescription",
+    "medicationRequest",
+  ]);
+  const pharmacyDispense = mergeDocumentPayload(subject, [
+    "medicationDispense",
+    "pharmacyDispense",
+    "dispense",
+  ]);
+  const medicationSummary = mergeDocumentPayload(subject, [
+    "medicationSummary",
+    "medications",
+  ]);
+  const scalarFields = fields.filter(
+    (item) => !Array.isArray(item.value) && isFieldWithValue(item),
+  );
+  const addFields = (
+    title = "รายละเอียดเอกสาร",
+    titleEn = "Document details",
+    inputFields = scalarFields,
+    key = "details",
+  ) => {
+    const section = paperFieldsSection(key, title, titleEn, inputFields);
+    if (section) sections.push(section);
+  };
+  const addSection = (section: CredentialPaperSection | undefined) => {
+    if (section) sections.push(section);
+  };
+
+  switch (documentType) {
+    case "allergy_alert":
+      addSection({
+        key: "allergy-alert",
+        title: "ข้อมูลเตือนการแพ้",
+        titleEn: "Allergy safety alert",
+        kind: "alert",
+        fields: fields.filter(isFieldWithValue),
+        tone: "critical",
+        sourcePath: "credentialSubject.allergyAlert",
+      });
+      break;
+    case "immunization":
+      addFields("ข้อมูลทะเบียนวัคซีน", "Immunization record");
+      addSection(
+        paperTableSection({
+          key: "immunizations",
+          title: "รายการวัคซีน",
+          titleEn: "Immunizations",
+          sourcePath: "credentialSubject.immunizationRecord.items",
+          items: payloads.immunizationItems,
+          columns: [
+            paperColumn("vaccine", "วัคซีน", "Vaccine", [
+              "display",
+              "vaccineName",
+              "vaccineCode",
+              "name",
+            ]),
+            paperColumn("date", "วันที่ได้รับ", "Date", [
+              "occurrenceDate",
+              "date",
+              "administeredAt",
+            ]),
+            paperColumn("lot", "หมายเลข Lot", "Lot", ["lotNumber", "lotNo"]),
+            paperColumn("performer", "ผู้ให้บริการ", "Performer", [
+              "performer",
+              "provider",
+              "organization",
+            ]),
+          ],
+        }),
+      );
+      break;
+    case "medication_summary":
+      addSection(
+        paperTableSection({
+          key: "medications",
+          title: "รายการยาปัจจุบัน",
+          titleEn: "Current medications",
+          sourcePath: "credentialSubject.medicationSummary.items",
+          items: payloads.medicationSummaryItems,
+          columns: medicationPaperColumns(),
+        }),
+      );
+      addSection(
+        paperBodySection(
+          "medication-reconciliation",
+          "การทบทวนรายการยา",
+          "Medication reconciliation",
+          getNested(medicationSummary, ["medicationReconciliation"]),
+          "note",
+          "credentialSubject.medicationSummary.medicationReconciliation",
+        ),
+      );
+      break;
+    case "prescription":
+      addFields(
+        "ข้อมูลใบสั่งยา",
+        "Prescription details",
+        prescriptionHeaderFields(prescription, scalarFields),
+      );
+      addSection(
+        paperTableSection({
+          key: "prescription-items",
+          title: "รายการยาในใบสั่งยา",
+          titleEn: "Medications prescribed",
+          sourcePath: "credentialSubject.prescription.items",
+          items: payloads.prescriptionItems,
+          columns: medicationPaperColumns(),
+        }),
+      );
+      addSection(
+        paperBodySection(
+          "prescription-note",
+          "คำแนะนำ",
+          "Instructions",
+          getNested(prescription, ["note"]),
+          "note",
+          "credentialSubject.prescription.note",
+        ),
+      );
+      break;
+    case "pharmacy_dispense":
+      addFields("ข้อมูลการจ่ายยา", "Dispense details");
+      addSection(
+        paperTableSection({
+          key: "dispensed-items",
+          title: "รายการยาที่จ่าย",
+          titleEn: "Medications dispensed",
+          sourcePath: "credentialSubject.pharmacyDispense.items",
+          items: payloads.pharmacyDispenseItems,
+          columns: medicationPaperColumns(),
+        }),
+      );
+      addSection(
+        paperBodySection(
+          "pharmacy-counseling",
+          "คำแนะนำจากเภสัชกร",
+          "Pharmacist counseling",
+          getNested(pharmacyDispense, ["counseling"]),
+          "note",
+          "credentialSubject.pharmacyDispense.counseling",
+        ),
+      );
+      break;
+    case "lab_result":
+      addFields("ข้อมูลรายงาน", "Report details");
+      addSection(
+        paperTableSection({
+          key: "lab-observations",
+          title: "ผลตรวจทางห้องปฏิบัติการ",
+          titleEn: "Laboratory results",
+          sourcePath: "credentialSubject.labReport.observations",
+          items: itemsFromUnknown(payloads.labReport.observations),
+          columns: observationPaperColumns(),
+        }),
+      );
+      break;
+    case "diagnostic_report":
+      addFields("ข้อมูลรายงาน", "Report details");
+      addSection(
+        paperTableSection({
+          key: "diagnostic-observations",
+          title: "รายละเอียดผลตรวจ",
+          titleEn: "Reported observations",
+          sourcePath: "credentialSubject.diagnosticReport.observations",
+          items: itemsFromUnknown(payloads.diagnosticReport.observations),
+          columns: observationPaperColumns(),
+        }),
+      );
+      addSection(
+        paperBodySection(
+          "diagnostic-conclusion",
+          "สรุปผล",
+          "Conclusion",
+          firstText(
+            getText(payloads.diagnosticReport, "conclusionTh"),
+            getText(payloads.diagnosticReport, "conclusion"),
+            getText(payloads.diagnosticReport, "result"),
+          ),
+          "note",
+          "credentialSubject.diagnosticReport.conclusion",
+        ),
+      );
+      break;
+    case "medical_certificate":
+      addFields(
+        "ข้อมูลการรับรอง",
+        "Certification details",
+        certificatePaperFields(payloads.certificate, scalarFields),
+      );
+      break;
+    case "referral_vc":
+      addFields("ข้อมูลการส่งต่อ", "Referral details");
+      addSection(
+        paperBodySection(
+          "referral-clinical-note",
+          "สรุปทางคลินิก",
+          "Clinical summary",
+          firstText(
+            getText(payloads.referral, "clinicalNotes"),
+            getText(payloads.referral, "clinicalSummary"),
+          ),
+          "letter",
+          "credentialSubject.referral.clinicalNotes",
+        ),
+      );
+      addSection(
+        paperBodySection(
+          "referral-attachments",
+          "เอกสารประกอบ",
+          "Attachments",
+          getNested(payloads.referral, ["attachments"]),
+          "note",
+          "credentialSubject.referral.attachments",
+        ),
+      );
+      break;
+    case "insurance_eligibility":
+      addFields("ข้อมูลสิทธิที่ Payer รายงาน", "Payer-reported coverage");
+      addSection(
+        paperTableSection({
+          key: "benefits",
+          title: "สิทธิประโยชน์ที่ Payer รายงาน",
+          titleEn: "Payer-reported benefits",
+          sourcePath: "credentialSubject.coverage.benefitSummary",
+          items: itemsFromUnknown(payloads.coverage.benefitSummary),
+          columns: [
+            paperColumn("benefit", "สิทธิประโยชน์", "Benefit", [
+              "benefit",
+              "name",
+              "display",
+            ]),
+            paperColumn("limit", "วงเงิน", "Limit", ["limit", "amount"]),
+            paperColumn("remaining", "คงเหลือ", "Remaining", [
+              "remaining",
+              "remainingLimit",
+            ]),
+          ],
+        }),
+      );
+      addSection(payerReportedDisclaimer());
+      break;
+    case "claim_package":
+      addFields("ข้อมูลชุดเคลม", "Claim package details");
+      addSection(
+        paperTableSection({
+          key: "claim-lines",
+          title: "รายการบริการในชุดเคลม",
+          titleEn: "Claim service lines",
+          sourcePath: "credentialSubject.claimPackage.items",
+          items: itemsFromUnknown(payloads.claimPackage.items),
+          columns: financialPaperColumns(),
+        }),
+      );
+      break;
+    case "claim_receipt":
+      addFields(
+        claimReceiptKind === "payment_receipt"
+          ? "ข้อมูลใบเสร็จ"
+          : "สถานะที่ Payer รายงาน",
+        claimReceiptKind === "payment_receipt"
+          ? "Receipt details"
+          : "Payer-reported status",
+      );
+      addSection(
+        paperTableSection({
+          key: "receipt-lines",
+          title: "รายการค่าใช้จ่าย",
+          titleEn: "Line items",
+          sourcePath: "credentialSubject.claimReceipt.items",
+          items: itemsFromUnknown(payloads.claimReceipt.items),
+          columns: financialPaperColumns(),
+        }),
+      );
+      if (claimReceiptKind !== "payment_receipt")
+        addSection(payerReportedDisclaimer());
+      break;
+    case "quotation":
+      addFields("ข้อมูลใบเสนอราคา", "Quotation details");
+      addSection(
+        paperTableSection({
+          key: "quotation-lines",
+          title: "รายการค่าใช้จ่ายโดยประมาณ",
+          titleEn: "Estimated costs",
+          sourcePath: "credentialSubject.quotation.items",
+          items: itemsFromUnknown(payloads.quotation.items),
+          columns: financialPaperColumns(),
+        }),
+      );
+      addSection(
+        paperBodySection(
+          "quotation-exclusions",
+          "ข้อยกเว้น",
+          "Exclusions",
+          getNested(payloads.quotation, ["exclusions"]),
+          "note",
+          "credentialSubject.quotation.exclusions",
+        ),
+      );
+      break;
+    case "guarantee_letter":
+      addFields(
+        "ข้อมูลการค้ำประกันที่ Payer รายงาน",
+        "Payer-reported guarantee",
+      );
+      addSection(
+        paperBodySection(
+          "covered-services",
+          "บริการที่คุ้มครอง",
+          "Covered services",
+          getNested(payloads.guaranteeLetter, ["coveredServices"]),
+          "letter",
+          "credentialSubject.guaranteeLetter.coveredServices",
+        ),
+      );
+      addSection(
+        paperBodySection(
+          "guarantee-conditions",
+          "เงื่อนไข",
+          "Conditions",
+          getNested(payloads.guaranteeLetter, ["conditions"]),
+          "note",
+          "credentialSubject.guaranteeLetter.conditions",
+        ),
+      );
+      addSection(payerReportedDisclaimer());
+      break;
+    case "visa_support_letter":
+      addFields("ข้อมูลหนังสือ", "Letter details");
+      addSection(
+        paperBodySection(
+          "visa-letter-note",
+          "ข้อความประกอบ",
+          "Supporting statement",
+          getText(payloads.visaSupportLetter, "note"),
+          "letter",
+          "credentialSubject.visaSupportLetter.note",
+        ),
+      );
+      break;
+    case "patient_identity":
+    case "staff_identity":
+    case "consent_receipt":
+    case "mpi_link_certificate":
+    case "patient_summary":
+    case "discharge_summary":
+    case "travel_document_verification":
+    case "shl_manifest":
+    case "sync_receipt":
+    case "appointment":
+      addFields();
+      break;
+    default:
+      addFields();
+      return { sections, generic: true };
+  }
+
+  return { sections, generic: false };
+}
+
+function paperFieldsSection(
+  key: string,
+  title: string,
+  titleEn: string,
+  fields: CredentialRenderField[],
+): CredentialPaperSection | undefined {
+  const visibleFields = fields.filter(isFieldWithValue);
+  if (!visibleFields.length) return undefined;
+  return {
+    key,
+    title,
+    titleEn,
+    kind: "fields",
+    fields: visibleFields,
+  };
+}
+
+function paperColumn(
+  key: string,
+  label: string,
+  labelEn: string,
+  aliases: string[],
+  align: CredentialPaperTableColumn["align"] = "start",
+): PaperColumnSpec {
+  return { key, label, labelEn, aliases, align };
+}
+
+function paperTableSection(input: {
+  key: string;
+  title: string;
+  titleEn: string;
+  sourcePath: string;
+  items: CredentialRenderItem[];
+  columns: PaperColumnSpec[];
+}): CredentialPaperSection | undefined {
+  const rows = input.items
+    .map((item) => {
+      const row: CredentialRenderItem = {};
+      for (const column of input.columns) {
+        const value = firstPaperCell(item, column.aliases);
+        if (paperHasValue(value)) row[column.key] = value;
+      }
+      return row;
+    })
+    .filter((row) => Object.keys(row).length > 0);
+  if (!rows.length) return undefined;
+  const columns = input.columns
+    .filter((column) => rows.some((row) => paperHasValue(row[column.key])))
+    .map(({ aliases: _aliases, ...column }) => column);
+  if (!columns.length) return undefined;
+  return {
+    key: input.key,
+    title: input.title,
+    titleEn: input.titleEn,
+    kind: "table",
+    columns,
+    rows,
+    sourcePath: input.sourcePath,
+  };
+}
+
+function paperBodySection(
+  key: string,
+  title: string,
+  titleEn: string,
+  body: unknown,
+  kind: "note" | "alert" | "letter",
+  sourcePath: string,
+): CredentialPaperSection | undefined {
+  if (!paperHasValue(body)) return undefined;
+  return { key, title, titleEn, body, kind, sourcePath };
+}
+
+function medicationPaperColumns(): PaperColumnSpec[] {
+  return [
+    paperColumn("medication", "ชื่อยา", "Medication", [
+      "medicationName",
+      "nameTh",
+      "name",
+      "display",
+    ]),
+    paperColumn("strength", "ความแรง", "Strength", ["strength"]),
+    paperColumn("instruction", "วิธีใช้", "Instructions", [
+      "dosageInstruction",
+      "instructions",
+      "dose",
+      "frequency",
+    ]),
+    paperColumn(
+      "quantity",
+      "จำนวน",
+      "Quantity",
+      ["quantity", "quantityDispensed", "daysSupply", "dispenseQuantity"],
+      "end",
+    ),
+    paperColumn("unit", "หน่วย", "Unit", ["unit"]),
+    paperColumn("refills", "Refill", "Refills", ["refills"], "end"),
+    paperColumn("lot", "Lot", "Lot", ["lotNo", "lotNumber"]),
+    paperColumn("status", "สถานะ", "Status", ["status"]),
+  ];
+}
+
+function observationPaperColumns(): PaperColumnSpec[] {
+  return [
+    paperColumn("test", "รายการตรวจ", "Test", [
+      "display",
+      "name",
+      "testName",
+      "code",
+    ]),
+    paperColumn("result", "ผล", "Result", ["value", "result"], "end"),
+    paperColumn("unit", "หน่วย", "Unit", ["unit"]),
+    paperColumn("reference", "ค่าอ้างอิง", "Reference range", [
+      "referenceRange",
+      "reference",
+    ]),
+    paperColumn(
+      "interpretation",
+      "แปลผล",
+      "Flag",
+      ["interpretation", "flag"],
+      "center",
+    ),
+  ];
+}
+
+function financialPaperColumns(): PaperColumnSpec[] {
+  return [
+    paperColumn("code", "รหัส", "Code", ["code", "serviceCode", "itemCode"]),
+    paperColumn("description", "รายการ", "Description", [
+      "description",
+      "display",
+      "name",
+      "service",
+    ]),
+    paperColumn("quantity", "จำนวน", "Quantity", ["quantity", "qty"], "end"),
+    paperColumn(
+      "amount",
+      "จำนวนเงิน",
+      "Amount",
+      ["amount", "totalAmount", "netAmount", "price"],
+      "end",
+    ),
+    paperColumn("currency", "สกุลเงิน", "Currency", ["currency"], "center"),
+  ];
+}
+
+function prescriptionHeaderFields(
+  prescription: CredentialRenderItem,
+  existing: CredentialRenderField[],
+): CredentialRenderField[] {
+  return [
+    field(
+      "เลขที่ใบสั่งยา",
+      firstText(
+        getText(prescription, "prescriptionNo"),
+        getText(prescription, "documentNo"),
+      ),
+      "credentialSubject.prescription.prescriptionNo",
+      true,
+    ),
+    field(
+      "Encounter",
+      getText(prescription, "encounterId"),
+      "credentialSubject.prescription.encounterId",
+      false,
+    ),
+    field(
+      "วันที่สั่ง",
+      formatDateTime(getText(prescription, "authoredOn")),
+      "credentialSubject.prescription.authoredOn",
+      false,
+    ),
+    ...existing,
+  ].filter(isFieldWithValue);
+}
+
+function certificatePaperFields(
+  certificate: CredentialRenderItem,
+  existing: CredentialRenderField[],
+): CredentialRenderField[] {
+  const diagnosis = field(
+    "การวินิจฉัย",
+    firstText(
+      getText(certificate, "diagnosisTh"),
+      getText(certificate, "diagnosis"),
+      getText(certificate, "diagnosisText"),
+    ),
+    "credentialSubject.certificate.diagnosis",
+    true,
+  );
+  return [diagnosis, ...existing].filter(isFieldWithValue);
+}
+
+function payerReportedDisclaimer(): CredentialPaperSection {
+  return {
+    key: "payer-reported-disclaimer",
+    title: "ขอบเขตผลจาก Payer",
+    titleEn: "Payer-reported outcome",
+    kind: "note",
+    body: "ข้อมูลผลหรือสถานะในเอกสารนี้เป็นข้อมูลที่ Payer หรือ integration issuer รายงานกลับมา โดย Wallet ไม่ได้เป็นผู้พิจารณาหรือตัดสินผลเคลม",
+    tone: "info",
+  };
+}
+
+function firstPaperCell(
+  item: CredentialRenderItem,
+  aliases: string[],
+): unknown {
+  for (const alias of aliases) {
+    const value = getNested(item, alias.split("."));
+    if (paperHasValue(value)) return value;
+  }
+  return undefined;
+}
+
+function paperHasValue(value: unknown): boolean {
+  if (value === undefined || value === null || value === "") return false;
+  if (Array.isArray(value)) return value.some(paperHasValue);
+  if (typeof value === "object")
+    return Object.values(value as CredentialRenderItem).some(paperHasValue);
+  return true;
+}
+
+function paperSignatories(
+  subject: CredentialRenderItem,
+  payloads: CredentialRenderPayloads,
+): CredentialPaperSignatory[] {
+  const humanDocument = getObject(subject, "humanDocument") ?? {};
+  const certificate = payloads.certificate;
+  const referral = payloads.referral;
+  const prescription = mergeDocumentPayload(subject, [
+    "prescription",
+    "medicationRequest",
+  ]);
+  const dispense = mergeDocumentPayload(subject, [
+    "medicationDispense",
+    "pharmacyDispense",
+    "dispense",
+  ]);
+  const discharge = payloads.dischargeSummary;
+  const quotation = payloads.quotation;
+  const guarantee = payloads.guaranteeLetter;
+  const explicitSignatories = strictRecordItems(
+    getNested(humanDocument, ["signatories"]),
+  );
+  const candidates = [
+    ...explicitSignatories,
+    getObject(humanDocument, "signatory"),
+    getObject(certificate, "certifyingPractitioner"),
+    getObject(certificate, "physician"),
+    getObject(referral, "requestedBy"),
+    getObject(referral, "referringPractitioner"),
+    getObject(prescription, "prescriber"),
+    getObject(dispense, "dispenser"),
+    getObject(payloads.labReport, "reportingPractitioner"),
+    getObject(payloads.labReport, "authorizedBy"),
+    getObject(payloads.diagnosticReport, "reportingPractitioner"),
+    getObject(discharge, "attendingPhysician"),
+    getObject(discharge, "author"),
+    getObject(payloads.visaSupportLetter, "responsiblePhysician"),
+    getObject(quotation, "authorizedOfficer"),
+    getObject(quotation, "approvedBy"),
+    getObject(guarantee, "authorizedOfficer"),
+  ].filter((item): item is CredentialRenderItem => Boolean(item));
+  const result: CredentialPaperSignatory[] = [];
+  const seen = new Set<string>();
+
+  for (const candidate of candidates) {
+    const signatory: CredentialPaperSignatory = {
+      name: firstText(
+        getText(candidate, "fullNameTh"),
+        getText(candidate, "nameTh"),
+        getText(candidate, "fullNameEn"),
+        getText(candidate, "nameEn"),
+        getText(candidate, "name"),
+        getText(candidate, "display"),
+      ),
+      role: firstText(
+        getText(candidate, "roleTh"),
+        getText(candidate, "roleEn"),
+        getText(candidate, "role"),
+        getText(candidate, "position"),
+      ),
+      licenseNo: firstText(
+        getText(candidate, "licenseNo"),
+        getText(candidate, "professionalLicenseNo"),
+      ),
+      organization: firstText(
+        getText(candidate, "organization"),
+        getText(candidate, "organizationName"),
+      ),
+      signedAt: firstText(
+        getText(candidate, "signedAt"),
+        getText(candidate, "date"),
+      ),
+    };
+    if (!Object.values(signatory).some(paperHasValue)) continue;
+    const identity = JSON.stringify(signatory);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    result.push(signatory);
+  }
+  return result;
+}
+
+function strictRecordItems(value: unknown): CredentialRenderItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is CredentialRenderItem =>
+      Boolean(item) && typeof item === "object" && !Array.isArray(item),
+  );
 }
 
 export function credentialRenderPayloads(
@@ -787,12 +2019,15 @@ function inferClaimReceiptRenderKind(
   receipt: CredentialRenderItem,
 ): ClaimReceiptRenderKind {
   const credentialTypes = Array.isArray(credential.type)
-    ? credential.type.filter((value): value is string => typeof value === "string")
+    ? credential.type.filter(
+        (value): value is string => typeof value === "string",
+      )
     : [];
   const typeText = [card.credentialType, ...credentialTypes]
     .filter((value): value is string => Boolean(value))
     .join(" ");
-  if (/ClaimStatusCredential/i.test(typeText)) return "claim_status";
+  if (/ClaimStatusCredential|PreAuthDecisionCredential/i.test(typeText))
+    return "claim_status";
   if (/ClaimSubmissionReceiptCredential/i.test(typeText))
     return "submission_receipt";
   if (
@@ -2209,6 +3444,7 @@ function guaranteeLetterPayload(
     ...letter,
     guaranteeNo: firstText(
       getText(letter, "guaranteeNo"),
+      getText(letter, "guaranteeNumber"),
       getText(letter, "guaranteeRef"),
       getText(letter, "documentNo"),
     ),
@@ -2218,7 +3454,10 @@ function guaranteeLetterPayload(
       getText(letter, "preAuthorizationNo"),
     ),
     guaranteeLimit: getObject(letter, "guaranteeLimit") ?? {
-      amount: getText(letter, "approvedLimit"),
+      amount: firstText(
+        getText(letter, "approvedLimit"),
+        getText(letter, "approvedAmount"),
+      ),
       currency: getText(letter, "currency"),
     },
   };

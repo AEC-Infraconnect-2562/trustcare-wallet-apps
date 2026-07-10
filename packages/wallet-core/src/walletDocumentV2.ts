@@ -125,6 +125,8 @@ export type WalletDocumentRecordV2 = {
   content: {
     documentProfile?: string;
     fhirDocument?: unknown;
+    /** Exact source VC payload when this record was migrated from a credential. */
+    credentialPayload?: Record<string, unknown>;
     documentReference: FhirDocumentReferenceLike;
     originalAttachments: OriginalAttachment[];
     patientSummary?: PatientReadableSummary;
@@ -360,6 +362,7 @@ export function walletDocumentRecordV2FromLegacy(
     content: {
       documentProfile: documentProfile(record.documentReference),
       fhirDocument: record.fhirDocumentBundle,
+      credentialPayload: record.credentialData ?? undefined,
       documentReference: record.documentReference,
       originalAttachments: attachmentsFromDocumentReference(
         record.documentReference,

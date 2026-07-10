@@ -86,6 +86,11 @@ describe("verifyQr VP resolver behavior", () => {
     expect(result.verified).toBe(false);
     expect(result.trustLevel).toBe("yellow");
     expect(result.warnings?.join(" ")).toContain("ES256");
+    expect(result.verificationPayload).toMatchObject({
+      presentationId: "vp-test-001",
+      holderDid: "did:key:test-holder",
+      validUntil: unsignedVp.validUntil,
+    });
   });
 
   it("does not return green for an unverified Data Integrity proof shape", async () => {

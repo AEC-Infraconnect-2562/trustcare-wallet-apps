@@ -6,6 +6,7 @@ import {
   claimStatusToFhirResponse,
   claimSubmissionReceiptCredential,
   claimSubmissionToFhir,
+  credentialRenderModelFromCard,
   createMockPayerRegistry,
   createShareDraftFromPrepare,
   eligibilityDecisionToFhir,
@@ -357,6 +358,39 @@ describe("payer orchestration foundation", () => {
       expect(new Set(result.shareCardIds).size).toBe(
         result.evidencePackage.cards.length,
       );
+      for (const card of result.artifactCards) {
+        const issuer = card.credentialData?.issuer as
+          Record<string, unknown> | undefined;
+        const trustcare = card.credentialData?.trustcare as
+          Record<string, unknown> | undefined;
+        expect(issuer?.role).toBe("payer");
+        expect(trustcare?.issuerRole).toBe("payer");
+      }
+      const preAuthCard = result.artifactCards.find(
+        (card) => card.credentialType === "PreAuthDecisionCredential",
+      );
+      if (preAuthCard) {
+        expect(
+          credentialRenderModelFromCard(preAuthCard).claimReceiptKind,
+        ).toBe("claim_status");
+      }
+      const guaranteeCard = result.artifactCards.find(
+        (card) => card.cardType === "guarantee_letter",
+      );
+      if (guaranteeCard && result.guarantee) {
+        const paper = credentialRenderModelFromCard(guaranteeCard).paper;
+        expect(JSON.stringify(paper.sections)).toContain(
+          result.guarantee.guaranteeNumber,
+        );
+        if (
+          typeof result.guarantee.approvedAmount === "number" &&
+          result.guarantee.currency
+        ) {
+          expect(JSON.stringify(paper.sections)).toContain(
+            `${result.guarantee.approvedAmount.toLocaleString("en-US")} ${result.guarantee.currency}`,
+          );
+        }
+      }
       expect(result.warnings.join(" ")).toContain("demo payer");
     },
   );

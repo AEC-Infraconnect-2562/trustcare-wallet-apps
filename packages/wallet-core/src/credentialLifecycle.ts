@@ -101,10 +101,24 @@ export function classifyCredentialSource(
   const proofSource = lower(card.credentialProof?.source);
   const proofType = lower(card.credentialProof?.type);
   const credentialType = lower(card.credentialType);
-  const cardType = lower(card.cardType);
   const issuerDid = lower(card.issuerDid);
   const hasProof = walletCardHasProof(card);
   const documentType = normalizeDocumentType(card.cardType);
+  const credentialData = card.credentialData ?? {};
+  const trustcare =
+    credentialData.trustcare &&
+    typeof credentialData.trustcare === "object" &&
+    !Array.isArray(credentialData.trustcare)
+      ? (credentialData.trustcare as Record<string, unknown>)
+      : {};
+  const issuer =
+    credentialData.issuer &&
+    typeof credentialData.issuer === "object" &&
+    !Array.isArray(credentialData.issuer)
+      ? (credentialData.issuer as Record<string, unknown>)
+      : {};
+  const declaredAuthority = lower(trustcare.sourceAuthority);
+  const issuerRole = lower(issuer.role);
 
   if (
     sourceSystem === "trustcare_portal" ||
@@ -124,13 +138,12 @@ export function classifyCredentialSource(
     sourceSystem.includes("payer") ||
     sourceSystem.includes("insurance") ||
     proofSource.includes("payer") ||
+    declaredAuthority === "payer_adapter" ||
+    issuerRole === "payer" ||
+    issuerRole.includes("insurer") ||
+    issuerDid.includes(":payer:") ||
     credentialType.includes("payer") ||
-    credentialType.includes("eligibility") ||
-    credentialType.includes("claim") ||
-    credentialType.includes("guarantee") ||
-    cardType.includes("insurance_eligibility") ||
-    cardType.includes("claim_") ||
-    cardType.includes("guarantee_letter")
+    credentialType.includes("insurer")
   ) {
     return "payer_adapter";
   }
@@ -372,9 +385,9 @@ export function summarizeCredentialSources(
 export function walletCardHasProof(card: WalletCard): boolean {
   return Boolean(
     card.credentialProof?.jwt ||
-      card.credentialJwt ||
-      card.credentialProof?.kid ||
-      card.credentialProof?.type,
+    card.credentialJwt ||
+    card.credentialProof?.kid ||
+    card.credentialProof?.type,
   );
 }
 
@@ -427,10 +440,7 @@ function credentialMismatches(
   return Array.from(new Set(mismatches));
 }
 
-function extractText(
-  value: unknown,
-  paths: string[],
-): string | undefined {
+function extractText(value: unknown, paths: string[]): string | undefined {
   for (const path of paths) {
     const item = getPath(value, path);
     if (typeof item === "string" && item.length > 0) return item;
@@ -439,12 +449,10 @@ function extractText(
 }
 
 function getPath(value: unknown, path: string): unknown {
-  return path
-    .split(".")
-    .reduce<unknown>((current, key) => {
-      if (!current || typeof current !== "object") return undefined;
-      return (current as Record<string, unknown>)[key];
-    }, value);
+  return path.split(".").reduce<unknown>((current, key) => {
+    if (!current || typeof current !== "object") return undefined;
+    return (current as Record<string, unknown>)[key];
+  }, value);
 }
 
 function lower(value: unknown): string {

@@ -464,6 +464,7 @@ const hospital = {
   nameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
   nameEn: "TrustCare Central Hospital",
   issuerDid: "did:web:trustcare.network:hospital:tcc",
+  role: "healthcare_provider",
   licenseNo: "HOS-TCC-2566-001",
   address: "188 TrustCare Tower, Bangkok 10120",
   phone: "02-555-0100",
@@ -474,6 +475,10 @@ const partnerHospital = {
   nameTh: "โรงพยาบาลทรัสต์แคร์ ภูเก็ต อินเตอร์เนชันแนล",
   nameEn: "TrustCare Phuket International Hospital",
   issuerDid: "did:web:trustcare.network:hospital:tcp",
+  role: "healthcare_provider",
+  licenseNo: "HOS-TCP-2566-014",
+  address: "88/8 Thepkrasattri Road, Phuket 83110",
+  phone: "076-555-0200",
 } as const;
 
 const payer = {
@@ -483,6 +488,17 @@ const payer = {
   memberNo: "M-GCI-00045521",
   plan: "International Comprehensive Plus",
   preAuthNo: "PA-2026-0701-00091",
+} as const;
+
+const payerIssuer = {
+  code: "GCI",
+  nameTh: payer.nameTh,
+  nameEn: payer.nameEn,
+  issuerDid: "did:web:trustcare.network:payer:global-care-demo",
+  role: "payer",
+  licenseNo: "INS-DEMO-2568-009",
+  address: "1 Insurance Demo Plaza, Bangkok 10330",
+  phone: "02-555-7700",
 } as const;
 
 const practitioner = {
@@ -1004,6 +1020,7 @@ export const completeWalletSeedCards: WalletCard[] = [
         lastCheckedAt: "2026-07-01T02:50:00.000Z",
       },
     },
+    issuerOverride: payerIssuer,
     expiresAt: "2026-12-31T16:59:59.000Z",
   }),
   makePatientCard("claim_package", 17, {
@@ -1169,6 +1186,7 @@ export const completeWalletSeedCards: WalletCard[] = [
         ],
       },
     },
+    issuerOverride: payerIssuer,
     expiresAt: "2026-08-31T16:59:59.000Z",
   }),
   makePatientCard("shl_manifest", 23, {
@@ -1420,7 +1438,8 @@ function makePatientCard(
   input: {
     credentialSubject: Record<string, unknown>;
     expiresAt: string;
-    issuerOverride?: typeof hospital | typeof partnerHospital;
+    issuerOverride?:
+      typeof hospital | typeof partnerHospital | typeof payerIssuer;
     pinned?: boolean;
   },
 ): WalletCard {
@@ -1504,7 +1523,7 @@ function makeStaffCard(
 function buildCredentialData(input: {
   def: CompleteSeedDocumentDefinition;
   credentialId: string;
-  issuer: typeof hospital | typeof partnerHospital;
+  issuer: typeof hospital | typeof partnerHospital | typeof payerIssuer;
   subject: Record<string, unknown>;
   expiresAt: string;
   holderDid?: string;
@@ -1533,6 +1552,10 @@ function buildCredentialData(input: {
       id: input.issuer.issuerDid,
       name: input.issuer.nameEn,
       nameTh: input.issuer.nameTh,
+      role: input.issuer.role,
+      identifier: input.issuer.licenseNo,
+      address: input.issuer.address,
+      phone: input.issuer.phone,
     },
     validFrom: issuedAt,
     validUntil: input.expiresAt,
@@ -1568,6 +1591,7 @@ function buildCredentialData(input: {
       tags: input.def.tags,
       issuerHospitalCode:
         "code" in input.issuer ? input.issuer.code : hospital.code,
+      issuerRole: input.issuer.role,
       holderDid,
       sourceSystem: input.def.sourceSystem,
       selectiveDisclosureRecommendedFields: selectiveFieldsFor(
@@ -1587,7 +1611,7 @@ function buildCredentialData(input: {
 function buildDocumentReference(
   def: CompleteSeedDocumentDefinition,
   credentialId: string,
-  issuer: typeof hospital | typeof partnerHospital,
+  issuer: typeof hospital | typeof partnerHospital | typeof payerIssuer,
   expiresAt: string,
 ) {
   return {
@@ -1667,7 +1691,7 @@ function buildDocumentReference(
 function buildHumanDocument(
   def: CompleteSeedDocumentDefinition,
   subject: Record<string, unknown>,
-  issuer: typeof hospital | typeof partnerHospital,
+  issuer: typeof hospital | typeof partnerHospital | typeof payerIssuer,
   expiresAt: string,
 ) {
   return {
@@ -1681,8 +1705,12 @@ function buildHumanDocument(
       nameTh: issuer.nameTh,
       nameEn: issuer.nameEn,
       did: issuer.issuerDid,
+      role: issuer.role,
+      identifier: issuer.licenseNo,
+      address: issuer.address,
+      phone: issuer.phone,
     },
-    patient: subject.patient ?? patientProfile(),
+    patient: subject.patient ?? subject.staff ?? patientProfile(),
     issuedAt,
     expiresAt,
     sections: documentSectionsFor(def.cardType),
