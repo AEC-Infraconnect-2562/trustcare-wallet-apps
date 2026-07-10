@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { WalletDocumentRecord } from "./canonicalDocuments";
+import { completeWalletSeedCards } from "./completeSeedData";
 import { DemoWalletRepository } from "./demoWalletRepository";
 import type { ActiveShare, WalletActivityEvent } from "./serviceInterfaces";
+import {
+  walletDocumentRecordV2FromCard,
+  type WalletDocumentRecordV2,
+} from "./walletDocumentV2";
 
 describe("DemoWalletRepository", () => {
   it("provides canonical demo records without exposing mutable seed state", async () => {
@@ -17,8 +21,8 @@ describe("DemoWalletRepository", () => {
       true,
     );
 
-    documents[0]!.title = "mutated outside repository";
-    expect((await repository.getDocument(documents[0]!.id))?.title).not.toBe(
+    documents[0]!.title.th = "mutated outside repository";
+    expect((await repository.getDocument(documents[0]!.id))?.title.th).not.toBe(
       "mutated outside repository",
     );
   });
@@ -35,8 +39,10 @@ describe("DemoWalletRepository", () => {
       }),
     ).toHaveLength(1);
 
-    await repository.saveDocuments([{ ...second, title: "Updated result" }]);
-    expect((await repository.getDocument(second.id))?.title).toBe(
+    await repository.saveDocuments([
+      { ...second, title: { ...second.title, th: "Updated result" } },
+    ]);
+    expect((await repository.getDocument(second.id))?.title.th).toBe(
       "Updated result",
     );
 
@@ -98,32 +104,20 @@ describe("DemoWalletRepository", () => {
 
 function document(
   id: string,
-  documentType: WalletDocumentRecord["documentType"],
+  documentType: WalletDocumentRecordV2["documentType"],
   title: string,
-): WalletDocumentRecord {
-  const category =
-    documentType === "lab_result"
-      ? "diagnostics_and_results"
-      : "identity_and_access";
+): WalletDocumentRecordV2 {
+  const seed = completeWalletSeedCards.find(
+    (card) => card.cardType === documentType,
+  )!;
+  const record = walletDocumentRecordV2FromCard(seed, {
+    now: "2026-07-10T00:00:00.000Z",
+  });
   return {
+    ...record,
     id,
-    ownerUserId: "patient-1",
-    documentType,
-    category,
-    title,
-    status: "active",
-    trustStatus: "issuer_signed",
-    sourceSystem: "trustcare_demo_issuer",
-    credentialId: id,
-    credentialData: {},
-    documentReference: {
-      resourceType: "DocumentReference",
-      id,
-      status: "current",
-      content: [],
-    },
-    source: { system: "trustcare_demo_issuer" },
-    version: { versionId: "1" },
-    privacy: {},
+    owner: { id: "patient-1" },
+    title: { th: title },
+    lifecycle: { ...record.lifecycle, versionId: "1" },
   };
 }

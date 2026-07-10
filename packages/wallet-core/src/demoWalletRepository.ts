@@ -1,8 +1,8 @@
-import {
-  walletDocumentRecordFromCard,
-  type WalletDocumentRecord,
-} from "./canonicalDocuments";
 import { getDemoWalletCards } from "./demoData";
+import {
+  walletDocumentRecordV2FromCard,
+  type WalletDocumentRecordV2,
+} from "./walletDocumentV2";
 import type {
   ActiveShare,
   ActivityQuery,
@@ -13,13 +13,13 @@ import type {
 
 export type DemoWalletRepositorySeed = {
   userId?: string | number;
-  documents?: WalletDocumentRecord[];
+  documents?: WalletDocumentRecordV2[];
   activity?: WalletActivityEvent[];
   activeShares?: ActiveShare[];
 };
 
 export class DemoWalletRepository implements WalletRepository {
-  private readonly documents = new Map<string, WalletDocumentRecord>();
+  private readonly documents = new Map<string, WalletDocumentRecordV2>();
   private readonly offlineDocumentIds = new Set<string>();
   private readonly activity: WalletActivityEvent[];
   private readonly activeShares: ActiveShare[];
@@ -27,7 +27,9 @@ export class DemoWalletRepository implements WalletRepository {
   constructor(seed: DemoWalletRepositorySeed = {}) {
     const documents =
       seed.documents ??
-      getDemoWalletCards(seed.userId).map(walletDocumentRecordFromCard);
+      getDemoWalletCards(seed.userId).map((card) =>
+        walletDocumentRecordV2FromCard(card),
+      );
     for (const document of documents) {
       this.documents.set(document.id, cloneValue(document));
     }
@@ -37,10 +39,10 @@ export class DemoWalletRepository implements WalletRepository {
 
   async listDocuments(
     query: WalletDocumentQuery = {},
-  ): Promise<WalletDocumentRecord[]> {
+  ): Promise<WalletDocumentRecordV2[]> {
     const search = query.search?.trim().toLocaleLowerCase();
     const filtered = Array.from(this.documents.values()).filter((document) => {
-      if (query.ownerUserId && document.ownerUserId !== query.ownerUserId) {
+      if (query.ownerUserId && document.owner.id !== query.ownerUserId) {
         return false;
       }
       if (
@@ -55,27 +57,30 @@ export class DemoWalletRepository implements WalletRepository {
       ) {
         return false;
       }
-      if (query.statuses?.length && !query.statuses.includes(document.status)) {
+      if (
+        query.statuses?.length &&
+        !query.statuses.includes(document.lifecycle.status)
+      ) {
         return false;
       }
       if (
-        query.trustStatuses?.length &&
-        !query.trustStatuses.includes(document.trustStatus)
+        query.trustStates?.length &&
+        !query.trustStates.includes(document.trust.state)
       ) {
         return false;
       }
       if (
         query.sourceSystems?.length &&
-        !query.sourceSystems.includes(document.sourceSystem ?? "")
+        !query.sourceSystems.includes(document.provenance.sourceKind)
       ) {
         return false;
       }
       if (!search) return true;
       return [
-        document.title,
-        document.titleEn,
+        document.title.th,
+        document.title.en,
         document.documentType,
-        document.issuerName,
+        document.provenance.issuerName,
       ]
         .filter(Boolean)
         .some((value) => String(value).toLocaleLowerCase().includes(search));
@@ -85,12 +90,12 @@ export class DemoWalletRepository implements WalletRepository {
     return cloneValue(filtered.slice(offset, offset + limit));
   }
 
-  async getDocument(id: string): Promise<WalletDocumentRecord | null> {
+  async getDocument(id: string): Promise<WalletDocumentRecordV2 | null> {
     const document = this.documents.get(id);
     return document ? cloneValue(document) : null;
   }
 
-  async saveDocuments(records: WalletDocumentRecord[]): Promise<void> {
+  async saveDocuments(records: WalletDocumentRecordV2[]): Promise<void> {
     for (const record of records) {
       this.documents.set(record.id, cloneValue(record));
     }

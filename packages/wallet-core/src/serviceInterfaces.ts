@@ -1,8 +1,11 @@
 import type {
   CanonicalDocumentCategory,
   CanonicalDocumentType,
-  WalletDocumentRecord,
 } from "./canonicalDocuments";
+import type {
+  WalletDocumentRecordV2,
+  WalletDocumentTrustState,
+} from "./walletDocumentV2";
 import type { FhirDocumentReferenceLike } from "./mhd";
 import type {
   ContractHubCatalog,
@@ -19,7 +22,7 @@ export type WalletDocumentQuery = {
   documentTypes?: CanonicalDocumentType[];
   categories?: CanonicalDocumentCategory[];
   statuses?: string[];
-  trustStatuses?: WalletDocumentRecord["trustStatus"][];
+  trustStates?: WalletDocumentTrustState[];
   sourceSystems?: string[];
   search?: string;
   offset?: number;
@@ -67,9 +70,9 @@ export type ActiveShare = {
 };
 
 export interface WalletRepository {
-  listDocuments(query?: WalletDocumentQuery): Promise<WalletDocumentRecord[]>;
-  getDocument(id: string): Promise<WalletDocumentRecord | null>;
-  saveDocuments(records: WalletDocumentRecord[]): Promise<void>;
+  listDocuments(query?: WalletDocumentQuery): Promise<WalletDocumentRecordV2[]>;
+  getDocument(id: string): Promise<WalletDocumentRecordV2 | null>;
+  saveDocuments(records: WalletDocumentRecordV2[]): Promise<void>;
   markOffline(id: string, enabled: boolean): Promise<void>;
   listActivity(query?: ActivityQuery): Promise<WalletActivityEvent[]>;
   listActiveShares(): Promise<ActiveShare[]>;
@@ -124,7 +127,7 @@ export type WalletSyncTombstone = {
 };
 
 export type WalletSyncPage = {
-  records: WalletDocumentRecord[];
+  records: WalletDocumentRecordV2[];
   tombstones: WalletSyncTombstone[];
   nextCursor?: string;
   etag?: string;

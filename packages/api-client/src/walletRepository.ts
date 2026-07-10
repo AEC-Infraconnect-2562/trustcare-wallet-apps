@@ -3,26 +3,29 @@ import type {
   ActivityQuery,
   WalletActivityEvent,
   WalletDocumentQuery,
-  WalletDocumentRecord,
+  WalletDocumentRecordV2,
   WalletRepository,
+  RuntimeEnvironment,
 } from "@trustcare/wallet-core";
 import {
   callTrpcProcedure,
   type TrustCareClientOptions,
 } from "./trpc";
+import { clientRuntimeEnvironment } from "./runtime";
 
 export type ApiWalletRepositoryOptions = TrustCareClientOptions & {
-  /** Required explicitly so this production adapter cannot inherit demo fallback. */
-  demoMode: false;
+  runtimeEnvironment: Exclude<RuntimeEnvironment, "demo">;
+  /** @deprecated Explicit compatibility only. */
+  demoMode?: false;
 };
 
 export class ApiWalletRepository implements WalletRepository {
   private readonly options: TrustCareClientOptions;
 
   constructor(options: ApiWalletRepositoryOptions) {
-    if (options.demoMode !== false) {
+    if (!options.runtimeEnvironment || clientRuntimeEnvironment(options) === "demo") {
       throw new Error(
-        "ApiWalletRepository requires demoMode:false; demo data belongs in DemoWalletRepository.",
+        "ApiWalletRepository requires an explicit non-demo runtimeEnvironment; demo data belongs in DemoWalletRepository.",
       );
     }
     if (!options.url.trim()) {
@@ -33,15 +36,15 @@ export class ApiWalletRepository implements WalletRepository {
 
   listDocuments(
     query: WalletDocumentQuery = {},
-  ): Promise<WalletDocumentRecord[]> {
+  ): Promise<WalletDocumentRecordV2[]> {
     return this.call("wallet.listDocuments", query);
   }
 
-  getDocument(id: string): Promise<WalletDocumentRecord | null> {
+  getDocument(id: string): Promise<WalletDocumentRecordV2 | null> {
     return this.call("wallet.getDocument", { id });
   }
 
-  async saveDocuments(records: WalletDocumentRecord[]): Promise<void> {
+  async saveDocuments(records: WalletDocumentRecordV2[]): Promise<void> {
     await this.call("wallet.saveDocuments", { records });
   }
 

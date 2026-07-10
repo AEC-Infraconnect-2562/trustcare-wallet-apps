@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import type {
-  ActiveShare,
-  WalletActivityEvent,
-  WalletDocumentRecord,
+import {
+  completeWalletSeedCards,
+  walletDocumentRecordV2FromCard,
+  type ActiveShare,
+  type WalletActivityEvent,
+  type WalletDocumentRecordV2,
 } from "@trustcare/wallet-core";
 import {
   ApiWalletRepository,
@@ -17,7 +19,7 @@ describe("ApiWalletRepository", () => {
           url: "https://portal.example.test/trpc",
           demoMode: true,
         } as unknown as ApiWalletRepositoryOptions),
-    ).toThrow("requires demoMode:false");
+    ).toThrow("requires an explicit non-demo runtimeEnvironment");
   });
 
   it("implements the WalletRepository contract through production API procedures", async () => {
@@ -65,6 +67,7 @@ describe("ApiWalletRepository", () => {
     });
     const repository = new ApiWalletRepository({
       url: "https://portal.example.test/trpc/",
+      runtimeEnvironment: "production",
       demoMode: false,
       getAuthToken: () => "test-token",
       fetchImpl: fetchImpl as typeof fetch,
@@ -96,25 +99,11 @@ describe("ApiWalletRepository", () => {
   });
 });
 
-function documentFixture(): WalletDocumentRecord {
-  return {
-    id: "patient_identity:1",
-    ownerUserId: "patient-1",
-    documentType: "patient_identity",
-    category: "identity_and_access",
-    title: "Patient identity",
-    status: "active",
-    trustStatus: "issuer_signed",
-    credentialId: "1",
-    credentialData: {},
-    documentReference: {
-      resourceType: "DocumentReference",
-      id: "document-reference-1",
-      status: "current",
-      content: [],
-    },
-    source: { system: "provider" },
-    version: { versionId: "1" },
-    privacy: {},
-  };
+function documentFixture(): WalletDocumentRecordV2 {
+  const seed = completeWalletSeedCards.find(
+    (card) => card.cardType === "patient_identity",
+  )!;
+  return walletDocumentRecordV2FromCard(seed, {
+    now: "2026-07-10T00:00:00.000Z",
+  });
 }

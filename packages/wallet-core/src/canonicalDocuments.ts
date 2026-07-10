@@ -60,6 +60,10 @@ export const CANONICAL_DOCUMENT_CATEGORIES = [
 export type CanonicalDocumentCategory =
   (typeof CANONICAL_DOCUMENT_CATEGORIES)[number];
 
+/**
+ * @deprecated Constitution V3 migration input. New repositories and patient
+ * workflows use WalletDocumentRecordV2 from walletDocumentV2.ts.
+ */
 export type WalletDocumentRecord = {
   id: string;
   ownerUserId?: string;
