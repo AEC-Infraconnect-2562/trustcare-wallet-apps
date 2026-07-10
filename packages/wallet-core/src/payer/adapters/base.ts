@@ -40,5 +40,6 @@ export type PayerAdapter = {
 
 export type PayerAdapterRegistry = {
   listProfiles(): PayerProfile[];
+  listAdapters(): PayerAdapter[];
   getAdapter(payerId: string): PayerAdapter | null;
 };

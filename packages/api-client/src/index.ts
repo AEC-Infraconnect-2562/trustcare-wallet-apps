@@ -6,4 +6,6 @@ export * as shlApi from "./shl";
 export * as verifierApi from "./verifier";
 export * as portalSyncApi from "./portalSync";
 export * as shareGatewayApi from "./shareGatewayClient";
+export * as payerApi from "./payer";
+export * as authBrokerApi from "./authBroker";
 export * from "./queryKeys";

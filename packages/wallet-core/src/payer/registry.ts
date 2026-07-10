@@ -18,6 +18,10 @@ export class StaticPayerAdapterRegistry implements PayerAdapterRegistry {
     return Array.from(this.adapters.values()).map((adapter) => adapter.profile);
   }
 
+  listAdapters(): PayerAdapter[] {
+    return Array.from(this.adapters.values());
+  }
+
   getAdapter(payerId: string): PayerAdapter | null {
     return this.adapters.get(payerId) ?? null;
   }

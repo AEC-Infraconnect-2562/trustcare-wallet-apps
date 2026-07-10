@@ -54,6 +54,7 @@ export type PayerProfile = {
 export type CoverageDiscoveryInput = {
   patientId?: string | number;
   holderDid?: string;
+  context?: ReadinessContext;
   nationalIdHash?: string;
   passportNumberHash?: string;
   payerId?: string;
@@ -209,6 +210,7 @@ export type AdditionalEvidenceRequest = {
 
 export type AdditionalEvidenceSubmission = {
   claimCaseId: string;
+  payerId: string;
   requestId: string;
   evidenceDocumentIds: string[];
   shlPackageId?: string;
