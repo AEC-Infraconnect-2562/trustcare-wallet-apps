@@ -78,6 +78,7 @@ import {
   type WalletCard,
   type WalletCardsByCategory,
   type WalletDocumentRequest,
+  type WalletDocumentRecordV2,
   type WalletDemoUser,
   type WalletExportResult,
   type WalletImportResult,
@@ -87,6 +88,7 @@ import {
   type VerifierResult,
 } from "@trustcare/wallet-core";
 import { env } from "./env";
+import { RecordsV2View } from "./components/records/RecordsV2View";
 import { RoutePlaceholderView } from "./components/shell/RoutePlaceholderView";
 import { useOfflineWallet } from "./hooks/useOfflineWallet";
 import { useScanHistory } from "./hooks/useScanHistory";
@@ -106,7 +108,6 @@ import {
 import {
   DialogLoadingFallback,
   DocumentFlowDialog,
-  DocumentsHubView,
   HistoryView,
   HomeView,
   LoginView,
@@ -468,20 +469,13 @@ export default function App() {
     [routerNavigate],
   );
 
-  useEffect(() => {
-    const recordId = routeMatch.params.recordId;
-    if (!recordId || !allCards.length) return;
-    const card = allCards.find(
-      (candidate) =>
-        String(candidate.credentialId) === recordId ||
-        String(candidate.id) === recordId,
-    );
-    if (!card) return;
-    setSelectedCard(card);
-    setQrDataUrl("");
-    setPresentation(null);
-    setDetailOpen(true);
-  }, [allCards, routeMatch.params.recordId]);
+  const openV2Record = useCallback(
+    (record: WalletDocumentRecordV2) => {
+      const routeId = record.credential.credentialId ?? record.id;
+      routerNavigate(`/records/${encodeURIComponent(routeId)}`);
+    },
+    [routerNavigate],
+  );
 
   useEffect(() => {
     if (!allCards.length) return;
@@ -1647,42 +1641,13 @@ export default function App() {
           />
         )}
         {routeView === "documents" && (
-          <DocumentsHubView
-            tab={documentsTab}
-            onTab={setDocumentsTab}
-            cards={allCards}
-            counts={counts}
-            user={activeUser}
-            fixtures={interopFixtures}
-            livePortalSync={canSyncPortalWallet}
-            developerMode={developerMode}
-            canSyncPortal={canSyncPortalWallet}
-            portalSyncBusy={portalSyncBusy}
-            objects={filteredObjects}
-            allObjects={storedObjects}
-            filter={storeFilter}
-            scanHistory={scanHistory}
-            history={history}
-            onOpenCard={openRecord}
-            onOpenScanner={() => setScannerOpen(true)}
-            onSyncPortal={() => void syncActiveWalletFromPortal()}
-            onImportPayload={(value) => {
-              importPayload(value);
-              setDocumentsTab("store");
-            }}
-            onAcceptCredentialOffer={(value) => {
-              void acceptCredentialOffer(value).then(() =>
-                setDocumentsTab("store"),
-              );
-            }}
-            onCopyFixture={(label, value) => {
-              void copyText(value);
-              setLastImportMessage(
-                `คัดลอก ${label} สำหรับ ${activeUser.nameTh ?? activeUser.nameEn} แล้ว`,
-              );
-            }}
-            onFilter={setStoreFilter}
-            onExport={exportResult}
+          <RecordsV2View
+            runtimeEnvironment={env.runtimeEnvironment}
+            userId={selectedUserId}
+            apiUrl={env.apiUrl}
+            selectedRecordId={routeMatch.params.recordId}
+            onOpenRecord={openV2Record}
+            onCloseRecord={() => routerNavigate("/records")}
           />
         )}
         {routeView === "receive" && (
