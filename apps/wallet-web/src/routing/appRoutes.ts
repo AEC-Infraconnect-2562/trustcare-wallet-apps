@@ -2,9 +2,7 @@ import { matchPath } from "react-router-dom";
 import type { View } from "../views/appViewModel";
 
 export type WalletPlaceholderRouteId =
-  | "active_shares"
-  | "connections"
-  | "family";
+  "active_shares" | "connections" | "family";
 
 export type WalletRouteId =
   | "home"
@@ -130,7 +128,8 @@ export const walletRouteDefinitions: readonly WalletRouteDefinition[] = [
     path: "/verify",
     view: null,
     title: "ตรวจสอบเอกสาร",
-    subtitle: "เปิดและตรวจ proof, issuer, status, expiry และ policy จาก Public URL",
+    subtitle:
+      "เปิดและตรวจ proof, issuer, status, expiry และ policy จาก Public URL",
     breadcrumb: "ตรวจสอบ",
   },
 ] as const;
@@ -182,11 +181,29 @@ export function resolveWalletRoute(pathname: string): WalletRouteMatch {
   for (const candidate of parameterizedRoutes) {
     const match = matchPath({ path: candidate.pattern, end: true }, normalized);
     if (match) {
-      return { route: routeById(candidate.routeId), params: match.params };
+      return {
+        route: routeById(candidate.routeId),
+        params: decodeRouteParams(match.params),
+      };
     }
   }
 
   return { route: home, params: {}, redirectTo: home.path };
+}
+
+function decodeRouteParams(
+  params: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(params).map(([key, value]) => {
+      if (value === undefined) return [key, value];
+      try {
+        return [key, decodeURIComponent(value)];
+      } catch {
+        return [key, value];
+      }
+    }),
+  );
 }
 
 export function routerBasename(baseUrl: string): string {

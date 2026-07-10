@@ -47,8 +47,12 @@ describe("wallet Web routes", () => {
       "lab-42",
     );
     expect(
-      resolveWalletRoute("/prepare/opd-v2").params.serviceProfileId,
-    ).toBe("opd-v2");
+      resolveWalletRoute("/records/urn%3Auuid%3ATCW-COMPLETE-0001").params
+        .recordId,
+    ).toBe("urn:uuid:TCW-COMPLETE-0001");
+    expect(resolveWalletRoute("/prepare/opd-v2").params.serviceProfileId).toBe(
+      "opd-v2",
+    );
     expect(
       resolveWalletRoute("/share/requests/request-7").params.requestId,
     ).toBe("request-7");
@@ -57,9 +61,7 @@ describe("wallet Web routes", () => {
 
   it("redirects root and unknown paths without preserving internal UI state", () => {
     expect(resolveWalletRoute("/").redirectTo).toBe("/home");
-    expect(resolveWalletRoute("/not-a-wallet-route").redirectTo).toBe(
-      "/home",
-    );
+    expect(resolveWalletRoute("/not-a-wallet-route").redirectTo).toBe("/home");
   });
 
   it("normalizes Vite base paths for BrowserRouter", () => {
