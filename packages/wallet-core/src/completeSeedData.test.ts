@@ -5,6 +5,7 @@ import {
   completeWalletSeedCards,
   exportWalletCard,
   getCompleteWalletSeed,
+  getDemoWalletCards,
   readinessContextValues,
 } from "./index";
 import type { WalletCard } from "./models";
@@ -147,6 +148,24 @@ describe("complete TrustCare wallet seed data", () => {
       expect(result.criticalReady, context).toBe(true);
       expect(result.requiredReady, context).toBe(result.requiredTotal);
       expect(result.selectedCardIds.length, context).toBeGreaterThan(0);
+    }
+  });
+
+  it("routes the complete demo login through the same readiness-complete fixture", () => {
+    const loginCards = getDemoWalletCards("demo-patient-complete-001");
+
+    expect(loginCards).toHaveLength(
+      getCompleteWalletSeed("demo-patient-complete-001").length,
+    );
+    for (const context of [
+      "insurance_claim",
+      "cross_border",
+      "medical_tourist",
+    ] as const) {
+      const result = assessLocalReadiness(loginCards, context);
+      expect(result.criticalReady, context).toBe(true);
+      expect(result.requiredReady, context).toBe(result.requiredTotal);
+      expect(result.recommendedReady, context).toBe(result.recommendedTotal);
     }
   });
 });
