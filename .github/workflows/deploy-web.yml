@@ -46,6 +46,7 @@ jobs:
         run: pnpm build:web
         env:
           VITE_BASE_PATH: /trustcare-wallet-apps/
+          VITE_TRUSTCARE_RUNTIME_ENV: demo
           VITE_TRUSTCARE_SHARE_GATEWAY_URL: https://wallet-web-production-6a00.up.railway.app/api/share-gateway
           VITE_TRUSTCARE_PUBLIC_SHARE_GATEWAY_URL: https://wallet-web-production-6a00.up.railway.app/api/share-gateway
 

@@ -4671,7 +4671,7 @@ export function createScannableWebUrl(payload: string): string {
     // Raw VC/VP payloads are wrapped below so another device can open this web app.
   }
   const encoded = encodeURIComponent(payload);
-  return `${currentAppShareRootUrl()}?verify=public#scan=${encoded}`;
+  return `${currentAppShareRootUrl()}verify#scan=${encoded}`;
 }
 
 export function getObjectScanPayload(object: WalletStoredObject): string {
@@ -5012,11 +5012,7 @@ export function currentShareGatewayBaseUrl(): string | null {
 }
 
 export function currentAppBaseUrl(): string {
-  if (typeof window === "undefined") return "https://trustcare.example.com";
-  return `${window.location.origin}${window.location.pathname.replace(/\/?$/, "/")}`.replace(
-    /\/$/,
-    "",
-  );
+  return currentAppShareRootUrl().replace(/\/$/, "");
 }
 
 export function currentAppShareRootUrl(): string {

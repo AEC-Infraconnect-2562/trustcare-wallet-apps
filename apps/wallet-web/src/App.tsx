@@ -8,6 +8,7 @@
   useState,
   type ReactElement,
 } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Activity,
   ArrowLeft,
@@ -86,11 +87,17 @@ import {
   type VerifierResult,
 } from "@trustcare/wallet-core";
 import { env } from "./env";
+import { RoutePlaceholderView } from "./components/shell/RoutePlaceholderView";
 import { useOfflineWallet } from "./hooks/useOfflineWallet";
 import { useScanHistory } from "./hooks/useScanHistory";
 import { useStoredExtras } from "./hooks/useStoredExtras";
 import { useWebAuthn } from "./hooks/useWebAuthn";
 import { toQrDataUrl } from "./utils/qrCode";
+import {
+  isPlaceholderRouteId,
+  pathForView,
+  resolveWalletRoute,
+} from "./routing/appRoutes";
 import {
   readStringStorage,
   removeStorageValue,
@@ -132,7 +139,6 @@ import {
   emptyPortalInteropFixtures,
   readinessContexts,
   readinessPurposeTh,
-  viewBreadcrumbLabels,
   type DocumentFlowState,
   type DocumentFlowMode,
   type DocumentsTab,
@@ -160,7 +166,7 @@ const SelectiveDisclosureDialog = lazy(() =>
 
 const baseApiOptions = {
   url: env.apiUrl,
-  demoMode: env.demoMode,
+  runtimeEnvironment: env.runtimeEnvironment,
   demoOrigin:
     typeof window !== "undefined"
       ? window.location.origin
@@ -171,17 +177,14 @@ const baseApiOptions = {
     typeof window !== "undefined"
       ? (currentShareGatewayBaseUrl() ?? undefined)
       : env.shareGatewayUrl,
-  portalOrigin: "https://trustcarehealth.live",
+  portalOrigin:
+    env.runtimeEnvironment === "demo"
+      ? "https://trustcarehealth.live"
+      : undefined,
   portalSyncMode: "disabled" as const,
 };
 
-const isStaticStandaloneRuntime =
-  typeof window !== "undefined" &&
-  (window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1" ||
-    window.location.hostname.endsWith("github.io"));
-
-const walletSessionKey = "trustcare-wallet-active-user:v1";
+const walletSessionKey = `trustcare-wallet-active-user:${env.runtimeEnvironment}:v1`;
 const legacyWalletSessionKey = "trustcare-wallet-active-user";
 const defaultLoginUserId = "demo-patient-001";
 const walletRuntimeRelease = "authoritative-photo-sources";
@@ -204,14 +207,23 @@ function isResolverBackedQrPayload(payload: string): boolean {
 }
 
 function readWalletSessionUserId() {
-  return readStringStorage(walletSessionKey, [legacyWalletSessionKey]);
+  return readStringStorage(
+    walletSessionKey,
+    env.runtimeEnvironment === "demo" ? [legacyWalletSessionKey] : [],
+  );
 }
 
 export default function App() {
   const { lang, setLang, t } = useLanguage();
+  const location = useLocation();
+  const routerNavigate = useNavigate();
+  const routeMatch = useMemo(
+    () => resolveWalletRoute(location.pathname),
+    [location.pathname],
+  );
+  const routeView = routeMatch.route.view;
+  const view: View = routeView ?? "home";
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [view, setView] = useState<View>("home");
-  const [viewHistory, setViewHistory] = useState<View[]>([]);
   const [documentsTab, setDocumentsTab] = useState<DocumentsTab>("cards");
   const [developerMode, setDeveloperMode] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>(() => {
@@ -278,7 +290,6 @@ export default function App() {
   const apiOptions = useMemo(
     () => ({
       ...baseApiOptions,
-      demoMode: isStaticStandaloneRuntime ? true : baseApiOptions.demoMode,
       portalSyncMode: "disabled" as const,
       userId: selectedUserId,
     }),
@@ -287,13 +298,16 @@ export default function App() {
   const portalSyncOptions = useMemo(
     () => ({
       ...baseApiOptions,
-      demoMode: true,
-      portalSyncMode: "live_demo" as const,
+      portalSyncMode:
+        env.runtimeEnvironment === "demo"
+          ? ("live_demo" as const)
+          : ("disabled" as const),
       userId: selectedUserId,
     }),
     [selectedUserId],
   );
   const canSyncPortalWallet =
+    env.runtimeEnvironment === "demo" &&
     portalSyncApi.canUsePortalDemoSync(selectedUserId);
   const interopFixtures = useMemo(() => {
     if (canSyncPortalWallet) return emptyPortalInteropFixtures(activeUser);
@@ -304,22 +318,34 @@ export default function App() {
   }, [activeUser, canSyncPortalWallet, selectedUserId]);
   const navigateTo = useCallback(
     (nextView: View, options?: { replace?: boolean }) => {
-      if (nextView === view) return;
-      if (!options?.replace) {
-        setViewHistory((previous) => [...previous.slice(-7), view]);
-      }
-      setView(nextView);
+      routerNavigate(pathForView(nextView), { replace: options?.replace });
     },
-    [view],
+    [routerNavigate],
   );
   const goBack = useCallback(() => {
-    setViewHistory((previous) => {
-      const next = [...previous];
-      const previousView = next.pop();
-      setView(previousView ?? "home");
-      return next;
-    });
-  }, []);
+    routerNavigate(-1);
+  }, [routerNavigate]);
+
+  useEffect(() => {
+    if (!routeMatch.redirectTo) return;
+    routerNavigate(
+      {
+        pathname: routeMatch.redirectTo,
+        search: location.search,
+        hash: location.hash,
+      },
+      { replace: true },
+    );
+  }, [location.hash, location.search, routeMatch.redirectTo, routerNavigate]);
+  useEffect(() => {
+    const serviceProfileId = routeMatch.params.serviceProfileId;
+    if (
+      serviceProfileId &&
+      serviceProfileId in readinessContextLabels
+    ) {
+      setReadinessContext(serviceProfileId as ReadinessContext);
+    }
+  }, [routeMatch.params.serviceProfileId]);
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
@@ -339,6 +365,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     let cancelled = false;
     async function loadWallet() {
       setPortalSyncMessage("");
@@ -385,12 +412,14 @@ export default function App() {
     };
   }, [
     apiOptions,
+    isAuthenticated,
     offlineWallet.isLoaded,
     offlineWallet.offlineCards,
     selectedUserId,
   ]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     let cancelled = false;
     void Promise.all([
       walletApi.readiness(apiOptions, { context: readinessContext }),
@@ -417,7 +446,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiOptions, readinessContext]);
+  }, [apiOptions, isAuthenticated, readinessContext]);
 
   const allCards = useMemo(() => {
     const online = flattenCardsByCategory(grouped);
@@ -427,6 +456,32 @@ export default function App() {
           (card) => card.ownerUserId === selectedUserId,
         );
   }, [grouped, offlineWallet.offlineCards, selectedUserId]);
+
+  const openRecord = useCallback(
+    (card: WalletCard) => {
+      setSelectedCard(card);
+      setQrDataUrl("");
+      setPresentation(null);
+      setDetailOpen(true);
+      routerNavigate(`/records/${encodeURIComponent(String(card.credentialId))}`);
+    },
+    [routerNavigate],
+  );
+
+  useEffect(() => {
+    const recordId = routeMatch.params.recordId;
+    if (!recordId || !allCards.length) return;
+    const card = allCards.find(
+      (candidate) =>
+        String(candidate.credentialId) === recordId ||
+        String(candidate.id) === recordId,
+    );
+    if (!card) return;
+    setSelectedCard(card);
+    setQrDataUrl("");
+    setPresentation(null);
+    setDetailOpen(true);
+  }, [allCards, routeMatch.params.recordId]);
 
   useEffect(() => {
     if (!allCards.length) return;
@@ -955,13 +1010,7 @@ export default function App() {
           window.clearTimeout(timeout);
         }
       }
-      const verifier = await verifierApi.verifyQr(
-        {
-          ...baseApiOptions,
-          demoMode: true,
-        },
-        payload,
-      );
+      const verifier = await verifierApi.verifyQr(baseApiOptions, payload);
       const outcome = {
         id: `public_scan_${Date.now().toString(36)}`,
         userId: "public-verifier",
@@ -1148,7 +1197,11 @@ export default function App() {
 
   useEffect(() => {
     if (!isAuthenticated || !pendingScanPayload || !allCards.length) return;
-    if (isPublicVerifierScanLocation()) return;
+    if (
+      routeMatch.route.id === "verify" ||
+      isPublicVerifierScanLocation()
+    )
+      return;
     if (
       allCards.some(
         (card) => card.ownerUserId && card.ownerUserId !== selectedUserId,
@@ -1163,6 +1216,7 @@ export default function App() {
     allCards,
     isAuthenticated,
     pendingScanPayload,
+    routeMatch.route.id,
     selectedUserId,
     verifyScan,
   ]);
@@ -1175,77 +1229,52 @@ export default function App() {
   }, [isAuthenticated, pendingScanPayload, verifyPublicScan]);
 
   useEffect(() => {
-    if (!pendingScanPayload || !isPublicVerifierScanLocation()) return;
+    if (
+      !pendingScanPayload ||
+      (routeMatch.route.id !== "verify" &&
+        !isPublicVerifierScanLocation())
+    )
+      return;
     if (lastPublicVerifyPayload.current === pendingScanPayload) return;
     lastPublicVerifyPayload.current = pendingScanPayload;
     void verifyPublicScan(pendingScanPayload);
-  }, [pendingScanPayload, verifyPublicScan]);
+  }, [pendingScanPayload, routeMatch.route.id, verifyPublicScan]);
 
   const loginAs = useCallback(
     (userId: string) => {
       writeStringStorage(walletSessionKey, userId);
       setSelectedUserId(userId);
       setIsAuthenticated(true);
-      setViewHistory([]);
-      setView(pendingScanPayload ? "share" : "home");
+      navigateTo(pendingScanPayload ? "share" : "home", { replace: true });
     },
-    [pendingScanPayload],
+    [navigateTo, pendingScanPayload],
   );
 
   const logout = useCallback(() => {
-    removeStorageValue(walletSessionKey, [legacyWalletSessionKey]);
+    removeStorageValue(
+      walletSessionKey,
+      env.runtimeEnvironment === "demo" ? [legacyWalletSessionKey] : [],
+    );
     setIsAuthenticated(false);
-    setViewHistory([]);
-    setView("home");
+    navigateTo("home", { replace: true });
     setSelectedCard(null);
     setDetailOpen(false);
     setVerifierResult(null);
     setScanOutcome(null);
     setScanResponseOpen(false);
-  }, []);
+  }, [navigateTo]);
 
-  const pageCopy: Record<View, { title: string; subtitle: string }> = {
-    home: {
-      title: "TrustCare Wallet",
-      subtitle: "เอกสารสุขภาพส่วนตัวที่ตรวจสอบได้",
-    },
-    documents: {
-      title: "เอกสารสุขภาพ",
-      subtitle: "ค้นหา กรอง ปักหมุด และตรวจดูเอกสารสุขภาพที่ตรวจสอบได้",
-    },
-    receive: {
-      title: "รับเอกสาร",
-      subtitle:
-        "สแกน วาง หรือ import OID4VCI offer, OID4VP request, SHL และ VC/VP",
-    },
-    share: {
-      title: "แชร์เอกสาร",
-      subtitle: "สร้าง VP QR และ selective disclosure ตามวัตถุประสงค์การใช้งาน",
-    },
-    prepare: {
-      title: "เตรียมเข้ารับบริการ",
-      subtitle:
-        "ตรวจความพร้อมจากกติกา Contract Hub แล้วส่งต่อไปสร้าง QR ในหน้าแชร์",
-    },
-    store: {
-      title: "คลังพกพา",
-      subtitle:
-        "ตรวจดูและส่งออก VC, VP, SHL, Manifest VP, Holder VC และ sync receipt ในเครื่อง",
-    },
-    history: {
-      title: "ประวัติ",
-      subtitle: "ประวัติการแสดงข้อมูล การตรวจสอบ และการแชร์",
-    },
-    settings: {
-      title: "ตั้งค่า",
-      subtitle: "ตัวตน ความปลอดภัย ภาษา ธีม และโหมดนักพัฒนา",
-    },
-  };
-  const title = pageCopy[view].title;
+  const title = routeMatch.route.title;
+  const placeholderRouteId = isPlaceholderRouteId(routeMatch.route.id)
+    ? routeMatch.route.id
+    : null;
+  const canGoBack =
+    typeof window !== "undefined" &&
+    Number((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0;
   const breadcrumbs = [
     "TrustCare Wallet",
-    viewBreadcrumbLabels[view],
-    ...(view === "documents"
+    routeMatch.route.breadcrumb,
+    ...(routeView === "documents"
       ? [documentTabBreadcrumbLabels[documentsTab]]
       : []),
   ];
@@ -1255,8 +1284,9 @@ export default function App() {
   };
 
   if (
-    pendingScanPayload &&
-    (!isAuthenticated || isPublicVerifierScanLocation())
+    routeMatch.route.id === "verify" ||
+    (pendingScanPayload &&
+      (!isAuthenticated || isPublicVerifierScanLocation()))
   ) {
     return (
       <>
@@ -1288,9 +1318,30 @@ export default function App() {
     );
   }
 
+  if (!isAuthenticated && env.runtimeEnvironment !== "demo") {
+    return (
+      <main className="runtime-auth-boundary">
+        <section role="alert">
+          <span className="eyebrow">{env.environmentBanner.labelTh}</span>
+          <h1>ยังไม่ได้เชื่อมต่อระบบยืนยันตัวตน</h1>
+          <p>
+            Wallet จะไม่เปิดข้อมูลสาธิตแทนข้อมูลจริง กรุณาตั้งค่าระบบเข้าสู่ระบบ
+            และการเชื่อมต่อ TrustCare Portal สำหรับระบบนี้
+          </p>
+        </section>
+      </main>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
       <>
+        {env.environmentBanner.bannerVisible && (
+          <div className="login-runtime-banner" role="status">
+            <strong>{env.environmentBanner.labelTh}</strong>
+            <span>{env.environmentBanner.descriptionTh}</span>
+          </div>
+        )}
         <LoginView
           users={walletDemoUsers}
           pendingScan={Boolean(pendingScanPayload)}
@@ -1318,7 +1369,8 @@ export default function App() {
     <main
       className="app-shell"
       data-release={walletRuntimeRelease}
-      data-view={view}
+      data-view={routeMatch.route.id}
+      data-runtime={env.runtimeEnvironment}
     >
       <header className="app-top-shell">
         <div className="brand-block">
@@ -1330,36 +1382,36 @@ export default function App() {
         </div>
         <nav className="primary-tabs" aria-label="TrustCare Wallet">
           <NavButton
-            active={view === "home"}
+            active={routeMatch.route.id === "home"}
             icon={<Home />}
             label="หน้าแรก"
             onClick={() => navigateTo("home")}
           />
           <NavButton
             active={
-              view === "documents" ||
-              view === "receive" ||
-              view === "store" ||
-              view === "history"
+              routeView === "documents" ||
+              routeView === "receive" ||
+              routeView === "store" ||
+              routeView === "history"
             }
             icon={<FileText />}
             label="เอกสาร"
             onClick={() => openDocumentsHub("cards")}
           />
           <NavButton
-            active={view === "share"}
+            active={routeView === "share"}
             icon={<Share2 />}
             label="แชร์"
             onClick={() => navigateTo("share")}
           />
           <NavButton
-            active={view === "prepare"}
+            active={routeView === "prepare"}
             icon={<Activity />}
             label="เตรียมบริการ"
             onClick={() => navigateTo("prepare")}
           />
           <NavButton
-            active={view === "settings"}
+            active={routeView === "settings"}
             icon={<Settings />}
             label="ตั้งค่า"
             onClick={() => navigateTo("settings")}
@@ -1376,49 +1428,49 @@ export default function App() {
         </div>
         <nav>
           <NavButton
-            active={view === "home"}
+            active={routeMatch.route.id === "home"}
             icon={<Home />}
             label="หน้าแรก"
             onClick={() => navigateTo("home")}
           />
           <NavButton
-            active={view === "documents"}
+            active={routeView === "documents"}
             icon={<FileText />}
             label="เอกสาร"
             onClick={() => navigateTo("documents")}
           />
           <NavButton
-            active={view === "receive"}
+            active={routeView === "receive"}
             icon={<Inbox />}
             label="รับเอกสาร"
             onClick={() => navigateTo("receive")}
           />
           <NavButton
-            active={view === "share"}
+            active={routeView === "share"}
             icon={<Share2 />}
             label="แชร์"
             onClick={() => navigateTo("share")}
           />
           <NavButton
-            active={view === "prepare"}
+            active={routeView === "prepare"}
             icon={<Activity />}
             label="เตรียมบริการ"
             onClick={() => navigateTo("prepare")}
           />
           <NavButton
-            active={view === "store"}
+            active={routeView === "store"}
             icon={<Database />}
             label="คลังข้อมูล"
             onClick={() => navigateTo("store")}
           />
           <NavButton
-            active={view === "history"}
+            active={routeView === "history"}
             icon={<History />}
             label="ประวัติ"
             onClick={() => navigateTo("history")}
           />
           <NavButton
-            active={view === "settings"}
+            active={routeView === "settings"}
             icon={<Settings />}
             label="ตั้งค่า"
             onClick={() => navigateTo("settings")}
@@ -1439,7 +1491,7 @@ export default function App() {
                 type="button"
                 className="back-button"
                 onClick={goBack}
-                disabled={view === "home" && viewHistory.length === 0}
+                disabled={!canGoBack}
               >
                 <ArrowLeft size={15} /> กลับ
               </button>
@@ -1457,7 +1509,7 @@ export default function App() {
               </nav>
             </div>
             <h1>{title}</h1>
-            <p>{pageCopy[view].subtitle}</p>
+            <p>{routeMatch.route.subtitle}</p>
           </div>
           <div className="topbar-actions">
             <div className="top-user-session" aria-label="ผู้ใช้ที่เข้าสู่ระบบ">
@@ -1494,6 +1546,16 @@ export default function App() {
             </button>
           </div>
         </header>
+
+        {env.environmentBanner.bannerVisible && (
+          <div
+            className={`environment-banner tone-${env.environmentBanner.tone}`}
+            role="status"
+          >
+            <strong>{env.environmentBanner.labelTh}</strong>
+            <span>{env.environmentBanner.descriptionTh}</span>
+          </div>
+        )}
 
         <div className="status-strip">
           <div>
@@ -1558,19 +1620,20 @@ export default function App() {
           <div className="toast-line portal-sync-line">{portalSyncMessage}</div>
         )}
 
-        {view === "home" && (
+        {placeholderRouteId && (
+          <RoutePlaceholderView
+            routeId={placeholderRouteId}
+            onNavigate={navigateTo}
+          />
+        )}
+        {routeView === "home" && (
           <HomeView
             cards={allCards}
             user={activeUser}
             readiness={readiness}
             history={history}
             offlineOnline={offlineWallet.isOnline}
-            onOpenCard={(card) => {
-              setSelectedCard(card);
-              setQrDataUrl("");
-              setPresentation(null);
-              setDetailOpen(true);
-            }}
+            onOpenCard={openRecord}
             onView={navigateTo}
             serviceReadiness={serviceReadinessSummaries}
             activeReadinessContext={readinessContext}
@@ -1583,7 +1646,7 @@ export default function App() {
             }}
           />
         )}
-        {view === "documents" && (
+        {routeView === "documents" && (
           <DocumentsHubView
             tab={documentsTab}
             onTab={setDocumentsTab}
@@ -1600,12 +1663,7 @@ export default function App() {
             filter={storeFilter}
             scanHistory={scanHistory}
             history={history}
-            onOpenCard={(card) => {
-              setSelectedCard(card);
-              setQrDataUrl("");
-              setPresentation(null);
-              setDetailOpen(true);
-            }}
+            onOpenCard={openRecord}
             onOpenScanner={() => setScannerOpen(true)}
             onSyncPortal={() => void syncActiveWalletFromPortal()}
             onImportPayload={(value) => {
@@ -1627,7 +1685,7 @@ export default function App() {
             onExport={exportResult}
           />
         )}
-        {view === "receive" && (
+        {routeView === "receive" && (
           <ReceiveView
             user={activeUser}
             fixtures={interopFixtures}
@@ -1652,7 +1710,7 @@ export default function App() {
             }}
           />
         )}
-        {view === "share" && (
+        {routeView === "share" && (
           <ShareView
             cards={allCards}
             user={activeUser}
@@ -1674,7 +1732,7 @@ export default function App() {
             onExport={exportResult}
           />
         )}
-        {view === "prepare" && (
+        {routeView === "prepare" && (
           <PrepareView
             user={activeUser}
             cards={allCards}
@@ -1702,7 +1760,7 @@ export default function App() {
             }
           />
         )}
-        {view === "store" && (
+        {routeView === "store" && (
           <StoreView
             user={activeUser}
             objects={filteredObjects}
@@ -1713,10 +1771,10 @@ export default function App() {
             onExport={exportResult}
           />
         )}
-        {view === "history" && (
+        {routeView === "history" && (
           <HistoryView history={history} scanHistory={scanHistory} />
         )}
-        {view === "settings" && (
+        {routeView === "settings" && (
           <SettingsView
             webAuthn={webAuthn}
             theme={theme}
@@ -1743,17 +1801,17 @@ export default function App() {
 
       <nav className="bottom-nav">
         <NavButton
-          active={view === "home"}
+          active={routeMatch.route.id === "home"}
           icon={<Home />}
           label="หน้าแรก"
           onClick={() => navigateTo("home")}
         />
         <NavButton
           active={
-            view === "documents" ||
-            view === "receive" ||
-            view === "store" ||
-            view === "history"
+            routeView === "documents" ||
+            routeView === "receive" ||
+            routeView === "store" ||
+            routeView === "history"
           }
           icon={<FileText />}
           label="เอกสาร"
@@ -1762,19 +1820,19 @@ export default function App() {
           }}
         />
         <NavButton
-          active={view === "share"}
+          active={routeView === "share"}
           icon={<Share2 />}
           label="แชร์"
           onClick={() => navigateTo("share")}
         />
         <NavButton
-          active={view === "prepare"}
+          active={routeView === "prepare"}
           icon={<Activity />}
           label="เตรียม"
           onClick={() => navigateTo("prepare")}
         />
         <NavButton
-          active={view === "settings"}
+          active={routeView === "settings"}
           icon={<Settings />}
           label="ตั้งค่า"
           onClick={() => navigateTo("settings")}
@@ -1789,7 +1847,12 @@ export default function App() {
             qrDataUrl={qrDataUrl}
             presentation={presentation}
             history={history}
-            onClose={() => setDetailOpen(false)}
+            onClose={() => {
+              setDetailOpen(false);
+              if (routeMatch.params.recordId) {
+                routerNavigate("/records", { replace: true });
+              }
+            }}
             onGenerateQr={generateQr}
             onSelectiveDisclosure={() => setSelectiveOpen(true)}
           />

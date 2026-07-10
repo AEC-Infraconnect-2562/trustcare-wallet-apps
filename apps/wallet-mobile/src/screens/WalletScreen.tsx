@@ -22,8 +22,10 @@ import {
   canPresentCredential,
   flattenCardsByCategory,
   getDemoCardsByCategory,
+  walletCardHasCryptographicProof,
   type WalletCard,
 } from "@trustcare/wallet-core";
+import { env } from "../env";
 import { useActiveWalletUser } from "../hooks/useActiveWalletUser";
 import { useMobileSecuritySettings } from "../hooks/useMobileSecuritySettings";
 import {
@@ -55,9 +57,22 @@ export function WalletScreen() {
 
   const displayCards = cached.length ? cached : cards;
   const activeCards = displayCards.filter((card) => canPresentCredential(card));
+  const cryptographicallyVerifiedCards = displayCards.filter((card) =>
+    walletCardHasCryptographicProof(card),
+  );
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+      {env.environmentBanner.bannerVisible ? (
+        <View style={styles.environmentBanner} accessibilityRole="summary">
+          <Text style={styles.environmentBannerTitle}>
+            {env.environmentBanner.labelTh}
+          </Text>
+          <Text style={styles.environmentBannerBody}>
+            {env.environmentBanner.descriptionTh}
+          </Text>
+        </View>
+      ) : null}
       <View style={styles.header}>
         <View>
           <Text style={styles.kicker}>TrustCare Wallet</Text>
@@ -92,16 +107,18 @@ export function WalletScreen() {
           </View>
         </View>
         <Text style={styles.archive}>
-          <Archive size={16} color="#4f67f2" /> คลังเก่า 280 รายการ
+          <Archive size={16} color="#4f67f2" /> เก็บในเครื่อง {cached.length} รายการ
         </Text>
       </View>
 
       <View style={styles.trustRow}>
         <View style={styles.trustChip}>
           <ShieldCheck color="#0f7c55" size={16} />
-          <Text style={styles.trustText}>ตรวจสอบได้</Text>
+          <Text style={styles.trustText}>
+            ตรวจ proof แล้ว {cryptographicallyVerifiedCards.length} รายการ
+          </Text>
         </View>
-        <Text style={styles.scopeText}>scope: {user.id}</Text>
+        <Text style={styles.scopeText}>อ้างอิงจากผลตรวจล่าสุดของแต่ละเอกสาร</Text>
       </View>
       <View style={styles.stateGrid}>
         <StateChip
@@ -201,6 +218,24 @@ function useNetworkState() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#f4f6fa" },
   content: { padding: 20, paddingBottom: 120 },
+  environmentBanner: {
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    borderRadius: 12,
+    backgroundColor: "#eff6ff",
+    padding: 12,
+    gap: 3,
+  },
+  environmentBannerTitle: {
+    color: "#1e3a5f",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  environmentBannerBody: {
+    color: "#365773",
+    fontSize: 12,
+    lineHeight: 18,
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

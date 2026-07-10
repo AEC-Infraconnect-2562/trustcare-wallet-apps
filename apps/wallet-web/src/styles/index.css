@@ -2175,6 +2175,75 @@ button:disabled {
   background: var(--card);
 }
 
+.login-runtime-banner {
+  position: fixed;
+  z-index: 20;
+  inset: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.65rem 1rem;
+  background: #eff6ff;
+  border-bottom: 1px solid #bfdbfe;
+  color: #1e3a5f;
+  font-size: 0.875rem;
+}
+
+.runtime-auth-boundary {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: #f4f7f9;
+}
+
+.runtime-auth-boundary section {
+  width: min(100%, 42rem);
+  padding: 2rem;
+  border: 1px solid #d8e0e7;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 18px 45px rgb(15 23 42 / 8%);
+}
+
+.runtime-auth-boundary h1 {
+  margin: 0.5rem 0;
+}
+
+.runtime-auth-boundary p {
+  margin: 0;
+  color: #526174;
+  line-height: 1.7;
+}
+
+.environment-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0 1.5rem 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border-color, #cbd5e1);
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1e3a5f;
+}
+
+.environment-banner span {
+  font-size: 0.875rem;
+}
+
+.environment-banner.tone-yellow {
+  background: #fffbeb;
+  color: #78350f;
+  border-color: #fde68a;
+}
+
+.environment-banner.tone-purple {
+  background: #faf5ff;
+  color: #581c87;
+  border-color: #e9d5ff;
+}
+
 .status-strip {
   position: sticky;
   top: var(--workspace-topbar-height);

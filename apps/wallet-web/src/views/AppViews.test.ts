@@ -3,6 +3,7 @@ import { getDemoUser, getDemoWalletCards } from "@trustcare/wallet-core";
 import {
   avatarUrlCandidatesForUser,
   createScannableWebUrl,
+  currentAppBaseUrl,
   currentShareGatewayBaseUrl,
   extractScannablePayload,
   getShlTrustProfile,
@@ -32,7 +33,7 @@ describe("scan URL payload parsing", () => {
       "https://wallet.example/api/share-gateway/presentations/vp_abc.jwt";
     const webScanUrl = createScannableWebUrl(resolverUrl);
 
-    expect(webScanUrl).toContain("?verify=public#scan=");
+    expect(webScanUrl).toContain("/verify#scan=");
     expect(webScanUrl).toContain("#scan=");
     expect(extractScannablePayload(webScanUrl)).toBe(resolverUrl);
     expect(createScannableWebUrl(webScanUrl)).toBe(webScanUrl);
@@ -40,6 +41,10 @@ describe("scan URL payload parsing", () => {
 });
 
 describe("share gateway URL resolution", () => {
+  it("uses an application root instead of the active route for publication", () => {
+    expect(currentAppBaseUrl()).toBe("https://trustcare.example.com");
+  });
+
   it("uses the public Railway gateway when running as a GitHub Pages static app", () => {
     vi.stubGlobal("window", {
       location: {
