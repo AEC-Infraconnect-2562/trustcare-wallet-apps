@@ -26,6 +26,7 @@ import {
   classifyQrPayload,
   fetchShlManifest,
   buildPortalInteroperabilityFixtures,
+  evaluateCredentialLifecycle,
   mhdDocumentReferenceFromRecord,
   recordFromMhdDocumentReference,
   validateDocumentReference,
@@ -804,13 +805,12 @@ async function hydrateIssuerSignedCredentials(
 }
 
 function shouldRequestIssuerSignature(card: WalletCard): boolean {
+  const lifecycle = evaluateCredentialLifecycle({ card });
   return Boolean(
     card.credentialData &&
-    !card.credentialJwt &&
-    !card.credentialProof?.jwt &&
     card.credentialStatus === "active" &&
-    card.sourceSystem !== "trustcare_portal" &&
-    card.sourceSystem !== "partner_wallet",
+    lifecycle.action === "issue_and_sign" &&
+    lifecycle.signingOwner === "source_issuer",
   );
 }
 

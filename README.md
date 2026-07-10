@@ -49,6 +49,7 @@ See `docs/SHL_GATEWAY_ARCHITECTURE.md` for the production-shaped SHL Gateway des
 See `docs/PAYER_ECLAIM_MEDICAL_TOURIST_HANDOFF.md` for the CarePass payer/e-Claim, cross-border, and medical tourist wallet foundation.
 See `docs/CLAIM_NOT_ENGINE_POLICY.md` and `docs/PAYER_ADAPTER_CONTRACT.md` for the payer orchestration boundary: TrustCare packages and verifies evidence, while payer adapters return payer decisions.
 See `docs/AUTH_BROKER_CONTRACT.md` for the provider-neutral identity broker contract used by payer and medical tourist flows.
+See `docs/PAYER_IMPLEMENTATION_NOTES.md` for the implemented core/API/UX entry points and production connector guardrails.
 
 The Contract Hub reference was checked against `AEC-Infraconnect-2562/trustcare-hospital-network` `main` at `153e99bc6788490241c385260f4b3d048a059cdc`.
 

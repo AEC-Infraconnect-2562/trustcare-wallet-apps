@@ -20,6 +20,7 @@ export * from "./shareGateway";
 export * from "./sharePackages";
 export * from "./trustcareJwt";
 export * from "./credentialProof";
+export * from "./credentialLifecycle";
 export * from "./sorting";
 export * from "./statusTone";
 export * from "./selectiveDisclosure";
