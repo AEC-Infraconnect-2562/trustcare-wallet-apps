@@ -1507,7 +1507,8 @@ function shareGatewayEvidenceProvider(input: {
       const vpSubject = request.subjects.find(
         (subject) => subject.role === "vp",
       );
-      const response = await input.fetcher(input.endpoint, {
+      const fetcher = input.fetcher;
+      const response = await fetcher(input.endpoint, {
         method: "POST",
         credentials: "omit",
         headers: {

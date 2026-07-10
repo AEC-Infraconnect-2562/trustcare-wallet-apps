@@ -336,7 +336,8 @@ describe("verifyQr VP resolver behavior", () => {
     const result = await verifyQr(
       {
         url: "https://trustcare.example.com/trpc",
-        fetchImpl: async (input, init) => {
+        fetchImpl: async function (this: void, input, init) {
+          expect(this).toBeUndefined();
           const url = String(input);
           if (url === presentationUrl) {
             return new Response(signed.jwt, {
