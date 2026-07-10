@@ -46,6 +46,9 @@ See `docs/TEST_USERS.md` for the active mock/seed users, per-login wallet scope,
 See `docs/WALLET_ARCHITECTURE.md` for the canonical wallet document model, Prepare/Share boundary, share-package rules, SHL certification modes, and seed/mock guardrails.
 See `docs/CONTRACT_HUB_FEATURE_UPDATES.md` for the Thai implementation notes that TrustCare Portal and Contract Hub should support later, including Standard SHL, TrustCare Verified SHL, Maker/Checker certification, optional Manifest VP/VC, and document bundle metadata.
 See `docs/SHL_GATEWAY_ARCHITECTURE.md` for the production-shaped SHL Gateway design: canonical SHL, browser viewer wrapper, Portal Backend/S3 publication, passcode handling, Manifest VP certification, and demo-mode limits.
+See `docs/PAYER_ECLAIM_MEDICAL_TOURIST_HANDOFF.md` for the CarePass payer/e-Claim, cross-border, and medical tourist wallet foundation.
+See `docs/CLAIM_NOT_ENGINE_POLICY.md` and `docs/PAYER_ADAPTER_CONTRACT.md` for the payer orchestration boundary: TrustCare packages and verifies evidence, while payer adapters return payer decisions.
+See `docs/AUTH_BROKER_CONTRACT.md` for the provider-neutral identity broker contract used by payer and medical tourist flows.
 
 The Contract Hub reference was checked against `AEC-Infraconnect-2562/trustcare-hospital-network` `main` at `153e99bc6788490241c385260f4b3d048a059cdc`.
 
