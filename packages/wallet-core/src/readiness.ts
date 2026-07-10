@@ -31,41 +31,70 @@ export const readinessRequirements: Record<
   ReadinessRequirement[]
 > = readinessRequirementsFromProfiles();
 
+const readinessRequirementTypeSets = Object.fromEntries(
+  Object.entries(readinessRequirements).map(([context, requirements]) => [
+    context,
+    requirements.map((requirement) => ({
+      ...requirement,
+      acceptableTypes: new Set(
+        requirement.cardTypes
+          .map((type) => normalizeDocumentType(type))
+          .filter((type): type is NonNullable<typeof type> => Boolean(type)),
+      ),
+    })),
+  ]),
+) as Record<
+  ReadinessContext,
+  Array<ReadinessRequirement & { acceptableTypes: Set<string> }>
+>;
+
 export function assessLocalReadiness(
   cards: WalletCard[],
   context: ReadinessContext,
 ): ReadinessResult {
-  const requirements = readinessRequirements[context];
-  const activeCards = cards.filter(
-    (card) =>
-      canPresentCredential(card) && !isTrustArtifactDocumentType(card.cardType),
-  );
+  const requirements = readinessRequirementTypeSets[context];
+  const activeCardsByType = new Map<string, WalletCard[]>();
+  for (const card of cards) {
+    if (
+      !canPresentCredential(card) ||
+      isTrustArtifactDocumentType(card.cardType)
+    ) {
+      continue;
+    }
+    const type = normalizeDocumentType(card.cardType);
+    if (!type) continue;
+    const bucket = activeCardsByType.get(type);
+    if (bucket) bucket.push(card);
+    else activeCardsByType.set(type, [card]);
+  }
   const ready: ReadinessResult["ready"] = [];
   const missing: ReadinessResult["missing"] = [];
   const selectedCardIds = new Set<number>();
+  let requiredTotal = 0;
+  let requiredReady = 0;
+  let recommendedTotal = 0;
+  let recommendedReady = 0;
 
   for (const requirement of requirements) {
-    const acceptableTypes = new Set(
-      requirement.cardTypes
-        .map((type) => normalizeDocumentType(type))
-        .filter(Boolean),
-    );
-    const matchedCards = activeCards.filter((card) => {
-      const type = normalizeDocumentType(card.cardType);
-      return Boolean(type && acceptableTypes.has(type));
-    });
+    const { acceptableTypes, ...publicRequirement } = requirement;
+    if (requirement.required) requiredTotal += 1;
+    else recommendedTotal += 1;
+
+    const matchedCards: WalletCard[] = [];
+    for (const type of acceptableTypes) {
+      const bucket = activeCardsByType.get(type);
+      if (bucket) matchedCards.push(...bucket);
+    }
     if (matchedCards.length) {
       matchedCards.forEach((card) => selectedCardIds.add(card.id));
-      ready.push({ ...requirement, status: "ready", matchedCards });
+      ready.push({ ...publicRequirement, status: "ready", matchedCards });
+      if (requirement.required) requiredReady += 1;
+      else recommendedReady += 1;
     } else {
-      missing.push({ ...requirement, status: "missing" });
+      missing.push({ ...publicRequirement, status: "missing" });
     }
   }
 
-  const requiredTotal = requirements.filter((item) => item.required).length;
-  const requiredReady = ready.filter((item) => item.required).length;
-  const recommendedTotal = requirements.filter((item) => !item.required).length;
-  const recommendedReady = ready.filter((item) => !item.required).length;
   const requiredScore = requiredTotal ? requiredReady / requiredTotal : 1;
   const recommendedScore = recommendedTotal
     ? recommendedReady / recommendedTotal

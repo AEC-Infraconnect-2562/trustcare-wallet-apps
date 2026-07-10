@@ -1,4 +1,10 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import type { WalletStoredObject } from "@trustcare/wallet-core";
 import {
   isRecordOfArrays,
@@ -21,8 +27,13 @@ export function useStoredExtras(selectedUserId: string): UseStoredExtrasResult {
   const [storedExtrasByUser, setStoredExtrasByUser] = useState<
     Record<string, WalletStoredObject[]>
   >(() => readStoredExtras());
+  const storageHydrated = useRef(false);
 
   useEffect(() => {
+    if (!storageHydrated.current) {
+      storageHydrated.current = true;
+      return;
+    }
     writeStoredExtras(storedExtrasByUser);
   }, [storedExtrasByUser]);
 

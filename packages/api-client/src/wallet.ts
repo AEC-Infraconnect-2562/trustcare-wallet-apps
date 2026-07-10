@@ -806,6 +806,8 @@ async function hydrateIssuerSignedCredentials(
 function shouldRequestIssuerSignature(card: WalletCard): boolean {
   return Boolean(
     card.credentialData &&
+    !card.credentialJwt &&
+    !card.credentialProof?.jwt &&
     card.credentialStatus === "active" &&
     card.sourceSystem !== "trustcare_portal" &&
     card.sourceSystem !== "partner_wallet",

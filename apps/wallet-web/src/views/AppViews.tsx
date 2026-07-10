@@ -373,26 +373,43 @@ export function HomeView({
   onPrepareContext: (context: ReadinessContext) => void;
 }) {
   const [readinessExpanded, setReadinessExpanded] = useState(false);
-  const activeCards = cards.filter((card) => canPresentCredential(card));
-  const criticalCards = activeCards
-    .filter((card) => card.pinned || criticalCardTypes.has(card.cardType))
-    .slice(0, 5);
-  const recentCards = [...activeCards]
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-    .slice(0, 4);
-  const nextAppointment = activeCards.find(
-    (card) => card.cardType === "appointment",
+  const activeCards = useMemo(
+    () => cards.filter((card) => canPresentCredential(card)),
+    [cards],
+  );
+  const criticalCards = useMemo(
+    () =>
+      activeCards
+        .filter((card) => card.pinned || criticalCardTypes.has(card.cardType))
+        .slice(0, 5),
+    [activeCards],
+  );
+  const recentCards = useMemo(
+    () =>
+      [...activeCards]
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+        .slice(0, 4),
+    [activeCards],
+  );
+  const nextAppointment = useMemo(
+    () => activeCards.find((card) => card.cardType === "appointment"),
+    [activeCards],
   );
   const readinessScore = readiness?.readiness?.score ?? 0;
   const readyForService = Boolean(readiness?.readiness?.criticalReady);
-  const sortedReadiness = [...serviceReadiness].sort((a, b) => {
-    if (Number(b.criticalReady) !== Number(a.criticalReady))
-      return Number(b.criticalReady) - Number(a.criticalReady);
-    return b.score - a.score;
-  });
-  const visibleReadiness = readinessExpanded
-    ? sortedReadiness
-    : sortedReadiness.slice(0, 3);
+  const sortedReadiness = useMemo(
+    () =>
+      [...serviceReadiness].sort((a, b) => {
+        if (Number(b.criticalReady) !== Number(a.criticalReady))
+          return Number(b.criticalReady) - Number(a.criticalReady);
+        return b.score - a.score;
+      }),
+    [serviceReadiness],
+  );
+  const visibleReadiness = useMemo(
+    () => (readinessExpanded ? sortedReadiness : sortedReadiness.slice(0, 3)),
+    [readinessExpanded, sortedReadiness],
+  );
 
   return (
     <div className="view-stack">
@@ -794,9 +811,13 @@ export function DocumentsView({
     () => ["all", ...Object.keys(counts).filter(Boolean)],
     [counts],
   );
-  const pinnedCards = cards
-    .filter((card) => card.pinned || criticalCardTypes.has(card.cardType))
-    .slice(0, 6);
+  const pinnedCards = useMemo(
+    () =>
+      cards
+        .filter((card) => card.pinned || criticalCardTypes.has(card.cardType))
+        .slice(0, 6),
+    [cards],
+  );
   const filteredCards = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return cards.filter((card) => {
@@ -823,6 +844,14 @@ export function DocumentsView({
         .some((value) => String(value).toLowerCase().includes(needle));
     });
   }, [cards, category, query, status]);
+  const activeFilteredCount = useMemo(
+    () =>
+      filteredCards.reduce(
+        (total, card) => total + (card.credentialStatus === "active" ? 1 : 0),
+        0,
+      ),
+    [filteredCards],
+  );
 
   return (
     <div className="view-stack">
@@ -918,13 +947,7 @@ export function DocumentsView({
               พบ {filteredCards.length} รายการในขอบเขตของ {user.id}
             </p>
           </div>
-          <Badge tone="blue">
-            {
-              filteredCards.filter((card) => card.credentialStatus === "active")
-                .length
-            }{" "}
-            ใช้งานได้
-          </Badge>
+          <Badge tone="blue">{activeFilteredCount} ใช้งานได้</Badge>
         </div>
         <div className="cards-grid wallet-grid">
           {filteredCards.map((card) => (
@@ -1422,10 +1445,11 @@ export function ShareView({
     setSharePublication({ state: "idle", message: "", warnings: [] });
   }, [purpose, purposeSelectedKey, shareProfile, shareableCards]);
 
-  const selectedCards = useMemo(
-    () => shareableCards.filter((card) => selectedCardIds.includes(card.id)),
-    [selectedCardIds, shareableCards],
-  );
+  const selectedCards = useMemo(() => {
+    if (!selectedCardIds.length) return [];
+    const selectedIdSet = new Set(selectedCardIds);
+    return shareableCards.filter((card) => selectedIdSet.has(card.id));
+  }, [selectedCardIds, shareableCards]);
   const shareGatewayReady = Boolean(currentShareGatewayBaseUrl());
   const sharePackageMode = sharePackageModeForUi(
     packageProtocol,

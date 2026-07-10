@@ -17,8 +17,14 @@ const dbVersion = 1;
 const storeCards = "health_cards";
 const storeQr = "qr_cache";
 const storeMeta = "meta";
+let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openDb(): Promise<IDBDatabase> {
+  dbPromise ??= createDb();
+  return dbPromise;
+}
+
+function createDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(dbName, dbVersion);
     request.onupgradeneeded = () => {
@@ -30,8 +36,18 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(storeMeta))
         db.createObjectStore(storeMeta, { keyPath: "key" });
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+      resolve(db);
+    };
+    request.onerror = () => {
+      dbPromise = null;
+      reject(request.error);
+    };
   });
 }
 
@@ -42,7 +58,6 @@ async function getAllCards(): Promise<WalletCard[]> {
     const request = tx.objectStore(storeCards).getAll();
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
-    tx.oncomplete = () => db.close();
   });
 }
 
@@ -53,14 +68,8 @@ async function putCards(cards: WalletCard[]) {
     const store = tx.objectStore(storeCards);
     store.clear();
     for (const card of cards) store.put(card);
-    tx.oncomplete = () => {
-      db.close();
-      resolve();
-    };
-    tx.onerror = () => {
-      db.close();
-      reject(tx.error);
-    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
   });
 }
 
@@ -73,10 +82,7 @@ async function setMeta(key: string, value: unknown) {
       value,
       updatedAt: new Date().toISOString(),
     });
-    tx.oncomplete = () => {
-      db.close();
-      resolve();
-    };
+    tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -88,7 +94,6 @@ async function getMeta(key: string): Promise<string | null> {
     const request = tx.objectStore(storeMeta).get(key);
     request.onsuccess = () => resolve(request.result?.value ?? null);
     request.onerror = () => reject(request.error);
-    tx.oncomplete = () => db.close();
   });
 }
 
@@ -99,7 +104,6 @@ async function getCachedQr(cardId: number): Promise<QrCacheEntry | undefined> {
     const request = tx.objectStore(storeQr).get(cardId);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
-    tx.oncomplete = () => db.close();
   });
 }
 
@@ -108,10 +112,7 @@ async function putCachedQr(entry: QrCacheEntry) {
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(storeQr, "readwrite");
     tx.objectStore(storeQr).put(entry);
-    tx.oncomplete = () => {
-      db.close();
-      resolve();
-    };
+    tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
 }

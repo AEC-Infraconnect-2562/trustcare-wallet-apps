@@ -160,7 +160,7 @@ export function groupCardsByCategory(
 ): WalletCardsByCategory {
   return cards.reduce<WalletCardsByCategory>((groups, card) => {
     const category = card.documentCategory || "clinical_summary";
-    groups[category] = [...(groups[category] ?? []), card];
+    (groups[category] ??= []).push(card);
     return groups;
   }, {});
 }

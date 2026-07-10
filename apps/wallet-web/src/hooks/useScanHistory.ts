@@ -1,4 +1,10 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import {
   isRecordOfArrays,
   readJsonStorage,
@@ -22,8 +28,13 @@ export function useScanHistory<TScanOutcome>(
   const [scanHistoryByUser, setScanHistoryByUser] = useState<
     Record<string, TScanOutcome[]>
   >(() => readScanHistory<TScanOutcome>());
+  const storageHydrated = useRef(false);
 
   useEffect(() => {
+    if (!storageHydrated.current) {
+      storageHydrated.current = true;
+      return;
+    }
     writeScanHistory(scanHistoryByUser);
   }, [scanHistoryByUser]);
 

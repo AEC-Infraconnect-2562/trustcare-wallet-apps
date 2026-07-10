@@ -9,10 +9,25 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (!id.includes("node_modules")) return undefined;
-          if (id.includes("react") || id.includes("scheduler"))
+          const normalizedId = id.replace(/\\/g, "/");
+          if (normalizedId.includes("/packages/wallet-core/"))
+            return "trustcare-wallet-core";
+          if (normalizedId.includes("/packages/api-client/"))
+            return "trustcare-api-client";
+          if (normalizedId.includes("/packages/ui-web/"))
+            return "trustcare-ui-web";
+          if (
+            normalizedId.includes("/packages/design-tokens/") ||
+            normalizedId.includes("/packages/i18n/")
+          )
+            return "trustcare-shared";
+          if (!normalizedId.includes("node_modules")) return undefined;
+          if (normalizedId.includes("lucide-react")) return "vendor-icons";
+          if (
+            normalizedId.includes("react") ||
+            normalizedId.includes("scheduler")
+          )
             return "vendor-react";
-          if (id.includes("lucide-react")) return "vendor-icons";
           return "vendor";
         },
       },
