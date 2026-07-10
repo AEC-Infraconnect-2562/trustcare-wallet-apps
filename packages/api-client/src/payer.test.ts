@@ -20,25 +20,27 @@ describe("payer API facade", () => {
   it("discovers coverage and verifies eligibility through the demo adapter", async () => {
     const coverage = await payerApi.discoverCoverage(options, {
       patientId: "demo-patient-complete-001",
-      payerId: "private_insurer_mock",
+      payerId: "global_care_insurance_demo",
       context: "insurance_claim",
       consentReceiptId: "consent_api_coverage",
     });
     const eligibility = await payerApi.verifyEligibility(options, {
-      payerId: "private_insurer_mock",
+      payerId: "global_care_insurance_demo",
       patientId: "demo-patient-complete-001",
       context: "insurance_claim",
       consentReceiptId: "consent_api_eligibility",
       requestedAt: "2026-07-10T00:00:00.000Z",
     });
 
-    expect(coverage.candidates[0]?.payerId).toBe("private_insurer_mock");
+    expect(coverage.candidates[0]?.payerId).toBe(
+      "global_care_insurance_demo",
+    );
     expect(eligibility.status).toBe("eligible");
   });
 
   it("creates claim evidence packages from wallet cards with certified SHL recommendation", async () => {
     const packageResult = await payerApi.createClaimEvidencePackage(options, {
-      payerId: "private_insurer_mock",
+      payerId: "global_care_insurance_demo",
       context: "insurance_claim",
       consentReceiptId: "consent_api_claim_package",
       createdAt: "2026-07-10T00:00:00.000Z",
@@ -99,7 +101,8 @@ describe("payer API facade", () => {
       fetchImpl,
     });
 
-    expect(payers[0]?.payerId).toBe("configured_payer");
+    const [configuredPayer] = payers;
+    expect(configuredPayer?.payerId).toBe("configured_payer");
     expect(fetchCalls[0]).toBe("https://wallet.example/trpc/payer.listPayers");
   });
 });

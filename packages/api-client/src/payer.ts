@@ -1,6 +1,7 @@
 import {
   buildClaimEvidencePackage,
   createMockPayerRegistry,
+  discoverMockCoverage,
   getDemoWalletCards,
   listMockPayerProfiles,
   type AdditionalEvidenceReceipt,
@@ -52,7 +53,7 @@ export async function discoverCoverage(
   input: CoverageDiscoveryInput,
 ): Promise<CoverageDiscoveryResult> {
   if (options.demoMode ?? true) {
-    return demoDiscoveryAdapter(input).discoverCoverage(input);
+    return discoverMockCoverage(input);
   }
   return callTrpcProcedure<CoverageDiscoveryResult>(
     options,
@@ -185,12 +186,5 @@ export async function reconcilePayment(
 function demoAdapter(payerId: string): PayerAdapter {
   const adapter = createMockPayerRegistry().getAdapter(payerId);
   if (!adapter) throw new Error(`Unknown payer adapter: ${payerId}`);
-  return adapter;
-}
-
-function demoDiscoveryAdapter(input: CoverageDiscoveryInput): PayerAdapter {
-  if (input.payerId) return demoAdapter(input.payerId);
-  const adapter = createMockPayerRegistry().listAdapters()[0];
-  if (!adapter) throw new Error("No payer adapters configured");
   return adapter;
 }

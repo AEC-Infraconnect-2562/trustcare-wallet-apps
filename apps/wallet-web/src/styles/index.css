@@ -5919,6 +5919,163 @@ body {
   gap: 8px;
 }
 
+.payer-orchestration-panel {
+  display: grid;
+  gap: 14px;
+  overflow: hidden;
+  border-left: 4px solid color-mix(in srgb, #b08a3b 78%, var(--primary));
+  background:
+    linear-gradient(135deg, rgba(255, 250, 240, 0.88), rgba(255, 255, 255, 0.96)),
+    var(--card);
+}
+
+.payer-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.payer-flow-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid rgba(226, 217, 199, 0.9);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 12px;
+}
+
+.payer-flow-card i {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: #5c4b21;
+  background: rgba(236, 217, 166, 0.38);
+}
+
+.payer-flow-card span,
+.payer-flow-card small,
+.payer-flow-card strong,
+.payer-flow-card em {
+  min-width: 0;
+  display: block;
+}
+
+.payer-flow-card small {
+  color: var(--muted-foreground);
+  font-size: 11.25px;
+  font-weight: 750;
+}
+
+.payer-flow-card strong {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+
+.payer-flow-card em {
+  margin-top: 5px;
+  color: var(--muted-foreground);
+  font-size: 11.2px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.payer-package-strip {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px dashed rgba(83, 97, 214, 0.26);
+  border-radius: 14px;
+  background: rgba(246, 247, 255, 0.62);
+  padding: 10px 12px;
+}
+
+.payer-package-strip span {
+  min-width: 0;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.payer-package-strip strong,
+.payer-package-strip small {
+  white-space: nowrap;
+}
+
+.payer-package-strip small {
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+}
+
+.payer-source-split {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.payer-source-chip {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgba(226, 217, 199, 0.85);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 9px 10px;
+}
+
+.payer-source-chip strong {
+  color: var(--foreground);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.payer-source-chip small {
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.payer-lifecycle-note {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  color: #34375f;
+  border: 1px solid rgba(83, 97, 214, 0.18);
+  border-radius: 14px;
+  background: rgba(246, 247, 255, 0.74);
+  padding: 11px 12px;
+  font-size: 12.25px;
+  line-height: 1.55;
+}
+
+.payer-boundary-note {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  color: #5f523f;
+  border: 1px solid rgba(226, 217, 199, 0.9);
+  border-radius: 14px;
+  background: rgba(255, 250, 240, 0.72);
+  padding: 11px 12px;
+  font-size: 12.25px;
+  line-height: 1.6;
+}
+
 .packet-content-row strong {
   font-size: 12.75px;
   line-height: 1.35;
@@ -5972,6 +6129,23 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .payer-flow-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .payer-source-split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .payer-lifecycle-note {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .payer-lifecycle-note .tc-badge {
+    justify-self: start;
+    grid-column: 2;
+  }
+
   .prepare-decision-grid .package-policy-panel {
     position: static;
   }
@@ -6000,7 +6174,8 @@ body {
   }
 
   .prep-doc-actions,
-  .prep-primary-row {
+  .prep-primary-row,
+  .payer-package-strip {
     grid-template-columns: 1fr;
   }
 }
@@ -6034,6 +6209,10 @@ body {
   }
 
   .service-context-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .payer-flow-grid {
     grid-template-columns: 1fr;
   }
 

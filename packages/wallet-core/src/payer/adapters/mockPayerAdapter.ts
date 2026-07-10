@@ -1,6 +1,8 @@
 import type {
   ClaimStatus,
   ClaimSubmissionReceipt,
+  CoverageDiscoveryInput,
+  CoverageDiscoveryResult,
   EligibilityDecision,
   PayerProfile,
   PayerTransport,
@@ -28,16 +30,16 @@ export const mockPayerProfiles: PayerProfile[] = [
     ],
   },
   {
-    payerId: "private_insurer_mock",
-    payerName: "TrustCare Private Insurance Demo",
-    payerNameEn: "TrustCare Private Insurance Demo",
+    payerId: "global_care_insurance_demo",
+    payerName: "บริษัทประกันสุขภาพสากล เดโม จำกัด",
+    payerNameEn: "Global Care Insurance Demo Co., Ltd.",
     payerType: "private_insurer",
     adapterKind: "mock_demo",
     supportedContexts: ["insurance_claim", "opd_visit", "emergency"],
     supportedTransports: ["mock_demo", "payer_rest_json"],
     endpointConfigured: false,
     demo: true,
-    trustedIssuerDid: "did:web:trustcare.network:payer:private-demo",
+    trustedIssuerDid: "did:web:trustcare.network:payer:global-care-demo",
   },
   {
     payerId: "international_tpa_mock",
@@ -64,36 +66,41 @@ export const mockPayerProfiles: PayerProfile[] = [
   },
 ];
 
+export function discoverMockCoverage(
+  input: CoverageDiscoveryInput,
+): CoverageDiscoveryResult {
+  const selectedProfiles = input.payerId
+    ? mockPayerProfiles.filter((item) => item.payerId === input.payerId)
+    : mockPayerProfiles.filter((item) => item.payerType !== "self_pay");
+  return {
+    candidates: selectedProfiles.map((item) => ({
+      payerId: item.payerId,
+      payerName: item.payerName,
+      policyNumberMasked:
+        item.payerType === "public" ? "UCS-****-2026" : "GCI-DEMO-****-7788",
+      memberNumberMasked: `MBR-${maskSeed(input.patientId ?? "demo")}`,
+      planName:
+        item.payerType === "international_tpa"
+          ? "International care guarantee"
+          : item.payerType === "public"
+            ? "Public e-Claim demo"
+            : "International Comprehensive Plus",
+      status: "found",
+      confidence: item.payerType === "international_tpa" ? "medium" : "high",
+      validFrom: "2026-01-01T00:00:00.000Z",
+      validUntil: demoValidUntil,
+    })),
+    warnings: [
+      "Mock payer coverage discovery. Configure a production payer adapter before connecting real payers.",
+    ],
+  };
+}
+
 export function createMockPayerAdapter(profile: PayerProfile): PayerAdapter {
   return {
     profile,
     async discoverCoverage(input) {
-      const selectedProfiles = input.payerId
-        ? mockPayerProfiles.filter((item) => item.payerId === input.payerId)
-        : mockPayerProfiles.filter((item) => item.payerType !== "self_pay");
-      return {
-        candidates: selectedProfiles.map((item) => ({
-          payerId: item.payerId,
-          payerName: item.payerName,
-          policyNumberMasked:
-            item.payerType === "public" ? "UCS-****-2026" : "POL-****-2026",
-          memberNumberMasked: `MBR-${maskSeed(input.patientId ?? "demo")}`,
-          planName:
-            item.payerType === "international_tpa"
-              ? "International care guarantee"
-              : item.payerType === "public"
-                ? "Public e-Claim demo"
-                : "Cashless OPD demo",
-          status: "found",
-          confidence:
-            item.payerType === "international_tpa" ? "medium" : "high",
-          validFrom: "2026-01-01T00:00:00.000Z",
-          validUntil: demoValidUntil,
-        })),
-        warnings: [
-          "Mock payer coverage discovery. Configure a production payer adapter before connecting real payers.",
-        ],
-      };
+      return discoverMockCoverage(input);
     },
     async verifyEligibility(input) {
       return decisionForEligibility(profile, input.serviceCode, input.context);

@@ -125,6 +125,7 @@ import { AcquisitionPlanner } from "../components/acquisition/AcquisitionPlanner
 import { DisabledReason } from "../components/common/DisabledReason";
 import { ImportHub } from "../components/import/ImportHub";
 import { MissingDocumentCard } from "../components/prepare/MissingDocumentCard";
+import { PayerOrchestrationPanel } from "../components/payer/PayerOrchestrationPanel";
 import { PurposePickerCard } from "../components/prepare/PurposePickerCard";
 import { ReadinessSummaryCard } from "../components/prepare/ReadinessSummaryCard";
 import { SharePacketComposer } from "../components/share/SharePacketComposer";
@@ -3060,6 +3061,16 @@ export function PrepareView({
           </div>
         </Surface>
       </section>
+
+      <PayerOrchestrationPanel
+        user={user}
+        context={context}
+        cards={cards}
+        readiness={readinessResult}
+        packetCards={packetContents}
+        canCreateFullPacket={canCreateFullPacket}
+        onPrepareAll={onPrepareAll}
+      />
 
       <Surface className="bundle-dashboard service-output-panel">
         <div className="section-title-row">

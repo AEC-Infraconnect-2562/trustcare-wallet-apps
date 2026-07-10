@@ -29,7 +29,7 @@ describe("payer orchestration foundation", () => {
 
     expect(profiles.map((profile) => profile.payerId)).toEqual([
       "nhso_mock",
-      "private_insurer_mock",
+      "global_care_insurance_demo",
       "international_tpa_mock",
       "self_pay_mock",
     ]);
@@ -99,7 +99,7 @@ describe("payer orchestration foundation", () => {
   it("builds claim evidence packages from canonical wallet records and selects SHL when required", () => {
     const cards = getDemoWalletCards("demo-patient-complete-001");
     const packageResult = buildClaimEvidencePackage({
-      payerId: "private_insurer_mock",
+      payerId: "global_care_insurance_demo",
       patientId: "demo-patient-complete-001",
       context: "insurance_claim",
       cards,
@@ -137,7 +137,7 @@ describe("payer orchestration foundation", () => {
 
   it("maps payer orchestration requests to FHIR-like resources for adapter contracts", async () => {
     const eligibilityRequest: EligibilityRequest = {
-      payerId: "private_insurer_mock",
+      payerId: "global_care_insurance_demo",
       patientId: "demo-patient-001",
       context: "insurance_claim",
       serviceCode: "OPD",
@@ -145,13 +145,13 @@ describe("payer orchestration foundation", () => {
       requestedAt: "2026-07-10T00:00:00.000Z",
     };
     const adapter = createMockPayerRegistry().getAdapter(
-      "private_insurer_mock",
+      "global_care_insurance_demo",
     );
     expect(adapter).not.toBeNull();
     const eligibilityDecision =
       await adapter!.verifyEligibility(eligibilityRequest);
     const preAuthRequest: PreAuthRequest = {
-      payerId: "private_insurer_mock",
+      payerId: "global_care_insurance_demo",
       patientId: "demo-patient-001",
       context: "insurance_claim",
       serviceCode: "OPD",
@@ -163,7 +163,7 @@ describe("payer orchestration foundation", () => {
     };
     const claimSubmission: ClaimSubmission = {
       claimCaseId: "claim-private-001",
-      payerId: "private_insurer_mock",
+      payerId: "global_care_insurance_demo",
       patientId: "demo-patient-001",
       claimType: "private_insurance",
       context: "insurance_claim",
@@ -176,7 +176,7 @@ describe("payer orchestration foundation", () => {
     };
     const status = await adapter!.getClaimStatus({
       claimCaseId: "claim-private-001",
-      payerId: "private_insurer_mock",
+      payerId: "global_care_insurance_demo",
     });
 
     expect(eligibilityRequestToFhir(eligibilityRequest).resourceType).toBe(
@@ -194,17 +194,17 @@ describe("payer orchestration foundation", () => {
 
   it("creates payer result credentials with W3C VC shapes for demo storage", async () => {
     const user = getDemoUser("demo-patient-001");
-    const adapter = getMockPayerAdapter("private_insurer_mock");
+    const adapter = getMockPayerAdapter("global_care_insurance_demo");
     expect(adapter).not.toBeNull();
     const eligibility = await adapter!.verifyEligibility({
-      payerId: "private_insurer_mock",
+      payerId: "global_care_insurance_demo",
       patientId: user.id,
       context: "insurance_claim",
       consentReceiptId: "consent_private",
       requestedAt: "2026-07-10T00:00:00.000Z",
     });
     const preAuth = await adapter!.requestPreAuth({
-      payerId: "private_insurer_mock",
+      payerId: "global_care_insurance_demo",
       patientId: user.id,
       context: "insurance_claim",
       serviceCode: "OPD",
@@ -216,7 +216,7 @@ describe("payer orchestration foundation", () => {
     });
     const receipt = await adapter!.submitClaimPackage({
       claimCaseId: "claim-private-002",
-      payerId: "private_insurer_mock",
+      payerId: "global_care_insurance_demo",
       patientId: user.id,
       claimType: "private_insurance",
       context: "insurance_claim",
@@ -230,24 +230,24 @@ describe("payer orchestration foundation", () => {
 
     const eligibilityVc = eligibilityResultCredential({
       id: "vc-eligibility-demo",
-      issuerDid: "did:web:trustcare.example:payer:private-demo",
-      issuerName: "TrustCare Private Insurance Demo",
+      issuerDid: "did:web:trustcare.example:payer:global-care-demo",
+      issuerName: "Global Care Insurance Demo Co., Ltd.",
       holderDid: user.holderDid,
       subject: eligibility,
       validFrom: "2026-07-10T00:00:00.000Z",
     });
     const preAuthVc = preAuthDecisionCredential({
       id: "vc-preauth-demo",
-      issuerDid: "did:web:trustcare.example:payer:private-demo",
-      issuerName: "TrustCare Private Insurance Demo",
+      issuerDid: "did:web:trustcare.example:payer:global-care-demo",
+      issuerName: "Global Care Insurance Demo Co., Ltd.",
       holderDid: user.holderDid,
       subject: preAuth,
       validFrom: "2026-07-10T00:00:00.000Z",
     });
     const receiptVc = claimSubmissionReceiptCredential({
       id: "vc-claim-receipt-demo",
-      issuerDid: "did:web:trustcare.example:payer:private-demo",
-      issuerName: "TrustCare Private Insurance Demo",
+      issuerDid: "did:web:trustcare.example:payer:global-care-demo",
+      issuerName: "Global Care Insurance Demo Co., Ltd.",
       holderDid: user.holderDid,
       subject: receipt,
       validFrom: "2026-07-10T00:00:00.000Z",
@@ -265,7 +265,7 @@ describe("payer orchestration foundation", () => {
     const cards = getDemoWalletCards("demo-patient-complete-001");
     const readiness = assessLocalReadiness(cards, "insurance_claim");
     const packageResult = buildClaimEvidencePackage({
-      payerId: "private_insurer_mock",
+      payerId: "global_care_insurance_demo",
       patientId: "demo-patient-complete-001",
       context: "insurance_claim",
       cards,
@@ -277,7 +277,7 @@ describe("payer orchestration foundation", () => {
       context: "insurance_claim",
       cards,
       selectedCardIds: packageResult.cards.map((card) => card.id),
-      recipient: "private_insurer_mock",
+      recipient: "global_care_insurance_demo",
       holderDid: cards[0]?.holderDid ?? undefined,
       origin: "https://wallet.example",
       gatewayBaseUrl: "https://wallet.example",
