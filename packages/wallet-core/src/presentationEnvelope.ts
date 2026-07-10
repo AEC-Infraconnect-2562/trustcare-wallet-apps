@@ -266,7 +266,7 @@ export function presentationEnvelopeFromWalletCard(
   card: WalletCard,
 ): PortablePresentationEnvelope {
   const renderModel = credentialRenderModelFromCard(card);
-  const record = walletDocumentRecordFromCard(card);
+  const baseRecord = walletDocumentRecordFromCard(card);
   const credential = portalRecord(card.credentialData);
   const rawSubject = portalRecord(credential.credentialSubject ?? credential);
   const subject = normalizePortalRenderSubject(rawSubject, credential);
@@ -285,7 +285,23 @@ export function presentationEnvelopeFromWalletCard(
     credential.issuer,
   );
   const document = firstRecord(renderData.document, subject.document);
-  const trustStatus = classifyPortableTrustStatus(card);
+  const lifecycleStatus =
+    stringOrUndefined(document.status) ?? String(card.credentialStatus);
+  const issuedAt = stringOrUndefined(document.issuedAt) ?? card.issuedAt;
+  const expiresAt = stringOrUndefined(document.expiresAt) ?? card.expiresAt;
+  const record: WalletDocumentRecord = {
+    ...baseRecord,
+    lifecycleStatus,
+    status: lifecycleStatus,
+    issuedAt,
+    expiresAt,
+  };
+  const trustStatus = classifyPortableTrustStatus({
+    ...card,
+    credentialStatus: lifecycleStatus,
+    issuedAt,
+    expiresAt,
+  });
   const documentType = record.documentType;
   const documentReferences = collectDocumentReferences(
     card,
@@ -333,7 +349,10 @@ export function presentationEnvelopeFromWalletCard(
       title:
         stringOrUndefined(portalValue(document, "titleTh")) ??
         stringOrUndefined(portalValue(document, "title")) ??
-        card.displayName,
+        (renderModel.claimReceiptKind === "claim_status" ||
+        renderModel.claimReceiptKind === "submission_receipt"
+          ? renderModel.narrative.title
+          : card.displayName),
       titleEn:
         stringOrUndefined(portalValue(document, "titleEn")) ??
         card.displayNameEn ??
@@ -360,11 +379,11 @@ export function presentationEnvelopeFromWalletCard(
     policy: {
       purpose: stringOrUndefined(record.source.system),
       scope: record.privacy.defaultDisclosure,
-      expiresAt: card.expiresAt ?? undefined,
+      expiresAt: expiresAt ?? undefined,
     },
     provenance: {
       sourceSystem: card.sourceSystem ?? record.source.system ?? undefined,
-      generatedAt: card.issuedAt ?? card.createdAt,
+      generatedAt: issuedAt ?? card.createdAt,
       importedAt: record.source.importedAt ?? undefined,
       transformedBy: "trustcare-wallet.presentationEnvelope",
       packageVersion: "2026.07.v1",
@@ -1207,17 +1226,19 @@ function presentationHasCryptographicProof(
     presentation.verificationChecklist,
   ),
 ): boolean {
-  if (checklist.some((item) => isProofChecklistItem(item) && item.ok)) {
-    return true;
-  }
-  const format = presentation.format.toLowerCase();
-  const isJwtPresentation =
-    format.includes("jwt") || format.includes("sd-jwt");
-  return Boolean(
-    isJwtPresentation &&
-      presentation.presentationId &&
-      presentation.qrData &&
-      presentation.credentialCount > 0,
+  return checklist.some(isVerifiedProofChecklistItem);
+}
+
+function isVerifiedProofChecklistItem(item: TrustLayerChecklistItem): boolean {
+  if (!item.ok) return false;
+  const key = item.key.trim().toLowerCase();
+  return (
+    key === "signature" ||
+    key === "jwt_signature" ||
+    key === "vc_signature" ||
+    key === "vp_signature" ||
+    key === "data_integrity" ||
+    key === "cryptographic_verification"
   );
 }
 

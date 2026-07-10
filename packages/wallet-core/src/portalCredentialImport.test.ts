@@ -126,6 +126,78 @@ describe("normalizeTrustCarePortalWalletCards", () => {
       "travel_document_verification",
     ]);
   });
+
+  it("uses canonical renderData metadata and never guesses the owner portrait", () => {
+    const owner = getDemoUser("demo-patient-003");
+    const base = portalCard({
+      id: 301,
+      cardType: "quotation",
+      displayName: "Legacy quotation label",
+      displayNameEn: "Legacy Quotation",
+      documentType: "quotation",
+    });
+    const credentialData = base.credentialData as Record<string, any>;
+    credentialData.credentialSubject = {
+      ...credentialData.credentialSubject,
+      patient: {
+        fullNameEn: "Legacy Patient",
+        photoUrl: "/manus-storage/legacy-patient.jpg",
+      },
+      humanDocument: {
+        renderData: {
+          hospital: {
+            nameTh: "โรงพยาบาลจาก Render Contract",
+          },
+          patient: {
+            fullNameEn: "Canonical Patient",
+            photoUrl: "/manus-storage/canonical-patient.jpg",
+          },
+          document: {
+            titleTh: "ใบเสนอราคาจาก Render Contract",
+            titleEn: "Canonical Treatment Quotation",
+            status: "revoked",
+            issuedAt: "2026-07-09T00:00:00.000Z",
+            expiresAt: "2026-07-10T00:00:00.000Z",
+          },
+        },
+      },
+    };
+    const result = normalizeTrustCarePortalWalletCards({
+      owner,
+      groupedCards: {
+        medical_tourism: [
+          {
+            ...base,
+            patientAvatarUrl: "/manus-storage/legacy-card.jpg",
+            credentialData,
+          },
+          {
+            ...portalCard({
+              id: 302,
+              cardType: "patient_summary",
+              displayName: "Summary without portrait",
+              displayNameEn: "Summary without portrait",
+              documentType: "patient_summary",
+            }),
+            patientAvatarUrl: null,
+          },
+        ],
+      },
+      syncedAt: "2026-07-10T01:00:00.000Z",
+    });
+
+    expect(result.cards[0]).toMatchObject({
+      displayName: "ใบเสนอราคาจาก Render Contract",
+      displayNameEn: "Canonical Treatment Quotation",
+      issuerHospitalName: "โรงพยาบาลจาก Render Contract",
+      credentialStatus: "revoked",
+      issuedAt: "2026-07-09T00:00:00.000Z",
+      expiresAt: "2026-07-10T00:00:00.000Z",
+      patientAvatarUrl:
+        "https://trustcarehealth.live/manus-storage/canonical-patient.jpg",
+    });
+    expect(result.cards[1]?.patientAvatarUrl).toBeNull();
+  });
 });
 
 function portalCard(input: {

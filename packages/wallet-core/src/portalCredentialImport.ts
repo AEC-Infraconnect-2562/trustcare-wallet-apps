@@ -11,6 +11,7 @@ import type {
 } from "./models";
 import type { WalletDemoUser } from "./demoData";
 import { normalizePhotoUrl } from "./photoSources";
+import { extractPortalRenderData } from "./portalRenderContract";
 import { TRUSTCARE_PORTAL_WEB_ORIGIN } from "./portalSyncData";
 
 export type TrustCarePortalCredentialProof = {
@@ -343,6 +344,18 @@ function portalCardToWalletCard(input: {
   const issuer = isRecord(input.credentialData.issuer)
     ? input.credentialData.issuer
     : {};
+  const renderData = extractPortalRenderData(credentialSubject);
+  const renderDocument = isRecord(renderData.document)
+    ? renderData.document
+    : {};
+  const rawDocument = isRecord(credentialSubject.document)
+    ? credentialSubject.document
+    : {};
+  const renderHospital = isRecord(renderData.hospital)
+    ? renderData.hospital
+    : isRecord(renderData.issuer)
+      ? renderData.issuer
+      : {};
   const credentialTypes = Array.isArray(input.credentialData.type)
     ? input.credentialData.type.filter((item) => typeof item === "string")
     : [];
@@ -351,10 +364,18 @@ function portalCardToWalletCard(input: {
     input.owner.cardBase + input.cardIndex,
   );
   const issuedAt = stringValue(
-    input.portalCard.issuedAt ?? input.credentialData.validFrom,
+    renderDocument.issuedAt ??
+      renderData.issuedAt ??
+      rawDocument.issuedAt ??
+      input.portalCard.issuedAt ??
+      input.credentialData.validFrom,
   );
   const expiresAt = stringValue(
-    input.portalCard.expiresAt ?? input.credentialData.validUntil,
+    renderDocument.expiresAt ??
+      renderData.expiresAt ??
+      rawDocument.expiresAt ??
+      input.portalCard.expiresAt ??
+      input.credentialData.validUntil,
   );
   const credentialProof = credentialProofFromPortalCard(input.portalCard);
 
@@ -362,9 +383,13 @@ function portalCardToWalletCard(input: {
     id: cardId,
     cardType: input.documentType,
     displayName:
+      stringValue(
+        renderDocument.titleTh ?? renderDocument.title ?? renderData.titleTh,
+      ) ??
       stringValue(input.portalCard.displayName) ??
       labelFromCredential(input.documentType),
     displayNameEn:
+      stringValue(renderDocument.titleEn ?? renderData.titleEn) ??
       stringValue(input.portalCard.displayNameEn) ??
       englishLabelFromCredential(input.documentType),
     documentCategory: normalizePortalCategory(
@@ -375,7 +400,12 @@ function portalCardToWalletCard(input: {
       stringValue(input.credentialData.id ?? input.portalCard.credentialId) ??
       String(cardId),
     credentialStatus:
-      stringValue(input.portalCard.credentialStatus) ??
+      stringValue(
+        renderDocument.status ??
+          renderData.status ??
+          rawDocument.status ??
+          input.portalCard.credentialStatus,
+      ) ??
       statusFromCredentialData(input.credentialData),
     credentialJwt:
       credentialProof?.jwt ?? credentialJwtFromPortalCard(input.portalCard),
@@ -385,14 +415,17 @@ function portalCardToWalletCard(input: {
       credentialTypes.at(-1) ??
       input.documentType,
     issuerHospitalName: stringValue(
-      input.portalCard.issuerHospitalName ?? issuer.nameTh ?? issuer.name,
+      renderHospital.nameTh ??
+        renderHospital.nameEn ??
+        input.portalCard.issuerHospitalName ??
+        issuer.nameTh ??
+        issuer.name,
     ),
     issuerDid: stringValue(issuer.id),
     holderDid: stringValue(credentialSubject.id) ?? input.owner.holderDid,
     patientAvatarUrl: absolutePortalAssetUrl(
-      stringValue(input.portalCard.patientAvatarUrl) ??
-        extractSubjectPhotoUrl(credentialSubject) ??
-        input.owner.avatarUrl,
+      extractSubjectPhotoUrl(credentialSubject, input.documentType) ??
+        stringValue(input.portalCard.patientAvatarUrl),
       input.portalOrigin,
     ),
     ownerUserId: input.owner.id,
@@ -595,48 +628,48 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function extractSubjectPhotoUrl(
   subject: Record<string, unknown>,
+  documentType: string,
 ): string | null {
-  for (const key of [
-    "patient",
-    "staff",
-    "holder",
-    "person",
-    "subject",
-    "profile",
-    "identity",
-  ]) {
-    const value = subject[key];
-    if (!isRecord(value)) continue;
-    const demographics = isRecord(value.demographics) ? value.demographics : {};
-    const photo = isRecord(value.photo) ? value.photo : {};
-    const avatar = isRecord(value.avatar) ? value.avatar : {};
-    const photoUrl = stringValue(
-      value.photoUrl ??
-        value.avatarUrl ??
-        value.imageUrl ??
-        value.profileImageUrl ??
-        value.portraitUrl ??
-        demographics.photoUrl ??
-        demographics.avatarUrl ??
-        photo.url ??
-        avatar.url,
-    );
-    if (photoUrl) return photoUrl;
-  }
-  const directPhotoUrl = stringValue(subject.photoUrl ?? subject.avatarUrl);
-  if (directPhotoUrl) return directPhotoUrl;
   const humanDocument = subject.humanDocument;
   if (isRecord(humanDocument)) {
-    const renderData = humanDocument.renderData;
+    const renderData = isRecord(humanDocument.renderData)
+      ? humanDocument.renderData
+      : humanDocument;
     if (isRecord(renderData)) {
-      const patient = renderData.patient;
-      if (isRecord(patient)) {
-        const photoUrl = stringValue(patient.photoUrl ?? patient.avatarUrl);
-        if (photoUrl) return photoUrl;
-      }
+      const renderPerson =
+        documentType === "staff_identity"
+          ? renderData.staff
+          : renderData.patient;
+      const photoUrl = photoUrlFromPerson(renderPerson);
+      if (photoUrl) return photoUrl;
     }
   }
+
+  const subjectKey = documentType === "staff_identity" ? "staff" : "patient";
+  for (const key of [subjectKey]) {
+    const value = subject[key];
+    const photoUrl = photoUrlFromPerson(value);
+    if (photoUrl) return photoUrl;
+  }
   return null;
+}
+
+function photoUrlFromPerson(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  const demographics = isRecord(value.demographics) ? value.demographics : {};
+  const photo = isRecord(value.photo) ? value.photo : {};
+  const avatar = isRecord(value.avatar) ? value.avatar : {};
+  return stringValue(
+    value.photoUrl ??
+      value.avatarUrl ??
+      value.imageUrl ??
+      value.profileImageUrl ??
+      value.portraitUrl ??
+      demographics.photoUrl ??
+      demographics.avatarUrl ??
+      photo.url ??
+      avatar.url,
+  );
 }
 
 function absolutePortalAssetUrl(

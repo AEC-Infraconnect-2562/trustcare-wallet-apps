@@ -36,7 +36,7 @@ describe("photoSources", () => {
     ]);
   });
 
-  it("does not add another person's wallet portrait to Portal photo candidates", () => {
+  it("keeps a supplied Portal portrait scoped to its own filename", () => {
     expect(
       normalizePhotoUrlCandidates(
         "https://trustcarehealth.live/manus-storage/patient_malee_74d2ef04.jpg",
@@ -45,6 +45,56 @@ describe("photoSources", () => {
       "https://trustcarehealth.live/manus-storage/patient_malee_74d2ef04.jpg",
       "https://trustcarehealth.live/api/storage-proxy/patient_malee_74d2ef04.jpg",
     ]);
+  });
+
+  it("prioritizes canonical renderData photo over legacy card metadata", () => {
+    const candidates = photoCandidatesForCard({
+      ...baseCard,
+      patientAvatarUrl:
+        "https://trustcarehealth.live/manus-storage/legacy-owner.jpg",
+      credentialData: {
+        credentialSubject: {
+          patient: {
+            photoUrl: "/manus-storage/legacy-subject.jpg",
+          },
+          humanDocument: {
+            renderData: {
+              patient: {
+                photoUrl: "/manus-storage/canonical-patient.jpg",
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(candidates[0]).toMatchObject({
+      label:
+        "credentialSubject.humanDocument.renderData.patient.photoUrl",
+      url: "https://trustcarehealth.live/manus-storage/canonical-patient.jpg",
+    });
+    expect(candidates.at(-1)?.url).toContain("legacy-owner.jpg");
+  });
+
+  it("does not cross-fallback from a staff credential to a patient portrait", () => {
+    const candidates = photoCandidatesForCard({
+      ...baseCard,
+      cardType: "staff_identity",
+      patientAvatarUrl: null,
+      credentialData: {
+        credentialSubject: {
+          patient: { photoUrl: "/manus-storage/wrong-patient.jpg" },
+          staff: { photoUrl: "/manus-storage/correct-staff.jpg" },
+        },
+      },
+    });
+
+    expect(candidates.map((candidate) => candidate.url).join(" ")).toContain(
+      "correct-staff.jpg",
+    );
+    expect(candidates.map((candidate) => candidate.url).join(" ")).not.toContain(
+      "wrong-patient.jpg",
+    );
   });
 
   it("reads Portal photo paths from current nested credential schemas", () => {

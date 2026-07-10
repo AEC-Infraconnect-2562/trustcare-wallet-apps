@@ -927,17 +927,19 @@ export function proofSummary(value: JsonRecord): string {
 export function walletCardHasCryptographicProof(
   card: Pick<
     WalletCard,
-    "credentialProof" | "credentialJwt" | "credentialData"
+    | "credentialProof"
+    | "credentialJwt"
+    | "credentialData"
+    | "portalVerification"
   >,
 ): boolean {
   const credentialData = jsonRecord(card.credentialData);
-  return Boolean(
+  const hasProofMaterial = Boolean(
     card.credentialProof?.jwt ??
     card.credentialJwt ??
-    (credentialData
-      ? assessDataIntegrityProof(credentialData).verified
-      : false),
+    (credentialData ? hasVerifiableProof(credentialData) : false),
   );
+  return hasProofMaterial && card.portalVerification?.verified === true;
 }
 
 export function buildTrustCareJwksCandidates(input: {

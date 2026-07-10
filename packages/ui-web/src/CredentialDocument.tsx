@@ -31,8 +31,10 @@ import {
   credentialRenderModelFromCard,
   credentialStatusLabel,
   credentialStatusTone,
+  displayCredentialValue,
   initialsFromName,
   photoCandidatesForCard,
+  photoBearingCredentialTypes,
 } from "@trustcare/wallet-core";
 import { Badge } from "./primitives";
 import { useLoadedPhotoCandidate } from "./useLoadedPhotoCandidate";
@@ -45,11 +47,7 @@ type Field = CredentialRenderField & {
 
 type ListItem = Record<string, unknown>;
 
-const photoDocumentTypes = new Set([
-  "patient_identity",
-  "staff_identity",
-  "travel_document_verification",
-]);
+const photoDocumentTypes = new Set<string>(photoBearingCredentialTypes);
 
 export function CredentialDocument({
   card,
@@ -82,12 +80,26 @@ export function CredentialDocument({
     getText(patient, "nameEn") ??
     getText(patient, "name") ??
     displayNameTh;
+  const documentTitleTh =
+    getText(document, "titleTh") ??
+    getText(document, "title") ??
+    claimReceiptTitle(renderModel.claimReceiptKind, "th") ??
+    card.displayName;
+  const documentTitleEn =
+    getText(document, "titleEn") ??
+    claimReceiptTitle(renderModel.claimReceiptKind, "en") ??
+    card.displayNameEn ??
+    renderModel.documentType;
+  const lifecycleStatus =
+    getText(document, "status") ?? String(card.credentialStatus);
+  const issuedAt = getText(document, "issuedAt") ?? card.issuedAt;
+  const expiresAt = getText(document, "expiresAt") ?? card.expiresAt;
   const patientId = documentIdentifier(card, subject, patient, document);
-  const photoCandidates = photoDocumentTypes.has(card.cardType)
+  const photoCandidates = photoDocumentTypes.has(renderModel.documentType)
     ? photoCandidatesForCard(card)
     : [];
   const accent = renderModel.accent;
-  const isIdentityDocument = photoDocumentTypes.has(card.cardType);
+  const isIdentityDocument = photoDocumentTypes.has(renderModel.documentType);
   const narrative = renderModel.narrative;
 
   if (!isIdentityDocument) {
@@ -106,11 +118,11 @@ export function CredentialDocument({
           </div>
           <div className="hospital-document-title">
             <small>{renderModel.kindLabel}</small>
-            <strong>{card.displayName}</strong>
-            <span>{card.displayNameEn ?? card.cardType}</span>
+            <strong>{documentTitleTh}</strong>
+            <span>{documentTitleEn}</span>
           </div>
-          <Badge tone={credentialStatusTone(card.credentialStatus)}>
-            {credentialStatusLabel(card.credentialStatus)}
+          <Badge tone={credentialStatusTone(lifecycleStatus)}>
+            {credentialStatusLabel(lifecycleStatus)}
           </Badge>
         </div>
 
@@ -121,8 +133,8 @@ export function CredentialDocument({
             <small>{displayNameEn}</small>
           </div>
           <InfoField label="เลขผู้ป่วย / เอกสาร" value={patientId} />
-          <InfoField label="วันที่ออก" value={formatDate(card.issuedAt)} />
-          <InfoField label="หมดอายุ" value={formatDate(card.expiresAt)} />
+          <InfoField label="วันที่ออก" value={formatDate(issuedAt)} />
+          <InfoField label="หมดอายุ" value={formatDate(expiresAt)} />
         </div>
 
         <DocumentNarrativePanel narrative={narrative} />
@@ -165,11 +177,11 @@ export function CredentialDocument({
           <h3>{issuerNameTh}</h3>
           <p>{issuerNameEn}</p>
           <strong>
-            {card.displayName} / {card.displayNameEn ?? card.cardType}
+            {documentTitleTh} / {documentTitleEn}
           </strong>
         </div>
-        <Badge tone={credentialStatusTone(card.credentialStatus)}>
-          {credentialStatusLabel(card.credentialStatus)}
+        <Badge tone={credentialStatusTone(lifecycleStatus)}>
+          {credentialStatusLabel(lifecycleStatus)}
         </Badge>
       </div>
 
@@ -180,9 +192,9 @@ export function CredentialDocument({
           <strong>{issuerNameTh}</strong>
         </div>
         <div>
-          {iconForDocument(card.cardType)}
+          {iconForDocument(renderModel.documentType)}
           <span>ประเภทเอกสาร</span>
-          <strong>{card.displayNameEn ?? card.displayName}</strong>
+          <strong>{documentTitleEn}</strong>
         </div>
       </div>
 
@@ -201,7 +213,7 @@ export function CredentialDocument({
           />
         ) : (
           <div className="document-type-mark" aria-hidden="true">
-            {iconForDocument(card.cardType)}
+            {iconForDocument(renderModel.documentType)}
           </div>
         )}
         <div className="credential-person">
@@ -217,11 +229,11 @@ export function CredentialDocument({
             </span>
             <span>
               <small>ออกเมื่อ</small>
-              <strong>{formatDate(card.issuedAt)}</strong>
+              <strong>{formatDate(issuedAt)}</strong>
             </span>
             <span>
               <small>หมดอายุ</small>
-              <strong>{formatDate(card.expiresAt)}</strong>
+              <strong>{formatDate(expiresAt)}</strong>
             </span>
           </div>
         </div>
@@ -233,9 +245,9 @@ export function CredentialDocument({
       <div className="credential-status-row document-status-row">
         <div>
           <span>สถานะ / STATUS</span>
-          <Badge tone={credentialStatusTone(card.credentialStatus)}>
+          <Badge tone={credentialStatusTone(lifecycleStatus)}>
             <ShieldCheck size={14} />{" "}
-            {credentialStatusLabel(card.credentialStatus)}
+            {credentialStatusLabel(lifecycleStatus)}
           </Badge>
         </div>
         <div>
@@ -299,57 +311,19 @@ function renderDocumentBody(
   card: WalletCard,
   model: CredentialRenderModel,
 ): ReactElement {
-  const { subject, payloads, fields } = model;
+  const { payloads, fields } = model;
   switch (model.documentType) {
     case "lab_result":
-      return <LabResultSection report={payloads.labReport} />;
     case "diagnostic_report":
-      return <DiagnosticReportSection report={payloads.diagnosticReport} />;
     case "prescription":
-      return (
-        <MedicationSection
-          title="รายการยาในใบสั่งยา"
-          items={payloads.prescriptionItems}
-        />
-      );
     case "medication_summary":
-      return (
-        <MedicationSection
-          title="รายการยาปัจจุบัน"
-          items={payloads.medicationSummaryItems}
-        />
-      );
     case "pharmacy_dispense":
-      return (
-        <MedicationSection
-          title="รายการจ่ายยา"
-          items={payloads.pharmacyDispenseItems}
-        />
-      );
     case "allergy_alert":
-      return (
-        <AllergySection
-          items={payloads.allergyItems}
-          instruction={firstText(
-            getText(subject, "emergencyInstruction"),
-            getText(subject, "clinicalNote"),
-          )}
-        />
-      );
     case "immunization":
-      return (
-        <ImmunizationSection
-          items={firstNonEmptyArray(
-            getArray(subject, "immunizations"),
-            getArray(getObject(subject, "fhir"), "immunizations"),
-          )}
-          registryStatus={getText(subject, "registryStatus")}
-        />
-      );
+    case "patient_summary":
+      return <FieldGridSection fields={fields} />;
     case "medical_certificate":
       return <MedicalCertificateSection certificate={payloads.certificate} />;
-    case "patient_summary":
-      return <ClinicalSummarySection summary={payloads.clinicalSummary} />;
     case "consent_receipt":
       return <ConsentReceiptSection consent={payloads.consent} />;
     case "mpi_link_certificate":
@@ -384,6 +358,9 @@ function renderDocumentBody(
     }
     case "claim_receipt": {
       const receipt = payloads.claimReceipt;
+      if (model.claimReceiptKind !== "payment_receipt") {
+        return <FieldGridSection fields={fields} />;
+      }
       return (
         <>
           <FieldGridSection fields={fields} />
@@ -454,7 +431,7 @@ function FieldGridSection({ fields }: { fields: Field[] }) {
               }
             >
               <span>{field.label}</span>
-              <strong>{formatValue(field.value)}</strong>
+              <strong>{displayCredentialValue(field.value)}</strong>
             </div>
           ))}
       </div>
@@ -1587,9 +1564,9 @@ function documentIdentifier(
   document: Record<string, unknown>,
 ): string {
   const documentNo = firstText(
-    getText(subject, "documentNo"),
     getText(document, "documentNo"),
     getText(document, "no"),
+    getText(subject, "documentNo"),
     getText(subject, "certificateNo"),
     getText(subject, "referralNo"),
     getText(subject, "quotationNo"),
@@ -1620,6 +1597,19 @@ function documentIdentifier(
       ? (personNo ?? documentNo)
       : (documentNo ?? personNo)) ?? String(card.credentialId)
   );
+}
+
+function claimReceiptTitle(
+  kind: CredentialRenderModel["claimReceiptKind"],
+  language: "th" | "en",
+): string | undefined {
+  if (kind === "claim_status")
+    return language === "th" ? "สถานะเคลมจาก Payer" : "Payer Claim Status";
+  if (kind === "submission_receipt")
+    return language === "th"
+      ? "หลักฐานรับชุดเคลม"
+      : "Claim Submission Receipt";
+  return undefined;
 }
 
 function iconForDocument(cardType: string): ReactElement {

@@ -190,7 +190,7 @@ describe("credential proof standards layer", () => {
     );
   });
 
-  it("does not treat unverified Data Integrity shape as cryptographic proof", () => {
+  it("requires a verification result before proof material is trusted", () => {
     const card: WalletCard = {
       id: 1,
       cardType: "patient_summary",
@@ -215,6 +215,20 @@ describe("credential proof standards layer", () => {
           id: "vc-001",
           type: ["VerifiableCredential"],
         }),
+      }),
+    ).toBe(false);
+    expect(
+      walletCardHasCryptographicProof({
+        ...card,
+        credentialJwt: makeJwt({
+          id: "vc-verified-001",
+          type: ["VerifiableCredential"],
+        }),
+        portalVerification: {
+          verified: true,
+          status: "verified",
+          checkedAt: "2026-07-10T00:00:00.000Z",
+        },
       }),
     ).toBe(true);
   });

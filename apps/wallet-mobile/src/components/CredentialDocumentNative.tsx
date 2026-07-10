@@ -5,6 +5,7 @@ import type {
   PortablePresentationSection,
   WalletCard,
 } from "@trustcare/wallet-core";
+import { displayCredentialValue } from "@trustcare/wallet-core";
 
 export function CredentialDocumentNative({
   card,
@@ -105,25 +106,12 @@ function FieldGrid({
             {field.label}
           </Text>
           <Text style={styles.value} numberOfLines={3}>
-            {displayValue(field.value)}
+            {displayCredentialValue(field.value)}
           </Text>
         </View>
       ))}
     </View>
   );
-}
-
-function displayValue(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "-";
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return String(value);
-  }
-  if (Array.isArray(value)) return value.map(displayValue).join(", ");
-  return JSON.stringify(value);
 }
 
 function trustLabel(

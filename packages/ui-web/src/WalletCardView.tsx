@@ -2,20 +2,19 @@ import { gradientForCardType } from "@trustcare/design-tokens";
 import type { PhotoCandidate, WalletCard } from "@trustcare/wallet-core";
 import {
   canPresentCredential,
+  credentialRenderModelFromCard,
   credentialStatusLabel,
   initialsFromName,
   labelForCredentialType,
+  photoBearingCredentialTypes,
   photoCandidatesForCard,
+  presentationEnvelopeFromWalletCard,
 } from "@trustcare/wallet-core";
 import { BadgeCheck, QrCode } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useLoadedPhotoCandidate } from "./useLoadedPhotoCandidate";
 
-const photoDocumentTypes = new Set([
-  "patient_identity",
-  "staff_identity",
-  "travel_document_verification",
-]);
+const photoDocumentTypes = new Set<string>(photoBearingCredentialTypes);
 
 export function WalletCardView({
   card,
@@ -25,14 +24,34 @@ export function WalletCardView({
   onClick?: () => void;
 }) {
   const [from, to] = gradientForCardType(card.cardType);
-  const disabled = !canPresentCredential(card);
-  const photoCandidates = photoDocumentTypes.has(card.cardType)
+  const renderModel = credentialRenderModelFromCard(card);
+  const envelope = presentationEnvelopeFromWalletCard(card);
+  const lifecycleStatus =
+    textValue(renderModel.document.status) ?? String(card.credentialStatus);
+  const expiresAt = textValue(renderModel.document.expiresAt) ?? card.expiresAt;
+  const disabled = !canPresentCredential({
+    credentialStatus: lifecycleStatus,
+    expiresAt,
+  });
+  const title =
+    textValue(renderModel.document.titleTh) ??
+    textValue(renderModel.document.title) ??
+    envelope.display.title ??
+    card.displayName;
+  const issuerName =
+    textValue(renderModel.hospital.nameTh) ??
+    textValue(renderModel.hospital.nameEn) ??
+    envelope.issuer?.name ??
+    card.issuerHospitalName ??
+    "TrustCare Network";
+  const photoCandidates = photoDocumentTypes.has(renderModel.documentType)
     ? photoCandidatesForCard(card)
     : [];
   const photoInitials = initialsFromName(
-    card.displayNameEn ??
-      card.displayName ??
-      labelForCredentialType(card.cardType),
+    envelope.subject.displayName ??
+      card.displayNameEn ??
+      title ??
+      labelForCredentialType(renderModel.documentType),
   );
   return (
     <button
@@ -58,22 +77,25 @@ export function WalletCardView({
             <BadgeCheck size={20} />
           )}
         </span>
-        <span className="wallet-card-status">
-          {credentialStatusLabel(card.credentialStatus)}
+        <span
+          className={`wallet-card-status tone-${envelope.trust.badge}`}
+          title={`Lifecycle: ${credentialStatusLabel(lifecycleStatus)}`}
+        >
+          {trustStatusLabel(envelope.trust.status)}
         </span>
       </span>
       <span className="wallet-card-body">
         <span className="wallet-card-issuer">
-          {card.issuerHospitalName ?? "TrustCare Network"}
+          {issuerName}
         </span>
         <strong>
-          {card.displayName || labelForCredentialType(card.cardType)}
+          {title || labelForCredentialType(renderModel.documentType)}
         </strong>
       </span>
       <span className="wallet-card-footer">
         <span className="wallet-card-meta">
-          {card.expiresAt
-            ? `หมดอายุ ${new Date(card.expiresAt).toLocaleDateString("th-TH")}`
+          {expiresAt
+            ? `หมดอายุ ${new Date(expiresAt).toLocaleDateString("th-TH")}`
             : "ไม่มีวันหมดอายุ"}
         </span>
         <span className="wallet-card-verified">
@@ -82,6 +104,24 @@ export function WalletCardView({
       </span>
     </button>
   );
+}
+
+function textValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function trustStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    issuer_signed: "ตรวจ proof แล้ว",
+    trustcare_certified: "TrustCare certified",
+    transport_valid: "ขนส่งถูกต้อง",
+    trustcare_pending: "รอรับรอง",
+    patient_provided_unverified: "ผู้ใช้เพิ่มเอง",
+    invalid_or_revoked: "ใช้ไม่ได้",
+    metadata_only: "Metadata only",
+    proof_missing: "รอตรวจ proof",
+  };
+  return labels[status] ?? status;
 }
 
 function WalletCardPhoto({

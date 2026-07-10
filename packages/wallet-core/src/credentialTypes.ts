@@ -1,10 +1,7 @@
 export const photoBearingCredentialTypes = [
   "patient_identity",
   "staff_identity",
-  "identity",
-  "medical_certificate",
-  "patient_summary",
-  "student_identity",
+  "travel_document_verification",
 ] as const;
 
 export const identityCredentialTypes = [

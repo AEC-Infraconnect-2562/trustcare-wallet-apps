@@ -6,6 +6,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import {
+  displayCredentialValue,
   trustBadgeTone,
   type PortablePresentationEnvelope,
 } from "@trustcare/wallet-core";
@@ -68,7 +69,7 @@ export function PortablePresentationDocument({
               {section.fields.slice(0, compact ? 4 : 12).map((field) => (
                 <div key={`${section.key}:${field.path ?? field.label}`}>
                   <dt>{field.label}</dt>
-                  <dd>{displayValue(field.value)}</dd>
+                  <dd>{displayCredentialValue(field.value)}</dd>
                 </div>
               ))}
             </dl>
@@ -178,19 +179,6 @@ function modeLabel(mode: PortablePresentationEnvelope["mode"]): string {
     SmartApiAccess: "SMART API Access",
   };
   return labels[mode];
-}
-
-function displayValue(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "-";
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return String(value);
-  }
-  if (Array.isArray(value)) return value.map(displayValue).join(", ");
-  return JSON.stringify(value);
 }
 
 function formatDateTime(value?: string): string {

@@ -90,6 +90,7 @@ export function CredentialDetailDialog({
   }, [onClose, open]);
 
   if (!open || !card || !envelope) return null;
+  const lifecycleStatus = lifecycleStatusFromEnvelope(envelope, card);
 
   async function handleGenerateQr() {
     await onGenerateQr();
@@ -167,13 +168,15 @@ export function CredentialDetailDialog({
               >
                 <ArrowLeft size={15} /> กลับ
               </button>
-              <span className="dialog-crumbs">เอกสาร / {card.displayName}</span>
+              <span className="dialog-crumbs">
+                เอกสาร / {envelope.display.title}
+              </span>
             </div>
             <div className="dialog-heading-row">
               <p className="eyebrow">{hospitalName(card, envelope)}</p>
-              <h2>{card.displayName}</h2>
-              <Badge tone={credentialStatusTone(card.credentialStatus)}>
-                {credentialStatusLabel(card.credentialStatus)}
+              <h2>{envelope.display.title}</h2>
+              <Badge tone={credentialStatusTone(lifecycleStatus)}>
+                {credentialStatusLabel(lifecycleStatus)}
               </Badge>
             </div>
           </div>
@@ -552,6 +555,18 @@ async function copyToClipboard(value: string) {
   textarea.select();
   document.execCommand("copy");
   textarea.remove();
+}
+
+function lifecycleStatusFromEnvelope(
+  envelope: PortablePresentationEnvelope,
+  card: WalletCard,
+): string {
+  const status = envelope.sections
+    .find((section) => section.key === "metadata")
+    ?.fields.find((field) => field.path === "document.status")?.value;
+  return typeof status === "string" && status.trim()
+    ? status
+    : String(card.credentialStatus);
 }
 
 function hospitalName(

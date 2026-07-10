@@ -48,7 +48,7 @@ describe("portable presentation envelope", () => {
     expect(envelope.trust.warnings).toContain("portal_issuer_proof_missing");
   });
 
-  it("treats an issuer-profile signed VC JWT as portable issuer proof", () => {
+  it("keeps an unverified issuer-profile JWT yellow until verification succeeds", () => {
     const card = {
       ...completeWalletSeedCards.find(
         (item) => item.cardType === "patient_identity",
@@ -66,22 +66,50 @@ describe("portable presentation envelope", () => {
     };
     const envelope = presentationEnvelopeFromWalletCard(card);
 
-    expect(classifyPortableTrustStatus(card)).toBe("issuer_signed");
-    expect(envelope.trust.status).toBe("issuer_signed");
-    expect(envelope.trust.badge).toBe("green");
-    expect(envelope.trust.warnings).not.toContain(
-      "cryptographic_proof_missing",
-    );
+    expect(classifyPortableTrustStatus(card)).toBe("proof_missing");
+    expect(envelope.trust.status).toBe("proof_missing");
+    expect(envelope.trust.badge).toBe("yellow");
+    expect(envelope.trust.warnings).toContain("portal_issuer_proof_missing");
     expect(envelope.trust.checklist).toContainEqual(
       expect.objectContaining({
         key: "proof",
-        ok: true,
+        ok: false,
         detail: "vc+jwt",
       }),
     );
   });
 
-  it("does not inherit a proof-missing card status after creating a signed VP", () => {
+  it("turns issuer proof green only after a cryptographic verification result", () => {
+    const card = {
+      ...completeWalletSeedCards.find(
+        (item) => item.cardType === "patient_identity",
+      )!,
+      issuerDid: "did:web:wallet.example:hospital:tcc",
+      credentialJwt: "header.payload.signature",
+      credentialProof: {
+        type: "W3C VC JWT",
+        format: "vc+jwt",
+        jwt: "header.payload.signature",
+        alg: "ES256",
+        kid: "did:web:wallet.example:hospital:tcc#hospital-tcc-signing-key",
+        source: "trustcare_hospital_issuer_profile",
+      },
+      portalVerification: {
+        verified: true,
+        status: "verified",
+        checkedAt: "2026-07-10T00:00:00.000Z",
+      },
+    };
+    const envelope = presentationEnvelopeFromWalletCard(card);
+
+    expect(classifyPortableTrustStatus(card)).toBe("issuer_signed");
+    expect(envelope.trust.badge).toBe("green");
+    expect(envelope.trust.checklist).toContainEqual(
+      expect.objectContaining({ key: "proof", ok: true }),
+    );
+  });
+
+  it("does not infer verified VP proof from a JWT format and resolver URL", () => {
     const card = {
       ...completeWalletSeedCards.find(
         (item) => item.cardType === "patient_identity",
@@ -111,18 +139,35 @@ describe("portable presentation envelope", () => {
     });
 
     expect(envelope.kind).toBe("presentation");
+    expect(envelope.trust.status).toBe("proof_missing");
+    expect(envelope.trust.badge).toBe("yellow");
+    expect(envelope.trust.warnings).toContain("portal_issuer_proof_missing");
+  });
+
+  it("accepts an explicit verifier signature result for a VP", () => {
+    const card = completeWalletSeedCards.find(
+      (item) => item.cardType === "patient_identity",
+    )!;
+    const envelope = presentationEnvelopeFromPresentation(card, {
+      presentationId: "vp_verified_signature",
+      format: "jwt-vp",
+      mode: "gateway_resolver_vp",
+      credentialCount: 1,
+      selectedFields: [],
+      expiresAt: "2026-07-10T01:00:00.000Z",
+      qrData: "https://wallet.example/verify?vp=vp_verified_signature",
+      verificationChecklist: [
+        {
+          key: "signature",
+          label: "Signature status",
+          ok: true,
+          detail: "verified via issuer JWKS",
+        },
+      ],
+    });
+
     expect(envelope.trust.status).toBe("issuer_signed");
     expect(envelope.trust.badge).toBe("green");
-    expect(envelope.trust.warnings).not.toContain(
-      "cryptographic_proof_missing",
-    );
-    expect(envelope.trust.checklist).toContainEqual(
-      expect.objectContaining({
-        key: "proof",
-        ok: true,
-        detail: "jwt-vp",
-      }),
-    );
   });
 
   it("keeps trust artifacts out of clinical readiness proof semantics", () => {

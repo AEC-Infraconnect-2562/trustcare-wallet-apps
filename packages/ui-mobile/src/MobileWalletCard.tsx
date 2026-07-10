@@ -4,6 +4,7 @@ import { gradientForCardType } from "@trustcare/design-tokens";
 import {
   canPresentCredential,
   credentialStatusLabel,
+  presentationEnvelopeFromWalletCard,
   type WalletCard,
 } from "@trustcare/wallet-core";
 
@@ -17,7 +18,8 @@ export function MobileWalletCard({
   onPress?: () => void;
 }) {
   const [from, to] = gradientForCardType(card.cardType);
-  const holderName = holderNameFromCard(card);
+  const envelope = presentationEnvelopeFromWalletCard(card);
+  const holderName = envelope.subject.displayName ?? card.displayName;
   const disabled = !canPresentCredential(card);
   return (
     <Pressable
@@ -39,16 +41,18 @@ export function MobileWalletCard({
         </View>
         <View>
           <Text style={styles.issuer}>
-            {card.issuerHospitalName ?? "TrustCare Network"}
+            {envelope.issuer?.name ??
+              card.issuerHospitalName ??
+              "TrustCare Network"}
           </Text>
-          <Text style={styles.title}>{card.displayName}</Text>
+          <Text style={styles.title}>{envelope.display.title}</Text>
         </View>
         <View style={styles.footer}>
           <Text style={styles.name}>{holderName}</Text>
           <Text style={styles.meta}>
             หมดอายุ{" "}
-            {card.expiresAt
-              ? new Date(card.expiresAt).toLocaleDateString("th-TH")
+            {envelope.policy.expiresAt
+              ? new Date(envelope.policy.expiresAt).toLocaleDateString("th-TH")
               : "-"}
           </Text>
           <Text style={styles.verified}>
@@ -57,27 +61,6 @@ export function MobileWalletCard({
         </View>
       </LinearGradient>
     </Pressable>
-  );
-}
-
-function holderNameFromCard(card: WalletCard): string {
-  const subject = (card.credentialData?.credentialSubject ??
-    card.credentialData ??
-    {}) as Record<string, any>;
-  const renderData = subject.humanDocument?.renderData;
-  const person =
-    renderData?.patient ??
-    subject.patient ??
-    subject.student ??
-    subject.staff ??
-    {};
-  return (
-    person.fullNameTh ??
-    person.nameTh ??
-    person.fullNameEn ??
-    person.nameEn ??
-    card.displayNameEn ??
-    card.displayName
   );
 }
 

@@ -42,6 +42,11 @@ export type CredentialRenderNarrative = {
   sourceSystem?: string;
 };
 
+export type ClaimReceiptRenderKind =
+  | "payment_receipt"
+  | "submission_receipt"
+  | "claim_status";
+
 export type CredentialRenderPayloads = {
   labReport: CredentialRenderItem;
   diagnosticReport: CredentialRenderItem;
@@ -61,6 +66,7 @@ export type CredentialRenderPayloads = {
   manifest: CredentialRenderItem;
   appointment: CredentialRenderItem;
   travelDocument: CredentialRenderItem;
+  immunizationItems: CredentialRenderItem[];
   prescriptionItems: CredentialRenderItem[];
   medicationSummaryItems: CredentialRenderItem[];
   pharmacyDispenseItems: CredentialRenderItem[];
@@ -82,6 +88,7 @@ export type CredentialRenderModel = {
   fields: CredentialRenderField[];
   sections: CredentialRenderSection[];
   narrative: CredentialRenderNarrative;
+  claimReceiptKind?: ClaimReceiptRenderKind;
 };
 
 const TECHNICAL_FIELD_NAMES = new Set([
@@ -321,6 +328,57 @@ const claimReceiptRenderConfig: BusinessPayloadRenderConfig = {
   ],
 };
 
+const payerClaimReceiptRenderConfig: BusinessPayloadRenderConfig = {
+  pathRoot: "credentialSubject.claimReceipt",
+  priority: [
+    "claimCaseId",
+    "externalSubmissionId",
+    "payerId",
+    "status",
+    "payerStatusCode",
+    "payerStatusText",
+    "submittedAt",
+    "updatedAt",
+    "channel",
+    "manualFollowUpRequired",
+    "needMoreEvidence",
+    "adjudicationSummaryRef",
+    "receiptCredentialId",
+    "credentialId",
+    "warnings",
+  ],
+  labels: {
+    claimCaseId: "Claim case ID",
+    externalSubmissionId: "เลขรับจาก Payer",
+    payerId: "Payer",
+    status: "สถานะเคลม",
+    payerStatusCode: "รหัสสถานะจาก Payer",
+    payerStatusText: "รายละเอียดสถานะจาก Payer",
+    submittedAt: "ส่งเมื่อ",
+    updatedAt: "อัปเดตเมื่อ",
+    channel: "ช่องทางส่ง",
+    manualFollowUpRequired: "ต้องติดตามด้วยเจ้าหน้าที่",
+    needMoreEvidence: "เอกสารเพิ่มเติมที่ Payer ขอ",
+    adjudicationSummaryRef: "Payer decision reference",
+    receiptCredentialId: "Receipt credential ID",
+    credentialId: "Status credential ID",
+    warnings: "คำเตือน",
+  },
+  discloseByDefault: [
+    "claimCaseId",
+    "externalSubmissionId",
+    "payerId",
+    "status",
+    "payerStatusCode",
+    "payerStatusText",
+    "submittedAt",
+    "updatedAt",
+    "channel",
+  ],
+  dateTimeKeys: ["submittedAt", "updatedAt"],
+  hiddenKeys: [...renderMetadataKeys, "claim", "claimReceipt"],
+};
+
 export function credentialRenderModelFromCard(
   card: WalletCard,
 ): CredentialRenderModel {
@@ -348,18 +406,24 @@ export function credentialRenderModelFromCard(
   const issuer = firstRecord(getObject(credential, "issuer"), hospital);
   const documentType = normalizeDocumentType(card.cardType) ?? card.cardType;
   const payloads = credentialRenderPayloads(subject);
+  const claimReceiptKind =
+    documentType === "claim_receipt"
+      ? inferClaimReceiptRenderKind(card, credential, payloads.claimReceipt)
+      : undefined;
   const fields = fieldsForCredentialType(
     card,
     documentType,
     subject,
     patient,
     payloads,
+    claimReceiptKind,
   ).filter(isFieldWithValue);
   const sections = credentialRenderSections(
     card,
     documentType,
     subject,
     patient,
+    document,
     fields,
   );
 
@@ -367,7 +431,10 @@ export function credentialRenderModelFromCard(
     documentType,
     variant: credentialDocumentVariant(documentType),
     accent: credentialDocumentAccent(documentType),
-    kindLabel: credentialDocumentKindLabel(documentType),
+    kindLabel: claimReceiptKindLabel(
+      claimReceiptKind,
+      credentialDocumentKindLabel(documentType),
+    ),
     credential,
     subject,
     patient,
@@ -382,7 +449,9 @@ export function credentialRenderModelFromCard(
       documentType,
       subject,
       patient,
+      claimReceiptKind,
     ),
+    claimReceiptKind,
   };
 }
 
@@ -408,6 +477,7 @@ export function credentialRenderPayloads(
     manifest: manifestPayload(subject),
     appointment: appointmentPayload(subject),
     travelDocument: travelDocumentPayload(subject),
+    immunizationItems: immunizationItems(subject),
     prescriptionItems: prescriptionItems(subject),
     medicationSummaryItems: medicationSummaryItems(subject),
     pharmacyDispenseItems: pharmacyDispenseItems(subject),
@@ -420,6 +490,7 @@ export function credentialRenderSections(
   documentType: string,
   subject: CredentialRenderItem,
   patient: CredentialRenderItem,
+  document: CredentialRenderItem,
   bodyFields: CredentialRenderField[],
 ): CredentialRenderSection[] {
   const identityFields = [
@@ -449,9 +520,24 @@ export function credentialRenderSections(
   ].filter(isFieldWithValue);
   const documentFields = [
     field("ประเภทเอกสาร", documentType, "document.type", true),
-    field("วันที่ออก", formatDate(card.issuedAt), "document.issuedAt", false),
-    field("หมดอายุ", formatDate(card.expiresAt), "document.expiresAt", false),
-    field("สถานะ", card.credentialStatus, "document.status", false),
+    field(
+      "วันที่ออก",
+      formatDate(firstText(getText(document, "issuedAt"), card.issuedAt)),
+      "document.issuedAt",
+      false,
+    ),
+    field(
+      "หมดอายุ",
+      formatDate(firstText(getText(document, "expiresAt"), card.expiresAt)),
+      "document.expiresAt",
+      false,
+    ),
+    field(
+      "สถานะ",
+      firstText(getText(document, "status"), card.credentialStatus),
+      "document.status",
+      false,
+    ),
     field("Credential ID", card.credentialId, "credential.id", false),
   ].filter(isFieldWithValue);
 
@@ -482,6 +568,7 @@ export function credentialDocumentNarrative(
   documentType: string,
   subject: CredentialRenderItem,
   patient: CredentialRenderItem,
+  claimReceiptKind?: ClaimReceiptRenderKind,
 ): CredentialRenderNarrative {
   const humanDocument = getObject(subject, "humanDocument");
   const renderData = getObject(humanDocument, "renderData") ?? humanDocument;
@@ -495,6 +582,25 @@ export function credentialDocumentNarrative(
     getText(humanDocument, "sourceSystem") ??
     getText(getObject(card.credentialData, "trustcare"), "sourceSystem");
   const sections = getStringArray(humanDocument, "sections");
+  if (documentType === "claim_receipt" && claimReceiptKind === "claim_status") {
+    return {
+      title: "สถานะเคลมจาก Payer",
+      body: "แสดงสถานะล่าสุดและคำขอเอกสารเพิ่มเติมตามที่ Payer หรือ integration issuer ส่งกลับ โดย Wallet ไม่ตัดสินผลเคลมเอง",
+      sections,
+      sourceSystem,
+    };
+  }
+  if (
+    documentType === "claim_receipt" &&
+    claimReceiptKind === "submission_receipt"
+  ) {
+    return {
+      title: "หลักฐานรับชุดเคลม",
+      body: "ยืนยันว่า Payer หรือช่องทางที่กำหนดได้รับชุดเคลมแล้ว พร้อมเลขอ้างอิง ช่องทาง เวลา และสถานะการติดตาม",
+      sections,
+      sourceSystem,
+    };
+  }
   const map: Record<string, { title: string; body: string }> = {
     patient_identity: {
       title: "บัตรยืนยันตัวตนผู้ป่วย",
@@ -675,6 +781,47 @@ export function credentialDocumentKindLabel(cardType: string): string {
   return map[cardType] ?? "Clinical document";
 }
 
+function inferClaimReceiptRenderKind(
+  card: WalletCard,
+  credential: CredentialRenderItem,
+  receipt: CredentialRenderItem,
+): ClaimReceiptRenderKind {
+  const credentialTypes = Array.isArray(credential.type)
+    ? credential.type.filter((value): value is string => typeof value === "string")
+    : [];
+  const typeText = [card.credentialType, ...credentialTypes]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+  if (/ClaimStatusCredential/i.test(typeText)) return "claim_status";
+  if (/ClaimSubmissionReceiptCredential/i.test(typeText))
+    return "submission_receipt";
+  if (
+    hasValue(getNested(receipt, ["updatedAt"])) ||
+    hasValue(getNested(receipt, ["payerStatusCode"])) ||
+    hasValue(getNested(receipt, ["payerStatusText"])) ||
+    hasValue(getNested(receipt, ["needMoreEvidence"]))
+  ) {
+    return "claim_status";
+  }
+  if (
+    hasValue(getNested(receipt, ["externalSubmissionId"])) ||
+    hasValue(getNested(receipt, ["channel"])) ||
+    hasValue(getNested(receipt, ["manualFollowUpRequired"]))
+  ) {
+    return "submission_receipt";
+  }
+  return "payment_receipt";
+}
+
+function claimReceiptKindLabel(
+  kind: ClaimReceiptRenderKind | undefined,
+  fallback: string,
+): string {
+  if (kind === "claim_status") return "Claim status";
+  if (kind === "submission_receipt") return "Claim submission receipt";
+  return fallback;
+}
+
 export function displayCredentialValue(value: unknown): string {
   return formatValue(value);
 }
@@ -691,6 +838,7 @@ function fieldsForCredentialType(
   subject: CredentialRenderItem,
   patient: CredentialRenderItem,
   payloads: CredentialRenderPayloads,
+  claimReceiptKind?: ClaimReceiptRenderKind,
 ): CredentialRenderField[] {
   const coverage = payloads.coverage;
   const certificate = payloads.certificate;
@@ -707,6 +855,9 @@ function fieldsForCredentialType(
   const syncReceipt = payloads.syncReceipt;
   const appointment = payloads.appointment;
   const manifest = payloads.manifest;
+  const labReport = payloads.labReport;
+  const diagnosticReport = payloads.diagnosticReport;
+  const clinicalSummary = payloads.clinicalSummary;
   const fields: Record<string, CredentialRenderField[]> = {
     patient_identity: [
       field("HN", getText(patient, "hn"), "credentialSubject.patient.hn", true),
@@ -792,6 +943,161 @@ function fieldsForCredentialType(
         "โทรศัพท์",
         getText(subject, "phone"),
         "credentialSubject.staff.phone",
+        false,
+      ),
+    ],
+    patient_summary: [
+      field(
+        "โรค/ภาวะสำคัญ",
+        getNested(clinicalSummary, ["conditions"]),
+        "credentialSubject.patientSummary.conditions",
+        true,
+      ),
+      field(
+        "การแพ้",
+        getNested(clinicalSummary, ["allergies"]),
+        "credentialSubject.patientSummary.allergies",
+        true,
+      ),
+      field(
+        "ยาปัจจุบัน",
+        getNested(clinicalSummary, ["medications"]),
+        "credentialSubject.patientSummary.medications",
+        true,
+      ),
+      field(
+        "สัญญาณชีพ",
+        getNested(clinicalSummary, ["vitalSigns"]),
+        "credentialSubject.patientSummary.vitalSigns",
+        false,
+      ),
+      field(
+        "แผนดูแล",
+        getText(clinicalSummary, "carePlan"),
+        "credentialSubject.patientSummary.carePlan",
+        false,
+      ),
+    ],
+    allergy_alert: [
+      field(
+        "รายการแพ้",
+        payloads.allergyItems,
+        "credentialSubject.allergyAlert.items",
+        true,
+      ),
+      field(
+        "คำแนะนำฉุกเฉิน",
+        firstText(
+          getText(subject, "emergencyInstruction"),
+          getText(subject, "clinicalNote"),
+        ),
+        "credentialSubject.allergyAlert.emergencyInstruction",
+        true,
+      ),
+    ],
+    immunization: [
+      field(
+        "รายการวัคซีน",
+        payloads.immunizationItems,
+        "credentialSubject.immunizationRecord.items",
+        true,
+      ),
+      field(
+        "สถานะทะเบียนวัคซีน",
+        getText(subject, "registryStatus"),
+        "credentialSubject.immunizationRecord.registryStatus",
+        false,
+      ),
+    ],
+    medication_summary: [
+      field(
+        "รายการยาปัจจุบัน",
+        payloads.medicationSummaryItems,
+        "credentialSubject.medicationSummary.items",
+        true,
+      ),
+    ],
+    prescription: [
+      field(
+        "รายการยาในใบสั่งยา",
+        payloads.prescriptionItems,
+        "credentialSubject.prescription.items",
+        true,
+      ),
+    ],
+    pharmacy_dispense: [
+      field(
+        "รายการยาที่จ่าย",
+        payloads.pharmacyDispenseItems,
+        "credentialSubject.pharmacyDispense.items",
+        true,
+      ),
+    ],
+    lab_result: [
+      field(
+        "เลขที่รายงาน",
+        getText(labReport, "reportNo"),
+        "credentialSubject.labReport.reportNo",
+        true,
+      ),
+      field(
+        "ห้องปฏิบัติการ",
+        getText(labReport, "laboratory"),
+        "credentialSubject.labReport.laboratory",
+        true,
+      ),
+      field(
+        "เก็บตัวอย่างเมื่อ",
+        formatDateTime(getText(labReport, "specimenCollectedAt")),
+        "credentialSubject.labReport.specimenCollectedAt",
+        false,
+      ),
+      field(
+        "รายงานเมื่อ",
+        formatDateTime(getText(labReport, "reportedAt")),
+        "credentialSubject.labReport.reportedAt",
+        false,
+      ),
+      field(
+        "ผลตรวจ",
+        getNested(labReport, ["observations"]),
+        "credentialSubject.labReport.observations",
+        true,
+      ),
+    ],
+    diagnostic_report: [
+      field(
+        "เลขที่รายงาน",
+        getText(diagnosticReport, "reportNo"),
+        "credentialSubject.diagnosticReport.reportNo",
+        true,
+      ),
+      field(
+        "ประเภทการตรวจ",
+        getText(diagnosticReport, "category"),
+        "credentialSubject.diagnosticReport.category",
+        true,
+      ),
+      field(
+        "วันที่ตรวจ",
+        formatDateTime(getText(diagnosticReport, "effectiveDateTime")),
+        "credentialSubject.diagnosticReport.effectiveDateTime",
+        true,
+      ),
+      field(
+        "สรุปผล",
+        firstText(
+          getText(diagnosticReport, "conclusionTh"),
+          getText(diagnosticReport, "conclusion"),
+          getText(diagnosticReport, "result"),
+        ),
+        "credentialSubject.diagnosticReport.conclusion",
+        true,
+      ),
+      field(
+        "รายละเอียดผลตรวจ",
+        getNested(diagnosticReport, ["observations"]),
+        "credentialSubject.diagnosticReport.observations",
         false,
       ),
     ],
@@ -1214,7 +1520,12 @@ function fieldsForCredentialType(
       claimPackage,
       claimPackageRenderConfig,
     ),
-    claim_receipt: businessPayloadFields(receipt, claimReceiptRenderConfig),
+    claim_receipt: businessPayloadFields(
+      receipt,
+      claimReceiptKind === "payment_receipt"
+        ? claimReceiptRenderConfig
+        : payerClaimReceiptRenderConfig,
+    ),
     sync_receipt: [
       field(
         "Sync ID",
@@ -1410,6 +1721,17 @@ function diagnosticReportPayload(
       getNested(getObject(report, "fhir"), ["observations"]),
     ),
   };
+}
+
+function immunizationItems(
+  subject: CredentialRenderItem,
+): CredentialRenderItem[] {
+  return firstNonEmptyItems(
+    getNested(subject, ["immunizationRecord", "items"]),
+    getNested(subject, ["immunizationRecord", "immunizations"]),
+    getNested(subject, ["immunizations"]),
+    getNested(getObject(subject, "fhir"), ["immunizations"]),
+  );
 }
 
 function prescriptionItems(
@@ -2362,5 +2684,9 @@ export function isCredentialDisclosurePath(path: string): boolean {
     .toLowerCase()
     .split(/[^a-z0-9]+/g)
     .filter(Boolean);
-  return !parts.some((part) => TECHNICAL_FIELD_NAMES.has(part));
+  return !parts.some(
+    (part, index) =>
+      TECHNICAL_FIELD_NAMES.has(part) &&
+      !(part === "credentialsubject" && index === 0 && parts.length > 1),
+  );
 }

@@ -18,49 +18,40 @@ export function getValueAtPath(source: unknown, path: string): unknown {
 
 export function photoCandidatesForCard(card: WalletCard): PhotoCandidate[] {
   const candidates: PhotoCandidate[] = [];
+  const data = card.credentialData;
+  const subjectKey = card.cardType === "staff_identity" ? "staff" : "patient";
+  const embeddedPaths = photoPathsForSubject(subjectKey);
+  for (const path of embeddedPaths) {
+    addPhotoCandidates(candidates, path, getValueAtPath(data, path));
+  }
   addPhotoCandidates(
     candidates,
     "wallet_cards.patientAvatarUrl",
     card.patientAvatarUrl,
   );
-  const data = card.credentialData;
-  const embeddedPaths = [
-    "credentialSubject.patient.photoUrl",
-    "credentialSubject.patient.avatarUrl",
-    "credentialSubject.patient.imageUrl",
-    "credentialSubject.patient.profileImageUrl",
-    "credentialSubject.patient.portraitUrl",
-    "credentialSubject.patient.photo.url",
-    "credentialSubject.patient.avatar.url",
-    "credentialSubject.patient.demographics.photoUrl",
-    "credentialSubject.patient.demographics.avatarUrl",
-    "credentialSubject.staff.photoUrl",
-    "credentialSubject.staff.avatarUrl",
-    "credentialSubject.holder.photoUrl",
-    "credentialSubject.holder.avatarUrl",
-    "credentialSubject.person.photoUrl",
-    "credentialSubject.person.avatarUrl",
-    "credentialSubject.subject.photoUrl",
-    "credentialSubject.subject.avatarUrl",
-    "credentialSubject.profile.photoUrl",
-    "credentialSubject.profile.avatarUrl",
-    "credentialSubject.identity.photoUrl",
-    "credentialSubject.identity.avatarUrl",
-    "credentialSubject.photoUrl",
-    "credentialSubject.avatarUrl",
-    "credentialSubject.photo.url",
-    "credentialSubject.avatar.url",
-    "credentialSubject.humanDocument.renderData.patient.photoUrl",
-    "credentialSubject.humanDocument.renderData.patient.avatarUrl",
-    "patient.photoUrl",
-    "patient.avatarUrl",
+  return dedupePhotoCandidates(candidates);
+}
+
+function photoPathsForSubject(subjectKey: "patient" | "staff"): string[] {
+  const prefixes = [
+    `credentialSubject.humanDocument.renderData.${subjectKey}`,
+    `credentialSubject.${subjectKey}`,
+    subjectKey,
+  ];
+  const suffixes = [
     "photoUrl",
     "avatarUrl",
+    "imageUrl",
+    "profileImageUrl",
+    "portraitUrl",
+    "photo.url",
+    "avatar.url",
+    "demographics.photoUrl",
+    "demographics.avatarUrl",
   ];
-  for (const path of embeddedPaths) {
-    addPhotoCandidates(candidates, path, getValueAtPath(data, path));
-  }
-  return dedupePhotoCandidates(candidates);
+  return prefixes.flatMap((prefix) =>
+    suffixes.map((suffix) => `${prefix}.${suffix}`),
+  );
 }
 
 export function normalizePhotoUrl(value: string): string {

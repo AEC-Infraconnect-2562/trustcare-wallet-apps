@@ -13,6 +13,7 @@ import {
   documentReferenceFromCard,
   type FhirDocumentReferenceLike,
 } from "./mhd";
+import { walletCardHasCryptographicProof } from "./credentialProof";
 
 export const CANONICAL_DOCUMENT_TYPES = [
   "patient_identity",
@@ -246,7 +247,9 @@ export function walletDocumentRecordFromCard(
       ? "trust_artifact"
       : String(card.credentialStatus ?? "active") === "unverified"
         ? "patient_provided_unverified"
-        : "issuer_signed",
+        : walletCardHasCryptographicProof(card)
+          ? "issuer_signed"
+          : "pending_trustcare_binding",
     issuedAt: card.issuedAt,
     expiresAt: card.expiresAt,
     issuerDid: card.issuerDid,
