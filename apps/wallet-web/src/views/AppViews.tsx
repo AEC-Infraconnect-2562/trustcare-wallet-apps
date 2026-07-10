@@ -37,6 +37,7 @@ import {
   LogOut,
   Network,
   Pin,
+  Printer,
   QrCode,
   RefreshCw,
   Search,
@@ -3429,9 +3430,16 @@ export function StoredObjectDialog({
     manifestDocuments[0] ??
     null;
   const rawShlPayload = shlDetail?.qrPayload ?? shlDetail?.shlUrl ?? "";
+  const storedCredentialCard = useMemo(
+    () => storedCredentialCardForRendering(object),
+    [object],
+  );
   const storedPass = useMemo(
-    () => (object ? describeStoredObjectPass(object, user) : null),
-    [object, user],
+    () =>
+      object && !storedCredentialCard
+        ? describeStoredObjectPass(object, user)
+        : null,
+    [object, storedCredentialCard, user],
   );
 
   useEffect(() => {
@@ -3454,7 +3462,9 @@ export function StoredObjectDialog({
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="stored-object-dialog">
+      <div
+        className={`stored-object-dialog${storedCredentialCard ? " stored-vc-dialog" : ""}`}
+      >
         <header className="credential-dialog-header">
           <div className="dialog-title-block">
             <div className="dialog-breadcrumb-row">
@@ -3492,8 +3502,17 @@ export function StoredObjectDialog({
           </button>
         </header>
         <div className="stored-object-body">
-          <section className="stored-object-summary">
-            {storedPass && (
+          <section
+            className={`stored-object-summary${storedCredentialCard ? " stored-vc-summary" : ""}`}
+          >
+            {storedCredentialCard ? (
+              <div
+                className="stored-vc-document"
+                aria-label="เอกสาร VC ที่เก็บใน Wallet"
+              >
+                <CredentialDocument card={storedCredentialCard} />
+              </div>
+            ) : storedPass ? (
               <BrandedSharePass
                 kind={storedPass.kind}
                 title={object.title}
@@ -3508,7 +3527,7 @@ export function StoredObjectDialog({
                 isReady={Boolean(scanPayload)}
                 items={storedPass.items}
               />
-            )}
+            ) : null}
             <dl className="details-grid compact">
               <div>
                 <dt>ประเภท</dt>
@@ -3549,6 +3568,14 @@ export function StoredObjectDialog({
             />
           )}
           <div className="credential-action-grid">
+            {storedCredentialCard && (
+              <Button
+                className="secondary"
+                onClick={() => void printStoredCredential()}
+              >
+                <Printer size={18} /> พิมพ์ / บันทึก PDF
+              </Button>
+            )}
             <Button
               className="secondary"
               onClick={() => void copyText(scanPayload)}
@@ -4805,6 +4832,23 @@ export function createScannableWebUrl(payload: string): string {
 
 export function getObjectScanPayload(object: WalletStoredObject): string {
   const payload = object.payload as any;
+  if (object.type === "vc") {
+    const renderCard = storedCredentialCardForRendering(object);
+    if (!renderCard) return "";
+    const credentialPayload = isStoredWalletCardPayload(payload)
+      ? typeof payload.credentialJwt === "string" &&
+        payload.credentialJwt.trim()
+        ? payload.credentialJwt
+        : payload.credentialData
+      : renderCard.credentialData;
+    if (typeof credentialPayload === "string" && credentialPayload.trim()) {
+      return createScannableWebUrl(credentialPayload);
+    }
+    if (credentialPayload && typeof credentialPayload === "object") {
+      return createScannableWebUrl(JSON.stringify(credentialPayload));
+    }
+    return "";
+  }
   if (object.type === "shl" && payload) {
     const directShlPayload =
       typeof payload?.qrPayload === "string"
@@ -4837,6 +4881,37 @@ export function getObjectScanPayload(object: WalletStoredObject): string {
       id: object.id,
       payload: object.payload,
     }),
+  );
+}
+
+export function storedCredentialCardForRendering(
+  object: WalletStoredObject | null,
+): WalletCard | null {
+  if (!object || object.type !== "vc") return null;
+  if (isStoredWalletCardPayload(object.payload)) return object.payload;
+  return walletCardForCredentialRendering(object.payload);
+}
+
+export function printStoredCredential(): boolean {
+  if (typeof window === "undefined" || typeof window.print !== "function") {
+    return false;
+  }
+  window.print();
+  return true;
+}
+
+function isStoredWalletCardPayload(value: unknown): value is WalletCard {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const payload = value as Record<string, unknown>;
+  return (
+    typeof payload.id === "number" &&
+    typeof payload.cardType === "string" &&
+    typeof payload.displayName === "string" &&
+    typeof payload.documentCategory === "string" &&
+    (typeof payload.credentialId === "string" ||
+      typeof payload.credentialId === "number") &&
+    typeof payload.credentialStatus === "string" &&
+    typeof payload.createdAt === "string"
   );
 }
 
