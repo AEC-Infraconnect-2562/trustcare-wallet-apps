@@ -1449,7 +1449,10 @@ function makePatientCard(
     patientAvatarUrl: completePatient.avatarUrl,
     ownerUserId: completePatient.ownerUserId,
     patientId: completePatient.patientId,
-    sourceSystem: "trustcare_portal",
+    // This complete fixture is intentionally issuer-explicit so the demo can
+    // exercise the normal issuer-signing path without weakening Portal VC
+    // proof enforcement for real portal-synced credentials.
+    sourceSystem: "trustcare_demo_issuer",
     scopeLabel: "Complete hospital-grade seed",
     issuedAt,
     expiresAt: input.expiresAt,
@@ -1488,7 +1491,7 @@ function makeStaffCard(
     patientAvatarUrl: completeStaff.avatarUrl,
     ownerUserId: completeStaff.ownerUserId,
     patientId: completeStaff.staffId,
-    sourceSystem: "trustcare_portal",
+    sourceSystem: "trustcare_demo_issuer",
     scopeLabel: "Complete staff seed",
     issuedAt,
     expiresAt: input.expiresAt,

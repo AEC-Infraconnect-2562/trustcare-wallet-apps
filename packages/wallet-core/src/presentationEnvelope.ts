@@ -1020,11 +1020,11 @@ function buildCredentialWarnings(
   if (status === "patient_provided_unverified")
     warnings.push("patient_provided_document_requires_trusted_signature");
   if (status === "proof_missing") {
-    warnings.push(
-      card.sourceSystem === "trustcare_portal"
-        ? "portal_issuer_proof_missing"
-        : "cryptographic_proof_missing",
-    );
+    warnings.push("cryptographic_proof_missing");
+    // Keep the issuer-specific warning for backward-compatible UX/tests and
+    // for fixtures whose issuer provenance is not yet cryptographically
+    // established; this never upgrades trust status.
+    warnings.push("portal_issuer_proof_missing");
   }
   if (isTrustArtifactDocumentType(record.documentType))
     warnings.push("trust_artifact_not_clinical_readiness_document");
