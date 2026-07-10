@@ -24,10 +24,10 @@ import { useLoadedPhotoCandidate } from "./useLoadedPhotoCandidate";
 const photoDocumentTypes = new Set<string>(photoBearingCredentialTypes);
 const requiredVerificationChecks = [
   ["proof", "signature"],
-  ["issuer"],
-  ["status"],
+  ["issuer", "issuer_key", "evidence_issuer"],
+  ["status", "portal_status", "evidence_status"],
   ["expiry"],
-  ["policy"],
+  ["policy", "evidence_policy"],
 ] as const;
 
 export type CredentialDocumentVerification = {

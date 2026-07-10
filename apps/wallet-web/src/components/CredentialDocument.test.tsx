@@ -126,6 +126,59 @@ describe("shared A4 credential document", () => {
     );
   });
 
+  it("recognizes the fail-closed keys emitted by the public verifier", () => {
+    const card = cards.find((item) => item.cardType === "medical_certificate")!;
+    const publicVerifierChecks = [
+      { key: "signature", ok: true },
+      { key: "data_integrity", ok: true },
+      { key: "issuer_key", ok: true },
+      { key: "expiry", ok: true },
+      { key: "evidence_issuer", ok: true },
+      { key: "evidence_status", ok: true },
+      { key: "evidence_policy", ok: true },
+      { key: "evidence_binding", ok: true },
+    ];
+    const verified = renderToStaticMarkup(
+      <CredentialDocument
+        card={card}
+        verification={{ verified: true, checklist: publicVerifierChecks }}
+      />,
+    );
+    const failedEvidence = renderToStaticMarkup(
+      <CredentialDocument
+        card={card}
+        verification={{
+          verified: true,
+          checklist: publicVerifierChecks.map((check) =>
+            check.key === "evidence_status" ? { ...check, ok: false } : check,
+          ),
+        }}
+      />,
+    );
+
+    expect(verified).toContain(
+      "ตรวจสอบ proof, issuer, status, expiry และ policy ผ่านแล้ว",
+    );
+    expect(failedEvidence).not.toContain(
+      "ตรวจสอบ proof, issuer, status, expiry และ policy ผ่านแล้ว",
+    );
+
+    const jwtOnly = renderToStaticMarkup(
+      <CredentialDocument
+        card={card}
+        verification={{
+          verified: true,
+          checklist: publicVerifierChecks.map((check) =>
+            check.key === "data_integrity" ? { ...check, ok: false } : check,
+          ),
+        }}
+      />,
+    );
+    expect(jwtOnly).toContain(
+      "ตรวจสอบ proof, issuer, status, expiry และ policy ผ่านแล้ว",
+    );
+  });
+
   it("renders a source-backed VP cover before a multi-document manifest", () => {
     const html = renderToStaticMarkup(
       <PresentationCoverDocument
@@ -152,10 +205,13 @@ describe("shared A4 credential document", () => {
           verified: true,
           checklist: [
             { key: "signature", ok: true },
-            { key: "issuer", ok: true },
-            { key: "status", ok: true },
+            { key: "data_integrity", ok: true },
+            { key: "issuer_key", ok: true },
             { key: "expiry", ok: true },
-            { key: "policy", ok: true },
+            { key: "evidence_issuer", ok: true },
+            { key: "evidence_status", ok: true },
+            { key: "evidence_policy", ok: true },
+            { key: "evidence_binding", ok: true },
           ],
         }}
       />,
