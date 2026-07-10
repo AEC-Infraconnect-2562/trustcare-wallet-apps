@@ -1,9 +1,13 @@
 import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
+import type { RuntimeEnvironment } from "@trustcare/wallet-core";
 import { TrustCareApiError } from "./errors";
 
 export type TrustCareClientOptions = {
   url: string;
+  runtimeEnvironment?: RuntimeEnvironment;
+  /** @deprecated Use runtimeEnvironment. Retained for explicit legacy callers. */
+  demoMode?: boolean;
   getAuthToken?: () => Promise<string | null> | string | null;
   fetchImpl?: typeof fetch;
   credentials?: RequestCredentials;

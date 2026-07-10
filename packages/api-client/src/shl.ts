@@ -6,15 +6,15 @@ import {
 import { canUsePortalDemoSync, type PortalSyncMode } from "./portalSync";
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
+import { usesDemoRuntime } from "./runtime";
 
 export type ShlApiOptions = TrustCareClientOptions & {
-  demoMode?: boolean;
   userId?: string | number;
   portalSyncMode?: PortalSyncMode;
 };
 
 export async function listShl(options: ShlApiOptions): Promise<ShlPackage[]> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     if (
       options.portalSyncMode === "live_demo" &&
       canUsePortalDemoSync(options.userId)
@@ -29,7 +29,7 @@ export async function getShlById(
   options: ShlApiOptions,
   id: number,
 ): Promise<ShlPackageDetail> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     if (
       options.portalSyncMode === "live_demo" &&
       canUsePortalDemoSync(options.userId)

@@ -52,9 +52,9 @@ import {
   type PortalSyncMode,
 } from "./portalSync";
 import { signCredentialWithShareGateway } from "./shareGatewayClient";
+import { usesDemoRuntime } from "./runtime";
 
 export type WalletApiOptions = TrustCareClientOptions & {
-  demoMode?: boolean;
   demoOrigin?: string;
   shareGatewayUrl?: string;
   shlGatewayUrl?: string;
@@ -131,7 +131,7 @@ function usesPortalLiveSync(
 export async function cardsByCategory(
   options: WalletApiOptions,
 ): Promise<WalletCardsByCategory> {
-  if (options.demoMode ?? true) return demoCardsByCategory(options);
+  if (usesDemoRuntime(options)) return demoCardsByCategory(options);
   return callTrpcProcedure<WalletCardsByCategory>(
     options,
     "wallet.cardsByCategory",
@@ -142,7 +142,7 @@ export async function listDocuments(
   options: WalletApiOptions,
   input: WalletDocumentListOptions = {},
 ): Promise<WalletDocumentRecord[]> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const cards = await demoWalletCards(options);
     const documentTypes = input.documentTypes?.map(String);
     return cards
@@ -175,7 +175,7 @@ export async function importFromMhd(
       `MHD DocumentReference import failed: ${validation.errors.join("; ")}`,
     );
   }
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const user = getDemoUser(options.userId);
     return recordFromMhdDocumentReference(input.documentReference, {
       id: `mhd:${input.documentReference.id}`,
@@ -201,7 +201,7 @@ export async function importFromShl(
   options: WalletApiOptions,
   input: WalletShlImportInput,
 ): Promise<WalletShlImportResult> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const classification = classifyQrPayload(input.payload);
     const manifest = await fetchShlManifest(input.payload);
     const trust = manifest.ok
@@ -225,7 +225,7 @@ export async function createSharePackage(
   options: WalletApiOptions,
   input: WalletCreateSharePackageInput,
 ): Promise<BuiltSharePackage> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const cards = await demoWalletCards(options);
     const vpMode = input.mode === "DirectVP" || input.mode === "PurposeVP";
     const defaultShareGatewayUrl =
@@ -256,7 +256,7 @@ export async function resolveSharePackage(
   options: WalletApiOptions,
   input: { qrPayload: string },
 ): Promise<WalletSharePackageResolution> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const classification = classifyQrPayload(input.qrPayload);
     const shl =
       classification.kind === "standard_shl" ||
@@ -282,7 +282,7 @@ export async function acceptCredentialOffer(
 ): Promise<WalletCredentialOfferAcceptance> {
   const parsed = parseOid4vcCredentialOffer(input.offerPayload);
   if (!parsed) throw new Error("OID4VCI credential offer ไม่ถูกต้อง");
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const user = getDemoUser(options.userId);
     const cards = await demoWalletCards({ ...options, userId: user.id });
     const sourceCard =
@@ -310,7 +310,7 @@ export async function verifySharePackage(
   options: WalletApiOptions,
   input: { qrPayload: string },
 ) {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     return verifyQr(options, input.qrPayload);
   }
   return callTrpcProcedure(options, "wallet.verifySharePackage", input);
@@ -319,14 +319,14 @@ export async function verifySharePackage(
 export async function superseded(
   options: WalletApiOptions,
 ): Promise<unknown[]> {
-  if (options.demoMode ?? true) return [];
+  if (usesDemoRuntime(options)) return [];
   return callTrpcProcedure<unknown[]>(options, "wallet.superseded");
 }
 
 export async function history(
   options: WalletApiOptions,
 ): Promise<PresentationHistoryItem[]> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     if (usesPortalLiveSync(options)) return [];
     return getDemoHistory(options.userId);
   }
@@ -341,7 +341,7 @@ export async function present(
   input: WalletPresentationRequest,
 ): Promise<WalletPresentationResponse> {
   const { cardSnapshot, ...requestInput } = input;
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const cards = await demoWalletCards(options);
     const card =
       cards.find((item) => item.id === input.cardId) ??
@@ -372,8 +372,8 @@ export async function readiness(
   options: WalletApiOptions,
   input: { context: ReadinessContext; patientId?: number },
 ): Promise<WalletReadinessResponse> {
-  const user = getDemoUser(options.userId ?? input.patientId);
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
+    const user = getDemoUser(options.userId ?? input.patientId);
     const cards = await demoWalletCards({ ...options, userId: user.id });
     return {
       patientId: input.patientId ?? user.patientId,
@@ -393,7 +393,7 @@ export async function prepareWorkbench(
   options: WalletApiOptions,
   input: { context: ReadinessContext; patientId?: number },
 ) {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const user = getDemoUser(options.userId ?? input.patientId);
     return buildPrepareWorkbench(
       input.context,
@@ -405,19 +405,19 @@ export async function prepareWorkbench(
 }
 
 export async function prepareContracts(options: WalletApiOptions) {
-  if (options.demoMode ?? true) return buildContractHubCatalog().contracts;
+  if (usesDemoRuntime(options)) return buildContractHubCatalog().contracts;
   return callTrpcProcedure(options, "wallet.prepareContracts");
 }
 
 export async function contractHub(
   options: WalletApiOptions,
 ): Promise<ContractHubCatalog> {
-  if (options.demoMode ?? true) return buildContractHubCatalog();
+  if (usesDemoRuntime(options)) return buildContractHubCatalog();
   return callTrpcProcedure<ContractHubCatalog>(options, "wallet.contractHub");
 }
 
 export async function dataMappingV2(options: WalletApiOptions) {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const hub = buildContractHubCatalog();
     return {
       version: hub.version,
@@ -443,7 +443,7 @@ export async function prepareApiExamples(
   options: WalletApiOptions,
   input: { context: ReadinessContext },
 ) {
-  if (options.demoMode ?? true)
+  if (usesDemoRuntime(options))
     return {
       basePath: "/api/public/prepare-service/v1",
       context: input.context,
@@ -460,7 +460,7 @@ export async function buildServiceBundle(
     receiver?: string;
   },
 ): Promise<ServiceBundleEnvelope> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const user = getDemoUser(options.userId ?? input.patientId);
     const cards = await demoWalletCards({ ...options, userId: user.id });
     return buildServiceBundleEnvelope({
@@ -489,7 +489,7 @@ export async function deployBundleToWallet(
     issueDocuments?: string[];
   },
 ) {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     return {
       deploymentId: `dep_demo_${Date.now().toString(36)}`,
       context: input.context,
@@ -528,7 +528,7 @@ export async function connectWalkInWallet(
     consentAttested: boolean;
   },
 ) {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     return {
       connectionId: `walkin_${Date.now().toString(36)}`,
       holderDid: `did:key:walkin-${Date.now().toString(36)}`,
@@ -552,7 +552,7 @@ export async function importForService(
     consentRef?: string;
   },
 ): Promise<WalletImportJob> {
-  if (options.demoMode ?? true)
+  if (usesDemoRuntime(options))
     return simulateImportForService(
       input.context,
       input.documentType ?? "patient_summary",
@@ -569,7 +569,7 @@ export async function documentRequests(
   options: WalletApiOptions,
   input?: { context?: ReadinessContext; patientId?: number; status?: string },
 ): Promise<WalletDocumentRequest[]> {
-  if (options.demoMode ?? true) return [];
+  if (usesDemoRuntime(options)) return [];
   return callTrpcProcedure<WalletDocumentRequest[]>(
     options,
     "wallet.documentRequests",
@@ -581,7 +581,7 @@ export async function requestDocument(
   options: WalletApiOptions,
   input: unknown,
 ) {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     return {
       id: Date.now(),
       requestId: `wdr_demo_${Date.now()}`,
@@ -595,7 +595,7 @@ export async function uploadDocument(
   options: WalletApiOptions,
   input: unknown,
 ) {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     return {
       id: Date.now(),
       uploadId: `pud_demo_${Date.now()}`,
@@ -618,7 +618,7 @@ export async function buildServicePacket(
     validMinutes?: number;
   },
 ): Promise<ServicePacketResponse> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const user = getDemoUser(options.userId ?? input.patientId);
     const cards = await demoWalletCards({ ...options, userId: user.id });
     const readiness = assessLocalReadiness(cards, input.context);
@@ -685,7 +685,7 @@ export async function generateCheckinQR(
     protocol?: "shl" | "hybrid";
   },
 ): Promise<CheckinQrResponse> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const user = getDemoUser(options.userId ?? input.patientId);
     const cards = await demoWalletCards({ ...options, userId: user.id });
     const selected = input.selectedCardIds?.length
@@ -724,7 +724,7 @@ export async function generateCheckinQR(
 export async function interoperabilityFixtures(
   options: WalletApiOptions,
 ): Promise<WalletInteroperabilityFixtures> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     if (usesPortalLiveSync(options)) {
       const user = getDemoUser(options.userId);
       return {

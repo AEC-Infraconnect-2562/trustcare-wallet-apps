@@ -1,6 +1,7 @@
 import { getDemoUser } from "@trustcare/wallet-core";
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
+import { usesDemoRuntime } from "./runtime";
 
 export type TrustCareUser = {
   id: number | string;
@@ -13,9 +14,10 @@ export type TrustCareUser = {
 
 export async function me(
   options: TrustCareClientOptions,
-  demoMode = true,
+  demoMode?: boolean,
 ): Promise<TrustCareUser> {
-  if (demoMode) {
+  const runtimeOptions = withLegacyDemoMode(options, demoMode);
+  if (usesDemoRuntime(runtimeOptions)) {
     const demoUser = getDemoUser(
       (options as TrustCareClientOptions & { userId?: string | number }).userId,
     );
@@ -32,8 +34,16 @@ export async function me(
 
 export async function logout(
   options: TrustCareClientOptions,
-  demoMode = true,
+  demoMode?: boolean,
 ): Promise<{ success: boolean }> {
-  if (demoMode) return { success: true };
+  if (usesDemoRuntime(withLegacyDemoMode(options, demoMode)))
+    return { success: true };
   return callTrpcProcedure<{ success: boolean }>(options, "auth.logout");
+}
+
+function withLegacyDemoMode(
+  options: TrustCareClientOptions,
+  demoMode: boolean | undefined,
+): TrustCareClientOptions {
+  return demoMode === undefined ? options : { ...options, demoMode };
 }

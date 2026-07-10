@@ -32,9 +32,9 @@ import {
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
 import { issuePayerCredentialWithShareGateway } from "./shareGatewayClient";
+import { usesDemoRuntime } from "./runtime";
 
 export type PayerApiOptions = TrustCareClientOptions & {
-  demoMode?: boolean;
   userId?: string | number;
   shareGatewayUrl?: string;
 };
@@ -61,7 +61,7 @@ const demoPayerRegistry = createMockPayerRegistry();
 export async function listPayers(
   options: PayerApiOptions,
 ): Promise<PayerProfile[]> {
-  if (options.demoMode ?? true) return listMockPayerProfiles();
+  if (usesDemoRuntime(options)) return listMockPayerProfiles();
   return callTrpcProcedure<PayerProfile[]>(options, "payer.listPayers", {});
 }
 
@@ -69,7 +69,7 @@ export async function discoverCoverage(
   options: PayerApiOptions,
   input: CoverageDiscoveryInput,
 ): Promise<CoverageDiscoveryResult> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     return discoverMockCoverage(input);
   }
   return callTrpcProcedure<CoverageDiscoveryResult>(
@@ -83,7 +83,7 @@ export async function verifyEligibility(
   options: PayerApiOptions,
   input: EligibilityRequest,
 ): Promise<EligibilityDecision> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     return demoAdapter(input.payerId).verifyEligibility(input);
   }
   return callTrpcProcedure<EligibilityDecision>(
@@ -97,7 +97,7 @@ export async function requestPreAuth(
   options: PayerApiOptions,
   input: PreAuthRequest,
 ): Promise<PreAuthDecision> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     return demoAdapter(input.payerId).requestPreAuth(input);
   }
   return callTrpcProcedure<PreAuthDecision>(
@@ -111,7 +111,7 @@ export async function createClaimEvidencePackage(
   options: PayerApiOptions,
   input: WalletClaimEvidencePackageInput,
 ): Promise<ClaimEvidencePackage> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const patientId = input.patientId ?? options.userId ?? "demo-patient-001";
     const user = requireDemoUser(patientId);
     return buildClaimEvidencePackage({
@@ -131,7 +131,7 @@ export async function runPayerLifecycle(
   options: PayerApiOptions,
   input: WalletPayerLifecycleInput,
 ): Promise<PayerLifecycleResult> {
-  if (!(options.demoMode ?? true)) {
+  if (!usesDemoRuntime(options)) {
     const {
       cards: _cards,
       requireSignedArtifacts: _required,
@@ -195,7 +195,7 @@ export async function submitClaimPackage(
   options: PayerApiOptions,
   input: ClaimSubmission,
 ): Promise<ClaimSubmissionReceipt> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     return demoAdapter(input.payerId).submitClaimPackage(input);
   }
   return callTrpcProcedure<ClaimSubmissionReceipt>(
@@ -209,7 +209,7 @@ export async function getClaimStatus(
   options: PayerApiOptions,
   input: ClaimStatusRequest,
 ): Promise<ClaimStatus> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     return demoAdapter(input.payerId).getClaimStatus(input);
   }
   return callTrpcProcedure<ClaimStatus>(options, "payer.getClaimStatus", input);
@@ -219,7 +219,7 @@ export async function requestGuaranteeLetter(
   options: PayerApiOptions,
   input: GuaranteeLetterRequest,
 ): Promise<GuaranteeLetterDecision> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     return demoAdapter(input.payerId).requestGuaranteeLetter(input);
   }
   return callTrpcProcedure<GuaranteeLetterDecision>(
@@ -233,7 +233,7 @@ export async function submitAdditionalEvidence(
   options: PayerApiOptions,
   input: AdditionalEvidenceSubmission,
 ): Promise<AdditionalEvidenceReceipt> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const adapter = demoAdapter(input.payerId);
     if (!adapter.submitAdditionalEvidence) {
       throw new Error("Payer adapter does not support additional evidence");
@@ -251,7 +251,7 @@ export async function reconcilePayment(
   options: PayerApiOptions,
   input: PaymentReconciliationRequest,
 ): Promise<PaymentReconciliationResult> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const adapter = demoAdapter(input.payerId);
     if (!adapter.reconcilePayment) {
       throw new Error("Payer adapter does not support payment reconciliation");

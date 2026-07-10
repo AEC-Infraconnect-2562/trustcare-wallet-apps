@@ -1,6 +1,7 @@
 import { getDemoUser } from "@trustcare/wallet-core";
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
+import { usesDemoRuntime } from "./runtime";
 
 export type AuthBrokerProviderKind =
   | "wallet_holder_did"
@@ -58,7 +59,6 @@ export type AuthBrokerTokenSet = {
 };
 
 export type AuthBrokerApiOptions = TrustCareClientOptions & {
-  demoMode?: boolean;
   userId?: string | number;
 };
 
@@ -92,7 +92,7 @@ const demoProviders: AuthBrokerProvider[] = [
 export async function listProviders(
   options: AuthBrokerApiOptions,
 ): Promise<AuthBrokerProvider[]> {
-  if (options.demoMode ?? true) return demoProviders;
+  if (usesDemoRuntime(options)) return demoProviders;
   return callTrpcProcedure<AuthBrokerProvider[]>(
     options,
     "authBroker.listProviders",
@@ -104,7 +104,7 @@ export async function startSession(
   options: AuthBrokerApiOptions,
   input: AuthBrokerSessionRequest,
 ): Promise<AuthBrokerSession> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const state = input.state ?? `state_${stableSuffix(input)}`;
     return {
       sessionId: `auth_${stableSuffix({ ...input, userId: options.userId })}`,
@@ -126,7 +126,7 @@ export async function exchangeCallback(
   options: AuthBrokerApiOptions,
   input: AuthBrokerExchangeInput,
 ): Promise<AuthBrokerTokenSet> {
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const user = getDemoUser(options.userId);
     return {
       subjectId: user.holderDid,
@@ -154,7 +154,7 @@ export async function revokeSession(
   options: AuthBrokerApiOptions,
   sessionId: string,
 ): Promise<{ revoked: boolean }> {
-  if (options.demoMode ?? true) return { revoked: true };
+  if (usesDemoRuntime(options)) return { revoked: true };
   return callTrpcProcedure<{ revoked: boolean }>(
     options,
     "authBroker.revokeSession",

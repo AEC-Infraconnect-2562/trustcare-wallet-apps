@@ -1,4 +1,5 @@
 export * from "./models";
+export * from "./runtimeEnvironment";
 export * from "./documentCategories";
 export * from "./credentialTypes";
 export * from "./canonicalDocuments";
@@ -44,3 +45,5 @@ export * from "./store";
 export * from "./exchange";
 export * from "./demoData";
 export * from "./payer";
+export * from "./serviceInterfaces";
+export * from "./demoWalletRepository";

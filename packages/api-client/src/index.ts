@@ -1,5 +1,6 @@
 export * from "./errors";
 export * from "./trpc";
+export * from "./runtime";
 export * as authApi from "./auth";
 export * as walletApi from "./wallet";
 export * as shlApi from "./shl";
@@ -9,3 +10,4 @@ export * as shareGatewayApi from "./shareGatewayClient";
 export * as payerApi from "./payer";
 export * as authBrokerApi from "./authBroker";
 export * from "./queryKeys";
+export * from "./walletRepository";

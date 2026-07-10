@@ -42,13 +42,13 @@ import {
 } from "jose";
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
+import { usesDemoRuntime } from "./runtime";
 import {
   verifyPortalCredentialJwt,
   type PortalCredentialVerifyResponse,
 } from "./portalSync";
 
 export type VerifierApiOptions = TrustCareClientOptions & {
-  demoMode?: boolean;
   portalOrigin?: string;
 };
 
@@ -381,7 +381,7 @@ async function verifyQrUnsafe(
           ],
     };
   }
-  if (options.demoMode ?? true) {
+  if (usesDemoRuntime(options)) {
     const parsed = parseTrustCareQr(qrData);
     const isStandardShl = parsed.kind === "shlink";
     return {
@@ -1150,7 +1150,7 @@ export async function verify(
   options: VerifierApiOptions,
   input: { token?: string; vpUrl?: string },
 ): Promise<VerifierResult> {
-  if (options.demoMode ?? true)
+  if (usesDemoRuntime(options))
     return verifyQr(options, input.vpUrl ?? input.token ?? "");
   return callTrpcProcedure<VerifierResult>(options, "verifier.verify", input);
 }
