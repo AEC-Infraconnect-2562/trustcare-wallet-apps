@@ -105,6 +105,25 @@ GET /api/share-gateway/.well-known/jwks.json
 
 Resolver responses are `no-store` except JWKS, which can be cached for one hour.
 
+## Verification evidence
+
+```http
+POST /api/share-gateway/verification-evidence
+Content-Type: application/json
+```
+
+The request identifies one immutable VP artifact and supplies only the
+verifier-computed purpose/recipient/audience and digest bindings. The gateway
+must retrieve the stored VP itself, verify the VP JWT and every nested VC JWT
+against allowlisted signing controllers, recompute the bindings, and return a
+`VerificationEvidenceV1` result. It must never accept client or payload
+`verified` flags as evidence.
+
+The endpoint is public for cross-device verification, but remains fail-closed:
+an unknown artifact is `404`, a non-JWT artifact is `422`, and any proof,
+issuer, governed status, expiry, policy, or binding failure is represented by a
+failed evidence check so the verifier cannot display green.
+
 ## Errors
 
 Gateway failures must be visible in Thai UX. Wallet must not silently fall back to inline payload QR when Portal publish fails.

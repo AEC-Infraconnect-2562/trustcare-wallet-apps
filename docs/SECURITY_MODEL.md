@@ -38,6 +38,12 @@ origin and `TRUSTCARE_GATEWAY_ALLOWED_ORIGINS`. It rejects non-JSON publish
 requests, caps JSON body size, returns `410 Gone` for expired artifacts, and
 sets no-store/security headers on API responses.
 
+The VP holder remains the Wallet holder `did:key`; the backend signing
+controller is the Share Gateway `did:web`. Verifiers must validate the gateway
+signature against that controller and evaluate holder/recipient/purpose binding
+as a separate policy check. They must not require the backend signing key to be
+controlled by the holder DID.
+
 Production mutations require either a trusted browser `Origin` or a configured
 backend bearer token. VP publication preserves existing nested `vc+jwt`
 credentials and fails closed on unsigned raw credentials. Portal-synced VC
@@ -50,6 +56,16 @@ Green verification requires verifier-side signature validation against JWKS,
 nested VC verification for VP JWT artifacts, or cryptographic W3C Data
 Integrity proof verification for supported JCS suites. Payload metadata such as
 `signingStatus: verified` is never sufficient proof.
+
+For a resolver-backed VP, the verifier also requests bound verification
+evidence from the same Share Gateway. The gateway re-reads the immutable stored
+JWT, independently verifies the allowlisted gateway/hospital/payer signing
+controllers, expiry, governed signed status references, purpose, recipient,
+audience, holder binding, and recomputed package/context digests. Missing,
+malformed, expired, cross-origin, or failed evidence keeps the result out of
+green. Arbitrary external issuer keys are not fetched by this endpoint; Portal
+or Contract Hub must provide the governed production trust integration for
+those issuers.
 
 ## Shared Standards Layer
 

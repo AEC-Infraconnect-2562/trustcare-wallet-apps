@@ -21,6 +21,7 @@ import {
   parseShlLink,
   parseUrl,
   parseTrustCareQr,
+  REQUIRED_VERIFICATION_CHECK_KEYS,
   sha256Hex,
   fetchShlManifest,
   resolveDemoResolverPayload,
@@ -92,6 +93,15 @@ type JwtVerificationResult = {
   warnings: string[];
   errors: string[];
 };
+
+const verificationArtifactRoles = new Set<VerificationArtifactRole>([
+  "vc",
+  "vp",
+  "manifest_vc",
+  "holder_authorization_vc",
+  "manifest_vp",
+]);
+const verificationCheckKeys = new Set<string>(REQUIRED_VERIFICATION_CHECK_KEYS);
 
 export async function verifyQr(
   options: VerifierApiOptions,
@@ -1181,11 +1191,21 @@ async function verifyResolvedVpPayload(
   const dataIntegrity = await verifyDataIntegrityProof(payload, {
     fetcher,
     expectedProofPurpose: "authentication",
-    expectedControllerDid: holderDid,
   });
+  const jwtSignerDid = resolved.jwtVerification?.verified
+    ? resolved.jwtVerification.issuer
+    : undefined;
+  const dataIntegritySignerDid = dataIntegrity.verified
+    ? controllerDid(dataIntegrity.verificationMethod ?? "")
+    : undefined;
+  const vpSignerDid = jwtSignerDid ?? dataIntegritySignerDid;
   const vpLocalProof =
-    localJwtProof(resolved.jwtVerification, holderDid, "authentication") ??
-    localDataIntegrityProof(dataIntegrity, holderDid, "authentication");
+    localJwtProof(resolved.jwtVerification, jwtSignerDid, "authentication") ??
+    localDataIntegrityProof(
+      dataIntegrity,
+      dataIntegritySignerDid,
+      "authentication",
+    );
   const credentialArtifacts = credentials.map(
     (credential) => objectValue(credential) ?? { id: String(credential) },
   );
@@ -1230,11 +1250,12 @@ async function verifyResolvedVpPayload(
   const audience = resolved.jwtVerification?.audience;
   const purposeBound = Boolean(purpose && (recipient || audience));
   const evidence = await evaluateArtifactTrust(
-    options,
+    resolvedVpEvidenceOptions(options, resolved),
     [
       {
         role: "vp",
         artifact: payload,
+        issuerDid: vpSignerDid,
         holderDid,
         validUntil: artifactValidUntil(payload),
         localProof: vpLocalProof,
@@ -1436,6 +1457,154 @@ async function verifyResolvedVpPayload(
       evidenceAssessment: evidence.assessment,
     },
   };
+}
+
+function resolvedVpEvidenceOptions(
+  options: VerifierApiOptions,
+  resolved: ResolvedVpPayload,
+): VerifierApiOptions {
+  if (options.verificationEvidenceProvider) return options;
+  const endpoint = shareGatewayEvidenceEndpoint(resolved.sourceUrl);
+  if (!endpoint) return options;
+  return {
+    ...options,
+    verificationEvidenceProvider: shareGatewayEvidenceProvider({
+      endpoint,
+      artifactId: resolved.id,
+      fetcher: options.fetchImpl ?? fetch,
+    }),
+  };
+}
+
+function shareGatewayEvidenceEndpoint(sourceUrl: string): string | null {
+  const url = parseUrl(sourceUrl);
+  if (!url) return null;
+  const localHttp =
+    url.protocol === "http:" &&
+    (url.hostname === "127.0.0.1" || url.hostname === "localhost");
+  if (url.protocol !== "https:" && !localHttp) return null;
+  const gatewayPath = "/api/share-gateway";
+  const gatewayIndex = url.pathname.indexOf(gatewayPath);
+  if (
+    gatewayIndex < 0 ||
+    !url.pathname
+      .slice(gatewayIndex + gatewayPath.length)
+      .startsWith("/presentations/")
+  ) {
+    return null;
+  }
+  const basePath = url.pathname.slice(0, gatewayIndex + gatewayPath.length);
+  return `${url.origin}${basePath}/verification-evidence`;
+}
+
+function shareGatewayEvidenceProvider(input: {
+  endpoint: string;
+  artifactId: string;
+  fetcher: typeof fetch;
+}): VerificationEvidenceProvider {
+  return {
+    async evaluate(request) {
+      const vpSubject = request.subjects.find(
+        (subject) => subject.role === "vp",
+      );
+      const response = await input.fetcher(input.endpoint, {
+        method: "POST",
+        credentials: "omit",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          artifactId: input.artifactId,
+          request: {
+            purpose: request.context.purpose,
+            recipient: request.context.recipient,
+            audience: Array.isArray(request.context.audience)
+              ? request.context.audience[0]
+              : request.context.audience,
+            subjectDigest: vpSubject?.digest,
+            packageDigest: request.packageDigest,
+            contextDigest: request.contextDigest,
+          },
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          verificationEvidenceError(payload) ||
+            `Share Gateway evidence request failed (${response.status}).`,
+        );
+      }
+      return parseVerificationEvidence(payload);
+    },
+  };
+}
+
+function verificationEvidenceError(value: unknown): string | null {
+  const record = objectValue(value);
+  if (!record) return null;
+  const errors = Array.isArray(record.errors)
+    ? record.errors.filter(
+        (error): error is string =>
+          typeof error === "string" && Boolean(error.trim()),
+      )
+    : [];
+  if (errors.length) return errors.join(" ");
+  return stringOrUndefined(record.message ?? record.detail) ?? null;
+}
+
+function parseVerificationEvidence(value: unknown): VerificationEvidenceV1 {
+  const evidence = objectValue(value);
+  const policy = objectValue(evidence?.policy);
+  const subjects = Array.isArray(evidence?.subjects) ? evidence.subjects : null;
+  const checks = Array.isArray(evidence?.checks) ? evidence.checks : null;
+  const validSubjects =
+    subjects?.every((subject) => {
+      const record = objectValue(subject);
+      return Boolean(
+        record &&
+        verificationArtifactRoles.has(
+          record.role as VerificationArtifactRole,
+        ) &&
+        isSha256Digest(record.digest),
+      );
+    }) ?? false;
+  const validChecks =
+    checks?.every((check) => {
+      const record = objectValue(check);
+      return Boolean(
+        record &&
+        verificationCheckKeys.has(String(record.key ?? "")) &&
+        ["pass", "fail", "indeterminate"].includes(
+          String(record.state ?? ""),
+        ) &&
+        Array.isArray(record.subjectDigests) &&
+        record.subjectDigests.every(isSha256Digest) &&
+        stringOrUndefined(record.checkedAt) &&
+        stringOrUndefined(record.authority),
+      );
+    }) ?? false;
+  if (
+    !evidence ||
+    evidence.version !== "1" ||
+    !stringOrUndefined(evidence.providerId) ||
+    !isSha256Digest(evidence.packageDigest) ||
+    !isSha256Digest(evidence.contextDigest) ||
+    !stringOrUndefined(evidence.checkedAt) ||
+    !stringOrUndefined(evidence.expiresAt) ||
+    !policy ||
+    !stringOrUndefined(policy.id) ||
+    !stringOrUndefined(policy.version) ||
+    !validSubjects ||
+    !validChecks
+  ) {
+    throw new Error("Share Gateway returned malformed verification evidence.");
+  }
+  return evidence as VerificationEvidenceV1;
+}
+
+function isSha256Digest(value: unknown): value is `sha256:${string}` {
+  return typeof value === "string" && /^sha256:[a-f0-9]{64}$/i.test(value);
 }
 
 function looksLikeVpResolverUrl(url: URL): boolean {

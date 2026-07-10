@@ -18,6 +18,7 @@ import {
   validateDemoPayerIssuanceRequest,
   validateIssuerSigningRequest,
 } from "./share-gateway-policy.mjs";
+import { evaluateStoredVpVerificationEvidence } from "./share-gateway-verification.mjs";
 
 const root = resolve("apps/wallet-web/dist");
 const port = positiveIntegerFromEnv("PORT", 3000);
@@ -261,6 +262,57 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
       deploymentId: stringValue(process.env.RAILWAY_DEPLOYMENT_ID) || null,
       runtimeNodeVersion: process.version,
     });
+    return;
+  }
+
+  if (request.method === "POST" && pathname === "/verification-evidence") {
+    if (!isJsonRequest(request)) {
+      json(response, 415, {
+        ok: false,
+        errors: ["Content-Type must be application/json."],
+      });
+      return;
+    }
+
+    const body = await readJsonBody(request);
+    const artifactId = stringValue(body.artifactId);
+    const evidenceRequest = isRecord(body.request) ? body.request : null;
+    if (!artifactId || !evidenceRequest) {
+      json(response, 400, {
+        ok: false,
+        errors: ["artifactId and request are required."],
+      });
+      return;
+    }
+    const stored = await artifactStore.get("vp", artifactId);
+    if (!stored) {
+      json(response, 404, {
+        ok: false,
+        errors: ["VP artifact not found."],
+      });
+      return;
+    }
+    if (
+      typeof stored.payload !== "string" ||
+      !String(stored.contentType).toLowerCase().includes("jwt")
+    ) {
+      json(response, 422, {
+        ok: false,
+        errors: ["Stored VP artifact is not an immutable signed VP JWT."],
+      });
+      return;
+    }
+
+    const evidence = await evaluateStoredVpVerificationEvidence({
+      artifactId,
+      jwt: stored.payload,
+      request: evidenceRequest,
+      now: new Date(),
+      providerId: `trustcare-wallet-share-gateway:${gatewayModeLabel()}`,
+      resolveSigningContext: (candidate) =>
+        resolveGatewayVerificationContext(origin, candidate),
+    });
+    json(response, 200, evidence);
     return;
   }
 
@@ -937,6 +989,45 @@ async function getPayerIssuerSigningContext(origin, payerIdInput) {
   };
   payerIssuerSigningContexts.set(cacheKey, context);
   return context;
+}
+
+async function resolveGatewayVerificationContext(origin, candidate) {
+  const kid = stringValue(candidate?.header?.kid);
+  const controller = kid.split("#")[0] || "";
+  if (!kid || !controller) return null;
+
+  const gatewayContext = await getSigningContext(origin);
+  if (
+    controller === gatewayContext.issuerDid &&
+    kid === gatewayContext.kid
+  ) {
+    return gatewayContext;
+  }
+  if (candidate?.kind !== "vc") return null;
+
+  const hospitalMatch = /:hospital:([^:#/?]+)$/i.exec(controller);
+  if (hospitalMatch) {
+    const code = normalizeHospitalCode(decodeURIComponent(hospitalMatch[1]));
+    if (!code) return null;
+    const context = await getCredentialIssuerSigningContext(origin, {
+      kind: "hospital",
+      code,
+    });
+    return context.issuerDid === controller && context.kid === kid
+      ? context
+      : null;
+  }
+
+  const payerMatch = /:payer:([^:#/?]+)$/i.exec(controller);
+  if (payerMatch) {
+    const payerId = normalizePayerId(decodeURIComponent(payerMatch[1]));
+    if (!payerId || !DEMO_PAYER_ISSUER_PROFILES[payerId]) return null;
+    const context = await getPayerIssuerSigningContext(origin, payerId);
+    return context.issuerDid === controller && context.kid === kid
+      ? context
+      : null;
+  }
+  return null;
 }
 
 function publicJwksForContext(context) {
@@ -1883,6 +1974,12 @@ function normalizeOrigin(origin) {
 
 function isPublicReadRequest(request, requestUrl) {
   const method = effectiveCorsMethod(request);
+  if (
+    method === "POST" &&
+    requestUrl.pathname === "/api/share-gateway/verification-evidence"
+  ) {
+    return true;
+  }
   return (
     (method === "GET" || method === "HEAD") &&
     (requestUrl.pathname === "/.well-known/jwks.json" ||

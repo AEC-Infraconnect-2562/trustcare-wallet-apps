@@ -13,7 +13,7 @@
     "build:web": "pnpm --filter wallet-web build",
     "check": "pnpm -r check",
     "test": "pnpm -r test && pnpm test:gateway",
-    "test:gateway": "node --test scripts/share-gateway-policy.test.mjs",
+    "test:gateway": "node --test scripts/share-gateway-policy.test.mjs scripts/share-gateway-verification.test.mjs",
     "format": "prettier --write ."
   },
   "devDependencies": {

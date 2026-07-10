@@ -7,8 +7,10 @@ import {
   extractCredentialJwt,
   parseJwtPayload,
   publicJwksForSigningKey,
+  sha256Hex,
   signTrustCareCredentialJwt,
   signTrustCarePresentationJwt,
+  unwrapVcPayload,
   type VerificationEvidenceProvider,
 } from "@trustcare/wallet-core";
 import { verifyQr } from "./verifier";
@@ -185,9 +187,14 @@ describe("verifyQr VP resolver behavior", () => {
     expect(JSON.stringify(result.verificationChecklist)).toContain(
       "Data Integrity proof",
     );
-    expect(JSON.stringify(result.verificationChecklist)).toContain(
-      "controller does not match",
+    expect(JSON.stringify(result.verificationChecklist)).not.toContain(
+      "controller does not match did:key:test-holder",
     );
+    expect(
+      (
+        result.verificationChecklist as Array<{ key?: string; ok?: boolean }>
+      ).find((item) => item.key === "data_integrity")?.ok,
+    ).toBe(true);
   });
 
   it("keeps legacy embedded demo VP URLs out of green trust", async () => {
@@ -286,6 +293,134 @@ describe("verifyQr VP resolver behavior", () => {
     );
     expect(JSON.stringify(result.verificationChecklist)).toContain(
       "did:web:wallet.example",
+    );
+    expect(
+      (
+        result.verificationChecklist as Array<{ key?: string; ok?: boolean }>
+      ).find((item) => item.key === "signature")?.ok,
+    ).toBe(true);
+    expect(result.warnings?.join(" ")).toContain(
+      "Share Gateway evidence request failed",
+    );
+  });
+
+  it("verifies a gateway-signed VP while keeping the holder DID as a separate binding subject", async () => {
+    const jwksUrl = "https://wallet.example/.well-known/jwks.json";
+    const signingKey = await createEphemeralEs256SigningKey({
+      issuerDid: "did:web:wallet.example",
+      kidPrefix: "did:web:wallet.example",
+      jku: jwksUrl,
+    });
+    const audience = "did:web:receiver.example";
+    const signed = await signTrustCarePresentationJwt({
+      vp: { ...unsignedVp, recipient: audience },
+      signingKey,
+      purpose: "care-entry",
+      audience,
+      signUnsignedCredentials: true,
+    });
+    const vpPayload = parseJwtPayload(signed.jwt)!;
+    const envelopedCredential = Array.isArray(vpPayload.verifiableCredential)
+      ? vpPayload.verifiableCredential[0]
+      : undefined;
+    const nestedJwt = extractCredentialJwt(envelopedCredential)!;
+    const nestedCredential = unwrapVcPayload(parseJwtPayload(nestedJwt))!;
+    const vpDigest = `sha256:${await sha256Hex(vpPayload)}` as const;
+    const credentialDigest =
+      `sha256:${await sha256Hex(nestedCredential)}` as const;
+    const presentationUrl =
+      "https://wallet.example/api/share-gateway/presentations/vp-test-001.jwt";
+    const evidenceUrl =
+      "https://wallet.example/api/share-gateway/verification-evidence";
+
+    const result = await verifyQr(
+      {
+        url: "https://trustcare.example.com/trpc",
+        fetchImpl: async (input, init) => {
+          const url = String(input);
+          if (url === presentationUrl) {
+            return new Response(signed.jwt, {
+              headers: { "content-type": "application/vp+jwt" },
+            });
+          }
+          if (url === jwksUrl) {
+            return new Response(
+              JSON.stringify(publicJwksForSigningKey(signingKey)),
+              { headers: { "content-type": "application/json" } },
+            );
+          }
+          if (url === evidenceUrl) {
+            const body = JSON.parse(String(init?.body)) as {
+              artifactId: string;
+              request: {
+                purpose?: string;
+                recipient?: string;
+                audience?: string;
+                subjectDigest?: string;
+                packageDigest: `sha256:${string}`;
+                contextDigest: `sha256:${string}`;
+              };
+            };
+            expect(body).toMatchObject({
+              artifactId: "vp-test-001",
+              request: {
+                purpose: "care-entry",
+                recipient: audience,
+                audience,
+                subjectDigest: vpDigest,
+              },
+            });
+            const checkedAt = new Date().toISOString();
+            const subjectDigests = [vpDigest, credentialDigest];
+            return new Response(
+              JSON.stringify({
+                version: "1",
+                providerId: "share-gateway:test",
+                packageDigest: body.request.packageDigest,
+                contextDigest: body.request.contextDigest,
+                subjects: [
+                  { role: "vp", digest: vpDigest },
+                  { role: "vc", digest: credentialDigest },
+                ],
+                policy: { id: "gateway-vp-policy", version: "1" },
+                checkedAt,
+                expiresAt: new Date(
+                  Date.parse(checkedAt) + 60_000,
+                ).toISOString(),
+                checks: [
+                  "proof",
+                  "issuer",
+                  "status",
+                  "expiry",
+                  "policy",
+                  "binding",
+                ].map((key) => ({
+                  key,
+                  state: "pass",
+                  subjectDigests,
+                  checkedAt,
+                  authority: "share-gateway:test",
+                })),
+              }),
+              { headers: { "content-type": "application/json" } },
+            );
+          }
+          return new Response("not found", { status: 404 });
+        },
+      },
+      presentationUrl,
+    );
+
+    expect(result.verified).toBe(true);
+    expect(result.trustLevel).toBe("green");
+    expect(result.holderDid).toBe("did:key:test-holder");
+    expect(
+      (
+        result.verificationChecklist as Array<{ key?: string; ok?: boolean }>
+      ).find((item) => item.key === "signature")?.ok,
+    ).toBe(true);
+    expect(result.warnings?.join(" ") ?? "").not.toContain(
+      "controller does not match did:key:test-holder",
     );
   });
 
