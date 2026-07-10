@@ -325,6 +325,50 @@ describe("shared credential renderer", () => {
     }
   });
 
+  it("assigns ISO ID-1 only to canonical identity cards", () => {
+    for (const cardType of ["patient_identity", "staff_identity"]) {
+      const source = [...completeCards, ...staffCards].find(
+        (item) => item.cardType === cardType,
+      );
+      expect(source, cardType).toBeTruthy();
+      expect(credentialRenderModelFromCard(source!).paper.formFactor).toEqual({
+        kind: "iso_id_1",
+        widthMm: 85.6,
+        heightMm: 53.98,
+        orientation: "landscape",
+      });
+    }
+
+    for (const cardType of [
+      "medical_certificate",
+      "patient_summary",
+      "mpi_link_certificate",
+    ]) {
+      const source = completeCards.find((item) => item.cardType === cardType);
+      expect(source, cardType).toBeTruthy();
+      expect(credentialRenderModelFromCard(source!).paper.formFactor).toEqual({
+        kind: "a4_portrait",
+        widthMm: 210,
+        heightMm: 297,
+        orientation: "portrait",
+      });
+    }
+  });
+
+  it("does not let an unrelated layout hint turn a clinical document into an ID card", () => {
+    const source = completeCards.find(
+      (item) => item.cardType === "medical_certificate",
+    )!;
+    const credentialData = structuredClone(source.credentialData!) as any;
+    credentialData.credentialSubject.humanDocument.layout =
+      "photo_identity_card";
+
+    expect(
+      credentialRenderModelFromCard({ ...source, credentialData }).paper
+        .formFactor.kind,
+    ).toBe("a4_portrait");
+  });
+
   it("keeps paper identity, issuer, signatory and evidence strictly source-backed", () => {
     const card = {
       id: 901,

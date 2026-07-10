@@ -19,6 +19,7 @@ import {
   PortablePresentationDocument,
 } from "@trustcare/ui-web";
 import {
+  credentialRenderModelFromCard,
   credentialStatusLabel,
   credentialStatusTone,
   presentationEnvelopeFromPresentation,
@@ -113,6 +114,12 @@ export function CredentialDetailDialog({
   function openPrintView(existingWindow?: Window) {
     const sourceHtml = printSourceRef.current?.innerHTML;
     if (!sourceHtml || !card) return;
+    const printFormFactor =
+      credentialRenderModelFromCard(card).paper.formFactor;
+    const printShellClass =
+      printFormFactor.kind === "iso_id_1"
+        ? "print-shell print-shell-id-card"
+        : "print-shell print-shell-a4";
 
     const styles = Array.from(
       document.querySelectorAll<HTMLLinkElement | HTMLStyleElement>(
@@ -137,6 +144,7 @@ export function CredentialDetailDialog({
     @page { size: A4 portrait; margin: 14mm 16mm; }
     body { margin: 0; background: #eef1f4; color: #111827; padding: 10mm 0; }
     .print-shell { width: min(210mm, 100%); margin: 0 auto; }
+    .print-shell-id-card { min-height: 269mm; display: grid; place-items: center; }
     .print-toolbar { display: flex; justify-content: flex-end; gap: 10px; width: min(210mm, calc(100% - 32px)); margin: 0 auto 16px; }
     .print-toolbar button { border: 1px solid #cbd5e1; border-radius: 9px; background: #fff; padding: 9px 14px; color: #1f2937; font: 650 13px system-ui, sans-serif; cursor: pointer; }
     .print-toolbar button:disabled { cursor: wait; opacity: .58; }
@@ -146,12 +154,14 @@ export function CredentialDetailDialog({
       body { padding: 0; }
       .print-toolbar { display: none !important; }
       .print-shell { width: auto; max-width: none; }
+      .print-shell-id-card { min-height: 269mm; display: grid; place-items: center; }
       .credential-doc { width: auto !important; min-height: auto !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+      .credential-doc.tc-form-iso-id-1 { width: 85.6mm !important; max-width: 85.6mm !important; height: 53.98mm !important; min-height: 53.98mm !important; padding: 3.2mm !important; border: 0.25mm solid #666 !important; border-top-width: 1.2mm !important; border-radius: 4mm !important; }
     }
   </style>
 </head>
 <body>
-  <main class="print-shell">
+  <main class="${printShellClass}">
     <div class="print-toolbar">
       <button type="button" onclick="window.close()">ปิด</button>
       <button id="print-action" type="button" class="primary" onclick="window.print()" disabled>กำลังเตรียมเอกสาร…</button>
@@ -301,7 +311,7 @@ export function CredentialDetailDialog({
             className="purple"
             onClick={onSelectiveDisclosure}
           >
-            <Eye size={18} /> SD / ZKP
+            <Eye size={18} /> ตรวจข้อมูลก่อนแชร์
           </Button>
           <Button
             className="secondary"

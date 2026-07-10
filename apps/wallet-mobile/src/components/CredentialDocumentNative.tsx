@@ -5,6 +5,7 @@ import QRCode from "react-native-qrcode-svg";
 import {
   credentialRenderModelFromCard,
   displayCredentialValue,
+  type CredentialPaperModel,
   type CredentialPaperSection,
   type CredentialRenderField,
   type PhotoCandidate,
@@ -29,6 +30,18 @@ export function CredentialDocumentNative({
     card,
     renderModel.documentType,
   );
+
+  if (paper.formFactor.kind === "iso_id_1") {
+    return (
+      <CredentialIdentityCardNative
+        paper={paper}
+        envelope={envelope}
+        qrValue={qrValue}
+        photoCandidates={photoCandidates}
+      />
+    );
+  }
+
   const holderSectionTitle =
     renderModel.documentType === "staff_identity"
       ? { th: "ข้อมูลผู้ถือเอกสาร", en: "DOCUMENT HOLDER" }
@@ -169,10 +182,136 @@ export function CredentialDocumentNative({
   );
 }
 
+function CredentialIdentityCardNative({
+  paper,
+  envelope,
+  qrValue,
+  photoCandidates,
+}: {
+  paper: CredentialPaperModel;
+  envelope: PortablePresentationEnvelope;
+  qrValue?: string;
+  photoCandidates: PhotoCandidate[];
+}) {
+  const fieldByLabel = (label: string) =>
+    paper.patientFields.find((field) => field.label === label);
+  const metadataByPath = (path: string) =>
+    paper.metadataFields.find((field) => field.path === path);
+  const issuerName = paper.letterhead.nameTh ?? paper.letterhead.nameEn;
+  const nameTh = fieldByLabel("ชื่อ-นามสกุล");
+  const nameEn = fieldByLabel("Name");
+  const identifiers = paper.patientFields
+    .filter((field) =>
+      ["HN", "CarePass ID", "เลขประจำตัว"].includes(field.label),
+    )
+    .slice(0, 2);
+  const status = metadataByPath("document.status");
+  const issuedAt = metadataByPath("document.issuedAt");
+  const expiresAt = metadataByPath("document.expiresAt");
+  const trustLabel =
+    envelope.trust.status === "invalid_or_revoked"
+      ? "ตรวจสอบไม่ผ่าน"
+      : "ยังไม่ได้ตรวจสอบ";
+
+  return (
+    <View accessibilityLabel={paper.title.th} style={styles.identityCard}>
+      {paper.watermark ? (
+        <Text style={styles.identityWatermark}>{paper.watermark}</Text>
+      ) : null}
+      <View style={styles.identityHeader}>
+        {paper.letterhead.logoUrl ? (
+          <Image
+            source={{ uri: paper.letterhead.logoUrl }}
+            style={styles.identityIssuerMark}
+            resizeMode="contain"
+          />
+        ) : (
+          <View style={styles.identityIssuerMark}>
+            <Building2 color="#244b72" size={18} />
+          </View>
+        )}
+        <View style={styles.identityIssuerCopy}>
+          <Text style={styles.identityIssuerName} numberOfLines={1}>
+            {issuerName ?? "ไม่พบชื่อผู้ออกเอกสารในข้อมูลต้นฉบับ"}
+          </Text>
+          {paper.letterhead.nameTh && paper.letterhead.nameEn ? (
+            <Text style={styles.identityIssuerNameEn} numberOfLines={1}>
+              {paper.letterhead.nameEn}
+            </Text>
+          ) : null}
+        </View>
+        {status ? (
+          <Text style={styles.identityStatus} numberOfLines={1}>
+            {displayCredentialValue(status.value)}
+          </Text>
+        ) : null}
+      </View>
+
+      <View style={styles.identityMain}>
+        <CredentialHolderPhotoNative candidates={photoCandidates} compact />
+        <View style={styles.identityHolder}>
+          <Text style={styles.identityKicker}>{paper.title.th}</Text>
+          <Text style={styles.identityName} numberOfLines={1}>
+            {nameTh
+              ? displayCredentialValue(nameTh.value)
+              : "ไม่พบชื่อผู้ถือเอกสารในข้อมูลต้นฉบับ"}
+          </Text>
+          {nameEn ? (
+            <Text style={styles.identityNameEn} numberOfLines={1}>
+              {displayCredentialValue(nameEn.value)}
+            </Text>
+          ) : null}
+          <View style={styles.identityIdentifiers}>
+            {identifiers.map((field) => (
+              <View
+                style={styles.identityIdentifier}
+                key={field.path ?? field.label}
+              >
+                <Text style={styles.identityFieldLabel}>{field.label}</Text>
+                <Text style={styles.identityFieldValue} numberOfLines={1}>
+                  {displayCredentialValue(field.value)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.identityFooter}>
+        <View style={styles.identityValidity}>
+          {issuedAt ? (
+            <View>
+              <Text style={styles.identityFieldLabel}>ออกเมื่อ</Text>
+              <Text style={styles.identityDate}>
+                {displayCredentialValue(issuedAt.value)}
+              </Text>
+            </View>
+          ) : null}
+          {expiresAt ? (
+            <View>
+              <Text style={styles.identityFieldLabel}>ใช้ได้ถึง</Text>
+              <Text style={styles.identityDate}>
+                {displayCredentialValue(expiresAt.value)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.identityTrust}>
+          <ShieldAlert color="#9a6518" size={13} />
+          <Text style={styles.identityTrustText}>{trustLabel}</Text>
+        </View>
+        {qrValue ? <QRCode value={qrValue} size={38} /> : null}
+      </View>
+    </View>
+  );
+}
+
 function CredentialHolderPhotoNative({
   candidates,
+  compact = false,
 }: {
   candidates: PhotoCandidate[];
+  compact?: boolean;
 }) {
   const candidateListKey = candidates
     .map((candidate) => candidate.url)
@@ -191,7 +330,7 @@ function CredentialHolderPhotoNative({
       accessibilityLabel="รูปจากข้อมูลประจำตัวในเอกสาร"
       key={candidate.url}
       source={{ uri: candidate.url }}
-      style={styles.patientPhoto}
+      style={[styles.patientPhoto, compact ? styles.identityPhoto : undefined]}
       resizeMode="cover"
       onError={() => {
         setCandidateIndex((index) =>
@@ -301,6 +440,104 @@ function PaperBodyNative({ value }: { value: unknown }) {
 }
 
 const styles = StyleSheet.create({
+  identityCard: {
+    position: "relative",
+    width: "100%",
+    aspectRatio: 85.6 / 53.98,
+    overflow: "hidden",
+    marginBottom: 18,
+    padding: 12,
+    borderWidth: 1,
+    borderTopWidth: 4,
+    borderColor: "#c8d1dc",
+    borderTopColor: "#244b72",
+    borderRadius: 15,
+    backgroundColor: "#fff",
+  },
+  identityWatermark: {
+    position: "absolute",
+    top: "42%",
+    alignSelf: "center",
+    color: "rgba(89,99,111,0.07)",
+    fontSize: 24,
+    fontWeight: "900",
+    transform: [{ rotate: "-28deg" }],
+  },
+  identityHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingBottom: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: "#d9dee3",
+  },
+  identityIssuerMark: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#c8d1dc",
+    borderRadius: 8,
+    backgroundColor: "#f3f5f6",
+  },
+  identityIssuerCopy: { flex: 1, minWidth: 0 },
+  identityIssuerName: { color: "#17202a", fontSize: 11, fontWeight: "800" },
+  identityIssuerNameEn: { marginTop: 1, color: "#59636f", fontSize: 8 },
+  identityStatus: {
+    maxWidth: 72,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "#edf7f1",
+    color: "#236746",
+    fontSize: 8,
+    fontWeight: "800",
+  },
+  identityMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 8,
+  },
+  identityPhoto: {
+    width: 56,
+    height: 70,
+    borderRadius: 7,
+  },
+  identityHolder: { flex: 1, minWidth: 0 },
+  identityKicker: { color: "#244b72", fontSize: 8, fontWeight: "800" },
+  identityName: {
+    marginTop: 2,
+    color: "#17202a",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  identityNameEn: { color: "#59636f", fontSize: 9 },
+  identityIdentifiers: { flexDirection: "row", gap: 6, marginTop: 6 },
+  identityIdentifier: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "#f3f5f6",
+  },
+  identityFieldLabel: { color: "#59636f", fontSize: 7, fontWeight: "700" },
+  identityFieldValue: { color: "#17202a", fontSize: 9, fontWeight: "800" },
+  identityFooter: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: "#d9dee3",
+  },
+  identityValidity: { flex: 1, flexDirection: "row", gap: 10 },
+  identityDate: { color: "#17202a", fontSize: 8, fontWeight: "700" },
+  identityTrust: { flexDirection: "row", alignItems: "center", gap: 4 },
+  identityTrustText: { color: "#8a5b11", fontSize: 7, fontWeight: "700" },
   paper: {
     position: "relative",
     overflow: "hidden",

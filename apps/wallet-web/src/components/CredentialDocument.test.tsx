@@ -6,14 +6,27 @@ import {
 } from "@trustcare/ui-web";
 import { getCompleteWalletSeed, type WalletCard } from "@trustcare/wallet-core";
 
-describe("shared A4 credential document", () => {
+describe("shared credential document", () => {
   const cards = getCompleteWalletSeed("demo-patient-complete-001");
+
+  it("renders patient identity as an ISO ID-1 card instead of A4 paper", () => {
+    const card = cards.find((item) => item.cardType === "patient_identity")!;
+    const html = renderToStaticMarkup(<CredentialDocument card={card} />);
+
+    expect(html).toContain('data-document-form-factor="iso_id_1"');
+    expect(html).toContain("tc-form-iso-id-1");
+    expect(html).toContain("tc-id-card-identifiers");
+    expect(html).not.toContain("tc-form-a4-portrait");
+    expect(html).not.toContain("tc-document-sections");
+  });
 
   it("renders prescription claims as a semantic paper table", () => {
     const card = cards.find((item) => item.cardType === "prescription")!;
     const html = renderToStaticMarkup(<CredentialDocument card={card} />);
 
     expect(html).toContain("tc-clinical-paper");
+    expect(html).toContain('data-document-form-factor="a4_portrait"');
+    expect(html).toContain("tc-form-a4-portrait");
     expect(html).toContain("<table");
     expect(html).toContain("<thead");
     expect(html).toContain('<th scope="col"');
@@ -28,9 +41,7 @@ describe("shared A4 credential document", () => {
     const html = renderToStaticMarkup(<CredentialDocument card={card} />);
 
     expect(html).toContain("บริษัทประกันสุขภาพสากล เดโม จำกัด");
-    expect(html).toContain(
-      "did:web:trustcare.network:payer:global-care-demo",
-    );
+    expect(html).toContain("did:web:trustcare.network:payer:global-care-demo");
     expect(html).not.toContain("โรงพยาบาลทรัสต์แคร์ เซ็นทรัล");
   });
 

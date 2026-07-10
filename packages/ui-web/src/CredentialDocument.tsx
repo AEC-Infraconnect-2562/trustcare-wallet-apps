@@ -64,10 +64,26 @@ export function CredentialDocument({
     ? photoCandidatesForCard(card)
     : [];
 
+  if (paper.formFactor.kind === "iso_id_1") {
+    return (
+      <CredentialIdentityCard
+        card={card}
+        paper={paper}
+        photos={photoCandidates}
+        envelope={presentation}
+        qrDataUrl={qrDataUrl}
+        verification={verification}
+        variant={renderModel.variant}
+        documentType={renderModel.documentType}
+      />
+    );
+  }
+
   return (
     <article
-      className={`credential-doc tc-clinical-paper document-${renderModel.variant}${compact ? " credential-doc-compact" : ""}`}
+      className={`credential-doc tc-clinical-paper tc-form-a4-portrait document-${renderModel.variant}${compact ? " credential-doc-compact" : ""}`}
       data-document-type={renderModel.documentType}
+      data-document-form-factor={paper.formFactor.kind}
       data-generic-renderer={paper.generic ? "true" : "false"}
       lang="th"
     >
@@ -96,6 +112,149 @@ export function CredentialDocument({
         qrDataUrl={qrDataUrl}
         verification={verification}
       />
+    </article>
+  );
+}
+
+function CredentialIdentityCard({
+  card,
+  paper,
+  photos,
+  envelope,
+  qrDataUrl,
+  verification,
+  variant,
+  documentType,
+}: {
+  card: WalletCard;
+  paper: CredentialPaperModel;
+  photos: PhotoCandidate[];
+  envelope: PortablePresentationEnvelope;
+  qrDataUrl?: string;
+  verification?: CredentialDocumentVerification;
+  variant: string;
+  documentType: string;
+}) {
+  const nameTh = paper.patientFields.find(
+    (field) => field.label === "ชื่อ-นามสกุล",
+  );
+  const nameEn = paper.patientFields.find((field) => field.label === "Name");
+  const identifiers = paper.patientFields
+    .filter((field) =>
+      ["HN", "CarePass ID", "เลขประจำตัว"].includes(field.label),
+    )
+    .slice(0, 2);
+  const issuedAt = paper.metadataFields.find(
+    (field) => field.path === "document.issuedAt",
+  );
+  const expiresAt = paper.metadataFields.find(
+    (field) => field.path === "document.expiresAt",
+  );
+  const documentStatus = paper.metadataFields.find(
+    (field) => field.path === "document.status",
+  );
+  const trust = verificationPresentation(envelope, verification);
+  const trustLabel =
+    trust.tone === "verified"
+      ? "ตรวจสอบที่มาแล้ว"
+      : trust.tone === "invalid"
+        ? "ตรวจสอบไม่ผ่าน"
+        : "ยังไม่ได้ตรวจสอบ";
+  const issuerName = paper.letterhead.nameTh ?? paper.letterhead.nameEn;
+
+  return (
+    <article
+      className={`credential-doc tc-clinical-paper tc-form-iso-id-1 document-${variant}`}
+      data-document-type={documentType}
+      data-document-form-factor={paper.formFactor.kind}
+      data-generic-renderer={paper.generic ? "true" : "false"}
+      aria-label={paper.title.th}
+      lang="th"
+    >
+      {paper.watermark ? (
+        <div className="tc-watermark" aria-hidden="true">
+          {paper.watermark}
+        </div>
+      ) : null}
+
+      <header className="tc-id-card-header">
+        <div
+          className={`tc-letterhead-mark${paper.letterhead.logoUrl ? " has-logo" : " neutral"}`}
+          aria-hidden="true"
+        >
+          {paper.letterhead.logoUrl ? (
+            <img src={paper.letterhead.logoUrl} alt="" />
+          ) : (
+            issuerIcon(paper.issuerRole)
+          )}
+        </div>
+        <div className="tc-id-card-issuer">
+          <strong>
+            {issuerName ?? "ไม่พบชื่อผู้ออกเอกสารในข้อมูลต้นฉบับ"}
+          </strong>
+          {paper.letterhead.nameTh && paper.letterhead.nameEn ? (
+            <span>{paper.letterhead.nameEn}</span>
+          ) : null}
+        </div>
+        {documentStatus ? (
+          <span className="tc-id-card-status">
+            {renderValue(documentStatus.value)}
+          </span>
+        ) : null}
+      </header>
+
+      <section className="tc-id-card-main">
+        <CredentialHolderPhoto candidates={photos} />
+        <div className="tc-id-card-holder">
+          <p>{paper.title.th}</p>
+          <h1>
+            {nameTh
+              ? renderValue(nameTh.value)
+              : "ไม่พบชื่อผู้ถือเอกสารในข้อมูลต้นฉบับ"}
+          </h1>
+          {nameEn ? <span>{renderValue(nameEn.value)}</span> : null}
+          <dl className="tc-id-card-identifiers">
+            {identifiers.map((field) => (
+              <div key={field.path ?? field.label}>
+                <dt>{field.label}</dt>
+                <dd>{renderValue(field.value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      <footer className="tc-id-card-footer">
+        <dl className="tc-id-card-validity">
+          {issuedAt ? (
+            <div>
+              <dt>ออกเมื่อ</dt>
+              <dd>{renderValue(issuedAt.value)}</dd>
+            </div>
+          ) : null}
+          {expiresAt ? (
+            <div>
+              <dt>ใช้ได้ถึง</dt>
+              <dd>{renderValue(expiresAt.value)}</dd>
+            </div>
+          ) : null}
+        </dl>
+        <div className={`tc-id-card-trust tone-${trust.tone}`}>
+          {trust.tone === "verified" ? (
+            <ShieldCheck size={14} aria-hidden="true" />
+          ) : (
+            <ShieldAlert size={14} aria-hidden="true" />
+          )}
+          <span>{trustLabel}</span>
+        </div>
+        {qrDataUrl ? (
+          <img
+            className="tc-id-card-qr"
+            src={qrDataUrl}
+            alt="QR สำหรับตรวจเอกสารนี้"
+          />
+        ) : null}
+      </footer>
     </article>
   );
 }

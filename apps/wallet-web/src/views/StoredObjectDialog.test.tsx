@@ -35,7 +35,7 @@ function renderDialog(object: WalletStoredObject) {
 }
 
 describe("stored object detail rendering", () => {
-  it("uses the shared A4 credential document for a stored WalletCard VC", () => {
+  it("uses the shared credential document for a stored WalletCard VC", () => {
     const object = walletObjectsFromCards([card])[0];
     const html = renderDialog(object);
 
@@ -54,6 +54,17 @@ describe("stored object detail rendering", () => {
     );
     expect(JSON.parse(encodedPayload)).toEqual(card.credentialData);
     expect(encodedPayload).not.toContain('"cardType"');
+  });
+
+  it("preserves the ID-1 form factor for a stored patient identity VC", () => {
+    const identityCard = getCompleteWalletSeed(
+      "demo-patient-complete-001",
+    ).find((item) => item.cardType === "patient_identity")!;
+    const object = walletObjectsFromCards([identityCard])[0];
+    const html = renderDialog(object);
+
+    expect(html).toContain('data-document-form-factor="iso_id_1"');
+    expect(html).toContain("tc-form-iso-id-1");
   });
 
   it("prints only when the browser print API is available", () => {

@@ -68,12 +68,13 @@ Every synced credential that should render as a human medical document must incl
 
 The current Wallet implementation normalizes Portal payloads through `@trustcare/wallet-core/portalRenderContract`. When Portal publishes the renderer as a shared package, both apps should consume the same renderer and keep this contract as the payload boundary.
 
-## A4 Paper and VP Presentation Contract
+## Physical Form Factor and VP Presentation Contract
 
 - The data model remains the VC/VP payload. `CredentialPaperModel` is a read-only view model and must not become another bundle, credential, or claim object.
 - A single-document VP renders the issuer document once and adds a compact purpose/trust footer. It must not render a second copy of the same claims as a VP card.
 - A multi-document VP may add one holder-generated cover/manifest, then renders every nested VC as a separate issuer document. Hospital, payer, and holder provenance must never be merged into one letterhead.
-- Screen preview uses an A4 portrait proportion (`210mm × 297mm`). Printed output uses `@page` margins and normal pagination rather than scaling or rasterizing a screenshot.
+- `CredentialPaperModel.formFactor` is the shared source of truth for physical presentation. Patient/staff identity cards use ISO ID-1 (`85.60mm × 53.98mm`); clinical, financial, certificate, referral, and claim documents use A4 portrait (`210mm × 297mm`). A source layout hint cannot change an unrelated canonical document type into an identity card.
+- ID-1 screen previews preserve the card ratio and show only essential source-backed front-face data; full claims and technical evidence remain available in Details/Trust. Printing places the card at actual size on an A4 carrier. A4 documents use `@page` margins and normal pagination rather than scaling or rasterizing a screenshot.
 - Clinical and financial rows use semantic HTML tables so headers repeat across printed pages. The renderer must not make the primary document horizontally scrollable.
 - Letterhead, patient identity, document metadata, claims, signatories, evidence, logos, and watermarks are rendered only when supplied by the current credential or its exact normalized render payload.
 - Missing values are omitted or identified as missing. The renderer must not substitute a network brand, another profile photo, a generic official, a fabricated logo, or assumed FHIR evidence.

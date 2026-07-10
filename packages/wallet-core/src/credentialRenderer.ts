@@ -77,7 +77,15 @@ export type CredentialPaperSignatory = {
   signedAt?: string;
 };
 
+export type CredentialPhysicalFormFactor = {
+  kind: "iso_id_1" | "a4_portrait";
+  widthMm: number;
+  heightMm: number;
+  orientation: "landscape" | "portrait";
+};
+
 export type CredentialPaperModel = {
+  formFactor: CredentialPhysicalFormFactor;
   letterhead: {
     nameTh?: string;
     nameEn?: string;
@@ -736,6 +744,15 @@ export function credentialPaperModelFromCard(
     getText(document, "titleTh"),
     card.displayName,
   );
+  const trustcareDisplay = getObject(
+    getObject(credential, "trustcare"),
+    "display",
+  );
+  const declaredLayout = firstText(
+    getText(renderData, "layout"),
+    getText(humanDocument, "layout"),
+    getText(trustcareDisplay, "documentLayout"),
+  );
   const paperSections = paperSectionsForCredential(
     documentType,
     subject,
@@ -745,6 +762,7 @@ export function credentialPaperModelFromCard(
   );
 
   return {
+    formFactor: credentialPhysicalFormFactor(documentType, declaredLayout),
     letterhead: {
       nameTh: firstText(
         getText(letterheadSource, "nameTh"),
@@ -801,6 +819,46 @@ export function credentialPaperModelFromCard(
       getText(getObject(credential, "trustcare"), "issuerRole"),
     ),
     generic: paperSections.generic,
+  };
+}
+
+const identityCardDocumentTypes = new Set([
+  "patient_identity",
+  "staff_identity",
+  "student_identity",
+]);
+
+const identityCardLayouts = new Set([
+  "photo_identity_card",
+  "staff_badge",
+  "student_identity_card",
+]);
+
+export function credentialPhysicalFormFactor(
+  documentType: string,
+  declaredLayout?: string,
+): CredentialPhysicalFormFactor {
+  const normalizedType = normalizeDocumentType(documentType) ?? documentType;
+  const normalizedLayout = declaredLayout?.trim().toLowerCase();
+  const isCanonicalIdentityCard = identityCardDocumentTypes.has(normalizedType);
+  const isAllowedIdentityLayout =
+    isCanonicalIdentityCard &&
+    Boolean(normalizedLayout && identityCardLayouts.has(normalizedLayout));
+
+  if (isCanonicalIdentityCard || isAllowedIdentityLayout) {
+    return {
+      kind: "iso_id_1",
+      widthMm: 85.6,
+      heightMm: 53.98,
+      orientation: "landscape",
+    };
+  }
+
+  return {
+    kind: "a4_portrait",
+    widthMm: 210,
+    heightMm: 297,
+    orientation: "portrait",
   };
 }
 
