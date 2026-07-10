@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assessLocalReadiness,
+  cardsSelectedByReadiness,
   completeSeedDocumentDefinitions,
   completeWalletSeedCards,
   exportWalletCard,
@@ -167,6 +168,40 @@ describe("complete TrustCare wallet seed data", () => {
       expect(result.requiredReady, context).toBe(result.requiredTotal);
       expect(result.recommendedReady, context).toBe(result.recommendedTotal);
     }
+  });
+
+  it("selects one deterministic current card per readiness requirement", () => {
+    const loginCards = getDemoWalletCards("demo-patient-complete-001");
+    const baselineEligibility = loginCards.find(
+      (card) => card.cardType === "insurance_eligibility",
+    )!;
+    const latestEligibility: WalletCard = {
+      ...baselineEligibility,
+      id: 1_999_999_001,
+      credentialId: "urn:trustcare:test:latest-eligibility",
+      credentialJwt: "latest.issuer.signed.jwt",
+      credentialProof: {
+        ...baselineEligibility.credentialProof,
+        jwt: "latest.issuer.signed.jwt",
+      },
+      issuedAt: "2026-07-10T10:00:00.000Z",
+      createdAt: "2026-07-10T10:00:00.000Z",
+    };
+    const cards = [...loginCards, latestEligibility];
+    const result = assessLocalReadiness(cards, "insurance_claim");
+    const eligibilityRequirement = result.ready.find((requirement) =>
+      requirement.cardTypes.includes("insurance_eligibility"),
+    );
+
+    expect(eligibilityRequirement?.matchedCards).toHaveLength(2);
+    expect(result.selectedCardIds).toContain(latestEligibility.id);
+    expect(result.selectedCardIds).not.toContain(baselineEligibility.id);
+    expect(
+      cardsSelectedByReadiness(cards, result).map((card) => card.id),
+    ).toEqual(result.selectedCardIds);
+    expect(result.selectedCardIds.length).toBeLessThanOrEqual(
+      result.ready.length,
+    );
   });
 });
 

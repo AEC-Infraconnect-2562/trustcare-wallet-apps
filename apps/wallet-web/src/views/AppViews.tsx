@@ -66,6 +66,7 @@ import {
   buildReadinessSummary,
   buildSharePackage,
   canPresentCredential,
+  cardsSelectedByReadiness,
   createDocumentRequestDraft,
   createPresentationQrPayload,
   createShareDraftFromPrepare,
@@ -2851,7 +2852,7 @@ export function PrepareView({
   const ready = readinessResult.ready ?? [];
   const missingRequired = missing.filter((item: any) => item.required);
   const canCreateFullPacket = missingRequired.length === 0;
-  const packetContents = ready.flatMap((item: any) => item.matchedCards ?? []);
+  const packetContents = cardsSelectedByReadiness(cards, readinessResult);
   const isPrepared = canCreateFullPacket;
   const contextRequests = requests.filter(
     (request: any) => !request.context || request.context === context,
