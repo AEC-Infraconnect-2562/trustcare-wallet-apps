@@ -42,3 +42,4 @@ export * from "./oid4vciIssuer";
 export * from "./store";
 export * from "./exchange";
 export * from "./demoData";
+export * from "./payer";
