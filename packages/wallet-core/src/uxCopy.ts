@@ -187,19 +187,18 @@ const packageCopy: Record<SharePackageMode, UxCopy> = {
     tone: "green",
   },
   PurposeVP: {
-    label: "VP ตามวัตถุประสงค์",
-    description:
-      "เหมาะกับ OPD หรือห้องยาที่ใช้เอกสารไม่มากและต้องเลือกเปิดเผยข้อมูล",
+    label: "QR ชุดเอกสารขนาดเล็ก",
+    description: "เหมาะกับ OPD หรือห้องยาที่ใช้เอกสารจำนวนไม่มากในครั้งเดียว",
     tone: "green",
   },
   StandardSHL: {
-    label: "SHL มาตรฐาน",
+    label: "ลิงก์สุขภาพปลอดภัย",
     description:
       "เหมาะกับข้อมูลขนาดใหญ่หรือข้อมูลต่อเนื่อง และยังเข้ากับระบบภายนอก",
     tone: "blue",
   },
   CertifiedSHLManifestPackage: {
-    label: "SHL + Manifest VP",
+    label: "ลิงก์สุขภาพที่ตรวจแหล่งที่มา",
     description:
       "เหมาะกับการส่งต่อ เคลม หรือข้ามเครือข่ายที่ต้องตรวจ trust layer",
     tone: "green",

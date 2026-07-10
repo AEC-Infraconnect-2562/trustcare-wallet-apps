@@ -271,7 +271,7 @@ export const protocolProfiles: Record<
   vp: {
     label: "VC/VP",
     description:
-      "ชุดเล็ก ตรวจสิทธิ์หรือเอกสารสำคัญแบบ purpose-bound และรองรับ selective disclosure",
+      "ชุดเอกสารขนาดเล็กสำหรับตรวจสิทธิ์หรือเอกสารสำคัญตามวัตถุประสงค์",
     badge: "VP QR",
   },
   shl: {

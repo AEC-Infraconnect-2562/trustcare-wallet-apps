@@ -28,7 +28,7 @@ export const th = {
   "tabs.payload": "Payload",
   "tabs.history": "ประวัติ",
   "actions.qrCode": "QR Code",
-  "actions.sdZkp": "SD (ZKP)",
+  "actions.sdZkp": "ตรวจข้อมูลก่อนแชร์",
   "actions.pdf": "PDF",
   "actions.copyId": "คัดลอก ID",
   "common.status": "สถานะ",

@@ -98,6 +98,7 @@ import {
   readinessContextLabels,
   readinessContextValues,
   recommendPolicyForDraft,
+  resolveShareDisclosureIntent,
   shareModePatientDescription,
   shareModePatientLabel,
   shlAccessSummary,
@@ -118,6 +119,7 @@ import {
   type ShlPackage,
   type ShlPackageDetail,
   type ShareAccessPolicy,
+  type ShareDisclosureIntent,
   type ShareValidationResult,
   type WalletCard,
   type WalletDemoUser,
@@ -149,7 +151,6 @@ import {
   maskShlPasscode,
   normalizeShlPasscode,
   protocolForTransport,
-  protocolProfiles,
   protocolRequiresShl,
   protocolRequiresVp,
   readinessPurposeTh,
@@ -160,7 +161,6 @@ import {
   shlPolicyExpiry,
   viewBreadcrumbLabels,
   vpDisclosureFields,
-  type DisclosureMode,
   type DocumentFlowMode,
   type DocumentsTab,
   type PackageProtocol,
@@ -174,6 +174,30 @@ import {
   type TimeAnchor,
   type View,
 } from "./appViewModel";
+
+const shareDisclosureIntentOptions: Array<{
+  value: ShareDisclosureIntent;
+  label: string;
+  description: string;
+  recommended?: boolean;
+}> = [
+  {
+    value: "minimum_necessary",
+    label: "ใช้ชุดเอกสารที่แนะนำ",
+    description: "ระบบเลือกเอกสารที่ตรงกับวัตถุประสงค์นี้",
+    recommended: true,
+  },
+  {
+    value: "custom_selection",
+    label: "เลือกข้อมูลเอง",
+    description: "ตรวจและปรับรายการก่อนสร้าง QR",
+  },
+  {
+    value: "complete_documents",
+    label: "ส่งเอกสารทั้งฉบับ",
+    description: "ผู้รับเห็นข้อมูลทั้งหมดในเอกสารที่เลือก",
+  },
+];
 export function DialogLoadingFallback() {
   return (
     <div className="modal-backdrop" role="status" aria-live="polite">
@@ -1343,8 +1367,8 @@ export function WalletView({
           <div>
             <h2>เอกสาร</h2>
             <p>
-              เลือกเอกสารเพื่อสร้าง VP, QR, selective disclosure หรือ export
-              ไปยัง partner flow
+              เลือกเอกสารเพื่อสร้าง QR ตามวัตถุประสงค์
+              ระบบจะเลือกวิธีส่งที่เหมาะสมให้โดยอัตโนมัติ
             </p>
           </div>
           <Badge tone="blue">{readyCount} พร้อมใช้</Badge>
@@ -1390,7 +1414,8 @@ export function ShareView({
   onVerifyText: (value: string) => void;
   onExport: (result: WalletExportResult) => void;
 }) {
-  const [mode, setMode] = useState<"full" | "sd" | "zkp">("full");
+  const [disclosureIntent, setDisclosureIntent] =
+    useState<ShareDisclosureIntent>("minimum_necessary");
   const [credentialInput, setCredentialInput] = useState("");
   const [requestType, setRequestType] = useState("PatientSummaryCredential");
   const [requestQrDataUrl, setRequestQrDataUrl] = useState("");
@@ -1461,6 +1486,7 @@ export function ShareView({
             .map((card) => card.id);
     setSelectedCardIds(recommendedIds);
     setSelectedFields(shareProfile.fields.map((field) => field.key));
+    setDisclosureIntent("minimum_necessary");
     setRecipient(shareProfile.recipient);
     setExpiryMinutes(shareProfile.expiryMinutes);
     setPackageProtocol(protocolForTransport(shareProfile.transport));
@@ -1485,6 +1511,37 @@ export function ShareView({
     return shareableCards.filter((card) => selectedIdSet.has(card.id));
   }, [selectedCardIds, shareableCards]);
   const shareGatewayReady = Boolean(currentShareGatewayBaseUrl());
+  const credentialDisclosureCapabilities = useMemo(
+    () =>
+      selectedCards.map((card) => ({
+        credentialId: String(card.credentialId || card.id),
+      })),
+    [selectedCards],
+  );
+  const disclosureResolution = useMemo(
+    () =>
+      resolveShareDisclosureIntent({
+        intent: disclosureIntent,
+        selectedFields,
+        credentials: credentialDisclosureCapabilities,
+      }),
+    [credentialDisclosureCapabilities, disclosureIntent, selectedFields],
+  );
+  const customDisclosureAvailable = useMemo(
+    () =>
+      resolveShareDisclosureIntent({
+        intent: "custom_selection",
+        selectedFields,
+        credentials: credentialDisclosureCapabilities,
+      }).mechanism !== "whole_credential",
+    [credentialDisclosureCapabilities, selectedFields],
+  );
+  useEffect(() => {
+    if (disclosureIntent === "custom_selection" && !customDisclosureAvailable) {
+      setDisclosureIntent("minimum_necessary");
+    }
+  }, [customDisclosureAvailable, disclosureIntent]);
+  const mode = disclosureResolution.disclosureMode;
   const sharePackageMode = sharePackageModeForUi(
     packageProtocol,
     mode,
@@ -1496,9 +1553,7 @@ export function ShareView({
         mode: sharePackageMode,
         disclosureMode: mode,
         selectedFields: protocolRequiresVp(packageProtocol)
-          ? mode === "full"
-            ? ["full_vc"]
-            : selectedFields
+          ? disclosureResolution.selectedFields
           : [],
         expiryMinutes,
         timelineAnchor: timeAnchor,
@@ -1514,9 +1569,8 @@ export function ShareView({
       }),
     [
       expiryMinutes,
-      mode,
+      disclosureResolution,
       packageProtocol,
-      selectedFields,
       sharePackageMode,
       shlPolicy,
       timeAnchor,
@@ -1596,6 +1650,13 @@ export function ShareView({
         ? previous.filter((item) => item !== field)
         : [...previous, field],
     );
+  };
+
+  const selectDisclosureIntent = (intent: ShareDisclosureIntent) => {
+    setDisclosureIntent(intent);
+    if (intent === "minimum_necessary") {
+      setSelectedFields(shareProfile.fields.map((field) => field.key));
+    }
   };
 
   const createSharePacket = useCallback(async () => {
@@ -1837,8 +1898,8 @@ export function ShareView({
             <span className="eyebrow">Share flow</span>
             <h2>สร้างชุดแชร์เอกสาร</h2>
             <p>
-              เลือกผู้รับ วัตถุประสงค์ เอกสาร และเงื่อนไขการเปิดอ่าน
-              ระบบจะแนะนำรูปแบบ QR/VP หรือ SHL ที่เหมาะสม
+              เลือกผู้รับ วัตถุประสงค์ เอกสาร และเงื่อนไขการเปิดอ่าน ระบบจะเลือก
+              QR หรือลิงก์สุขภาพที่เหมาะสมให้
             </p>
           </div>
           <Badge tone={shareValidation.publishEnabled ? "green" : "yellow"}>
@@ -1894,35 +1955,13 @@ export function ShareView({
                 </Badge>
                 <span>{shareProfile.help}</span>
               </div>
-              <div className="protocol-mini-grid">
-                {(Object.keys(protocolProfiles) as PackageProtocol[]).map(
-                  (item) => {
-                    const itemMode = sharePackageModeForUi(
-                      item,
-                      mode,
-                      selectedCards.length,
-                    );
-                    const itemDisabled =
-                      item === "hybrid" && !shareGatewayReady;
-                    return (
-                      <button
-                        key={item}
-                        type="button"
-                        className={packageProtocol === item ? "active" : ""}
-                        disabled={itemDisabled}
-                        onClick={() => setPackageProtocol(item)}
-                        title={
-                          itemDisabled
-                            ? "ต้องมี Share Gateway และ TrustCare manifest service ก่อนสร้าง Certified SHL"
-                            : protocolProfiles[item].description
-                        }
-                      >
-                        <strong>{shareModePatientLabel(itemMode)}</strong>
-                        <small>{protocolProfiles[item].description}</small>
-                      </button>
-                    );
-                  },
-                )}
+              <div className="share-auto-transport">
+                <ShieldCheck size={19} />
+                <span>
+                  <small>ระบบเลือกช่องทางส่งที่เหมาะสม</small>
+                  <strong>{shareModePatientLabel(sharePackageMode)}</strong>
+                  <p>{shareModePatientDescription(sharePackageMode)}</p>
+                </span>
               </div>
             </div>
 
@@ -1997,48 +2036,98 @@ export function ShareView({
 
             <div className="share-step">
               <span className="step-number">3</span>
-              <strong>ข้อมูลที่จะเปิดเผย</strong>
+              <strong>ตรวจสอบข้อมูลก่อนแชร์</strong>
               <p className="share-step-hint">
-                {shareProfile.help}{" "}
-                เงื่อนไขด้านล่างจะเปลี่ยนตามชนิดชุดเอกสารที่เลือก
+                ระบบจัดชุดข้อมูลตามวัตถุประสงค์นี้ให้แล้ว
+                คุณตรวจและปรับรายการได้ก่อนสร้าง QR
               </p>
               {protocolRequiresVp(packageProtocol) && (
                 <>
-                  <div className="segmented compact">
-                    {(["full", "sd", "zkp"] as DisclosureMode[]).map((item) => (
+                  <div
+                    className="disclosure-intent-grid"
+                    role="group"
+                    aria-label="วิธีเลือกข้อมูลสำหรับการแชร์"
+                  >
+                    {shareDisclosureIntentOptions.map((option) => (
                       <button
-                        key={item}
+                        key={option.value}
                         type="button"
-                        className={mode === item ? "active" : ""}
-                        onClick={() => setMode(item)}
+                        className={
+                          disclosureIntent === option.value
+                            ? "disclosure-intent-card active"
+                            : "disclosure-intent-card"
+                        }
+                        aria-pressed={disclosureIntent === option.value}
+                        disabled={
+                          option.value === "custom_selection" &&
+                          !customDisclosureAvailable
+                        }
+                        onClick={() => selectDisclosureIntent(option.value)}
                       >
-                        {item === "full"
-                          ? "Full VC"
-                          : item === "sd"
-                            ? "SD"
-                            : "ZKP"}
+                        <span>
+                          <strong>{option.label}</strong>
+                          {option.recommended ? <small>แนะนำ</small> : null}
+                        </span>
+                        <p>
+                          {option.value === "custom_selection" &&
+                          !customDisclosureAvailable
+                            ? "เอกสารชุดนี้ยังเลือกเฉพาะบางข้อมูลไม่ได้"
+                            : option.description}
+                        </p>
                       </button>
                     ))}
                   </div>
                   <div
                     className="field-chip-grid disclosure-field-grid"
                     role="group"
-                    aria-label="ข้อมูลที่จะเปิดเผย"
+                    aria-label="รายการข้อมูลตามวัตถุประสงค์"
                   >
-                    {shareProfile.fields.map((field) => (
-                      <button
-                        key={field.key}
-                        type="button"
-                        className={
-                          selectedFields.includes(field.key) || mode === "full"
-                            ? "active"
-                            : ""
-                        }
-                        disabled={mode === "full"}
-                        onClick={() => toggleField(field.key)}
-                      >
-                        {field.label}
-                      </button>
+                    {shareProfile.fields.map((field) =>
+                      disclosureIntent === "custom_selection" &&
+                      customDisclosureAvailable ? (
+                        <button
+                          key={field.key}
+                          type="button"
+                          className={
+                            selectedFields.includes(field.key) ? "active" : ""
+                          }
+                          onClick={() => toggleField(field.key)}
+                        >
+                          {field.label}
+                        </button>
+                      ) : (
+                        <span
+                          key={field.key}
+                          className={
+                            disclosureIntent === "complete_documents" ||
+                            selectedFields.includes(field.key)
+                              ? "field-chip-summary active"
+                              : "field-chip-summary"
+                          }
+                        >
+                          {field.label}
+                        </span>
+                      ),
+                    )}
+                  </div>
+                  <div
+                    className={`disclosure-auto-summary${
+                      disclosureResolution.warnings.length ? " warning" : ""
+                    }`}
+                    aria-live="polite"
+                  >
+                    <div>
+                      <ShieldCheck size={19} />
+                      <span>
+                        <small>ระบบเลือกวิธีส่งให้อัตโนมัติ</small>
+                        <strong>{disclosureResolution.patientLabel}</strong>
+                      </span>
+                    </div>
+                    <p>{disclosureResolution.patientDescription}</p>
+                    {disclosureResolution.warnings.map((warning) => (
+                      <p className="disclosure-warning" key={warning}>
+                        {warning}
+                      </p>
                     ))}
                   </div>
                 </>
@@ -2320,41 +2409,23 @@ export function ShareView({
           <div className="portal-card-header">
             <div className="portal-card-title">
               <ShieldCheck size={22} />
-              <span>เลือก Mode การตรวจสอบ</span>
+              <span>วิธีส่งที่ระบบเลือก</span>
             </div>
-            <Badge tone="blue">Full VC / SD / ZKP</Badge>
+            <Badge tone="blue">อัตโนมัติ</Badge>
           </div>
-          <div className="mode-grid">
-            <button
-              type="button"
-              className={mode === "full" ? "mode-card selected" : "mode-card"}
-              aria-pressed={mode === "full"}
-              onClick={() => setMode("full")}
-            >
-              <FileJson size={26} />
-              <strong>Full VC</strong>
-              <span>ตรวจสอบ VC ทั้งฉบับ เปิดเผยข้อมูลครบ</span>
-            </button>
-            <button
-              type="button"
-              className={mode === "sd" ? "mode-card selected" : "mode-card"}
-              aria-pressed={mode === "sd"}
-              onClick={() => setMode("sd")}
-            >
-              <Eye size={26} />
-              <strong>Selective Disclosure</strong>
-              <span>เลือกเปิดเผยเฉพาะฟิลด์ที่ต้องการ</span>
-            </button>
-            <button
-              type="button"
-              className={mode === "zkp" ? "mode-card selected" : "mode-card"}
-              aria-pressed={mode === "zkp"}
-              onClick={() => setMode("zkp")}
-            >
-              <Fingerprint size={26} />
-              <strong>Zero Knowledge Proof</strong>
-              <span>พิสูจน์เงื่อนไขโดยไม่เปิดเผยข้อมูลจริง</span>
-            </button>
+          <div className="technical-resolution-card">
+            <strong>{disclosureResolution.patientLabel}</strong>
+            <span>{disclosureResolution.patientDescription}</span>
+            <dl>
+              <div>
+                <dt>นโยบายที่ผู้ใช้เลือก</dt>
+                <dd>{disclosureIntent}</dd>
+              </div>
+              <div>
+                <dt>กลไกภายใน</dt>
+                <dd>{disclosureResolution.mechanism}</dd>
+              </div>
+            </dl>
           </div>
         </Surface>
 
@@ -2384,13 +2455,7 @@ export function ShareView({
                   <Camera size={18} /> สแกน QR
                 </Button>
               </div>
-              <p>
-                {mode === "full"
-                  ? "ตรวจสอบเอกสารเต็มฉบับ"
-                  : mode === "sd"
-                    ? "เตรียมตรวจแบบ selective disclosure"
-                    : "เตรียมตรวจแบบ proof-only"}
-              </p>
+              <p>{disclosureResolution.patientDescription}</p>
             </div>
           </Surface>
 
@@ -2698,10 +2763,10 @@ export function DocumentFlowControls({
     <div className="document-flow-control-stack">
       {plan.controls.selectiveDisclosure && (
         <div className="document-flow-control-panel">
-          <strong>Selective Disclosure</strong>
+          <strong>เลือกข้อมูลที่จำเป็น</strong>
           <p>
-            เลือก claim ที่จำเป็นต่อวัตถุประสงค์นี้เท่านั้น ไม่รวม technical
-            properties เช่น watermark, payload hash หรือ UI state
+            เลือกเฉพาะข้อมูลที่ผู้รับต้องใช้ ระบบจะตรวจความสามารถของเอกสาร
+            และเลือกวิธีส่งที่รองรับให้โดยอัตโนมัติ
           </p>
           <div className="field-chip-grid">
             {[

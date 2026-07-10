@@ -80,7 +80,7 @@ export const walletRouteDefinitions: readonly WalletRouteDefinition[] = [
     path: "/share",
     view: "share",
     title: "แชร์เอกสาร",
-    subtitle: "สร้าง VP QR และ selective disclosure ตามวัตถุประสงค์การใช้งาน",
+    subtitle: "สร้าง QR และเลือกข้อมูลตามวัตถุประสงค์การใช้งาน",
     breadcrumb: "แชร์",
   },
   {

@@ -115,7 +115,7 @@ function buildRecommendationReason(
     return "มีเอกสารเดียวและไม่ใช่ชุดข้อมูลขนาดใหญ่ จึงใช้ VP เอกสารเดียวได้ชัดเจนที่สุด";
   }
   if (mode === "PurposeVP") {
-    return `${serviceLabel} ใช้เอกสารจำนวนไม่มาก จึงเหมาะกับ VP ตามวัตถุประสงค์และ selective disclosure`;
+    return `${serviceLabel} ใช้เอกสารจำนวนไม่มาก ระบบจึงจัดเป็น QR ชุดเอกสารตามวัตถุประสงค์`;
   }
   if (mode === "CertifiedSHLManifestPackage") {
     return hasLarge

@@ -28,7 +28,7 @@ export const en = {
   "tabs.payload": "Payload",
   "tabs.history": "History",
   "actions.qrCode": "QR Code",
-  "actions.sdZkp": "SD (ZKP)",
+  "actions.sdZkp": "Review before sharing",
   "actions.pdf": "PDF",
   "actions.copyId": "Copy ID",
   "common.status": "Status",

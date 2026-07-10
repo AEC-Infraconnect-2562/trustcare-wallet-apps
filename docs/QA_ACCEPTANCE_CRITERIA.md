@@ -20,6 +20,8 @@
 ## UX
 
 - Thai text is first-class and fits mobile and desktop containers.
-- Credential detail has tab/action surfaces for QR Code, SD/ZKP, PDF, details, trust checklist, and payload.
+- Credential detail has patient-language actions for QR, review-before-sharing, print/PDF, details, trust checklist, and payload. Primary UX must not ask the patient to choose Full VC, SD, or ZKP.
+- Patient and staff identity credentials render at ISO ID-1 proportions; A4 remains reserved for document-shaped credentials. Both form factors use the same source-backed renderer contract on Web and Mobile.
+- Share resolves the technical disclosure mechanism from issuer/credential and recipient capabilities. If partial disclosure cannot be derived, the UI states that the selected credential will be sent whole and never falls back silently.
 - Mobile uses bottom navigation and full-width credential detail surfaces rather than desktop sidebars.
 - Home, Prepare, Share, Store, credential detail, and login must avoid desktop/mobile overlap and must keep action bars reachable.

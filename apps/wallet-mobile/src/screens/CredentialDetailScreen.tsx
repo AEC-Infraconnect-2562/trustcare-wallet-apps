@@ -12,7 +12,6 @@ import {
   getDemoHistory,
   presentationEnvelopeFromPresentation,
   presentationEnvelopeFromWalletCard,
-  requireAtLeastOneField,
   type WalletPresentationResponse,
 } from "@trustcare/wallet-core";
 import { CredentialDocumentNative } from "../components/CredentialDocumentNative";
@@ -32,9 +31,6 @@ export function CredentialDetailScreen() {
     useState<WalletPresentationResponse | null>(null);
   const [tab, setTab] = useState<Tab>("details");
   const [selectiveOpen, setSelectiveOpen] = useState(false);
-  const [selectedFields, setSelectedFields] = useState<Record<string, boolean>>(
-    {},
-  );
   const [message, setMessage] = useState("");
   const security = useMobileSecuritySettings();
   const biometric = useBiometricGate();
@@ -93,7 +89,7 @@ export function CredentialDetailScreen() {
 
   const activeCard = card;
 
-  async function generateQr(selectedFields: string[] = []) {
+  async function generateQr() {
     setMessage("");
     if (!canPresentCredential(activeCard)) {
       setMessage(
@@ -109,7 +105,7 @@ export function CredentialDetailScreen() {
         userId: user.id,
         holderDid: user.holderDid,
         shareGatewayUrl: env.shareGatewayUrl,
-        selectedFields,
+        selectedFields: [],
         validMinutes: 10,
       });
       setPresentation(result.presentation);
@@ -128,26 +124,7 @@ export function CredentialDetailScreen() {
       );
       return;
     } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : selectedFields.length
-            ? "สร้าง selective VP ไม่สำเร็จ"
-            : "สร้าง QR ไม่สำเร็จ",
-      );
-    }
-  }
-
-  function confirmSelectiveDisclosure() {
-    try {
-      const fields = requireAtLeastOneField(
-        selectableFields
-          .filter((field) => selectedFields[field.path] ?? field.recommended)
-          .map((field) => field.path),
-      );
-      void generateQr(fields);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "กรุณาเลือกข้อมูล");
+      setMessage(error instanceof Error ? error.message : "สร้าง QR ไม่สำเร็จ");
     }
   }
 
@@ -179,13 +156,13 @@ export function CredentialDetailScreen() {
           onPress={() => setSelectiveOpen((previous) => !previous)}
         >
           <Eye color="#7c3aed" />
-          <Text style={styles.actionPurpleText}>SD (ZKP)</Text>
+          <Text style={styles.actionPurpleText}>ตรวจข้อมูลก่อนแชร์</Text>
         </Pressable>
         <Pressable
           style={styles.actionGreen}
           onPress={() =>
             setMessage(
-              "การพิมพ์ A4 / บันทึก PDF ใช้งานผ่าน Wallet Web; Mobile ใช้ Shared Renderer เดียวกันแต่ยังไม่เปิด native print adapter",
+              "การพิมพ์ตามขนาดจริง / บันทึก PDF ใช้งานผ่าน Wallet Web; Mobile ใช้ Shared Renderer เดียวกันแต่ยังไม่เปิด native print adapter",
             )
           }
         >
@@ -196,48 +173,32 @@ export function CredentialDetailScreen() {
       {!!message && <Text style={styles.message}>{message}</Text>}
       {selectiveOpen && (
         <View style={styles.selectorPanel}>
-          <Text style={styles.selectorTitle}>เลือกข้อมูลที่จะเปิดเผย</Text>
+          <Text style={styles.selectorTitle}>ตรวจข้อมูลก่อนแชร์</Text>
+          <Text style={styles.muted}>
+            ผู้ออกเอกสารยังไม่ได้ให้ credential ที่เลือกเปิดเผยบางส่วนได้
+            ระบบจึงส่งเอกสารนี้ทั้งฉบับโดยไม่ตัดข้อมูลหรือสร้าง proof แทน
+          </Text>
           {selectableFields.map((field) => (
-            <Pressable
-              key={field.path}
-              style={styles.fieldRow}
-              onPress={() =>
-                setSelectedFields((previous) => ({
-                  ...previous,
-                  [field.path]: !(previous[field.path] ?? field.recommended),
-                }))
-              }
-            >
-              <View
-                style={[
-                  styles.checkbox,
-                  (selectedFields[field.path] ?? field.recommended) &&
-                    styles.checkboxChecked,
-                ]}
-              />
+            <View key={field.path} style={styles.fieldRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>{field.label}</Text>
                 <Text style={styles.muted} numberOfLines={1}>
                   {field.valuePreview || "-"}
                 </Text>
               </View>
-            </Pressable>
+            </View>
           ))}
           {!selectableFields.length && (
             <Text style={styles.muted}>
-              เอกสารนี้ไม่มี field ที่เปิดเผยแบบ selective ได้
+              ไม่พบรายการข้อมูลสำหรับแสดงตัวอย่าง
             </Text>
           )}
           <Pressable
-            style={[
-              styles.shareSelected,
-              !selectableFields.length && styles.disabledAction,
-            ]}
-            disabled={!selectableFields.length}
-            onPress={confirmSelectiveDisclosure}
+            style={styles.shareSelected}
+            onPress={() => void generateQr()}
           >
             <Text style={styles.shareSelectedText}>
-              แชร์เฉพาะข้อมูลที่เลือก
+              สร้าง QR เอกสารทั้งฉบับ
             </Text>
           </Pressable>
         </View>
