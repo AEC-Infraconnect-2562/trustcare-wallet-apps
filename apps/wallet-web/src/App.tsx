@@ -67,6 +67,7 @@ import {
   walletObjectsFromCards,
   walletObjectsFromHistory,
   walletObjectsFromShl,
+  walletCardForDocumentRendering,
   walletDemoUsers,
   type ContractHubCatalog,
   type DocumentRequestDraft,
@@ -340,10 +341,7 @@ export default function App() {
   }, [location.hash, location.search, routeMatch.redirectTo, routerNavigate]);
   useEffect(() => {
     const serviceProfileId = routeMatch.params.serviceProfileId;
-    if (
-      serviceProfileId &&
-      serviceProfileId in readinessContextLabels
-    ) {
+    if (serviceProfileId && serviceProfileId in readinessContextLabels) {
       setReadinessContext(serviceProfileId as ReadinessContext);
     }
   }, [routeMatch.params.serviceProfileId]);
@@ -464,13 +462,19 @@ export default function App() {
       setQrDataUrl("");
       setPresentation(null);
       setDetailOpen(true);
-      routerNavigate(`/records/${encodeURIComponent(String(card.credentialId))}`);
+      routerNavigate(
+        `/records/${encodeURIComponent(String(card.credentialId))}`,
+      );
     },
     [routerNavigate],
   );
 
   const openV2Record = useCallback(
     (record: WalletDocumentRecordV2) => {
+      setSelectedCard(walletCardForDocumentRendering(record));
+      setQrDataUrl("");
+      setPresentation(null);
+      setDetailOpen(true);
       const routeId = record.credential.credentialId ?? record.id;
       routerNavigate(`/records/${encodeURIComponent(routeId)}`);
     },
@@ -1191,10 +1195,7 @@ export default function App() {
 
   useEffect(() => {
     if (!isAuthenticated || !pendingScanPayload || !allCards.length) return;
-    if (
-      routeMatch.route.id === "verify" ||
-      isPublicVerifierScanLocation()
-    )
+    if (routeMatch.route.id === "verify" || isPublicVerifierScanLocation())
       return;
     if (
       allCards.some(
@@ -1225,8 +1226,7 @@ export default function App() {
   useEffect(() => {
     if (
       !pendingScanPayload ||
-      (routeMatch.route.id !== "verify" &&
-        !isPublicVerifierScanLocation())
+      (routeMatch.route.id !== "verify" && !isPublicVerifierScanLocation())
     )
       return;
     if (lastPublicVerifyPayload.current === pendingScanPayload) return;
@@ -1279,8 +1279,7 @@ export default function App() {
 
   if (
     routeMatch.route.id === "verify" ||
-    (pendingScanPayload &&
-      (!isAuthenticated || isPublicVerifierScanLocation()))
+    (pendingScanPayload && (!isAuthenticated || isPublicVerifierScanLocation()))
   ) {
     return (
       <>

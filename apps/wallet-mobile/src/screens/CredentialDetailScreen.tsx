@@ -181,9 +181,16 @@ export function CredentialDetailScreen() {
           <Eye color="#7c3aed" />
           <Text style={styles.actionPurpleText}>SD (ZKP)</Text>
         </Pressable>
-        <Pressable style={styles.actionGreen}>
+        <Pressable
+          style={styles.actionGreen}
+          onPress={() =>
+            setMessage(
+              "การพิมพ์ A4 / บันทึก PDF ใช้งานผ่าน Wallet Web; Mobile ใช้ Shared Renderer เดียวกันแต่ยังไม่เปิด native print adapter",
+            )
+          }
+        >
           <Download color="#167347" />
-          <Text style={styles.actionGreenText}>PDF</Text>
+          <Text style={styles.actionGreenText}>PDF (Web)</Text>
         </Pressable>
       </View>
       {!!message && <Text style={styles.message}>{message}</Text>}

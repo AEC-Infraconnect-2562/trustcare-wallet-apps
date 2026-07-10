@@ -5,6 +5,7 @@ import { LanguageProvider } from "@trustcare/i18n/src/provider.web";
 import App from "./App";
 import { routerBasename } from "./routing/appRoutes";
 import "./styles/index.css";
+import "./styles/credential-paper.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

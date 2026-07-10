@@ -67,3 +67,19 @@ Every synced credential that should render as a human medical document must incl
 ## Shared Component Direction
 
 The current Wallet implementation normalizes Portal payloads through `@trustcare/wallet-core/portalRenderContract`. When Portal publishes the renderer as a shared package, both apps should consume the same renderer and keep this contract as the payload boundary.
+
+## A4 Paper and VP Presentation Contract
+
+- The data model remains the VC/VP payload. `CredentialPaperModel` is a read-only view model and must not become another bundle, credential, or claim object.
+- A single-document VP renders the issuer document once and adds a compact purpose/trust footer. It must not render a second copy of the same claims as a VP card.
+- A multi-document VP may add one holder-generated cover/manifest, then renders every nested VC as a separate issuer document. Hospital, payer, and holder provenance must never be merged into one letterhead.
+- Screen preview uses an A4 portrait proportion (`210mm × 297mm`). Printed output uses `@page` margins and normal pagination rather than scaling or rasterizing a screenshot.
+- Clinical and financial rows use semantic HTML tables so headers repeat across printed pages. The renderer must not make the primary document horizontally scrollable.
+- Letterhead, patient identity, document metadata, claims, signatories, evidence, logos, and watermarks are rendered only when supplied by the current credential or its exact normalized render payload.
+- Missing values are omitted or identified as missing. The renderer must not substitute a network brand, another profile photo, a generic official, a fabricated logo, or assumed FHIR evidence.
+- `DEMO`, `SAMPLE`, or similar watermarks are allowed only when the credential explicitly declares that watermark or environment state.
+- Document lifecycle, cryptographic verification, status/expiry, issuer trust, and purpose policy are separate signals. Green verified wording is reserved for an explicit verifier result that completed the required checks.
+- Issuer DID, credential/presentation ID, digest, purpose, audience, expiry, and verifier URL belong in the technical verification footer, not the clinical letterhead.
+- Payer eligibility, pre-authorization, guarantee, receipt, and claim-status artifacts are labelled as payer-reported. The Wallet does not adjudicate claims.
+
+The layout follows the document structure of [FHIR Composition and documents](https://hl7.org/fhir/R4/composition.html), the provenance separation of [W3C Verifiable Credentials and Presentations](https://www.w3.org/TR/vc-data-model/#verifiable-presentations), and pagination behavior from [CSS Paged Media](https://www.w3.org/TR/css-page-3/) and [CSS Fragmentation](https://www.w3.org/TR/css-break-3/). Issuer-provided `renderMethod` templates are optional hints only; the current [VC Rendering Methods](https://www.w3.org/TR/vc-render-method/) specification is a Working Draft, so remote templates must not bypass the Shared Renderer, integrity checks, sanitization, or sandboxing.

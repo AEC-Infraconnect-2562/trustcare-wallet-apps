@@ -1,0 +1,172 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import {
+  CredentialDocument,
+  PresentationCoverDocument,
+} from "@trustcare/ui-web";
+import { getCompleteWalletSeed, type WalletCard } from "@trustcare/wallet-core";
+
+describe("shared A4 credential document", () => {
+  const cards = getCompleteWalletSeed("demo-patient-complete-001");
+
+  it("renders prescription claims as a semantic paper table", () => {
+    const card = cards.find((item) => item.cardType === "prescription")!;
+    const html = renderToStaticMarkup(<CredentialDocument card={card} />);
+
+    expect(html).toContain("tc-clinical-paper");
+    expect(html).toContain("<table");
+    expect(html).toContain("<thead");
+    expect(html).toContain('<th scope="col"');
+    expect(html).toContain("Metformin XR");
+    expect(html).not.toContain("TrustCare Network");
+  });
+
+  it("uses the payer issuer as the letterhead for payer artifacts", () => {
+    const card = cards.find(
+      (item) => item.cardType === "insurance_eligibility",
+    )!;
+    const html = renderToStaticMarkup(<CredentialDocument card={card} />);
+
+    expect(html).toContain("บริษัทประกันสุขภาพสากล เดโม จำกัด");
+    expect(html).toContain(
+      "did:web:trustcare.network:payer:global-care-demo",
+    );
+    expect(html).not.toContain("โรงพยาบาลทรัสต์แคร์ เซ็นทรัล");
+  });
+
+  it("does not invent issuer, patient, evidence, signatory or watermark data", () => {
+    const card: WalletCard = {
+      id: 991,
+      cardType: "medical_certificate",
+      displayName: "Source-only certificate",
+      documentCategory: "clinical_summary",
+      credentialId: "urn:vc:source-only",
+      credentialStatus: "",
+      credentialData: {
+        "@context": ["https://www.w3.org/ns/credentials/v2"],
+        id: "urn:vc:source-only",
+        type: ["VerifiableCredential", "MedicalCertificateCredential"],
+        issuer: { id: "did:web:issuer.example" },
+        credentialSubject: {
+          id: "did:key:patient",
+          certificate: { result: "source-backed result" },
+        },
+      },
+      createdAt: "2026-07-10T00:00:00.000Z",
+    };
+    const html = renderToStaticMarkup(<CredentialDocument card={card} />);
+
+    expect(html).toContain("ไม่พบชื่อผู้ออกเอกสารในข้อมูลต้นฉบับ");
+    expect(html).not.toContain("ผู้ใช้ TrustCare");
+    expect(html).not.toContain("DEMO ONLY");
+    expect(html).not.toContain("FHIR Evidence");
+    expect(html).not.toContain("เจ้าหน้าที่ผู้มีสิทธิออกเอกสาร");
+  });
+
+  it("shows verified wording only for an explicit verifier result", () => {
+    const card = cards.find((item) => item.cardType === "medical_certificate")!;
+    const unchecked = renderToStaticMarkup(<CredentialDocument card={card} />);
+    const checked = renderToStaticMarkup(
+      <CredentialDocument
+        card={card}
+        verification={{
+          verified: true,
+          checklist: [
+            { key: "proof", label: "Proof", ok: true },
+            { key: "issuer", label: "Issuer", ok: true },
+            { key: "status", label: "Status", ok: true },
+            { key: "expiry", label: "Expiry", ok: true },
+            { key: "policy", label: "Policy", ok: true },
+          ],
+        }}
+      />,
+    );
+
+    expect(unchecked).not.toContain(
+      "ตรวจสอบ proof, issuer, status, expiry และ policy ผ่านแล้ว",
+    );
+    expect(checked).toContain(
+      "ตรวจสอบ proof, issuer, status, expiry และ policy ผ่านแล้ว",
+    );
+  });
+
+  it("fails closed when any required verifier check is missing or fails", () => {
+    const card = cards.find((item) => item.cardType === "medical_certificate")!;
+    const baseChecks = [
+      { key: "proof", ok: true },
+      { key: "issuer", ok: true },
+      { key: "status", ok: true },
+      { key: "policy", ok: true },
+    ];
+    const missingExpiry = renderToStaticMarkup(
+      <CredentialDocument
+        card={card}
+        verification={{ verified: true, checklist: baseChecks }}
+      />,
+    );
+    const failedStatus = renderToStaticMarkup(
+      <CredentialDocument
+        card={card}
+        verification={{
+          verified: true,
+          checklist: [
+            ...baseChecks,
+            { key: "expiry", ok: true },
+            { key: "status", ok: false },
+          ],
+        }}
+      />,
+    );
+
+    expect(missingExpiry).not.toContain(
+      "ตรวจสอบ proof, issuer, status, expiry และ policy ผ่านแล้ว",
+    );
+    expect(failedStatus).not.toContain(
+      "ตรวจสอบ proof, issuer, status, expiry และ policy ผ่านแล้ว",
+    );
+  });
+
+  it("renders a source-backed VP cover before a multi-document manifest", () => {
+    const html = renderToStaticMarkup(
+      <PresentationCoverDocument
+        presentationId="urn:vp:public:123"
+        holderDid="did:key:holder-123"
+        purpose="cross-border referral"
+        audience="did:web:receiver.example"
+        publicUrl="https://wallet.example/verify/123"
+        documents={[
+          {
+            id: "urn:vc:1",
+            title: "ใบส่งต่อ",
+            issuer: "โรงพยาบาลต้นทาง",
+            status: "active",
+          },
+          {
+            id: "urn:vc:2",
+            title: "ผลตรวจ",
+            issuer: "ห้องปฏิบัติการ",
+            status: "active",
+          },
+        ]}
+        verification={{
+          verified: true,
+          checklist: [
+            { key: "signature", ok: true },
+            { key: "issuer", ok: true },
+            { key: "status", ok: true },
+            { key: "expiry", ok: true },
+            { key: "policy", ok: true },
+          ],
+        }}
+      />,
+    );
+
+    expect(html).toContain("HEALTH DOCUMENT PRESENTATION");
+    expect(html).toContain("urn:vp:public:123");
+    expect(html).toContain("cross-border referral");
+    expect(html).toContain("โรงพยาบาลต้นทาง");
+    expect(html).toContain(
+      "ตรวจ proof, issuer, status, expiry และ policy ผ่านครบแล้ว",
+    );
+  });
+});

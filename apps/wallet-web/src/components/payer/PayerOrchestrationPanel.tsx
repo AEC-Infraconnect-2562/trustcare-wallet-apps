@@ -294,7 +294,10 @@ export function PayerOrchestrationPanel({
 
       <div className="payer-source-split" aria-label="Credential source split">
         <SourceChip label="Portal sync" value={sourceSummary.portalSynced} />
-        <SourceChip label="Issuer signed" value={sourceSummary.issuerSigned} />
+        <SourceChip
+          label="Issuer authority"
+          value={sourceSummary.issuerSigned}
+        />
         <SourceChip label="Payer adapter" value={sourceSummary.payerAdapter} />
         <SourceChip label="Wallet issued" value={sourceSummary.walletIssued} />
         <SourceChip

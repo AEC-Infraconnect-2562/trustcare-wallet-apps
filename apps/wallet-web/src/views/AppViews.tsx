@@ -54,6 +54,8 @@ import { shareGatewayApi } from "@trustcare/api-client";
 import {
   Badge,
   Button,
+  CredentialDocument,
+  PresentationCoverDocument,
   Surface,
   WalletCardView,
   useLoadedPhotoCandidate,
@@ -90,6 +92,7 @@ import {
   parseShlLink,
   walletDocumentRecordV2FromCard,
   walletDocumentTrustPresentation,
+  walletCardForCredentialRendering,
   photoCandidatesForCard,
   readinessContextLabels,
   readinessContextValues,
@@ -4025,6 +4028,54 @@ export function PublicVerifierView({
   const checklist = Array.isArray(outcome?.verifier.verificationChecklist)
     ? outcome.verifier.verificationChecklist
     : [];
+  const renderedCredentials = useMemo(() => {
+    const credentials = Array.isArray(outcome?.verifier.credentials)
+      ? outcome.verifier.credentials
+      : outcome?.verifier.credential
+        ? [outcome.verifier.credential]
+        : [];
+    return credentials
+      .map((credential, index) =>
+        walletCardForCredentialRendering(credential, index),
+      )
+      .filter((card): card is WalletCard => Boolean(card));
+  }, [outcome]);
+  const presentationCover = useMemo(
+    () => presentationCoverFacts(outcome),
+    [outcome],
+  );
+  const [presentationQrDataUrl, setPresentationQrDataUrl] = useState("");
+  useEffect(() => {
+    let active = true;
+    if (renderedCredentials.length < 2 || !payload.startsWith("http")) {
+      setPresentationQrDataUrl("");
+      return () => {
+        active = false;
+      };
+    }
+    void toQrDataUrl(payload)
+      .then((value) => {
+        if (active) setPresentationQrDataUrl(value);
+      })
+      .catch(() => {
+        if (active) setPresentationQrDataUrl("");
+      });
+    return () => {
+      active = false;
+    };
+  }, [outcome?.id, payload, renderedCredentials.length]);
+  const documentVerification = outcome
+    ? {
+        verified: outcome.verifier.verified,
+        checklist: normalizeDocumentVerificationChecklist(
+          outcome.verifier.verificationChecklist,
+        ),
+        checkedAt: outcome.scannedAt,
+        publicUrl: payload.startsWith("http") ? payload : undefined,
+        warnings: outcome.verifier.warnings,
+        errors: outcome.verifier.errors,
+      }
+    : undefined;
   return (
     <main className="public-verifier-shell">
       <section className="public-verifier-card">
@@ -4119,6 +4170,62 @@ export function PublicVerifierView({
 
         {outcome && <ScanOutcomePanel outcome={outcome} />}
 
+        {renderedCredentials.length ? (
+          <section
+            className="public-verifier-documents"
+            aria-label="เอกสารจาก Verifiable Presentation"
+          >
+            <header className="public-verifier-documents-header">
+              <div>
+                <span className="eyebrow">SHARED DOCUMENTS</span>
+                <h2>เอกสารที่อยู่ใน VP</h2>
+                <p>
+                  แสดงด้วย Shared Renderer เดียวกับ Wallet โดยคง issuer และ
+                  claims ของแต่ละ VC แยกจากกัน
+                </p>
+              </div>
+              <Badge tone={outcome?.verifier.verified ? "green" : "yellow"}>
+                {renderedCredentials.length} เอกสาร
+              </Badge>
+            </header>
+            <div className="public-verifier-document-stack">
+              {renderedCredentials.length > 1 ? (
+                <PresentationCoverDocument
+                  presentationId={presentationCover.presentationId}
+                  holderDid={presentationCover.holderDid}
+                  purpose={presentationCover.purpose}
+                  recipient={presentationCover.recipient}
+                  audience={presentationCover.audience}
+                  createdAt={presentationCover.validFrom}
+                  expiresAt={presentationCover.validUntil}
+                  publicUrl={payload.startsWith("http") ? payload : undefined}
+                  qrDataUrl={presentationQrDataUrl || undefined}
+                  verification={documentVerification}
+                  documents={renderedCredentials.map((card) => ({
+                    id: card.credentialId
+                      ? String(card.credentialId)
+                      : undefined,
+                    title: card.displayName,
+                    titleEn: card.displayNameEn ?? undefined,
+                    issuer:
+                      card.issuerHospitalName ?? card.issuerDid ?? undefined,
+                    issuedAt: card.issuedAt ?? undefined,
+                    expiresAt: card.expiresAt ?? undefined,
+                    status: card.credentialStatus || undefined,
+                  }))}
+                />
+              ) : null}
+              {renderedCredentials.map((card, index) => (
+                <CredentialDocument
+                  key={`${card.cardType}:${String(card.credentialId || index)}`}
+                  card={card}
+                  verification={documentVerification}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <footer className="public-verifier-footer">
           <span>
             Public verifier mode ไม่อ่านข้อมูลจาก Wallet ในเครื่องนี้ และไม่ต้อง
@@ -4131,6 +4238,56 @@ export function PublicVerifierView({
       </section>
     </main>
   );
+}
+
+function presentationCoverFacts(outcome: ScanOutcome | null): {
+  presentationId?: string;
+  holderDid?: string;
+  purpose?: string;
+  recipient?: string;
+  audience?: string;
+  validFrom?: string;
+  validUntil?: string;
+} {
+  const value = outcome?.verifier.verificationPayload;
+  const record =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const text = (key: string) =>
+    typeof record[key] === "string" && String(record[key]).trim()
+      ? String(record[key])
+      : undefined;
+  return {
+    presentationId: text("presentationId"),
+    holderDid: text("holderDid") ?? outcome?.verifier.holderDid,
+    purpose: text("purpose"),
+    recipient: text("recipient"),
+    audience: text("audience"),
+    validFrom: text("validFrom"),
+    validUntil: text("validUntil"),
+  };
+}
+
+function normalizeDocumentVerificationChecklist(value: unknown): Array<{
+  key?: string;
+  label?: string;
+  ok?: boolean;
+  detail?: string;
+}> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    return [
+      {
+        key: typeof record.key === "string" ? record.key : undefined,
+        label: typeof record.label === "string" ? record.label : undefined,
+        ok: typeof record.ok === "boolean" ? record.ok : undefined,
+        detail: typeof record.detail === "string" ? record.detail : undefined,
+      },
+    ];
+  });
 }
 
 export function ScanResponseDialog({
