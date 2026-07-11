@@ -83,6 +83,7 @@ export function CredentialDetailDialog({
     const viewport = paperViewportRef.current;
     const frame = paperFrameRef.current;
     let frameId = 0;
+    let disposed = false;
 
     const updatePaperLayout = () => {
       const naturalWidth = frame.offsetWidth;
@@ -104,17 +105,29 @@ export function CredentialDetailDialog({
     };
 
     const scheduleUpdate = () => {
+      if (disposed) return;
       window.cancelAnimationFrame(frameId);
       frameId = window.requestAnimationFrame(updatePaperLayout);
     };
-    const observer = new ResizeObserver(scheduleUpdate);
-    observer.observe(viewport);
-    observer.observe(frame);
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(scheduleUpdate);
+    if (observer) {
+      observer.observe(viewport);
+      observer.observe(frame);
+    } else {
+      window.addEventListener("resize", scheduleUpdate);
+    }
     scheduleUpdate();
-    void document.fonts?.ready.then(scheduleUpdate);
+    void document.fonts?.ready.then(() => {
+      if (!disposed) scheduleUpdate();
+    });
 
     return () => {
-      observer.disconnect();
+      disposed = true;
+      observer?.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
       window.cancelAnimationFrame(frameId);
     };
   }, [card?.id, isIdentity, open]);

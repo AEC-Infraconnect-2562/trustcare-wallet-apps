@@ -1441,16 +1441,24 @@ body {
   }
 
   body.printing-credential-inspector .credential-paper-scaled-viewport {
-    width: 210mm !important;
+    width: 100% !important;
     height: auto !important;
-    max-width: none !important;
+    max-width: 100% !important;
     margin: 0 auto !important;
   }
 
   body.printing-credential-inspector .credential-paper-scaled-frame {
     position: static !important;
-    width: 210mm !important;
-    min-width: 210mm !important;
+    width: 100% !important;
+    min-width: 0 !important;
     transform: none !important;
+  }
+
+  body.printing-credential-inspector
+    .credential-paper-scaled-frame
+    > .credential-doc.tc-clinical-paper.tc-form-a4-portrait {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
   }
 }
