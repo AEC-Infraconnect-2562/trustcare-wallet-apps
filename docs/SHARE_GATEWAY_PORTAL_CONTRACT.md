@@ -1,148 +1,55 @@
-# TrustCare Portal Share Gateway Contract
+# TrustCare Wallet Exchange V2 Share Gateway contract
 
-Status: implemented as the production target contract for Wallet QR publish flows.
+Status: live Portal dependency; holder-preservation requirement currently fails
+closed until Portal implements it.
 
-## Purpose
-
-Wallet QR payloads must be resolver URLs, not raw VP JWTs, inline JSON, or `ServiceBundleEnvelope` payloads. The Wallet publishes a bounded artifact to TrustCare Portal first, then renders the returned `qrPayload`.
-
-Default production gateway:
+Gateway discovery comes only from `GET /api/wallet/v2`. For the current Portal
+sandbox it resolves below the single configured Portal origin:
 
 ```text
-https://trustcarehealth.live/api/share-gateway
+https://trustcare-hospital-network-production.up.railway.app/api/share-gateway
 ```
 
-Local development can still use the Vite in-memory gateway at:
+## Authority
 
-```text
-http://localhost:<port>/api/share-gateway
-```
-
-## Environment
-
-Web:
-
-```text
-VITE_TRUSTCARE_SHARE_GATEWAY_URL=https://trustcarehealth.live/api/share-gateway
-```
-
-Mobile:
-
-```text
-EXPO_PUBLIC_TRUSTCARE_SHARE_GATEWAY_URL=https://trustcarehealth.live/api/share-gateway
-```
-
-The app defaults to the Portal gateway above when the env var is not set. Localhost keeps using the local Vite gateway when explicitly configured by the dev server.
-
-## Publish
-
-```http
-POST /api/share-gateway/artifacts
-Content-Type: application/json
-Accept: application/json
-```
-
-Request:
-
-```json
-{
-  "artifactId": "vp_demo_001",
-  "kind": "vp",
-  "contentType": "application/vp+json",
-  "payload": {},
-  "ownerUserId": "demo-patient-001",
-  "holderDid": "did:key:holder",
-  "context": "opd_visit",
-  "purpose": "เตรียมเข้ารับบริการ OPD",
-  "recipient": "Verifier",
-  "expiresAt": "2026-07-08T09:10:00.000Z",
-  "accessPolicy": {},
-  "trustcare": {}
-}
-```
-
-Supported `kind` values:
-
-- `vp`
-- `standard_shl_manifest`
-- `certified_shl_manifest`
-- `manifest_vp`
-- `manifest_credential`
-- `holder_authorization`
-- `shl_file`
-
-Response:
-
-```json
-{
-  "ok": true,
-  "mode": "portal_backend",
-  "artifactId": "vp_demo_001",
-  "kind": "vp",
-  "publicUrl": "https://trustcarehealth.live/api/share-gateway/presentations/vp_demo_001.jwt",
-  "qrPayload": "https://trustcarehealth.live/api/share-gateway/presentations/vp_demo_001.jwt",
-  "jwksUrl": "https://trustcarehealth.live/api/share-gateway/.well-known/jwks.json",
-  "warnings": [],
-  "errors": []
-}
-```
-
-For VP artifacts, Portal signs the payload as `vp+JWT` with ES256 and stores it. The JWT header includes `kid` and `jku` pointing at the gateway JWKS endpoint.
-
-For SHL manifest artifacts, Portal stores the manifest/support artifact and returns a JSON resolver URL. The SHL transport stays SHL; it is not converted into a VP QR.
-
-## Resolve
+Wallet creates and signs every holder VP with the patient's local `did:key`.
+The Share Gateway may store, certify, and resolve an artifact, but it must not
+replace that holder signature with a network-owned VP. The compact holder VP
+retrieved from:
 
 ```http
 GET /api/share-gateway/presentations/{artifactId}.jwt
-GET /api/share-gateway/manifests/{artifactId}.json
-GET /api/share-gateway/manifest-vps/{artifactId}.json
-GET /api/share-gateway/manifest-credentials/{artifactId}.json
-GET /api/share-gateway/holder-authorizations/{artifactId}.json
-GET /api/share-gateway/files/{artifactId}
-GET /api/share-gateway/.well-known/jwks.json
 ```
 
-Resolver responses are `no-store` except JWKS, which can be cached for one hour.
+must be byte-for-byte identical to the VP Wallet supplied. Wallet verifies the
+holder signature again before submitting the certified artifact reference to
+`POST /api/wallet/v2/submissions`.
 
-## Verification evidence
+If Portal needs an accountable certification layer, it must publish a separate
+issuer-signed Manifest VC or envelope whose contract preserves the nested holder
+VP unmodified. Wallet never treats a Portal-generated outer VP as the patient's
+authorization.
 
-```http
-POST /api/share-gateway/verification-evidence
-Content-Type: application/json
-```
+## Browser and service tokens
 
-The request identifies one immutable VP artifact and supplies only the
-verifier-computed purpose/recipient/audience and digest bindings. The gateway
-must retrieve the stored VP itself, verify the VP JWT and every nested VC JWT
-against allowlisted signing controllers, recompute the bindings, and return a
-`VerificationEvidenceV1` result. It must never accept client or payload
-`verified` flags as evidence.
+The browser may use only the public/trusted-origin contract supported by Portal.
+`TRUSTCARE_SHARE_GATEWAY_SERVICE_TOKEN` must never be exposed through a Vite
+or Expo environment variable. A future operation requiring that token must go
+through a Wallet server/BFF.
 
-The endpoint is public for cross-device verification, but remains fail-closed:
-an unknown artifact is `404`, a non-JWT artifact is `422`, and any proof,
-issuer, governed status, expiry, policy, or binding failure is represented by a
-failed evidence check so the verifier cannot display green.
+Gateway publication failure, modified holder VP, expired artifact, digest
+mismatch, or unexpected resolver origin is a visible error. There is no inline
+QR, legacy Portal, or demo-data fallback in a non-demo runtime.
 
-## Errors
+## Certified SHL
 
-Gateway failures must be visible in Thai UX. Wallet must not silently fall back to inline payload QR when Portal publish fails.
+SHL remains encrypted transport to a manifest and JWE files. The trust layer is:
 
-Expected failures:
+1. externally issuer-signed Manifest VC;
+2. exact manifest, access-policy, plaintext, and encrypted-file hashes;
+3. Wallet holder authorization bound to purpose, recipient, audience, context,
+   consent, and expiry; and
+4. a fresh holder-signed Manifest VP preserving all nested issuer JWT bytes.
 
-- `400`: invalid artifact request, unsupported kind, invalid expiry.
-- `404`: artifact not found.
-- `410`: artifact expired.
-- `503`: database or gateway storage unavailable.
-
-## CORS
-
-Portal must allow the Wallet origins that already use wallet sync:
-
-- `https://aec-infraconnect-2562.github.io`
-- `http://localhost:<port>`
-- `http://127.0.0.1:<port>`
-
-Allowed methods: `GET`, `POST`, `OPTIONS`.
-
-Allowed headers: `Content-Type`, `Authorization`.
+A standard SHL without these artifacts may be transported as standard SHL, but
+must not receive a TrustCare-certified badge.

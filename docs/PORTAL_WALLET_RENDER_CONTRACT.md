@@ -17,7 +17,7 @@ Every synced credential that should render as a human medical document must incl
           "code": "tcp",
           "nameTh": "โรงพยาบาลทรัสต์แคร์ ภูเก็ต อินเตอร์เนชั่นแนล",
           "nameEn": "TrustCare Phuket International Hospital",
-          "did": "did:web:trustcare.network:hospital:tcp"
+          "did": "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcp"
         },
         "patient": {
           "fullNameTh": "Mr. John Williams",
