@@ -9520,6 +9520,88 @@ b {
   gap: 14px;
 }
 
+.acquisition-auto-route {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--primary) 4%, var(--card));
+}
+
+.acquisition-auto-heading {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.acquisition-auto-heading h3 {
+  margin: 3px 0 0;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.acquisition-auto-heading em {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #e8f3ff;
+  color: #1e65aa;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 820;
+}
+
+.acquisition-auto-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.acquisition-auto-grid article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.acquisition-auto-grid article > svg {
+  color: var(--primary);
+}
+
+.acquisition-auto-grid small,
+.acquisition-auto-grid strong {
+  display: block;
+}
+
+.acquisition-auto-grid small {
+  margin-bottom: 3px;
+  color: var(--muted-foreground);
+  font-size: 10.5px;
+}
+
+.acquisition-auto-grid strong {
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.acquisition-auto-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid #2f8f71;
+  border-radius: 8px;
+  background: #edf9f3;
+  color: #275c45;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .planner-option {
   min-height: 86px;
   color: var(--foreground);
@@ -9708,6 +9790,10 @@ b {
     grid-column: 1 / -1;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .acquisition-auto-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -9737,6 +9823,14 @@ b {
 
   .acquisition-hero {
     display: grid;
+  }
+
+  .acquisition-auto-heading {
+    display: grid;
+  }
+
+  .acquisition-auto-heading em {
+    justify-self: start;
   }
 
   .acquisition-review {

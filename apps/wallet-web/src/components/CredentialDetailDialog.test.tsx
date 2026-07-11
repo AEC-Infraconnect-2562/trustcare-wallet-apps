@@ -1,7 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { getCompleteWalletSeed } from "@trustcare/wallet-core";
-import { CredentialDetailDialog } from "./CredentialDetailDialog";
+import {
+  CredentialDetailDialog,
+  measurePaperNaturalHeight,
+} from "./CredentialDetailDialog";
 
 describe("credential inspector", () => {
   const cards = getCompleteWalletSeed("demo-patient-complete-001");
@@ -42,6 +45,16 @@ describe("credential inspector", () => {
     expect(html).toContain("credential-paper-scaled-viewport");
     expect(html).toContain("credential-paper-scaled-frame");
     expect(html).toContain("เปิดเอกสารเต็ม");
+    expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("tc-form-a4-portrait");
+  });
+
+  it("reserves the complete paper height when content extends past one A4 sheet", () => {
+    expect(
+      measurePaperNaturalHeight(
+        { offsetHeight: 1121, scrollHeight: 1153 },
+        { offsetHeight: 1121, scrollHeight: 1210 },
+      ),
+    ).toBe(1210);
   });
 });

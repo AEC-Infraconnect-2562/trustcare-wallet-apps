@@ -1,7 +1,19 @@
-import { AlertTriangle, CheckCircle2, FilePlus2, Upload } from "lucide-react";
+import {
+  AlertTriangle,
+  Building2,
+  CheckCircle2,
+  FilePlus2,
+  ShieldCheck,
+  Upload,
+  WalletCards,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@trustcare/ui-web";
-import { getCanonicalDocumentTypeCopy } from "@trustcare/wallet-core";
+import {
+  documentRequestPatientReturnChannelLabel,
+  documentRequestPatientSourceLabel,
+  getCanonicalDocumentTypeCopy,
+} from "@trustcare/wallet-core";
 import type {
   DocumentPackageScope,
   DocumentRequestFormat,
@@ -51,7 +63,7 @@ export function AcquisitionPlanner({
           <h3>{plan.serviceLabel}</h3>
           <p>
             {requestMode
-              ? "เลือกแหล่งข้อมูลและรูปแบบผลลัพธ์ก่อนส่งคำขอ เอกสารที่ได้จะกลับเข้ากระเป๋านี้ตามช่องทางที่เลือก"
+              ? "ตรวจรายการแล้วส่งคำขอครั้งเดียว ระบบจะเลือกแหล่งที่รับผิดชอบและวิธีรับเอกสารกลับเข้ากระเป๋านี้ให้"
               : "เลือกวิธีนำเข้าและตรวจ trust state ก่อนบันทึกเป็นเอกสารใน Wallet"}
           </p>
         </div>
@@ -77,75 +89,100 @@ export function AcquisitionPlanner({
         </div>
       </section>
 
-      <section className="acquisition-grid">
-        <PlannerOptionSection
-          title={requestMode ? "ขอไปที่ไหน" : "นำเข้าจากที่ไหน"}
-          options={plan.sourceOptions}
-          activeId={plan.selectedSource}
-          onSelect={onSource}
+      {requestMode ? (
+        <AutomaticRequestRoute
+          plan={plan}
+          selectedReturnChannel={selectedReturnChannel}
         />
-        <div className="acquisition-section">
-          <span className="eyebrow">รูปแบบเอกสาร</span>
-          <div className="mini-toggle-group">
-            <button
-              type="button"
-              className={scope === "single_document" ? "active" : ""}
-              onClick={() => onScope("single_document")}
-            >
-              เอกสารเดี่ยว
-            </button>
-            <button
-              type="button"
-              className={scope === "document_bundle" ? "active" : ""}
-              onClick={() => onScope("document_bundle")}
-            >
-              Document Bundle
-            </button>
-          </div>
-          <PlannerOptionGrid
-            options={plan.formatOptions}
-            activeId={plan.selectedFormat}
-            onSelect={onFormat}
-          />
-        </div>
-      </section>
+      ) : (
+        <>
+          <section className="acquisition-grid">
+            <PlannerOptionSection
+              title="นำเข้าจากที่ไหน"
+              options={plan.sourceOptions}
+              activeId={plan.selectedSource}
+              onSelect={onSource}
+            />
+            <div className="acquisition-section">
+              <span className="eyebrow">รูปแบบเอกสาร</span>
+              <div className="mini-toggle-group">
+                <button
+                  type="button"
+                  className={scope === "single_document" ? "active" : ""}
+                  onClick={() => onScope("single_document")}
+                >
+                  เอกสารเดี่ยว
+                </button>
+                <button
+                  type="button"
+                  className={scope === "document_bundle" ? "active" : ""}
+                  onClick={() => onScope("document_bundle")}
+                >
+                  Document Bundle
+                </button>
+              </div>
+              <PlannerOptionGrid
+                options={plan.formatOptions}
+                activeId={plan.selectedFormat}
+                onSelect={onFormat}
+              />
+            </div>
+          </section>
 
-      <section className="acquisition-grid">
-        <PlannerOptionSection
-          title="รับกลับอย่างไร"
-          options={plan.returnChannelOptions}
-          activeId={selectedReturnChannel}
-          onSelect={onReturnChannel}
-        />
-        <section className="acquisition-section">
-          <span className="eyebrow">เงื่อนไขตามรูปแบบ</span>
-          {controls}
-        </section>
-      </section>
+          <section className="acquisition-grid">
+            <PlannerOptionSection
+              title="รับกลับอย่างไร"
+              options={plan.returnChannelOptions}
+              activeId={selectedReturnChannel}
+              onSelect={onReturnChannel}
+            />
+            <section className="acquisition-section">
+              <span className="eyebrow">เงื่อนไขตามรูปแบบ</span>
+              {controls}
+            </section>
+          </section>
+        </>
+      )}
 
       <section className="acquisition-review">
         <div>
           <span className="eyebrow">ตรวจสอบก่อนส่ง</span>
           <h3>{requestMode ? "ส่งคำขอเอกสาร" : "สร้างงานนำเข้า"}</h3>
           <p>
-            เอกสารที่ผู้ใช้ให้มาเองจะยังไม่ถือว่า verified จนกว่า trusted issuer
-            จะลงนาม ส่วน Certified SHL ต้องมี Manifest VP และ Holder VC หลังผ่าน
-            TrustCare verification policy
+            {requestMode
+              ? "ระบบจะรับเอกสารจากแหล่งที่รับผิดชอบ แล้วตรวจผู้ออก ลายเซ็น สถานะ วันหมดอายุ และเงื่อนไขการใช้งานก่อนนำไปใช้"
+              : "เอกสารที่ผู้ใช้ให้มาเองจะยังไม่ถือว่าตรวจสอบแล้ว จนกว่าผู้ออกเอกสารที่เชื่อถือได้จะตรวจและลงนาม"}
           </p>
         </div>
         <div className="acquisition-message-stack">
-          {plan.warnings.map((warning) => (
-            <p key={warning} className="warning">
-              <AlertTriangle size={16} />
-              {warning}
-            </p>
-          ))}
-          {plan.nextSteps.map((step) => (
-            <p key={step}>
-              <CheckCircle2 size={16} />
-              {step}
-            </p>
-          ))}
+          {requestMode ? (
+            <>
+              <p>
+                <CheckCircle2 size={16} /> ส่งคำขอไปยังแหล่งที่รับผิดชอบ
+              </p>
+              <p>
+                <CheckCircle2 size={16} /> รับเอกสารกลับเข้ากระเป๋านี้
+              </p>
+              <p>
+                <CheckCircle2 size={16} /> ตรวจหลักฐานก่อนนำไปใช้
+              </p>
+            </>
+          ) : (
+            <>
+              {plan.warnings.map((warning) => (
+                <p key={warning} className="warning">
+                  <AlertTriangle size={16} />
+                  {warning}
+                </p>
+              ))}
+              {plan.nextSteps.map((step) => (
+                <p key={step}>
+                  <CheckCircle2 size={16} />
+                  {step}
+                </p>
+              ))}
+            </>
+          )}
         </div>
         <div className="document-flow-actions">
           <Button className="secondary" onClick={onCancel}>
@@ -158,6 +195,65 @@ export function AcquisitionPlanner({
         </div>
       </section>
     </div>
+  );
+}
+
+function AutomaticRequestRoute({
+  plan,
+  selectedReturnChannel,
+}: {
+  plan: PlannerPlan;
+  selectedReturnChannel: DocumentRequestReturnChannel;
+}) {
+  return (
+    <section
+      className="acquisition-auto-route"
+      data-testid="automatic-document-route"
+    >
+      <div className="acquisition-auto-heading">
+        <div>
+          <span className="eyebrow">ระบบจัดการวิธีรับเอกสารให้</span>
+          <h3>คุณไม่ต้องเลือกรูปแบบไฟล์หรือมาตรฐานทางเทคนิค</h3>
+        </div>
+        <em>อัตโนมัติ</em>
+      </div>
+      <div className="acquisition-auto-grid">
+        <article>
+          <Building2 size={20} aria-hidden="true" />
+          <span>
+            <small>ขอจาก</small>
+            <strong>
+              {documentRequestPatientSourceLabel(plan.selectedSource)}
+            </strong>
+          </span>
+        </article>
+        <article>
+          <WalletCards size={20} aria-hidden="true" />
+          <span>
+            <small>รับกลับ</small>
+            <strong>
+              {documentRequestPatientReturnChannelLabel(
+                selectedReturnChannel,
+              )}
+            </strong>
+          </span>
+        </article>
+        <article>
+          <ShieldCheck size={20} aria-hidden="true" />
+          <span>
+            <small>ตรวจสอบก่อนใช้</small>
+            <strong>
+              ผู้ออกเอกสาร ลายเซ็น สถานะ วันหมดอายุ และเงื่อนไข
+            </strong>
+          </span>
+        </article>
+      </div>
+      <p className="acquisition-auto-note">
+        หากแหล่งข้อมูลไม่รองรับวิธีที่ปลอดภัยและตรงกับเอกสารนี้
+        ระบบจะหยุดและแจ้งขั้นตอนที่ทำต่อได้
+        โดยไม่เปลี่ยนเป็นเอกสารที่ความน่าเชื่อถือต่ำกว่าแบบเงียบ ๆ
+      </p>
+    </section>
   );
 }
 

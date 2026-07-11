@@ -32,6 +32,7 @@ import {
   History,
   Home,
   IdCard,
+  ImageOff,
   Inbox,
   KeyRound,
   Layers3,
@@ -75,12 +76,15 @@ import {
   buildSharePackage,
   canPresentCredential,
   cardsSelectedByReadiness,
+  createAutomaticDocumentRequestDraft,
   createDocumentRequestDraft,
   createPresentationQrPayload,
   createShareDraftFromPrepare,
   createSharePolicy,
   createShlViewerUrl,
+  credentialCompactSummaryRows,
   credentialPresentationPolicy,
+  credentialRenderModelFromCard,
   credentialStatusLabel,
   credentialStatusTone,
   credentialTypeForDocument,
@@ -442,6 +446,17 @@ export function HomeView({
     }
     return [...unique.values()].slice(0, 3);
   }, [activeCards]);
+  const importantCardItems = useMemo(
+    () =>
+      importantCards.map((card) => ({
+        card,
+        summaryRows: credentialCompactSummaryRows(
+          credentialRenderModelFromCard(card),
+          3,
+        ),
+      })),
+    [importantCards],
+  );
   const recentCards = useMemo(
     () =>
       [...activeCards]
@@ -520,7 +535,7 @@ export function HomeView({
             <h1>
               {nextAppointment
                 ? "พร้อมสำหรับนัดหมายถัดไป"
-                : "เตรียมเอกสารสำหรับบริการครั้งถัดไป"}
+                : "พร้อมสำหรับบริการครั้งถัดไป"}
             </h1>
             {appointmentIssuer ? <strong>{appointmentIssuer}</strong> : null}
             {appointmentDate ? <span>{appointmentDate}</span> : null}
@@ -574,7 +589,7 @@ export function HomeView({
           </button>
         </div>
         <div className="clinical-important-grid">
-          {importantCards.map((card) => {
+          {importantCardItems.map(({ card, summaryRows }) => {
             const trust = homeCardTrust(card);
             const isIdentity = card.cardType === "patient_identity";
             return (
@@ -586,7 +601,7 @@ export function HomeView({
               >
                 <span className="clinical-pass-icon" aria-hidden="true">
                   {isIdentity ? (
-                    <UserAvatarImage user={user} cards={[card]} />
+                    <CredentialSubjectAvatar card={card} />
                   ) : card.cardType.includes("medication") ||
                     card.cardType === "prescription" ? (
                     <Pill />
@@ -609,6 +624,19 @@ export function HomeView({
                       : categoryLabel(card.documentCategory)}
                   </span>
                 </span>
+                {summaryRows.length ? (
+                  <dl className="clinical-pass-summary">
+                    {summaryRows.map((row) => (
+                      <div
+                        className="clinical-pass-summary-row"
+                        key={row.key}
+                      >
+                        <dt>{row.label}</dt>
+                        <dd title={row.value}>{row.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : null}
                 <span className={`clinical-trust-state tone-${trust.tone}`}>
                   <ShieldCheck size={14} /> {trust.label}
                 </span>
@@ -2655,11 +2683,11 @@ export function DocumentFlowDialog({
       buildDocumentRequestPlan({
         context,
         requirements,
-        source,
-        format,
-        scope,
+        source: mode === "import" ? source : undefined,
+        format: mode === "import" ? format : undefined,
+        scope: mode === "import" ? scope : undefined,
       }),
-    [context, format, requirements, scope, source],
+    [context, format, mode, requirements, scope, source],
   );
   const fallbackReturnChannel =
     plan.returnChannelOptions.find(
@@ -2672,10 +2700,23 @@ export function DocumentFlowDialog({
       (option) => option.id === returnChannel && option.enabled,
     )?.id ?? fallbackReturnChannel;
   const hasShlPasscodeError =
-    plan.controls.shlAccessPolicy && passcodeRequired && maxAccessCount < 1;
+    mode === "import" &&
+    plan.controls.shlAccessPolicy &&
+    passcodeRequired &&
+    maxAccessCount < 1;
 
   const submit = () => {
     if (hasShlPasscodeError) return;
+    if (mode === "request") {
+      onSubmit(
+        createAutomaticDocumentRequestDraft({
+          context,
+          requirements,
+          patientId: user.patientId,
+        }),
+      );
+      return;
+    }
     onSubmit(
       createDocumentRequestDraft({
         context,
@@ -2703,21 +2744,21 @@ export function DocumentFlowDialog({
   const subtitle =
     mode === "import"
       ? "เลือกแหล่งที่มาและรูปแบบไฟล์ ระบบจะเก็บเป็น DocumentReference ก่อน จนกว่าจะมี issuer ลงนาม"
-      : "เลือกว่าจะขอเอกสารจากระบบไหน รับกลับมาเป็นรูปแบบใด และต้องมีเงื่อนไขอะไรบ้าง";
+      : "ตรวจรายการแล้วส่งคำขอครั้งเดียว ระบบจะเลือกวิธีรับเอกสารที่เหมาะสมให้โดยอัตโนมัติ";
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <div className="credential-dialog document-flow-dialog">
         <div className="modal-header">
           <div className="dialog-title-stack">
+            <h2>{title}</h2>
+            <p>{subtitle}</p>
             <div className="breadcrumb-row">
               <button className="dialog-back-button" onClick={onClose}>
                 <ArrowLeft size={16} /> กลับ
               </button>
               <span>เตรียมบริการ / {title}</span>
             </div>
-            <h2>{title}</h2>
-            <p>{subtitle}</p>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="ปิด">
             ×
@@ -2728,7 +2769,7 @@ export function DocumentFlowDialog({
           <AcquisitionPlanner
             mode={mode}
             plan={plan}
-            scope={scope}
+            scope={mode === "request" ? plan.selectedScope : scope}
             selectedReturnChannel={selectedReturnChannel}
             onSource={(id) => {
               setSource(id);
@@ -5362,6 +5403,34 @@ export function UserAvatarImage({
           onError={markFailed}
         />
       )}
+    </span>
+  );
+}
+
+function CredentialSubjectAvatar({ card }: { card: WalletCard }) {
+  const candidates = useMemo(() => photoCandidatesForCard(card), [card]);
+  const { candidate, imageSrc, isLoaded, markFailed, markLoaded } =
+    useLoadedPhotoCandidate(candidates);
+
+  return (
+    <span
+      className="user-avatar-image credential-subject-avatar"
+      aria-label={
+        candidate && imageSrc
+          ? "รูปผู้ถือเอกสารจาก credential เดียวกัน"
+          : "ไม่พบรูปผู้ถือเอกสารใน credential ต้นฉบับ"
+      }
+    >
+      <ImageOff aria-hidden="true" />
+      {candidate && imageSrc ? (
+        <img
+          className={isLoaded ? "loaded" : ""}
+          src={imageSrc}
+          alt=""
+          onLoad={markLoaded}
+          onError={markFailed}
+        />
+      ) : null}
     </span>
   );
 }

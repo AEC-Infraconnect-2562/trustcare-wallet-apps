@@ -1,11 +1,27 @@
 import { useDeferredValue, useMemo, useState } from "react";
-import { ArrowLeft, FileText, RefreshCw, Search } from "lucide-react";
-import { Badge, Button, Surface } from "@trustcare/ui-web";
+import {
+  ArrowLeft,
+  FileText,
+  ImageOff,
+  RefreshCw,
+  Search,
+} from "lucide-react";
+import {
+  Badge,
+  Button,
+  Surface,
+  useLoadedPhotoCandidate,
+} from "@trustcare/ui-web";
 import type {
   RuntimeEnvironment,
   WalletDocumentRecordV2,
 } from "@trustcare/wallet-core";
-import { walletDocumentTrustPresentation } from "@trustcare/wallet-core";
+import {
+  photoBearingCredentialTypes,
+  photoCandidatesForCard,
+  walletCardForDocumentRendering,
+  walletDocumentTrustPresentation,
+} from "@trustcare/wallet-core";
 import { useWalletDocuments } from "../../hooks/useWalletDocuments";
 
 export function RecordsV2View({
@@ -142,9 +158,7 @@ export function RecordsV2View({
                 className="record-v2-row"
                 onClick={() => onOpenRecord(record)}
               >
-                <span className="record-v2-icon" aria-hidden="true">
-                  <FileText size={20} />
-                </span>
+                <RecordV2Thumbnail record={record} />
                 <span className="record-v2-copy">
                   <strong>{record.title.th || record.title.en}</strong>
                   <small>
@@ -169,6 +183,55 @@ export function RecordsV2View({
         </section>
       )}
     </div>
+  );
+}
+
+const recordPhotoDocumentTypes = new Set<string>(
+  photoBearingCredentialTypes,
+);
+
+function RecordV2Thumbnail({
+  record,
+}: {
+  record: WalletDocumentRecordV2;
+}) {
+  const photoRequired = recordPhotoDocumentTypes.has(record.documentType);
+  const candidates = useMemo(() => {
+    if (!photoRequired) return [];
+    return photoCandidatesForCard(walletCardForDocumentRendering(record));
+  }, [photoRequired, record]);
+  const { candidate, imageSrc, isLoaded, markFailed, markLoaded } =
+    useLoadedPhotoCandidate(candidates);
+
+  if (!photoRequired) {
+    return (
+      <span className="record-v2-icon" aria-hidden="true">
+        <FileText size={21} />
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={`record-v2-icon record-v2-photo${candidate && imageSrc ? "" : " is-missing"}`}
+      aria-label={
+        candidate && imageSrc
+          ? "รูปผู้ถือเอกสารจาก credential เดียวกัน"
+          : "ไม่พบรูปผู้ถือเอกสารใน credential ต้นฉบับ"
+      }
+    >
+      <ImageOff className="record-v2-photo-fallback" aria-hidden="true" />
+      {candidate && imageSrc ? (
+        <img
+          className={isLoaded ? "loaded" : ""}
+          key={imageSrc}
+          src={imageSrc}
+          alt=""
+          onLoad={markLoaded}
+          onError={markFailed}
+        />
+      ) : null}
+    </span>
   );
 }
 

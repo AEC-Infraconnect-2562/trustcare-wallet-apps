@@ -180,6 +180,22 @@ const sidebarCollapsedKey = "trustcare-wallet-sidebar-collapsed:v1";
 const defaultLoginUserId = "demo-patient-001";
 const walletRuntimeRelease = "premium-clinical-home-inspector";
 
+function preserveDesktopScrollPosition(): void {
+  if (
+    typeof window === "undefined" ||
+    !window.matchMedia("(min-width: 941px)").matches
+  ) {
+    return;
+  }
+  const left = window.scrollX;
+  const top = window.scrollY;
+  const restore = () => window.scrollTo({ left, top, behavior: "auto" });
+  window.requestAnimationFrame(() => {
+    restore();
+    window.requestAnimationFrame(restore);
+  });
+}
+
 function readWalletSessionUserId() {
   return readStringStorage(
     walletSessionKey,
@@ -436,6 +452,7 @@ export default function App() {
 
   const openRecord = useCallback(
     (card: WalletCard) => {
+      preserveDesktopScrollPosition();
       detailReturnPathRef.current = location.pathname;
       setSelectedCard(card);
       setDetailOpen(true);
@@ -445,6 +462,7 @@ export default function App() {
 
   const openV2Record = useCallback(
     (record: WalletDocumentRecordV2) => {
+      preserveDesktopScrollPosition();
       detailReturnPathRef.current = "/records";
       setSelectedCard(walletCardForDocumentRendering(record));
       setDetailOpen(true);
@@ -455,6 +473,7 @@ export default function App() {
   );
 
   const closeCredentialInspector = useCallback(() => {
+    preserveDesktopScrollPosition();
     setDetailOpen(false);
     if (routeMatch.params.recordId) {
       routerNavigate(detailReturnPathRef.current, { replace: true });
@@ -1325,7 +1344,10 @@ export default function App() {
           aria-label={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"}
           title={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"}
           aria-expanded={!sidebarCollapsed}
-          onClick={() => setSidebarCollapsed((value) => !value)}
+          onClick={() => {
+            preserveDesktopScrollPosition();
+            setSidebarCollapsed((value) => !value);
+          }}
         >
           {sidebarCollapsed ? (
             <PanelLeftOpen size={19} />
@@ -1416,20 +1438,22 @@ export default function App() {
         )}
 
         <div className="status-strip">
-          <div>
+          <div className="status-documents">
             <Wallet size={18} /> <strong>{allCards.length} เอกสาร</strong>
           </div>
-          <div className="interop-ok">
+          <div className="interop-ok status-source">
             <Network size={18} />{" "}
             {activeUser.source === "trustcare_portal"
               ? "ผู้ใช้จาก TrustCare Portal"
               : "ผู้ใช้จาก Wallet นี้"}
           </div>
-          <div>
+          <div className="status-holder">
             <Fingerprint size={18} />{" "}
             <strong>{shortDid(activeUser.holderDid)}</strong>
           </div>
-          <div className={offlineWallet.isOnline ? "online" : "offline"}>
+          <div
+            className={`status-connectivity ${offlineWallet.isOnline ? "online" : "offline"}`}
+          >
             {offlineWallet.isOnline ? t("wallet.online") : t("wallet.offline")}
           </div>
           {developerMode && (
@@ -1453,18 +1477,21 @@ export default function App() {
           )}
           <button
             type="button"
+            className="status-export"
             onClick={() => exportResult(exportWalletObjects(storedObjects))}
           >
             <Download size={18} /> ส่งออกทั้งหมด
           </button>
           <button
             type="button"
+            className="status-theme"
             onClick={() => setTheme(theme === "light" ? "dark" : "light")}
           >
             {theme === "light" ? <Moon size={18} /> : <Sun size={18} />} ธีม
           </button>
           <button
             type="button"
+            className="status-language"
             onClick={() => setLang(lang === "th" ? "en" : "th")}
           >
             <Languages size={18} /> {lang.toUpperCase()}
@@ -1509,7 +1536,9 @@ export default function App() {
             runtimeEnvironment={env.runtimeEnvironment}
             userId={selectedUserId}
             apiUrl={env.apiUrl}
-            selectedRecordId={routeMatch.params.recordId}
+            selectedRecordId={
+              detailOpen ? undefined : routeMatch.params.recordId
+            }
             onOpenRecord={openV2Record}
             onCloseRecord={() => routerNavigate("/records")}
           />

@@ -82,6 +82,9 @@ export function CredentialDetailDialog({
     }
     const viewport = paperViewportRef.current;
     const frame = paperFrameRef.current;
+    const paper = frame.querySelector<HTMLElement>(
+      ".credential-doc.tc-form-a4-portrait",
+    );
     let frameId = 0;
     let disposed = false;
 
@@ -89,7 +92,7 @@ export function CredentialDetailDialog({
       const naturalWidth = frame.offsetWidth;
       if (!naturalWidth || !viewport.clientWidth) return;
       const scale = Math.min(1, viewport.clientWidth / naturalWidth);
-      const naturalHeight = Math.max(frame.offsetHeight, frame.scrollHeight);
+      const naturalHeight = measurePaperNaturalHeight(frame, paper);
       const next = {
         scale,
         width: naturalWidth * scale,
@@ -116,6 +119,7 @@ export function CredentialDetailDialog({
     if (observer) {
       observer.observe(viewport);
       observer.observe(frame);
+      if (paper) observer.observe(paper);
     } else {
       window.addEventListener("resize", scheduleUpdate);
     }
@@ -130,7 +134,7 @@ export function CredentialDetailDialog({
       window.removeEventListener("resize", scheduleUpdate);
       window.cancelAnimationFrame(frameId);
     };
-  }, [card?.id, isIdentity, open]);
+  }, [card?.id, documentExpanded, isIdentity, open]);
 
   useEffect(() => {
     setDocumentExpanded(false);
@@ -228,6 +232,7 @@ export function CredentialDetailDialog({
       <div className="credential-inspector-scroll">
         <section
           ref={isIdentity ? undefined : paperViewportRef}
+          id="credential-document-preview"
           className={`credential-inspector-preview${
             isIdentity ? " is-id-card" : " is-paper"
           }${documentExpanded ? " is-expanded" : ""}`}
@@ -262,6 +267,8 @@ export function CredentialDetailDialog({
             type="button"
             className="credential-open-full"
             onClick={() => setDocumentExpanded((value) => !value)}
+            aria-controls="credential-document-preview"
+            aria-expanded={documentExpanded}
           >
             <ExternalLink size={16} />
             {documentExpanded ? "ย่อเอกสาร" : "เปิดเอกสารเต็ม"}
@@ -365,6 +372,20 @@ export function CredentialDetailDialog({
         </Button>
       </footer>
     </aside>
+  );
+}
+
+type MeasurablePaperBox = Pick<HTMLElement, "offsetHeight" | "scrollHeight">;
+
+export function measurePaperNaturalHeight(
+  frame: MeasurablePaperBox,
+  paper?: MeasurablePaperBox | null,
+): number {
+  return Math.max(
+    frame.offsetHeight,
+    frame.scrollHeight,
+    paper?.offsetHeight ?? 0,
+    paper?.scrollHeight ?? 0,
   );
 }
 

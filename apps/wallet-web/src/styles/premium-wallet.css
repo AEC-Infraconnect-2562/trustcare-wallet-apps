@@ -589,6 +589,39 @@ body {
   color: #4c5f76;
 }
 
+.clinical-pass-summary {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 4px;
+  margin: 7px 0 0;
+}
+
+.clinical-pass-summary-row {
+  display: grid;
+  grid-template-columns: minmax(66px, 0.42fr) minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.clinical-pass-summary dt,
+.clinical-pass-summary dd {
+  overflow: hidden;
+  font-size: 10.5px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clinical-pass-summary dt {
+  color: #708198;
+}
+
+.clinical-pass-summary dd {
+  margin: 0;
+  color: #26384e;
+  font-weight: 650;
+}
+
 .clinical-trust-state {
   position: absolute;
   right: 0;
@@ -798,6 +831,7 @@ body {
   padding: 18px 20px 26px;
   overflow: auto;
   overscroll-behavior: contain;
+  scroll-padding-block-end: 28px;
 }
 
 .credential-inspector-preview {
@@ -857,6 +891,21 @@ body {
   min-width: 210mm;
   max-width: 210mm;
   margin: 0;
+}
+
+@media screen {
+  .credential-paper-scaled-frame
+    > .credential-doc.tc-clinical-paper.tc-form-a4-portrait {
+    height: auto;
+    min-height: 297mm;
+    aspect-ratio: auto;
+    overflow: visible;
+  }
+}
+
+.credential-inspector-preview.is-paper.is-expanded
+  .credential-paper-scaled-viewport {
+  margin-bottom: 12px;
 }
 
 .credential-open-full {
@@ -1294,7 +1343,8 @@ body {
   }
 
   .credential-inspector-scroll {
-    padding: 14px 14px 22px;
+    padding: 14px 14px max(30px, env(safe-area-inset-bottom));
+    scroll-padding-block-end: max(30px, env(safe-area-inset-bottom));
   }
 
   .credential-inspector-preview.is-id-card {
@@ -1344,6 +1394,31 @@ body {
   .bottom-nav .nav-button.active {
     background: #edf5ff;
     color: var(--clinical-blue-strong);
+  }
+}
+
+@media (max-width: 940px) {
+  .document-flow-dialog {
+    width: min(720px, calc(100vw - 40px));
+    max-height: calc(100dvh - 32px);
+  }
+
+  .document-flow-dialog .modal-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: start;
+    padding: 14px 16px;
+  }
+
+  .document-flow-dialog .dialog-title-stack {
+    min-width: 0;
+  }
+
+  .document-flow-dialog .icon-button {
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
   }
 }
 
@@ -1397,6 +1472,464 @@ body {
   .clinical-document-pass,
   .credential-security-details summary > svg {
     transition: none !important;
+  }
+}
+
+/* Desktop finish pass: one calm rhythm for shell, records and inspector. */
+body {
+  font-family:
+    "IBM Plex Sans Thai", "Noto Sans Thai", "Leelawadee UI", Tahoma,
+    ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+.document-flow-dialog .modal-header .dialog-title-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+  align-items: start;
+}
+
+.document-flow-dialog .dialog-title-stack .breadcrumb-row {
+  grid-area: auto;
+}
+
+@media (min-width: 941px) {
+  html,
+  body,
+  .app-shell {
+    overflow-anchor: none;
+  }
+
+  .side-nav nav {
+    gap: 5px;
+    margin-top: 18px;
+    padding-right: 2px;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+
+  .side-nav nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .side-nav .brand-copy strong {
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .side-nav .brand-copy small {
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  .side-nav .nav-button {
+    min-height: 44px;
+    font-size: 14.5px;
+    font-weight: 600;
+  }
+
+  .main-pane {
+    padding-inline: clamp(24px, 2.3vw, 34px);
+    overflow-anchor: none;
+  }
+
+  .app-shell:not([data-view="home"]) .topbar {
+    min-height: 94px;
+    margin-inline: calc(clamp(24px, 2.3vw, 34px) * -1);
+    padding: 15px clamp(24px, 2.3vw, 34px);
+    border-bottom-color: var(--clinical-line);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 8px 24px rgba(31, 61, 93, 0.045);
+  }
+
+  .app-shell:not([data-view="home"]) .topbar h1 {
+    font-size: clamp(28px, 2vw, 32px);
+    font-weight: 700;
+    line-height: 1.18;
+    letter-spacing: -0.015em;
+  }
+
+  .app-shell:not([data-view="home"]) .topbar p {
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+
+  .app-shell:not([data-view="home"]) .status-strip {
+    margin-inline: calc(clamp(24px, 2.3vw, 34px) * -1);
+    padding-inline: clamp(24px, 2.3vw, 34px);
+    border-bottom-color: var(--clinical-line);
+    background: rgba(255, 255, 255, 0.9);
+  }
+
+  .app-shell[data-view="home"] .environment-banner,
+  .app-shell[data-view="home"] .portal-sync-line {
+    width: min(calc(100% - 48px), 1280px);
+    margin-inline: auto;
+  }
+
+  .clinical-home {
+    width: min(100%, 1280px);
+    padding: 30px 28px 60px;
+    overflow-anchor: none;
+  }
+
+  .clinical-home-greeting {
+    margin-bottom: 24px;
+  }
+
+  .clinical-home-greeting p,
+  .clinical-eyebrow {
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.45;
+  }
+
+  .clinical-home-greeting h2 {
+    font-size: clamp(28px, 2.2vw, 34px);
+    font-weight: 700;
+    line-height: 1.18;
+    letter-spacing: -0.015em;
+  }
+
+  .clinical-appointment-hero {
+    min-height: 220px;
+    border-radius: 16px;
+  }
+
+  .clinical-appointment-copy {
+    width: 75%;
+    gap: 20px;
+    padding: 27px 30px 24px;
+  }
+
+  .clinical-appointment-copy h1 {
+    max-width: 650px;
+    margin-bottom: 8px;
+    font-size: clamp(25px, 1.9vw, 29px);
+    font-weight: 600;
+    line-height: 1.24;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+
+  .clinical-appointment-copy strong {
+    font-size: 15.5px;
+    font-weight: 600;
+  }
+
+  .clinical-appointment-copy > div > span {
+    font-size: 14.5px;
+  }
+
+  .clinical-appointment-copy > div > small {
+    font-size: 12.5px;
+  }
+
+  .clinical-home-section {
+    margin-top: 28px;
+  }
+
+  .clinical-section-heading {
+    margin-bottom: 14px;
+  }
+
+  .clinical-section-heading h2 {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  .clinical-important-grid {
+    gap: 16px;
+  }
+
+  .clinical-document-pass {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 14px;
+    min-height: 164px;
+    padding: 17px 16px 42px;
+    border-radius: 13px;
+    transition:
+      transform 160ms ease,
+      border-color 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .clinical-pass-copy strong {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: 15.5px;
+    font-weight: 700;
+    line-height: 1.38;
+    text-overflow: clip;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .clinical-pass-chevron {
+    display: none;
+  }
+
+  .clinical-pass-copy small,
+  .clinical-pass-copy > span {
+    font-size: 12px;
+    line-height: 1.48;
+  }
+
+  .clinical-pass-copy > span {
+    margin-top: 10px;
+  }
+
+  .clinical-pass-summary dt,
+  .clinical-pass-summary dd {
+    font-size: 11.5px;
+  }
+
+  .clinical-trust-state {
+    min-height: 38px;
+    padding-inline: 17px;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+
+  .clinical-recent-list > button {
+    min-height: 72px;
+    padding: 12px 17px;
+  }
+
+  .clinical-recent-list strong {
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .clinical-recent-list small,
+  .clinical-recent-list time,
+  .clinical-list-trust {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .records-v2-view {
+    width: min(100%, 1260px);
+    margin-inline: auto;
+    gap: 18px;
+  }
+
+  .records-v2-view .documents-command {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 28px;
+    padding: 23px 26px;
+  }
+
+  .records-v2-view .documents-command > div:first-child {
+    max-width: 760px;
+  }
+
+  .records-v2-view .documents-command h2 {
+    margin-top: 3px;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.012em;
+  }
+
+  .records-v2-view .documents-command p {
+    margin-top: 7px;
+    font-size: 14px;
+    line-height: 1.58;
+  }
+
+  .records-v2-view .document-controls {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  .records-v2-view .search-box {
+    min-height: 48px;
+    padding-inline: 15px;
+    border-radius: 10px;
+    background: #ffffff;
+  }
+
+  .records-v2-view .search-box input {
+    font-size: 14px;
+  }
+
+  .record-v2-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .record-v2-row {
+    min-height: 112px;
+    gap: 16px;
+    padding: 17px 18px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow: 0 8px 24px rgba(31, 61, 93, 0.045);
+    transition:
+      transform 150ms ease,
+      border-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+
+  .record-v2-row:hover,
+  .record-v2-row:focus-visible {
+    border-color: #b7d3ec;
+    box-shadow: 0 12px 28px rgba(31, 76, 121, 0.09);
+    transform: translateY(-1px);
+  }
+
+  .record-v2-icon {
+    width: 52px;
+    height: 58px;
+    border-radius: 11px;
+    background: #edf5ff;
+    color: var(--clinical-blue);
+  }
+
+  .record-v2-photo {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid #d5e1ed;
+    background: #f2f6fa;
+    color: #75859a;
+  }
+
+  .record-v2-photo-fallback {
+    width: 21px;
+    height: 21px;
+  }
+
+  .record-v2-photo img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 140ms ease;
+  }
+
+  .record-v2-photo img.loaded {
+    opacity: 1;
+  }
+
+  .record-v2-copy {
+    gap: 3px;
+  }
+
+  .record-v2-copy strong {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.38;
+  }
+
+  .record-v2-copy small,
+  .record-v2-status small {
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+
+  .record-v2-status {
+    gap: 7px;
+  }
+
+  .record-v2-status .tc-badge {
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+
+  .credential-inspector-header p {
+    font-size: 11px;
+  }
+
+  .credential-inspector-header h2 {
+    font-size: 21px;
+    font-weight: 700;
+  }
+
+  .credential-inspector-section-title h3 {
+    font-size: 15.5px;
+    font-weight: 700;
+  }
+
+  .credential-claim-list dt,
+  .credential-claim-list dd {
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+
+  .credential-provenance-grid small,
+  .credential-provenance-grid em {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .credential-provenance-grid strong {
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+
+  .credential-security-details summary {
+    font-size: 12.5px;
+  }
+
+  .credential-security-details strong,
+  .credential-security-details small,
+  .credential-security-details em {
+    font-size: 11px;
+  }
+
+  .app-shell[data-inspector-open="true"] .top-user-session,
+  .app-shell[data-inspector-open="true"] .status-source,
+  .app-shell[data-inspector-open="true"] .status-holder,
+  .app-shell[data-inspector-open="true"] .status-theme,
+  .app-shell[data-inspector-open="true"] .status-language {
+    display: none;
+  }
+
+  .app-shell[data-inspector-open="true"] .shell-scan-button {
+    width: 44px;
+    min-width: 44px;
+    padding-inline: 0;
+  }
+
+  .app-shell[data-inspector-open="true"] .shell-scan-button span {
+    display: none;
+  }
+
+  .app-shell[data-inspector-open="true"] .topbar-actions {
+    gap: 7px;
+  }
+
+  .clinical-hospital-illustration {
+    opacity: 0.82;
+  }
+}
+
+@media (min-width: 1221px) {
+  .app-shell[data-inspector-open="true"] {
+    grid-template-columns:
+      var(--clinical-current-rail)
+      minmax(520px, 1fr)
+      minmax(400px, 440px);
+  }
+
+  .app-shell[data-inspector-open="true"] .record-v2-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 941px) and (max-width: 1180px) {
+  .record-v2-list {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

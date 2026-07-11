@@ -53,6 +53,13 @@ describe("premium patient Home", () => {
     expect(html).toContain("เอกสารสำคัญ");
     expect(html).toContain("ล่าสุด");
     expect(html).toContain("appointment-hospital.png");
+    expect(html).toContain("patient_somsak_a2e00e97.jpg");
+    expect(html).toContain("รูปผู้ถือเอกสารจาก credential เดียวกัน");
+    expect(html).toContain("clinical-pass-summary");
+    expect(html).toContain("HN");
+    expect(html).toContain("ผู้รับประกัน");
+    expect(html).toContain("Metformin");
+    expect(html).not.toContain("doctor_napa_abd67502.jpg");
     expect(html).not.toContain("ภาพรวม Health Passport");
   });
 
