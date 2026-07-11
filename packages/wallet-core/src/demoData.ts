@@ -37,6 +37,7 @@ export {
 } from "./completeSeedData";
 
 const now = new Date("2026-07-04T09:41:00+07:00");
+const demoShlPolicyExpiresAt = "2030-07-15T16:59:59.000Z";
 
 function isoOffset(days: number): string {
   const date = new Date(now);
@@ -543,7 +544,7 @@ export function getDemoShlPackages(
     origin: "https://aec-infraconnect-2562.github.io/trustcare-wallet-apps",
     includeTrustCareManifestVp: trustcareCertified,
     policy: {
-      expiresAt: isoOffset(7),
+      expiresAt: demoShlPolicyExpiresAt,
       passcodeRequired: false,
       passcodeHint: null,
       accessCodeDelivery: "not_required",

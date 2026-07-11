@@ -1199,7 +1199,7 @@ export const completeWalletSeedCards: WalletCard[] = [
         passcodeRequired: true,
         maxAccessCount: 5,
         currentAccessCount: 1,
-        expiresAt: "2026-07-15T16:59:59.000Z",
+        expiresAt: "2030-07-15T16:59:59.000Z",
         manifestHash: "sha256:demo-manifest-9a3f1bd45c0f",
         sourceBundleHash: "sha256:demo-fhir-bundle-4883c9e8af11",
         files: [
@@ -1225,7 +1225,7 @@ export const completeWalletSeedCards: WalletCard[] = [
         ],
       },
     },
-    expiresAt: "2026-07-15T16:59:59.000Z",
+    expiresAt: "2030-07-15T16:59:59.000Z",
   }),
   makePatientCard("sync_receipt", 24, {
     credentialSubject: {
@@ -1329,7 +1329,7 @@ function createCompleteWalletShlPackages(): ShlPackageDetail[] {
     origin: "https://aec-infraconnect-2562.github.io/trustcare-wallet-apps",
     includeTrustCareManifestVp: true,
     policy: {
-      expiresAt: "2026-07-15T16:59:59.000Z",
+      expiresAt: "2030-07-15T16:59:59.000Z",
       passcodeRequired: false,
       passcodeHint: null,
       accessCodeDelivery: "not_required",
