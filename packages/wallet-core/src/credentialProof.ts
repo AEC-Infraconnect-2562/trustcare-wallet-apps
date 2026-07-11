@@ -43,11 +43,6 @@ type DataIntegrityProofInput = {
   privateKeyJwk: JWK;
 };
 
-export const TRUSTCARE_STANDARD_JWKS_ORIGINS = [
-  "https://trustcarehealth.live",
-  "https://www.trustcarehealth.live",
-];
-
 export const W3C_VC_JWT_MEDIA_TYPE = "application/vc+jwt";
 export const W3C_VP_JWT_MEDIA_TYPE = "application/vp+jwt";
 
@@ -995,6 +990,7 @@ export function buildTrustCareJwksCandidates(input: {
   payload: JsonRecord;
   sourceUrl: string;
   trustcareOrigins?: string[];
+  issuerBound?: boolean;
 }): string[] {
   return buildTrustCareJwksCandidateResult(input).candidates;
 }
@@ -1004,15 +1000,34 @@ export function buildTrustCareJwksCandidateResult(input: {
   payload: JsonRecord;
   sourceUrl: string;
   trustcareOrigins?: string[];
+  issuerBound?: boolean;
 }): TrustCareJwksCandidateResult {
   const candidates = new Set<string>();
   const warnings: string[] = [];
-  const trustcareOrigins =
-    input.trustcareOrigins ?? TRUSTCARE_STANDARD_JWKS_ORIGINS;
+  // Trust anchors must come from the active runtime contract. Never infer a
+  // Portal origin from a historical Wallet default: doing so can make a
+  // credential issued by one DID resolve through another deployment's keys.
+  const trustcareOrigins = input.trustcareOrigins ?? [];
   const trustedOrigins = trustcareOrigins.map(normalizeOrigin);
   const source = parseUrl(input.sourceUrl);
   const sourceOrigin = source?.origin;
-  const issuerOrigin = didWebIssuerOrigin(stringOrUndefined(input.payload.iss));
+  const issuer = stringOrUndefined(input.payload.iss);
+  const issuerOrigin = didWebIssuerOrigin(issuer);
+  const jku = stringOrUndefined(input.header.jku);
+  if (input.issuerBound) {
+    if (jku) {
+      warnings.push(
+        `JWT header jku ${jku} was ignored because issuer-bound verification only uses the issuer DID document and JWKS.`,
+      );
+    }
+    for (const url of didWebJwksCandidates(issuer, trustcareOrigins)) {
+      candidates.add(url);
+    }
+    return {
+      candidates: Array.from(candidates),
+      warnings,
+    };
+  }
   const allowedJkuOrigins = new Set(
     [sourceOrigin, issuerOrigin, ...trustedOrigins].filter(
       (origin): origin is string => Boolean(origin),
@@ -1020,7 +1035,6 @@ export function buildTrustCareJwksCandidateResult(input: {
   );
   const allowPrivateJwks =
     source !== null && isPrivateOrLoopbackHost(source.hostname);
-  const jku = stringOrUndefined(input.header.jku);
   if (jku) {
     const decision = trustCareJkuDecision({
       jku,
@@ -1043,9 +1057,6 @@ export function buildTrustCareJwksCandidateResult(input: {
   )) {
     candidates.add(url);
   }
-  for (const origin of trustcareOrigins) {
-    candidates.add(`${normalizeOrigin(origin)}/.well-known/jwks.json`);
-  }
   return {
     candidates: Array.from(candidates),
     warnings,
@@ -1054,7 +1065,7 @@ export function buildTrustCareJwksCandidateResult(input: {
 
 export function didWebJwksCandidates(
   issuer: string | undefined,
-  trustcareOrigins = TRUSTCARE_STANDARD_JWKS_ORIGINS,
+  trustcareOrigins: string[] = [],
 ): string[] {
   if (!issuer?.startsWith("did:web:")) return [];
   const parts = issuer
@@ -1065,11 +1076,14 @@ export function didWebJwksCandidates(
   if (!host) return [];
   const pathParts = parts.slice(1).filter(Boolean);
   const candidates = new Set<string>();
-  candidates.add(`https://${host}/.well-known/jwks.json`);
-  if (pathParts.length) {
+  if (!pathParts.length) {
+    candidates.add(`https://${host}/.well-known/did.json`);
+  } else {
     const didPath = pathParts.join("/");
+    // TrustCare Portal publishes the hospital JWKS next to the canonical
+    // did:web document. Both URLs remain bound to the issuer DID host/path.
+    // There is intentionally no network-root or cross-origin fallback.
     candidates.add(`https://${host}/${didPath}/did/jwks.json`);
-    candidates.add(`https://${host}/${didPath}/jwks.json`);
     candidates.add(`https://${host}/${didPath}/did.json`);
   }
   const hospitalIndex = pathParts.findIndex(
@@ -1077,13 +1091,12 @@ export function didWebJwksCandidates(
   );
   const hospitalCode =
     hospitalIndex >= 0 ? pathParts[hospitalIndex + 1] : undefined;
-  if (hospitalCode) {
-    const code = encodeURIComponent(hospitalCode.toLowerCase());
-    for (const portalOrigin of trustcareOrigins) {
-      const origin = normalizeOrigin(portalOrigin);
-      candidates.add(`${origin}/hospital/${code}/did/jwks.json`);
-      candidates.add(`${origin}/hospital/${code}/did.json`);
-    }
+  if (hospitalCode && trustcareOrigins.length > 0) {
+    const issuerOrigin = `https://${host}`;
+    const mismatchedOrigin = trustcareOrigins
+      .map(normalizeOrigin)
+      .find((origin) => origin !== issuerOrigin);
+    if (mismatchedOrigin) return [];
   }
   return Array.from(candidates);
 }

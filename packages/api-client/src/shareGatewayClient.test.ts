@@ -13,7 +13,6 @@ import {
   publishVpSharePackage,
   requestBodyForShareGateway,
   shareGatewayJwksUrl,
-  signCredentialWithShareGateway,
 } from "./shareGatewayClient";
 
 describe("shareGatewayClient", () => {
@@ -201,72 +200,6 @@ describe("shareGatewayClient", () => {
         },
       }),
     ).rejects.toThrow("JSON request body exceeds 1000000 bytes.");
-  });
-
-  it("requests issuer-profile VC signing from the share gateway", async () => {
-    const card = cards[0]!;
-    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
-    const fetchImpl = async (url: RequestInfo | URL, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body ?? "{}")) as Record<
-        string,
-        unknown
-      >;
-      requests.push({ url: String(url), body });
-      return jsonResponse({
-        ok: true,
-        mode: "portal_backend",
-        credentialId: String(body.credentialId),
-        credentialJwt: "issuer.signed.jwt",
-        issuerDid: "did:web:wallet.example:hospital:tcc",
-        jwksUrl: "https://wallet.example/hospital/tcc/jwks.json",
-        signedCredential: {
-          ...(body.credential as Record<string, unknown>),
-          issuer: { id: "did:web:wallet.example:hospital:tcc" },
-        },
-        credentialProof: {
-          type: "W3C VC JWT",
-          format: "vc+jwt",
-          jwt: "issuer.signed.jwt",
-          alg: "ES256",
-          kid: "did:web:wallet.example:hospital:tcc#hospital-tcc-signing-key",
-          source: "trustcare_hospital_issuer_profile",
-        },
-        warnings: [],
-        errors: [],
-      });
-    };
-
-    const response = await signCredentialWithShareGateway({
-      gatewayBaseUrl,
-      fetchImpl: fetchImpl as typeof fetch,
-      issuerServiceOperation: "demo_issuer_reissue",
-      sourceAuthority: "issuer_signed",
-      signingOwner: "source_issuer",
-      sourceSystem: card.sourceSystem,
-      cardId: card.id,
-      credentialId: card.credentialId,
-      credential: card.credentialData ?? {},
-      credentialType: card.credentialType,
-      holderDid: card.holderDid,
-      expiresAt: card.expiresAt,
-    });
-
-    expect(requests).toHaveLength(1);
-    expect(requests[0]?.url).toBe(`${gatewayBaseUrl}/credentials/sign`);
-    expect(requests[0]?.body).toMatchObject({
-      issuerServiceOperation: "demo_issuer_reissue",
-      sourceAuthority: "issuer_signed",
-      signingOwner: "source_issuer",
-      sourceSystem: card.sourceSystem,
-      cardId: card.id,
-      credentialId: card.credentialId,
-      credentialType: card.credentialType,
-      holderDid: card.holderDid,
-    });
-    expect(response.issuerDid).toBe("did:web:wallet.example:hospital:tcc");
-    expect(response.credentialProof.source).toBe(
-      "trustcare_hospital_issuer_profile",
-    );
   });
 
   it("issues payer artifacts only through the explicit demo payer integration endpoint", async () => {

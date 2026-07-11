@@ -6,6 +6,9 @@ import {
   photoCandidatesForCard,
 } from "./photoSources";
 
+const portalOrigin =
+  "https://trustcare-hospital-network-production.up.railway.app";
+
 const baseCard: WalletCard = {
   id: 1,
   cardType: "patient_identity",
@@ -23,35 +26,32 @@ describe("photoSources", () => {
   it("keeps TrustCare storage URLs production-resolvable with source-equivalent variants", () => {
     expect(
       normalizePhotoUrl("/manus-storage/patient_somsak_a2e00e97.jpg"),
-    ).toBe(
-      "https://trustcarehealth.live/manus-storage/patient_somsak_a2e00e97.jpg",
-    );
+    ).toBe(`${portalOrigin}/manus-storage/patient_somsak_a2e00e97.jpg`);
     expect(
       normalizePhotoUrlCandidates(
         "/api/storage-proxy/patient_somsak_a2e00e97.jpg",
       ),
     ).toEqual([
-      "https://trustcarehealth.live/manus-storage/patient_somsak_a2e00e97.jpg",
-      "https://trustcarehealth.live/api/storage-proxy/patient_somsak_a2e00e97.jpg",
+      `${portalOrigin}/manus-storage/patient_somsak_a2e00e97.jpg`,
+      `${portalOrigin}/api/storage-proxy/patient_somsak_a2e00e97.jpg`,
     ]);
   });
 
   it("keeps a supplied Portal portrait scoped to its own filename", () => {
     expect(
       normalizePhotoUrlCandidates(
-        "https://trustcarehealth.live/manus-storage/patient_malee_74d2ef04.jpg",
+        `${portalOrigin}/manus-storage/patient_malee_74d2ef04.jpg`,
       ),
     ).toEqual([
-      "https://trustcarehealth.live/manus-storage/patient_malee_74d2ef04.jpg",
-      "https://trustcarehealth.live/api/storage-proxy/patient_malee_74d2ef04.jpg",
+      `${portalOrigin}/manus-storage/patient_malee_74d2ef04.jpg`,
+      `${portalOrigin}/api/storage-proxy/patient_malee_74d2ef04.jpg`,
     ]);
   });
 
   it("keeps fallbacks scoped to the canonical renderData photo", () => {
     const candidates = photoCandidatesForCard({
       ...baseCard,
-      patientAvatarUrl:
-        "https://trustcarehealth.live/manus-storage/legacy-owner.jpg",
+      patientAvatarUrl: `${portalOrigin}/manus-storage/legacy-owner.jpg`,
       credentialData: {
         credentialSubject: {
           patient: {
@@ -69,17 +69,16 @@ describe("photoSources", () => {
     });
 
     expect(candidates[0]).toMatchObject({
-      label:
-        "credentialSubject.humanDocument.renderData.patient.photoUrl",
-      url: "https://trustcarehealth.live/manus-storage/canonical-patient.jpg",
+      label: "credentialSubject.humanDocument.renderData.patient.photoUrl",
+      url: `${portalOrigin}/manus-storage/canonical-patient.jpg`,
     });
     expect(candidates.map((candidate) => candidate.url)).toEqual([
-      "https://trustcarehealth.live/manus-storage/canonical-patient.jpg",
-      "https://trustcarehealth.live/api/storage-proxy/canonical-patient.jpg",
+      `${portalOrigin}/manus-storage/canonical-patient.jpg`,
+      `${portalOrigin}/api/storage-proxy/canonical-patient.jpg`,
     ]);
-    expect(candidates.map((candidate) => candidate.url).join(" ")).not.toContain(
-      "legacy-owner.jpg",
-    );
+    expect(
+      candidates.map((candidate) => candidate.url).join(" "),
+    ).not.toContain("legacy-owner.jpg");
   });
 
   it("does not cross-fallback from a staff credential to a patient portrait", () => {
@@ -98,9 +97,9 @@ describe("photoSources", () => {
     expect(candidates.map((candidate) => candidate.url).join(" ")).toContain(
       "correct-staff.jpg",
     );
-    expect(candidates.map((candidate) => candidate.url).join(" ")).not.toContain(
-      "wrong-patient.jpg",
-    );
+    expect(
+      candidates.map((candidate) => candidate.url).join(" "),
+    ).not.toContain("wrong-patient.jpg");
   });
 
   it("normalizes staff aliases before selecting the subject portrait", () => {
@@ -119,12 +118,12 @@ describe("photoSources", () => {
     expect(candidates.map((candidate) => candidate.url).join(" ")).toContain(
       "correct-staff.jpg",
     );
-    expect(candidates.map((candidate) => candidate.url).join(" ")).not.toContain(
-      "wrong-patient.jpg",
-    );
-    expect(candidates.map((candidate) => candidate.url).join(" ")).not.toContain(
-      "wrong-owner.jpg",
-    );
+    expect(
+      candidates.map((candidate) => candidate.url).join(" "),
+    ).not.toContain("wrong-patient.jpg");
+    expect(
+      candidates.map((candidate) => candidate.url).join(" "),
+    ).not.toContain("wrong-owner.jpg");
   });
 
   it("uses the legacy staff renderData subject without borrowing another photo", () => {
@@ -146,9 +145,9 @@ describe("photoSources", () => {
     expect(candidates.map((candidate) => candidate.url).join(" ")).toContain(
       "correct-staff.jpg",
     );
-    expect(candidates.map((candidate) => candidate.url).join(" ")).not.toContain(
-      "wrong-owner.jpg",
-    );
+    expect(
+      candidates.map((candidate) => candidate.url).join(" "),
+    ).not.toContain("wrong-owner.jpg");
   });
 
   it("reads Portal photo paths from current nested credential schemas", () => {
@@ -167,15 +166,14 @@ describe("photoSources", () => {
 
     expect(candidates[0]).toMatchObject({
       label: "credentialSubject.patient.demographics.photoUrl",
-      url: "https://trustcarehealth.live/manus-storage/patient_somsak_a2e00e97.jpg",
+      url: `${portalOrigin}/manus-storage/patient_somsak_a2e00e97.jpg`,
     });
   });
 
   it("dedupes owner and embedded photo candidates", () => {
     const candidates = photoCandidatesForCard({
       ...baseCard,
-      patientAvatarUrl:
-        "https://trustcarehealth.live/manus-storage/patient_somsak_a2e00e97.jpg",
+      patientAvatarUrl: `${portalOrigin}/manus-storage/patient_somsak_a2e00e97.jpg`,
       credentialData: {
         credentialSubject: {
           patient: {
@@ -186,8 +184,8 @@ describe("photoSources", () => {
     });
 
     expect(candidates.map((candidate) => candidate.url)).toEqual([
-      "https://trustcarehealth.live/manus-storage/patient_somsak_a2e00e97.jpg",
-      "https://trustcarehealth.live/api/storage-proxy/patient_somsak_a2e00e97.jpg",
+      `${portalOrigin}/manus-storage/patient_somsak_a2e00e97.jpg`,
+      `${portalOrigin}/api/storage-proxy/patient_somsak_a2e00e97.jpg`,
     ]);
   });
 });

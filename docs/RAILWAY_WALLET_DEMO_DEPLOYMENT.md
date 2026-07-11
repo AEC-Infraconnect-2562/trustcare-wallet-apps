@@ -10,7 +10,7 @@ run. Create a separate Railway project/service for this repository.
 
 - Repository: `AEC-Infraconnect-2562/trustcare-wallet-apps`
 - Branch: `main`
-- Build command: `VITE_TRUSTCARE_RUNTIME_ENV=demo pnpm build:web`
+- Build command: `VITE_TRUSTCARE_RUNTIME_ENV=sandbox pnpm build:web`
 - Start command: `node scripts/serve-wallet-web.mjs`
 - Public URL: Railway-generated domain at the service root
 - Share Gateway: `/api/share-gateway`
@@ -22,7 +22,10 @@ run. Create a separate Railway project/service for this repository.
   `/payer/<allowlisted-payer-id>/jwks.json`
 
 `railway.json` uses `build.watchPatterns` so Railway redeploys when the wallet
-app, shared packages, gateway script, lockfile, or Railway config changes.
+app, shared packages, gateway script, Wallet Exchange config, lockfile, or
+Railway config changes. The canonical Portal sandbox origin lives only in
+`config/wallet-exchange-v2.json`; platform environment variables may override
+it without introducing another source-code default.
 
 ## Required Production Variables
 
@@ -92,10 +95,12 @@ required Node 22.x runtime can be verified without guessing from asset hashes.
 
 Production VP publication accepts existing issuer-signed `vc+jwt` credentials
 only. It rejects unsigned Portal, payer, and other raw credentials instead of
-re-signing them with the Wallet gateway. `/credentials/sign` is limited to an
-explicit allowlisted demo hospital issuer operation. Demo payer artifacts use
-the separate allowlisted payer integration issuer endpoint; this endpoint is
-not a claim decision engine and does not represent a real payer connection.
+re-signing them with the Wallet gateway. The Wallet no longer exposes hospital
+DID/JWKS or credential-signing routes; TCC, TCP, and TCM credentials must be
+issued by the configured Portal hospital `did:web` identities. Demo payer
+artifacts use the separate allowlisted payer integration issuer endpoint; this
+endpoint is not a claim decision engine and does not represent a real payer
+connection.
 
 Every VP sharing event receives a cryptographically random artifact ID.
 Published artifact IDs are immutable: an exact request retry is idempotent,

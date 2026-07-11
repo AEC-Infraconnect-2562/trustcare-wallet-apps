@@ -1,23 +1,12 @@
-export type TrustCareValidationIssue = {
-  path: string;
-  message: string;
-};
+import {
+  TrustCareContractError,
+  type TrustCareValidationIssue,
+} from "./validation";
 
-export class TrustCareContractError extends Error {
-  readonly contractName: string;
-  readonly issues: TrustCareValidationIssue[];
-
-  constructor(contractName: string, issues: TrustCareValidationIssue[]) {
-    super(
-      `${contractName} contract validation failed: ${issues
-        .map((issue) => `${issue.path} ${issue.message}`)
-        .join("; ")}`,
-    );
-    this.name = "TrustCareContractError";
-    this.contractName = contractName;
-    this.issues = issues;
-  }
-}
+export {
+  TrustCareContractError,
+  type TrustCareValidationIssue,
+} from "./validation";
 
 export type ShareGatewayMode =
   "portal_backend" | "local_dev_gateway" | "trustcare_production_gateway";
@@ -440,3 +429,5 @@ function assertNoIssues(
 ) {
   if (issues.length) throw new TrustCareContractError(contractName, issues);
 }
+
+export * from "./walletExchangeV2";

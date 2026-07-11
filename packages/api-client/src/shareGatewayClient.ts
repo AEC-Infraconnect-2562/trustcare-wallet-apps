@@ -4,8 +4,6 @@ import {
   normalizeShareGatewayBaseUrl,
   readinessContextLabels,
   type BuiltSharePackage,
-  type CredentialSigningOwner,
-  type CredentialSourceAuthority,
   type ReadinessContext,
   type ShareGatewayPublicationRequest,
   type ShareGatewayPublicationResponse,
@@ -38,21 +36,7 @@ export type PublishShlSharePackageInput = {
   expiresAt: string;
 };
 
-export type SignCredentialWithGatewayInput = {
-  issuerServiceOperation: "demo_issuer_reissue";
-  sourceAuthority: CredentialSourceAuthority;
-  signingOwner: CredentialSigningOwner;
-  sourceSystem?: string | null;
-  cardId?: string | number;
-  credentialId?: string | number;
-  credential: Record<string, unknown>;
-  credentialType?: string | null;
-  holderDid?: string | null;
-  expiresAt?: string | null;
-  audience?: string;
-};
-
-export type SignCredentialWithGatewayResponse = {
+export type IssueCredentialWithGatewayResponse = {
   ok: boolean;
   credentialId: string;
   credentialJwt: string;
@@ -82,7 +66,7 @@ export type IssuePayerCredentialWithGatewayInput = {
 };
 
 export type IssuePayerCredentialWithGatewayResponse =
-  SignCredentialWithGatewayResponse & {
+  IssueCredentialWithGatewayResponse & {
     payerId: string;
   };
 
@@ -323,45 +307,6 @@ function shareGatewayFailureMessage(payload: unknown): string | null {
     return "Gateway rejected the publication request.";
   }
   return null;
-}
-
-export async function signCredentialWithShareGateway(
-  input: SignCredentialWithGatewayInput & ShareGatewayClientOptions,
-): Promise<SignCredentialWithGatewayResponse> {
-  const fetchImpl = input.fetchImpl ?? fetch;
-  const response = await fetchImpl(
-    `${normalizeShareGatewayBaseUrl(input.gatewayBaseUrl)}/credentials/sign`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-      },
-      body: JSON.stringify({
-        issuerServiceOperation: input.issuerServiceOperation,
-        sourceAuthority: input.sourceAuthority,
-        signingOwner: input.signingOwner,
-        sourceSystem: input.sourceSystem,
-        cardId: input.cardId,
-        credentialId: input.credentialId,
-        credential: input.credential,
-        credentialType: input.credentialType,
-        holderDid: input.holderDid,
-        expiresAt: input.expiresAt,
-        audience: input.audience,
-      }),
-    },
-  );
-  const payload = (await response
-    .json()
-    .catch(() => null)) as SignCredentialWithGatewayResponse | null;
-  if (!response.ok || !payload?.ok || !payload.credentialJwt) {
-    const errors = payload?.errors?.length
-      ? payload.errors.join(" ")
-      : response.statusText;
-    throw new Error(`Share Gateway credential signing failed: ${errors}`);
-  }
-  return payload;
 }
 
 export async function issuePayerCredentialWithShareGateway(

@@ -1,8 +1,32 @@
 # API Contract
 
-The wallet apps call the existing TrustCare backend and keep it authoritative.
+Wallet Exchange V2 is the production integration contract. Its discovery,
+Contract Hub manifest, render contract, and schema are loaded from the single
+configured Portal origin and integrity-checked at runtime. The older tRPC API
+below is retained only for explicitly gated demo/legacy surfaces; it is not a
+fallback for Portal sync, credential requests, or submissions.
 
-## MVP Routes
+## Wallet Exchange V2
+
+```text
+POST /api/wallet/v2/session-challenges
+POST /api/wallet/v2/sessions
+POST /api/wallet/v2/credentials/sync
+POST /api/wallet/v2/credentials/sync/ack
+POST /api/wallet/v2/credential-requests
+GET  /api/wallet/v2/credential-requests/{requestId}
+POST /api/wallet/v2/submissions
+GET  /api/wallet/v2/submissions/{submissionId}
+```
+
+The holder `did:key` signs the exact session challenge and a fresh VP for every
+share event. Every protected request uses RFC 9449 DPoP. Wallet never sends or
+trusts Portal `patientId`; never sends the holder private key; and never
+re-signs a Portal credential. TCC, TCP, and TCM credentials are accepted only
+after verification against the live Portal hospital DID document and
+`/hospital/{code}/did/jwks.json`.
+
+## Legacy/demo tRPC routes
 
 ```ts
 auth.me()
@@ -48,11 +72,18 @@ GET  /api/share-gateway/presentations/<presentationId>.jwt
 GET  /api/share-gateway/.well-known/jwks.json
 ```
 
-Production should point `VITE_TRUSTCARE_SHARE_GATEWAY_URL` to TrustCare Portal Backend. The gateway signs VP artifacts as `vp+jwt` with ES256 or EdDSA and exposes a JWKS endpoint that verifiers can resolve. The verifier may parse and fetch VP payloads locally, but a green trust badge requires a verified JWT signature or a cryptographically verified W3C Data Integrity proof plus nested credential verification. Resolver-only, metadata-only, unverified Data Integrity proof shapes, or legacy `tc_payload` flows must stay yellow/red, never green.
+Production resolves the Share Gateway endpoint from Wallet Exchange discovery.
+For holder submissions, the published artifact must preserve the exact
+holder-signed VP bytes. A Portal/network wrapper must not replace that VP. The
+verifier may parse and fetch VP payloads locally, but a green trust badge
+requires a verified holder/issuer signature, credential status, expiry, schema,
+audience, consent, and policy. Resolver-only, metadata-only, unverified Data
+Integrity proof shapes, or legacy `tc_payload` flows must stay yellow/red,
+never green.
 
 The browser wallet must not own production private keys. Local development uses an in-memory Vite gateway to simulate the backend signer; production should use Portal Backend/KMS/S3-backed persistence.
 
-## External Wallet Exchange
+## Other external exchange formats
 
 The standalone wallet accepts and stores these payload families:
 
@@ -87,17 +118,21 @@ Implementation rule:
 
 ## Contract Hub Alignment
 
-Latest inspected TrustCare source:
+Authoritative Portal implementation guide:
 
 ```txt
-AEC-Infraconnect-2562/trustcare-hospital-network main
-1d93e7c96694828478c94003010a84f40cb5d933
+AEC-Infraconnect-2562/trustcare-hospital-network-railway
+docs/WALLET_EXCHANGE_V2_IMPLEMENTATION_GUIDE.md
 ```
 
 The wallet mirrors the current Contract Hub direction for service readiness contexts, external wallet deployment handshakes, document imports, canonical share packages, Standard SHL, and Certified SHL + Manifest VP packages.
 
 `ServiceBundleEnvelope`, legacy Service VP packets, and check-in SHL packet routes may remain as backend compatibility contracts while TrustCare Portal catches up. The standalone Wallet UI must not expose them as primary QR/verifier payloads; Prepare only checks readiness and Share creates exactly one resolver-backed package.
 
-## Auth Strategy
+## Auth strategy
 
-Web supports cookie credentials for same-site or credentialed CORS deployment. Mobile needs bearer-token capable auth for production. Until the backend exposes a mobile auth exchange, the mobile app runs with demo mode and documented TODOs.
+Web stores a non-extractable holder key locally and keeps the short-lived DPoP
+access token only in memory. Mobile shares the same domain workflow, but a
+production native Secure Enclave/Android Keystore signing adapter remains
+required; private JWK serialization is forbidden. No service token may be
+embedded in a Vite or Expo bundle.

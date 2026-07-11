@@ -53,15 +53,16 @@ describe("portable presentation envelope", () => {
       ...completeWalletSeedCards.find(
         (item) => item.cardType === "patient_identity",
       )!,
-      issuerDid: "did:web:wallet.example:hospital:tcc",
+      issuerDid:
+        "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
       credentialJwt: "header.payload.signature",
       credentialProof: {
         type: "W3C VC JWT",
         format: "vc+jwt",
         jwt: "header.payload.signature",
         alg: "ES256",
-        kid: "did:web:wallet.example:hospital:tcc#hospital-tcc-signing-key",
-        source: "trustcare_hospital_issuer_profile",
+        kid: "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc#active-key",
+        source: "trustcare_portal",
       },
     };
     const envelope = presentationEnvelopeFromWalletCard(card);
@@ -84,15 +85,16 @@ describe("portable presentation envelope", () => {
       ...completeWalletSeedCards.find(
         (item) => item.cardType === "patient_identity",
       )!,
-      issuerDid: "did:web:wallet.example:hospital:tcc",
+      issuerDid:
+        "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
       credentialJwt: "header.payload.signature",
       credentialProof: {
         type: "W3C VC JWT",
         format: "vc+jwt",
         jwt: "header.payload.signature",
         alg: "ES256",
-        kid: "did:web:wallet.example:hospital:tcc#hospital-tcc-signing-key",
-        source: "trustcare_hospital_issuer_profile",
+        kid: "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc#active-key",
+        source: "trustcare_portal",
       },
       portalVerification: {
         verified: true,

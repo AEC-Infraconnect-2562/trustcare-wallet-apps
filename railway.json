@@ -2,11 +2,12 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "VITE_TRUSTCARE_RUNTIME_ENV=demo pnpm build:web",
+    "buildCommand": "VITE_TRUSTCARE_RUNTIME_ENV=sandbox pnpm build:web",
     "watchPatterns": [
       "apps/wallet-web/**",
       "packages/**",
       "scripts/**",
+      "config/**",
       "package.json",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",

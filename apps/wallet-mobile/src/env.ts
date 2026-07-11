@@ -3,6 +3,7 @@ import {
   runtimeEnvironmentDescriptor,
   runtimeAllowsSyntheticData,
 } from "@trustcare/wallet-core";
+import { resolvePortalBaseUrl } from "@trustcare/api-client";
 
 export const runtimeEnvironment = resolveRuntimeEnvironment({
   runtimeEnvironment: process.env.EXPO_PUBLIC_TRUSTCARE_RUNTIME_ENV,
@@ -12,13 +13,22 @@ export const runtimeEnvironment = resolveRuntimeEnvironment({
 export const environmentBanner =
   runtimeEnvironmentDescriptor(runtimeEnvironment);
 
+export const portalBaseUrl = resolvePortalBaseUrl({
+  configuredUrl: process.env.EXPO_PUBLIC_TRUSTCARE_PORTAL_BASE_URL,
+  runtimeEnvironment,
+});
+
 export const env = {
   apiUrl:
     process.env.EXPO_PUBLIC_TRUSTCARE_API_URL ??
     "https://trustcare.example.com/trpc",
+  portalBaseUrl,
+  walletExchangeAppId:
+    process.env.EXPO_PUBLIC_TRUSTCARE_WALLET_EXCHANGE_APP_ID ??
+    "trustcare-wallet-production",
   shareGatewayUrl:
     process.env.EXPO_PUBLIC_TRUSTCARE_SHARE_GATEWAY_URL ??
-    "https://trustcarehealth.live/api/share-gateway",
+    "https://wallet-web-production-6a00.up.railway.app/api/share-gateway",
   runtimeEnvironment,
   environmentBanner,
   demoMode: runtimeAllowsSyntheticData(runtimeEnvironment),

@@ -16,9 +16,12 @@ import {
   publicationRequestDigest,
   unsignedCredentialPublicationPolicy,
   validateDemoPayerIssuanceRequest,
-  validateIssuerSigningRequest,
 } from "./share-gateway-policy.mjs";
 import { evaluateStoredVpVerificationEvidence } from "./share-gateway-verification.mjs";
+import {
+  resolvePortalHospitalVerificationContext,
+  TRUSTCARE_PORTAL_SANDBOX_ORIGIN,
+} from "./portal-hospital-issuer.mjs";
 
 const root = resolve("apps/wallet-web/dist");
 const port = positiveIntegerFromEnv("PORT", 3000);
@@ -27,44 +30,10 @@ const maxJsonBodyBytes = positiveIntegerFromEnv(
   1_000_000,
 );
 const signingContexts = new Map();
-const issuerSigningContexts = new Map();
 const payerIssuerSigningContexts = new Map();
 const productionGateway = isProductionGatewayRuntime();
 const configuredSigningKey = await loadConfiguredSigningKey();
 const artifactStore = await createArtifactStore();
-
-const demoHospitalIssuerProfiles = new Map([
-  [
-    "tcc",
-    {
-      code: "tcc",
-      name: "TrustCare Central Hospital",
-      nameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
-      trustDomain: "hospital",
-      country: "TH",
-    },
-  ],
-  [
-    "tcp",
-    {
-      code: "tcp",
-      name: "TrustCare Phuket International Hospital",
-      nameTh: "โรงพยาบาลทรัสต์แคร์ ภูเก็ต อินเตอร์เนชันแนล",
-      trustDomain: "hospital",
-      country: "TH",
-    },
-  ],
-  [
-    "tcm",
-    {
-      code: "tcm",
-      name: "TrustCare Chiang Mai Cross-Border Hospital",
-      nameTh: "โรงพยาบาลทรัสต์แคร์ เชียงใหม่",
-      trustDomain: "hospital",
-      country: "TH",
-    },
-  ],
-]);
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -125,21 +94,6 @@ const server = createServer(async (request, response) => {
       json(response, 200, didDocumentForContext(context));
       return;
     }
-    const issuerDocumentRoute = matchIssuerDidRoute(requestUrl.pathname);
-    if (issuerDocumentRoute) {
-      const context = await getCredentialIssuerSigningContext(
-        requestOrigin(request),
-        { kind: "hospital", code: issuerDocumentRoute.code },
-      );
-      json(
-        response,
-        200,
-        issuerDocumentRoute.kind === "jwks"
-          ? publicJwksForContext(context)
-          : didDocumentForContext(context),
-      );
-      return;
-    }
     const payerDocumentRoute = matchPayerIssuerDidRoute(requestUrl.pathname);
     if (payerDocumentRoute) {
       const context = await getPayerIssuerSigningContext(
@@ -188,21 +142,6 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
   const pathname =
     requestUrl.pathname.replace(/^\/api\/share-gateway/, "") || "/";
 
-  const issuerDocumentRoute = matchIssuerDidRoute(pathname);
-  if (request.method === "GET" && issuerDocumentRoute) {
-    const context = await getCredentialIssuerSigningContext(origin, {
-      kind: "hospital",
-      code: issuerDocumentRoute.code,
-    });
-    json(
-      response,
-      200,
-      issuerDocumentRoute.kind === "jwks"
-        ? publicJwksForContext(context)
-        : didDocumentForContext(context),
-    );
-    return;
-  }
   const payerDocumentRoute = matchPayerIssuerDidRoute(pathname);
   if (request.method === "GET" && payerDocumentRoute) {
     const context = await getPayerIssuerSigningContext(
@@ -229,17 +168,7 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
       issuer: context.issuerDid,
       jwksUrl: context.jku,
       didUrl: `${origin}/.well-known/did.json`,
-      hospitalIssuerProfiles: [...demoHospitalIssuerProfiles.keys()].map(
-        (code) => {
-          const didBaseOrigin = issuerDidBaseOrigin(origin);
-          return {
-            code,
-            did: didWebFromPath(didBaseOrigin, ["hospital", code]),
-            didUrl: `${didBaseOrigin}/hospital/${code}/did.json`,
-            jwksUrl: `${didBaseOrigin}/hospital/${code}/jwks.json`,
-          };
-        },
-      ),
+      portalHospitalIssuerOrigin: portalBaseOrigin(),
       payerIntegrationIssuerProfiles: Object.values(
         DEMO_PAYER_ISSUER_PROFILES,
       ).map((profile) => {
@@ -316,95 +245,7 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
     return;
   }
 
-  if (request.method === "POST" && pathname === "/credentials/sign") {
-    if (!isJsonRequest(request)) {
-      json(response, 415, {
-        ok: false,
-        errors: ["Content-Type must be application/json."],
-      });
-      return;
-    }
-
-    const body = await readJsonBody(request);
-    const credential = isRecord(body.credential) ? body.credential : null;
-    if (!credential) {
-      json(response, 400, {
-        ok: false,
-        errors: ["credential is required."],
-      });
-      return;
-    }
-
-    const signingPolicy = validateIssuerSigningRequest(body, credential);
-    if (!signingPolicy.ok) {
-      json(response, signingPolicy.status, {
-        ok: false,
-        sourceAuthority: signingPolicy.source.authority,
-        errors: [signingPolicy.message],
-      });
-      return;
-    }
-
-    const issuerProfile = issuerProfileFromCredential(credential);
-    if (issuerProfile.kind !== "hospital") {
-      json(response, 422, {
-        ok: false,
-        sourceAuthority: signingPolicy.source.authority,
-        errors: [
-          "The demo issuer service only re-issues credentials for an explicit hospital issuer profile.",
-        ],
-      });
-      return;
-    }
-    const context = await getCredentialIssuerSigningContext(
-      origin,
-      issuerProfile,
-    );
-    const expiresAt =
-      stringValue(body.expiresAt) ||
-      stringValue(credential.validUntil) ||
-      new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString();
-    const signed = await signCredentialJwt({
-      credential: buildIssuerSignedCredential(
-        credential,
-        context,
-        issuerProfile,
-        expiresAt,
-      ),
-      context,
-      audience:
-        stringValue(body.audience) || "https://trustcare.network/verifier",
-      expiresAt,
-    });
-
-    json(response, 201, {
-      ok: true,
-      credentialId: signed.credentialId,
-      credentialJwt: signed.jwt,
-      credentialProof: {
-        type: "W3C VC JWT",
-        format: "vc+jwt",
-        jwt: signed.jwt,
-        alg: "ES256",
-        kid: context.kid,
-        source:
-          issuerProfile.kind === "hospital"
-            ? "trustcare_hospital_issuer_profile"
-            : "trustcare_system_issuer_profile",
-      },
-      issuerDid: context.issuerDid,
-      jwksUrl: context.jku,
-      signedCredential: signed.credential,
-      warnings: [],
-      errors: [],
-    });
-    return;
-  }
-
-  if (
-    request.method === "POST" &&
-    pathname === "/payer/credentials/issue"
-  ) {
+  if (request.method === "POST" && pathname === "/payer/credentials/issue") {
     if (!isJsonRequest(request)) {
       json(response, 415, {
         ok: false,
@@ -531,10 +372,7 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
 
     const requestDigest = publicationRequestDigest(body);
     const existing = await artifactStore.get(kind, artifactId);
-    const existingDecision = immutableArtifactDecision(
-      existing,
-      requestDigest,
-    );
+    const existingDecision = immutableArtifactDecision(existing, requestDigest);
     if (existingDecision.status === "conflict") {
       json(response, 409, {
         ok: false,
@@ -551,7 +389,9 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
         origin,
         artifactId,
         kind,
-        warnings: ["Idempotent retry returned the existing immutable artifact."],
+        warnings: [
+          "Idempotent retry returned the existing immutable artifact.",
+        ],
       });
       return;
     }
@@ -602,7 +442,9 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
       return;
     }
     if (writeResult.status === "idempotent") {
-      warnings.push("Idempotent retry returned the existing immutable artifact.");
+      warnings.push(
+        "Idempotent retry returned the existing immutable artifact.",
+      );
     }
 
     sendArtifactPublicationResponse(
@@ -699,29 +541,11 @@ async function signPresentationJwt(input) {
       production: productionGateway,
       credential,
     });
-    if (!unsignedPolicy.ok) {
-      throw httpError(422, unsignedPolicy.message);
-    }
-    const issuerProfile = issuerProfileFromCredential(credential);
-    const credentialSigningContext = await getCredentialIssuerSigningContext(
-      input.origin ?? "",
-      issuerProfile,
-    );
-    const signed = await signCredentialJwt({
-      credential: buildIssuerSignedCredential(
-        credential,
-        credentialSigningContext,
-        issuerProfile,
-        expiresAt,
-      ),
-      context: credentialSigningContext,
-      audience: input.audience,
-      now,
-      expiresAt: stringValue(credential.validUntil) || expiresAt,
-    });
-    credentialJwts.push(signed.jwt);
-    warnings.push(
-      "Unsigned wallet credential was re-signed by its issuer DID profile.",
+    throw httpError(
+      422,
+      unsignedPolicy.ok
+        ? "Unsigned credentials are not accepted. Obtain a newly issued Portal hospital vc+jwt; the Wallet gateway does not rewrite or re-sign credentials."
+        : unsignedPolicy.message,
     );
   }
 
@@ -909,49 +733,6 @@ async function getSigningContext(origin) {
   return context;
 }
 
-async function getCredentialIssuerSigningContext(origin, profile) {
-  if (profile.kind === "system") return getSigningContext(origin);
-  const normalizedOrigin = origin.replace(/\/+$/, "");
-  const code = normalizeHospitalCode(profile.code);
-  const cacheKey = `${normalizedOrigin}:hospital:${code}`;
-  const cached = issuerSigningContexts.get(cacheKey);
-  if (cached) return cached;
-
-  const didBaseOrigin = issuerDidBaseOrigin(normalizedOrigin);
-  const issuerDid = didWebFromPath(didBaseOrigin, ["hospital", code]);
-  const issuer = demoHospitalIssuerProfiles.get(code) ?? {
-    code,
-    name: `TrustCare Hospital ${code.toUpperCase()}`,
-    nameTh: `โรงพยาบาล TrustCare ${code.toUpperCase()}`,
-    trustDomain: "hospital",
-    country: "TH",
-  };
-  const keyMaterial =
-    configuredSigningKey ?? (await createLocalDevelopmentSigningKey());
-  const publicJwk = sanitizePublicJwk(keyMaterial.publicJwk);
-  const thumbprint = await calculateJwkThumbprint(publicJwk, "sha256");
-  const kid = `${issuerDid}#hospital-${code}-signing-key-${thumbprint.slice(
-    0,
-    12,
-  )}`;
-  const context = {
-    issuerDid,
-    kid,
-    jku: `${didBaseOrigin}/hospital/${code}/jwks.json`,
-    privateKey: keyMaterial.privateKey,
-    publicJwk: sanitizePublicJwk({
-      ...publicJwk,
-      alg: "ES256",
-      kid,
-      use: "sig",
-    }),
-    keySource: `${keyMaterial.source}:issuer-profile:${code}`,
-    issuerProfile: issuer,
-  };
-  issuerSigningContexts.set(cacheKey, context);
-  return context;
-}
-
 async function getPayerIssuerSigningContext(origin, payerIdInput) {
   const payerId = normalizePayerId(payerIdInput);
   const profile = DEMO_PAYER_ISSUER_PROFILES[payerId];
@@ -997,26 +778,17 @@ async function resolveGatewayVerificationContext(origin, candidate) {
   if (!kid || !controller) return null;
 
   const gatewayContext = await getSigningContext(origin);
-  if (
-    controller === gatewayContext.issuerDid &&
-    kid === gatewayContext.kid
-  ) {
+  if (controller === gatewayContext.issuerDid && kid === gatewayContext.kid) {
     return gatewayContext;
   }
   if (candidate?.kind !== "vc") return null;
 
-  const hospitalMatch = /:hospital:([^:#/?]+)$/i.exec(controller);
-  if (hospitalMatch) {
-    const code = normalizeHospitalCode(decodeURIComponent(hospitalMatch[1]));
-    if (!code) return null;
-    const context = await getCredentialIssuerSigningContext(origin, {
-      kind: "hospital",
-      code,
-    });
-    return context.issuerDid === controller && context.kid === kid
-      ? context
-      : null;
-  }
+  const portalContext = await resolvePortalHospitalVerificationContext({
+    portalBaseUrl: portalBaseOrigin(),
+    controller,
+    kid,
+  });
+  if (portalContext) return portalContext;
 
   const payerMatch = /:payer:([^:#/?]+)$/i.exec(controller);
   if (payerMatch) {
@@ -1060,60 +832,6 @@ function didDocumentForContext(context) {
     assertionMethod: [context.kid],
     authentication: [context.kid],
   };
-}
-
-function buildIssuerSignedCredential(
-  credential,
-  context,
-  issuerProfile,
-  expiresAt,
-) {
-  const originalIssuer = credential.issuer;
-  const currentProfile =
-    issuerProfile.kind === "hospital"
-      ? demoHospitalIssuerProfiles.get(
-          normalizeHospitalCode(issuerProfile.code),
-        )
-      : null;
-  const issuer =
-    issuerProfile.kind === "hospital"
-      ? {
-          id: context.issuerDid,
-          name: currentProfile?.name ?? "TrustCare Hospital",
-          nameTh: currentProfile?.nameTh,
-          trustDomain: currentProfile?.trustDomain ?? "hospital",
-          country: currentProfile?.country ?? "TH",
-        }
-      : {
-          id: context.issuerDid,
-          name: "TrustCare Wallet System",
-          trustDomain: "wallet-system",
-          country: "TH",
-        };
-  return stripUndefined({
-    ...credential,
-    issuer,
-    validUntil: credential.validUntil ?? expiresAt,
-    evidence: [
-      ...arrayValue(credential.evidence),
-      {
-        type: "SourceCredentialIssuer",
-        sourceIssuer: originalIssuer,
-        signingIssuer: context.issuerDid,
-      },
-    ],
-    trustcare: {
-      ...objectValue(credential.trustcare),
-      issuerSignedCredential: true,
-      issuerProfile:
-        issuerProfile.kind === "hospital"
-          ? `hospital:${normalizeHospitalCode(issuerProfile.code)}`
-          : "system",
-      originalIssuer,
-      signingIssuerDid: context.issuerDid,
-      signingJwksUrl: context.jku,
-    },
-  });
 }
 
 function buildPayerIssuerSignedCredential(
@@ -1719,21 +1437,15 @@ function didWebFromPath(origin, pathSegments) {
 
 function issuerDidBaseOrigin(origin) {
   return (
-    stringValue(process.env.TRUSTCARE_ISSUER_DID_WEB_BASE_URL) ||
-    stringValue(process.env.TRUSTCARE_DID_WEB_BASE_URL) ||
-    origin
+    stringValue(process.env.TRUSTCARE_DID_WEB_BASE_URL) || origin
   ).replace(/\/+$/, "");
 }
 
-function matchIssuerDidRoute(pathname) {
-  const match =
-    /^(?:\/api\/share-gateway)?\/hospital\/([^/]+)\/(?:did(?:\.json|\/jwks\.json)|jwks\.json)$/.exec(
-      pathname,
-    );
-  if (!match) return null;
-  const kind = pathname.endsWith("/jwks.json") ? "jwks" : "did";
-  const code = normalizeHospitalCode(decodeURIComponent(match[1]));
-  return code ? { code, kind } : null;
+function portalBaseOrigin() {
+  return (
+    stringValue(process.env.TRUSTCARE_PORTAL_BASE_URL) ||
+    TRUSTCARE_PORTAL_SANDBOX_ORIGIN
+  ).replace(/\/+$/, "");
 }
 
 function matchPayerIssuerDidRoute(pathname) {
@@ -1748,61 +1460,6 @@ function matchPayerIssuerDidRoute(pathname) {
     payerId,
     kind: match[2] === "jwks.json" ? "jwks" : "did",
   };
-}
-
-function issuerProfileFromCredential(credential) {
-  const trustcare = objectValue(credential.trustcare);
-  const issuer = credential.issuer;
-  const issuerId =
-    typeof issuer === "string"
-      ? issuer
-      : isRecord(issuer)
-        ? stringValue(issuer.id)
-        : "";
-  const candidates = [
-    stringValue(trustcare?.issuerHospitalCode),
-    stringValue(trustcare?.issuerHospitalId),
-    hospitalCodeFromDid(issuerId),
-    hospitalCodeFromName(stringValue(credential.issuerHospitalName)),
-    hospitalCodeFromName(
-      isRecord(issuer)
-        ? stringValue(issuer.name, stringValue(issuer.nameTh))
-        : "",
-    ),
-  ].filter(Boolean);
-  const code = normalizeHospitalCode(candidates[0] ?? "");
-  if (code) {
-    return { kind: "hospital", code };
-  }
-  const didCode = hospitalCodeFromDid(issuerId);
-  if (didCode) {
-    return { kind: "hospital", code: didCode };
-  }
-  return { kind: "system" };
-}
-
-function hospitalCodeFromDid(value) {
-  const match = /:hospital:([^:#/?]+)/i.exec(value);
-  return match ? normalizeHospitalCode(match[1]) : "";
-}
-
-function hospitalCodeFromName(value) {
-  const normalized = value.toLowerCase();
-  if (normalized.includes("phuket")) return "tcp";
-  if (normalized.includes("chiang mai") || normalized.includes("เชียงใหม่")) {
-    return "tcm";
-  }
-  if (normalized.includes("trustcare") || normalized.includes("ทรัสต์แคร์")) {
-    return "tcc";
-  }
-  return "";
-}
-
-function normalizeHospitalCode(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "");
 }
 
 function normalizePayerId(value) {

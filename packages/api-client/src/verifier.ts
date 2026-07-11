@@ -56,13 +56,8 @@ import {
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
 import { usesDemoRuntime } from "./runtime";
-import {
-  verifyPortalCredentialJwt,
-  type PortalCredentialVerifyResponse,
-} from "./portalSync";
 
 export type VerifierApiOptions = TrustCareClientOptions & {
-  portalOrigin?: string;
   verificationEvidenceProvider?: VerificationEvidenceProvider;
 };
 
@@ -952,64 +947,17 @@ async function verifyDirectJwtQr(
     "inline-jwt",
   );
   const vc = unwrapVcPayload(verification.payload) ?? directVc;
-  const portalStatus = await verifyPortalStatusIfTrustCare(
-    options,
-    jwt,
-    verification,
-  );
-  return buildDirectVcVerifierResult(
-    jwt,
-    vc,
-    verification,
-    portalStatus,
-    options,
-  );
-}
-
-async function verifyPortalStatusIfTrustCare(
-  options: VerifierApiOptions,
-  jwt: string,
-  verification: JwtVerificationResult,
-): Promise<PortalCredentialVerifyResponse | null> {
-  const trustHints = [
-    verification.issuer,
-    verification.kid,
-    verification.jku,
-    verification.jwksUrl,
-  ]
-    .filter(Boolean)
-    .join(" ");
-  if (!/trustcare/i.test(trustHints)) return null;
-  try {
-    return await verifyPortalCredentialJwt({
-      fetchImpl: options.fetchImpl,
-      portalOrigin: options.portalOrigin,
-      jwt,
-    });
-  } catch (error) {
-    return {
-      verified: false,
-      trustLevel: "yellow",
-      status: "portal_status_unavailable",
-      message:
-        error instanceof Error
-          ? error.message
-          : "TrustCare Portal status check unavailable",
-    };
-  }
+  return buildDirectVcVerifierResult(jwt, vc, verification, options);
 }
 
 async function buildDirectVcVerifierResult(
   jwt: string,
   vc: Record<string, any>,
   verification: JwtVerificationResult,
-  portalStatus: PortalCredentialVerifyResponse | null,
   options: VerifierApiOptions,
 ): Promise<VerifierResult> {
   const expiresAt = artifactValidUntil(vc);
   const notExpired = !expiresAt || Date.parse(expiresAt) > Date.now();
-  const portalChecked = Boolean(portalStatus);
-  const portalOk = !portalStatus || Boolean(portalStatus.verified);
   const issuerDid = artifactIssuerDid(vc) ?? verification.issuer;
   const holderDid = artifactSubjectDid(vc) ?? verification.subject;
   const localProof = localJwtProof(verification, issuerDid, "assertionMethod");
@@ -1036,22 +984,12 @@ async function buildDirectVcVerifierResult(
     },
   );
   const verified =
-    Boolean(localProof) &&
-    portalOk &&
-    notExpired &&
-    evidence.assessment.verified;
+    Boolean(localProof) && notExpired && evidence.assessment.verified;
   const trustLevel = verified
     ? "green"
-    : !localProof ||
-        portalStatus?.trustLevel === "red" ||
-        !notExpired ||
-        evidence.assessment.trustLevel === "red"
+    : !localProof || !notExpired || evidence.assessment.trustLevel === "red"
       ? "red"
       : "yellow";
-  const portalError =
-    portalStatus && !portalOk
-      ? (portalStatus.message ?? portalStatus.error ?? portalStatus.status)
-      : undefined;
   const credentialType =
     lastCredentialType(vc) ??
     verification.credentialType ??
@@ -1093,14 +1031,6 @@ async function buildDirectVcVerifierResult(
             : verification.errors.join(" "),
       },
       {
-        key: "portal_status",
-        label: "TrustCare Portal status",
-        ok: portalOk,
-        detail: portalChecked
-          ? `${portalStatus?.trustLevel ?? "unknown"} / ${portalStatus?.status ?? "-"}`
-          : "not required for non-Portal issuer",
-      },
-      {
         key: "schema",
         label: "Schema and claims",
         ok: Boolean(credentialType),
@@ -1134,21 +1064,11 @@ async function buildDirectVcVerifierResult(
     warnings: [
       ...verification.warnings,
       ...verification.errors,
-      ...(portalStatus?.message ? [portalStatus.message] : []),
-      ...(!portalChecked &&
-      /trustcare/i.test(
-        `${verification.issuer ?? ""} ${verification.kid ?? ""}`,
-      )
-        ? [
-            "ตรวจลายเซ็นได้แล้ว แต่ยังไม่ได้รับผล DB cross-check จาก TrustCare Portal.",
-          ]
-        : []),
       ...(!notExpired ? ["VC หมดอายุแล้ว"] : []),
       ...evidence.assessment.warnings,
     ],
     errors: [
       ...(!localProof ? verification.errors : []),
-      ...(portalError ? [portalError] : []),
       ...(!notExpired ? ["VC หมดอายุแล้ว"] : []),
       ...evidence.assessment.errors,
     ],
@@ -1159,7 +1079,6 @@ async function buildDirectVcVerifierResult(
       holderDid,
       credentials: [vc],
       jwt,
-      portalStatus,
       evidenceAssessment: evidence.assessment,
     },
   };
@@ -1675,27 +1594,78 @@ async function verifyJwtArtifact(
   const alg = typeof header.alg === "string" ? header.alg : undefined;
   const kid = typeof header.kid === "string" ? header.kid : undefined;
   const jku = typeof header.jku === "string" ? header.jku : undefined;
+  const issuer = stringOrUndefined(decodedPayload.iss);
+  const portalHospitalCredential =
+    kind === "vc" && isPortalHospitalIssuerDid(issuer);
   if (alg !== "ES256" && alg !== "EdDSA") {
-    warnings.push(
-      `JWT alg ${alg ?? "-"} is parsed, but production TrustCare verification expects ES256 or EdDSA.`,
+    errors.push(
+      `JWT alg ${alg ?? "-"} is not supported; production TrustCare verification only accepts ES256 or EdDSA.`,
     );
   }
   if (!kid) errors.push("JWT header has no kid.");
+  if (portalHospitalCredential) {
+    const credential = unwrapVcPayload(decodedPayload);
+    const credentialIssuer = artifactIssuerDid(credential);
+    if (alg !== "ES256") {
+      errors.push("Portal hospital credential JWTs must use ES256.");
+    }
+    if (
+      !kid ||
+      controllerDid(kid) !== issuer ||
+      !kid.startsWith(`${issuer}#`)
+    ) {
+      errors.push(
+        "Portal hospital credential kid is not controlled by its declared issuer DID.",
+      );
+    }
+    if (credentialIssuer && credentialIssuer !== issuer) {
+      errors.push(
+        "Portal hospital credential issuer does not match the JWT issuer claim.",
+      );
+    }
+  }
+
+  if (errors.length > 0) {
+    return failedJwtVerification({
+      kind,
+      alg,
+      kid,
+      jku,
+      token,
+      payload: decodedPayload,
+      warnings,
+      errors,
+    });
+  }
+  const verificationAlg = alg as "ES256" | "EdDSA";
 
   const jwksCandidateResult = buildTrustCareJwksCandidateResult({
     header,
     payload: decodedPayload,
     sourceUrl,
+    issuerBound: portalHospitalCredential,
   });
   warnings.push(...jwksCandidateResult.warnings);
   const jwksCandidates = jwksCandidateResult.candidates;
   for (const jwksUrl of jwksCandidates) {
-    const jwk = await fetchMatchingJwk(jwksUrl, kid, fetcher);
+    const jwk = await fetchMatchingJwk(jwksUrl, kid, fetcher, {
+      alg: verificationAlg,
+      issuerDid: portalHospitalCredential ? issuer : undefined,
+      strictKid: portalHospitalCredential,
+    });
     if (!jwk) continue;
     try {
-      const key = await importJWK(jwk, alg ?? String(jwk.alg ?? "ES256"));
-      const result = await jwtVerify(token.issuerJwt, key);
+      const key = await importJWK(jwk, verificationAlg);
+      const result = await jwtVerify(token.issuerJwt, key, {
+        algorithms: [verificationAlg],
+        ...(portalHospitalCredential ? { issuer } : {}),
+      });
       const payload = result.payload as Record<string, any>;
+      const timeErrors = artifactTimeErrors(payload, kind, new Date());
+      if (timeErrors.length > 0) {
+        errors.push(...timeErrors);
+        break;
+      }
       return {
         kind,
         verified: true,
@@ -1739,39 +1709,27 @@ async function verifyJwtArtifact(
       `No public JWK matched kid ${kid ?? "-"} from resolver candidates.`,
     );
   }
-  return {
+  return failedJwtVerification({
     kind,
-    verified: false,
     alg,
     kid,
     jku,
-    disclosureCount: token.disclosures.length,
-    issuer: stringOrUndefined(decodedPayload.iss),
-    subject: stringOrUndefined(decodedPayload.sub),
-    audience: audienceSummary(decodedPayload.aud),
-    credentialId: stringOrUndefined(
-      decodedPayload.jti ??
-        unwrapVcPayload(decodedPayload)?.id ??
-        unwrapVpPayload(decodedPayload)?.id,
-    ),
-    credentialType:
-      kind === "vc"
-        ? String(
-            decodedPayload.vct ??
-              lastCredentialType(unwrapVcPayload(decodedPayload)) ??
-              "",
-          )
-        : undefined,
+    token,
     payload: decodedPayload,
     warnings,
     errors,
-  };
+  });
 }
 
 async function fetchMatchingJwk(
   jwksUrl: string,
   kid: string | undefined,
   fetcher: typeof fetch,
+  binding: {
+    alg?: "ES256" | "EdDSA";
+    issuerDid?: string;
+    strictKid?: boolean;
+  } = {},
 ): Promise<JWK | null> {
   try {
     const response = await fetcher(jwksUrl, {
@@ -1780,6 +1738,9 @@ async function fetchMatchingJwk(
     });
     if (!response.ok) return null;
     const jwks = (await response.json()) as Record<string, any>;
+    if (binding.strictKid) {
+      return strictIssuerBoundJwk(jwks, kid, binding.issuerDid, binding.alg);
+    }
     const keys = jwksToKeys(jwks);
     if (!keys.length) return null;
     if (kid) {
@@ -1794,6 +1755,146 @@ async function fetchMatchingJwk(
   } catch {
     return null;
   }
+}
+
+function strictIssuerBoundJwk(
+  payload: Record<string, any>,
+  kid: string | undefined,
+  issuerDid: string | undefined,
+  alg: "ES256" | "EdDSA" | undefined,
+): JWK | null {
+  if (!kid || !issuerDid || !alg || controllerDid(kid) !== issuerDid) {
+    return null;
+  }
+
+  const methods = Array.isArray(payload.verificationMethod)
+    ? payload.verificationMethod
+    : null;
+  let jwk: JWK | null = null;
+  if (methods) {
+    if (payload.id !== issuerDid) return null;
+    const assertionMethods = Array.isArray(payload.assertionMethod)
+      ? payload.assertionMethod
+          .map((method) =>
+            typeof method === "string"
+              ? method
+              : stringOrUndefined(objectValue(method)?.id),
+          )
+          .filter((value): value is string => Boolean(value))
+      : [];
+    if (!assertionMethods.includes(kid)) return null;
+    const method = methods
+      .map(objectValue)
+      .find(
+        (candidate) =>
+          candidate?.id === kid && candidate.controller === issuerDid,
+      );
+    jwk = objectValue(method?.publicKeyJwk) as JWK | null;
+  } else {
+    if (payload.issuer !== issuerDid) return null;
+    const keys = Array.isArray(payload.keys) ? (payload.keys as JWK[]) : [];
+    jwk = keys.find((candidate) => candidate.kid === kid) ?? null;
+  }
+
+  if (!jwk || (jwk.kid !== undefined && jwk.kid !== kid)) return null;
+  if (jwk.alg !== alg || (jwk.use !== undefined && jwk.use !== "sig")) {
+    return null;
+  }
+  if (Array.isArray(jwk.key_ops) && !jwk.key_ops.includes("verify"))
+    return null;
+  if (
+    alg === "ES256" &&
+    (jwk.kty !== "EC" || jwk.crv !== "P-256" || !jwk.x || !jwk.y)
+  ) {
+    return null;
+  }
+  return { ...jwk, kid };
+}
+
+function isPortalHospitalIssuerDid(value: string | undefined): boolean {
+  if (!value?.startsWith("did:web:")) return false;
+  try {
+    const parts = value
+      .slice("did:web:".length)
+      .split(":")
+      .map(decodeURIComponent);
+    return (
+      parts.length === 3 &&
+      parts[1]?.toLowerCase() === "hospital" &&
+      ["tcc", "tcp", "tcm"].includes(parts[2]?.toLowerCase() ?? "")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function artifactTimeErrors(
+  payload: Record<string, any>,
+  kind: "vp" | "vc",
+  now: Date,
+): string[] {
+  const artifact =
+    kind === "vc" ? unwrapVcPayload(payload) : unwrapVpPayload(payload);
+  if (!artifact) return [];
+  const errors: string[] = [];
+  const validFrom = stringOrUndefined(
+    artifact.validFrom ?? artifact.issuanceDate,
+  );
+  const validUntil = stringOrUndefined(
+    artifact.validUntil ?? artifact.expirationDate,
+  );
+  if (validFrom) {
+    const startsAt = Date.parse(validFrom);
+    if (!Number.isFinite(startsAt) || startsAt > now.getTime()) {
+      errors.push("JWT artifact is not valid yet or has an invalid validFrom.");
+    }
+  }
+  if (validUntil) {
+    const expiresAt = Date.parse(validUntil);
+    if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime()) {
+      errors.push("JWT artifact is expired or has an invalid validUntil.");
+    }
+  }
+  return errors;
+}
+
+function failedJwtVerification(input: {
+  kind: "vp" | "vc";
+  alg?: string;
+  kid?: string;
+  jku?: string;
+  token: { disclosures: string[] };
+  payload: Record<string, any>;
+  warnings: string[];
+  errors: string[];
+}): JwtVerificationResult {
+  return {
+    kind: input.kind,
+    verified: false,
+    alg: input.alg,
+    kid: input.kid,
+    jku: input.jku,
+    disclosureCount: input.token.disclosures.length,
+    issuer: stringOrUndefined(input.payload.iss),
+    subject: stringOrUndefined(input.payload.sub),
+    audience: audienceSummary(input.payload.aud),
+    credentialId: stringOrUndefined(
+      input.payload.jti ??
+        unwrapVcPayload(input.payload)?.id ??
+        unwrapVpPayload(input.payload)?.id,
+    ),
+    credentialType:
+      input.kind === "vc"
+        ? String(
+            input.payload.vct ??
+              lastCredentialType(unwrapVcPayload(input.payload)) ??
+              "",
+          )
+        : undefined,
+    payload: input.payload,
+    warnings: input.warnings,
+    errors: input.errors,
+  };
 }
 
 function manifestFilesAreStandard(

@@ -726,7 +726,7 @@ describe("wallet-core", () => {
 
     expect(portalUser.avatarSource).toBe("trustcare_portal");
     expect(portalUser.avatarUrl).toContain(
-      "https://trustcarehealth.live/manus-storage/",
+      "https://trustcare-hospital-network-production.up.railway.app/manus-storage/",
     );
     expect(portalUser.avatarUrl).toContain("patient_somsak");
     expect(nativeUser.avatarSource).toBe("wallet_generated");

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Buffer } from "node:buffer";
+import { SignJWT } from "jose";
 import {
   createDemoResolverUrl,
   createDataIntegrityProof,
@@ -14,6 +15,13 @@ import {
   type VerificationEvidenceProvider,
 } from "@trustcare/wallet-core";
 import { verifyQr } from "./verifier";
+
+const PORTAL_ORIGIN =
+  "https://trustcare-hospital-network-production.up.railway.app";
+const PORTAL_TCC_DID =
+  "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc";
+const PORTAL_ROOT_DID =
+  "did:web:trustcare-hospital-network-production.up.railway.app";
 
 const unsignedVp = {
   "@context": ["https://www.w3.org/ns/credentials/v2"],
@@ -524,10 +532,10 @@ describe("verifyQr VP resolver behavior", () => {
     expect(result.warnings?.join(" ")).toContain("signature");
   });
 
-  it("verifies a Portal-signed VC only with hospital proof, Portal status and independent policy evidence", async () => {
+  it("verifies a Portal-signed VC only with hospital proof and independent status/policy evidence", async () => {
     const signingKey = await createEphemeralEs256SigningKey({
-      issuerDid: "did:web:trustcare.network:hospital:tcc",
-      kidPrefix: "did:web:trustcare.network:hospital:tcc",
+      issuerDid: PORTAL_TCC_DID,
+      kidPrefix: PORTAL_TCC_DID,
     });
     const signed = await signTrustCareCredentialJwt({
       credential: {
@@ -535,7 +543,7 @@ describe("verifyQr VP resolver behavior", () => {
         id: "urn:trustcare:seed:vc:tcc:p001:patient_identity",
         type: ["VerifiableCredential", "PatientIdentityCredential"],
         issuer: {
-          id: "did:web:trustcare.network:hospital:tcc",
+          id: PORTAL_TCC_DID,
           name: "TrustCare Central Hospital",
           nameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
         },
@@ -556,12 +564,10 @@ describe("verifyQr VP resolver behavior", () => {
     expect(parseJwtPayload(signed.jwt)?.type).toEqual(
       expect.arrayContaining(["VerifiableCredential"]),
     );
-    const hospitalJwksUrl =
-      "https://trustcarehealth.live/hospital/tcc/did/jwks.json";
+    const hospitalJwksUrl = `${PORTAL_ORIGIN}/hospital/tcc/did/jwks.json`;
     const result = await verifyQr(
       {
         url: "https://trustcare.example.com/trpc",
-        portalOrigin: "https://trustcarehealth.live",
         verificationEvidenceProvider: completeEvidenceProvider,
         fetchImpl: async (input, init) => {
           const url = String(input);
@@ -571,17 +577,6 @@ describe("verifyQr VP resolver behavior", () => {
               {
                 headers: { "content-type": "application/json" },
               },
-            );
-          }
-          if (url === "https://trustcarehealth.live/api/wallet/sync/verify") {
-            expect(JSON.parse(String(init?.body))).toEqual({ jwt: signed.jwt });
-            return new Response(
-              JSON.stringify({
-                verified: true,
-                trustLevel: "green",
-                status: "active",
-              }),
-              { headers: { "content-type": "application/json" } },
             );
           }
           return new Response("not found", { status: 404 });
@@ -594,18 +589,18 @@ describe("verifyQr VP resolver behavior", () => {
     expect(result.verified).toBe(true);
     expect(result.trustLevel).toBe("green");
     expect(JSON.stringify(result.verificationChecklist)).toContain(
-      "TrustCare Portal status",
+      "ตรวจสถานะล่าสุด",
     );
   });
 
   it("does not treat a network-root key as hospital issuer proof", async () => {
     const signingKey = await createEphemeralEs256SigningKey({
-      issuerDid: "did:web:trustcare.network:hospital:tcc",
-      kidPrefix: "did:web:trustcare.network",
+      issuerDid: PORTAL_TCC_DID,
+      kidPrefix: PORTAL_ROOT_DID,
     });
     const wrongHospitalKey = await createEphemeralEs256SigningKey({
-      issuerDid: "did:web:trustcare.network:hospital:tcc",
-      kidPrefix: "did:web:trustcare.network:hospital:tcc",
+      issuerDid: PORTAL_TCC_DID,
+      kidPrefix: PORTAL_TCC_DID,
     });
     const signed = await signTrustCareCredentialJwt({
       credential: {
@@ -613,7 +608,7 @@ describe("verifyQr VP resolver behavior", () => {
         id: "urn:trustcare:seed:vc:tcc:p001:network-key",
         type: ["VerifiableCredential", "PatientIdentityCredential"],
         issuer: {
-          id: "did:web:trustcare.network:hospital:tcc",
+          id: PORTAL_TCC_DID,
           name: "TrustCare Central Hospital",
           nameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
         },
@@ -630,16 +625,16 @@ describe("verifyQr VP resolver behavior", () => {
       signingKey,
       credentialType: "PatientIdentityCredential",
     });
-    const hospitalJwksUrl =
-      "https://trustcarehealth.live/hospital/tcc/did/jwks.json";
-    const rootJwksUrl = "https://trustcarehealth.live/.well-known/jwks.json";
+    const hospitalJwksUrl = `${PORTAL_ORIGIN}/hospital/tcc/did/jwks.json`;
+    const rootJwksUrl = `${PORTAL_ORIGIN}/.well-known/jwks.json`;
+    const requestedUrls: string[] = [];
     const result = await verifyQr(
       {
         url: "https://trustcare.example.com/trpc",
-        portalOrigin: "https://trustcarehealth.live",
         verificationEvidenceProvider: completeEvidenceProvider,
         fetchImpl: async (input, init) => {
           const url = String(input);
+          requestedUrls.push(url);
           if (url === hospitalJwksUrl) {
             return new Response(
               JSON.stringify(publicJwksForSigningKey(wrongHospitalKey)),
@@ -654,13 +649,127 @@ describe("verifyQr VP resolver behavior", () => {
               },
             );
           }
-          if (url === "https://trustcarehealth.live/api/wallet/sync/verify") {
-            expect(JSON.parse(String(init?.body))).toEqual({ jwt: signed.jwt });
+          return new Response("not found", { status: 404 });
+        },
+      },
+      signed.jwt,
+    );
+
+    expect(result.protocol).toBe("trustcare-vc");
+    expect(result.verified).toBe(false);
+    expect(result.trustLevel).not.toBe("green");
+    expect(requestedUrls).not.toContain(rootJwksUrl);
+    expect(JSON.stringify(result.verificationChecklist)).toContain(
+      "not controlled by its declared issuer DID",
+    );
+  });
+
+  it("does not let a nested Portal hospital VC borrow the Share Gateway key", async () => {
+    const gatewayJwksUrl = "https://wallet.example/.well-known/jwks.json";
+    const gatewayKey = await createEphemeralEs256SigningKey({
+      issuerDid: "did:web:wallet.example",
+      kidPrefix: "did:web:wallet.example",
+      jku: gatewayJwksUrl,
+    });
+    const forgedHospitalKey = await createEphemeralEs256SigningKey({
+      issuerDid: PORTAL_TCC_DID,
+      kidPrefix: PORTAL_TCC_DID,
+      jku: gatewayJwksUrl,
+    });
+    const forgedCredential = await signTrustCareCredentialJwt({
+      credential: {
+        "@context": ["https://www.w3.org/ns/credentials/v2"],
+        id: "urn:trustcare:test:forged-source-vc",
+        type: ["VerifiableCredential", "PatientIdentityCredential"],
+        issuer: { id: PORTAL_TCC_DID },
+        validFrom: new Date(Date.now() - 60_000).toISOString(),
+        validUntil: new Date(Date.now() + 60_000).toISOString(),
+        credentialSubject: { id: "did:key:test-holder" },
+      },
+      signingKey: forgedHospitalKey,
+    });
+    const signedVp = await signTrustCarePresentationJwt({
+      vp: {
+        ...unsignedVp,
+        purpose: "care-entry",
+        recipient: "did:web:receiver.example",
+        verifiableCredential: [forgedCredential.jwt],
+      },
+      signingKey: gatewayKey,
+      purpose: "care-entry",
+      audience: "did:web:receiver.example",
+    });
+    const gatewayKeys = publicJwksForSigningKey(gatewayKey).keys as object[];
+    const forgedKeys = publicJwksForSigningKey(forgedHospitalKey)
+      .keys as object[];
+    const presentationUrl =
+      "https://wallet.example/api/share-gateway/presentations/forged-vp.jwt";
+    let gatewayJwksFetches = 0;
+    const result = await verifyQr(
+      {
+        url: "https://trustcare.example.com/trpc",
+        verificationEvidenceProvider: completeEvidenceProvider,
+        fetchImpl: async (input) => {
+          const url = String(input);
+          if (url === presentationUrl) {
+            return new Response(signedVp.jwt, {
+              headers: { "content-type": "application/vp+jwt" },
+            });
+          }
+          if (url === gatewayJwksUrl) {
+            gatewayJwksFetches += 1;
+            return new Response(
+              JSON.stringify({ keys: [...gatewayKeys, ...forgedKeys] }),
+              { headers: { "content-type": "application/json" } },
+            );
+          }
+          return new Response("not found", { status: 404 });
+        },
+      },
+      presentationUrl,
+    );
+
+    const checklist = result.verificationChecklist as Array<{
+      key?: string;
+      ok?: boolean;
+    }>;
+    expect(checklist.find((item) => item.key === "signature")?.ok).toBe(true);
+    expect(checklist.find((item) => item.key === "nested_vc")?.ok).toBe(false);
+    expect(result.verified).toBe(false);
+    expect(result.trustLevel).not.toBe("green");
+    expect(gatewayJwksFetches).toBe(1);
+  });
+
+  it("requires an exact hospital JWK kid instead of a matching root-key fragment", async () => {
+    const signingKey = await createEphemeralEs256SigningKey({
+      issuerDid: PORTAL_TCC_DID,
+      kidPrefix: PORTAL_TCC_DID,
+    });
+    const signed = await signTrustCareCredentialJwt({
+      credential: {
+        "@context": ["https://www.w3.org/ns/credentials/v2"],
+        id: "urn:trustcare:test:fragment-key",
+        type: ["VerifiableCredential", "PatientIdentityCredential"],
+        issuer: { id: PORTAL_TCC_DID },
+        validFrom: new Date(Date.now() - 60_000).toISOString(),
+        validUntil: new Date(Date.now() + 60_000).toISOString(),
+        credentialSubject: { id: "did:key:test-holder" },
+      },
+      signingKey,
+    });
+    const hospitalJwks = publicJwksForSigningKey(signingKey);
+    const key = (hospitalJwks.keys as Record<string, unknown>[])[0];
+    const fragment = String(key.kid).split("#").at(-1);
+    const result = await verifyQr(
+      {
+        url: "https://trustcare.example.com/trpc",
+        verificationEvidenceProvider: completeEvidenceProvider,
+        fetchImpl: async (input) => {
+          if (String(input).endsWith("/hospital/tcc/did/jwks.json")) {
             return new Response(
               JSON.stringify({
-                verified: true,
-                trustLevel: "green",
-                status: "active",
+                ...hospitalJwks,
+                keys: [{ ...key, kid: `${PORTAL_ROOT_DID}#${fragment}` }],
               }),
               { headers: { "content-type": "application/json" } },
             );
@@ -671,18 +780,95 @@ describe("verifyQr VP resolver behavior", () => {
       signed.jwt,
     );
 
-    expect(result.protocol).toBe("trustcare-vc");
     expect(result.verified).toBe(false);
     expect(result.trustLevel).not.toBe("green");
     expect(JSON.stringify(result.verificationChecklist)).toContain(
-      "key controller does not match",
+      "No public JWK matched",
     );
+  });
+
+  it("never verifies an unsupported Portal hospital JWT algorithm", async () => {
+    const now = Math.floor(Date.now() / 1_000);
+    const jwt = await new SignJWT({
+      "@context": ["https://www.w3.org/ns/credentials/v2"],
+      id: "urn:trustcare:test:unsupported-alg",
+      type: ["VerifiableCredential", "PatientIdentityCredential"],
+      issuer: { id: PORTAL_TCC_DID },
+      validFrom: new Date((now - 60) * 1_000).toISOString(),
+      validUntil: new Date((now + 60) * 1_000).toISOString(),
+      credentialSubject: { id: "did:key:test-holder" },
+    })
+      .setProtectedHeader({
+        alg: "HS256",
+        typ: "vc+jwt",
+        kid: `${PORTAL_TCC_DID}#vc-signing-active`,
+      })
+      .setIssuer(PORTAL_TCC_DID)
+      .setIssuedAt(now)
+      .setExpirationTime(now + 60)
+      .sign(new TextEncoder().encode("trustcare-test-secret-32-bytes!!"));
+    let fetched = false;
+    const result = await verifyQr(
+      {
+        url: "https://trustcare.example.com/trpc",
+        verificationEvidenceProvider: completeEvidenceProvider,
+        fetchImpl: async () => {
+          fetched = true;
+          return new Response("not found", { status: 404 });
+        },
+      },
+      jwt,
+    );
+
+    expect(fetched).toBe(false);
+    expect(result.verified).toBe(false);
+    expect(result.trustLevel).toBe("red");
+    expect(result.errors?.join(" ")).toContain("not supported");
+  });
+
+  it("rejects a hospital credential before its W3C validFrom", async () => {
+    const signingKey = await createEphemeralEs256SigningKey({
+      issuerDid: PORTAL_TCC_DID,
+      kidPrefix: PORTAL_TCC_DID,
+    });
+    const signed = await signTrustCareCredentialJwt({
+      credential: {
+        "@context": ["https://www.w3.org/ns/credentials/v2"],
+        id: "urn:trustcare:test:not-yet-valid",
+        type: ["VerifiableCredential", "PatientIdentityCredential"],
+        issuer: { id: PORTAL_TCC_DID },
+        validFrom: new Date(Date.now() + 60_000).toISOString(),
+        validUntil: new Date(Date.now() + 120_000).toISOString(),
+        credentialSubject: { id: "did:key:test-holder" },
+      },
+      signingKey,
+    });
+    const result = await verifyQr(
+      {
+        url: "https://trustcare.example.com/trpc",
+        verificationEvidenceProvider: completeEvidenceProvider,
+        fetchImpl: async (input) => {
+          if (String(input).endsWith("/hospital/tcc/did/jwks.json")) {
+            return new Response(
+              JSON.stringify(publicJwksForSigningKey(signingKey)),
+              { headers: { "content-type": "application/json" } },
+            );
+          }
+          return new Response("not found", { status: 404 });
+        },
+      },
+      signed.jwt,
+    );
+
+    expect(result.verified).toBe(false);
+    expect(result.trustLevel).toBe("red");
+    expect(result.errors?.join(" ")).toContain("not valid yet");
   });
 
   it("verifies a Portal SD-JWT-VC QR while preserving disclosures for Portal cross-check", async () => {
     const signingKey = await createEphemeralEs256SigningKey({
-      issuerDid: "did:web:trustcare.network:hospital:tcc",
-      kidPrefix: "did:web:trustcare.network:hospital:tcc",
+      issuerDid: PORTAL_TCC_DID,
+      kidPrefix: PORTAL_TCC_DID,
     });
     const signed = await signTrustCareCredentialJwt({
       credential: {
@@ -690,7 +876,7 @@ describe("verifyQr VP resolver behavior", () => {
         id: "urn:trustcare:seed:vc:tcc:p001:patient_summary",
         type: ["VerifiableCredential", "PatientSummaryCredential"],
         issuer: {
-          id: "did:web:trustcare.network:hospital:tcc",
+          id: PORTAL_TCC_DID,
           name: "TrustCare Central Hospital",
           nameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
         },
@@ -712,12 +898,10 @@ describe("verifyQr VP resolver behavior", () => {
       JSON.stringify(["salt", "patient_name", "Somchai"]),
     ).toString("base64url");
     const sdJwtVc = `${signed.jwt}~${disclosure}`;
-    const hospitalJwksUrl =
-      "https://trustcarehealth.live/hospital/tcc/did/jwks.json";
+    const hospitalJwksUrl = `${PORTAL_ORIGIN}/hospital/tcc/did/jwks.json`;
     const result = await verifyQr(
       {
         url: "https://trustcare.example.com/trpc",
-        portalOrigin: "https://trustcarehealth.live",
         verificationEvidenceProvider: completeEvidenceProvider,
         fetchImpl: async (input, init) => {
           const url = String(input);
@@ -727,17 +911,6 @@ describe("verifyQr VP resolver behavior", () => {
               {
                 headers: { "content-type": "application/json" },
               },
-            );
-          }
-          if (url === "https://trustcarehealth.live/api/wallet/sync/verify") {
-            expect(JSON.parse(String(init?.body))).toEqual({ jwt: sdJwtVc });
-            return new Response(
-              JSON.stringify({
-                verified: true,
-                trustLevel: "green",
-                status: "active",
-              }),
-              { headers: { "content-type": "application/json" } },
             );
           }
           return new Response("not found", { status: 404 });

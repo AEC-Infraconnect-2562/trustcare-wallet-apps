@@ -30,7 +30,7 @@ Rule for this checklist: mark an item complete only when code and verification e
 
 ## WP-2 - Production Share Gateway
 
-- [x] Decide and document the production gateway path for this repo run: Portal backend or deployable serverless gateway. (Selected Portal backend: `https://trustcarehealth.live/api/share-gateway`.)
+- [x] Decide and document the gateway path for this repo run: Wallet Exchange V2 discovery returns `https://trustcare-hospital-network-production.up.railway.app/api/share-gateway`.
 - [ ] If Portal backend is selected, create and push a Portal PR implementing the required endpoints/CORS/status behavior. (Branch pushed: `codex/share-gateway-backend`; PR creation pending because GitHub connector timed out and local `gh` token is invalid.)
 - [x] Add/update `docs/SHARE_GATEWAY_PORTAL_CONTRACT.md`.
 - [x] Ensure web env supports `VITE_TRUSTCARE_SHARE_GATEWAY_URL`.

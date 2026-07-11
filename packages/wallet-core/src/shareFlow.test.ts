@@ -365,7 +365,7 @@ describe("premium share flow policy and validation", () => {
     const signedPortalJwt = makeJwt({
       id: "vc-signed-portal-001",
       type: ["VerifiableCredential", "PatientIdentityCredential"],
-      issuer: "did:web:trustcare.network:hospital:tcc",
+      issuer: "did:web:portal.example:hospital:tcc",
       credentialSubject: { id: "did:key:holder001" },
     });
     const cards = [
@@ -376,7 +376,7 @@ describe("premium share flow policy and validation", () => {
           type: "jwt",
           jwt: signedPortalJwt,
           alg: "ES256",
-          kid: "did:web:trustcare.network:hospital:tcc#vc-signing-key",
+          kid: "did:web:portal.example:hospital:tcc#vc-signing-key",
         },
       },
       card(2, "allergy_alert"),
@@ -500,13 +500,13 @@ function card(id: number, cardType: string): WalletCard {
     credentialData: {
       "@context": ["https://www.w3.org/ns/credentials/v2"],
       type: ["VerifiableCredential"],
-      issuer: { id: "did:web:trustcare.network:hospital:tcc" },
+      issuer: { id: "did:web:portal.example:hospital:tcc" },
       credentialSubject: {
         id: "did:key:holder001",
         documentReference: { resourceType: "DocumentReference", id },
       },
     },
-    issuerDid: "did:web:trustcare.network:hospital:tcc",
+    issuerDid: "did:web:portal.example:hospital:tcc",
     holderDid: "did:key:holder001",
     sourceSystem: "trustcare_portal",
     createdAt: "2026-07-01T00:00:00.000Z",

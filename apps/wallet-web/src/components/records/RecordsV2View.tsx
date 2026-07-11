@@ -5,10 +5,12 @@ import {
   ImageOff,
   RefreshCw,
   Search,
+  Share2,
 } from "lucide-react";
 import {
   Badge,
   Button,
+  CredentialDocument,
   Surface,
   useLoadedPhotoCandidate,
 } from "@trustcare/ui-web";
@@ -17,17 +19,36 @@ import type {
   WalletDocumentRecordV2,
 } from "@trustcare/wallet-core";
 import {
+  mergeWalletDocumentRecordsV2,
   photoBearingCredentialTypes,
   photoCandidatesForCard,
   walletCardForDocumentRendering,
   walletDocumentTrustPresentation,
 } from "@trustcare/wallet-core";
 import { useWalletDocuments } from "../../hooks/useWalletDocuments";
+import type {
+  PortalHospitalCode,
+  RecordExchangeSubmissionResult,
+} from "../../walletExchangeSubmission";
+
+export type {
+  PortalHospitalCode,
+  RecordExchangeSubmissionResult,
+} from "../../walletExchangeSubmission";
 
 export function RecordsV2View({
   runtimeEnvironment,
   userId,
   apiUrl,
+  exchangeRecords = [],
+  exchangeLoading = false,
+  exchangeError = "",
+  onReloadExchange,
+  pendingShareCount = 0,
+  onRecoverPendingShares,
+  defaultTargetHospitalCode = "TCC",
+  onSubmitExchangeRecord,
+  onRefreshExchangeSubmission,
   selectedRecordId,
   onOpenRecord,
   onCloseRecord,
@@ -35,18 +56,75 @@ export function RecordsV2View({
   runtimeEnvironment: RuntimeEnvironment;
   userId: string;
   apiUrl: string;
+  exchangeRecords?: WalletDocumentRecordV2[];
+  exchangeLoading?: boolean;
+  exchangeError?: string;
+  onReloadExchange?: () => void;
+  pendingShareCount?: number;
+  onRecoverPendingShares?: () => Promise<void>;
+  defaultTargetHospitalCode?: PortalHospitalCode;
+  onSubmitExchangeRecord?: (
+    record: WalletDocumentRecordV2,
+    targetHospitalCode: PortalHospitalCode,
+  ) => Promise<RecordExchangeSubmissionResult>;
+  onRefreshExchangeSubmission?: (
+    clientSubmissionId: string,
+  ) => Promise<RecordExchangeSubmissionResult>;
   selectedRecordId?: string;
   onOpenRecord: (record: WalletDocumentRecordV2) => void;
   onCloseRecord: () => void;
 }) {
   const [search, setSearch] = useState("");
+  const [recoveringShares, setRecoveringShares] = useState(false);
+  const [shareRecoveryError, setShareRecoveryError] = useState("");
   const deferredSearch = useDeferredValue(search);
-  const { records, loading, error, reload } = useWalletDocuments({
+  const {
+    records: repositoryRecords,
+    loading: repositoryLoading,
+    error: repositoryError,
+    reload,
+  } = useWalletDocuments({
+    enabled: runtimeEnvironment === "demo",
     runtimeEnvironment,
     userId,
     apiUrl,
     search: deferredSearch,
   });
+  const mergedRecords = useMemo(
+    () => mergeRecordSources(repositoryRecords, exchangeRecords),
+    [exchangeRecords, repositoryRecords],
+  );
+  const records = useMemo(
+    () =>
+      mergedRecords.error
+        ? []
+        : mergedRecords.records.filter((record) =>
+            recordMatchesSearch(record, deferredSearch),
+          ),
+    [deferredSearch, mergedRecords],
+  );
+  const loading = repositoryLoading || exchangeLoading;
+  const error = records.length
+    ? ""
+    : mergedRecords.error || exchangeError || repositoryError;
+  const reloadAll = () => {
+    reload();
+    onReloadExchange?.();
+  };
+  const recoverPendingShares = async () => {
+    if (!onRecoverPendingShares || recoveringShares) return;
+    setRecoveringShares(true);
+    setShareRecoveryError("");
+    try {
+      await onRecoverPendingShares();
+    } catch {
+      setShareRecoveryError(
+        "ยังส่งไม่สำเร็จ เอกสารยังเก็บไว้อย่างปลอดภัยและลองใหม่ได้ภายหลัง",
+      );
+    } finally {
+      setRecoveringShares(false);
+    }
+  };
   const selectedRecord = useMemo(
     () =>
       selectedRecordId
@@ -58,9 +136,35 @@ export function RecordsV2View({
         : undefined,
     [records, selectedRecordId],
   );
+  const selectedExchangeRecord = useMemo(
+    () =>
+      selectedRecord
+        ? exchangeRecords.find(
+            (candidate) =>
+              candidate.id === selectedRecord.id &&
+              candidate.lifecycle.versionId ===
+                selectedRecord.lifecycle.versionId &&
+              Boolean(candidate.credential.jwt) &&
+              candidate.credential.jwt === selectedRecord.credential.jwt,
+          )
+        : undefined,
+    [exchangeRecords, selectedRecord],
+  );
 
   if (selectedRecord) {
-    return <RecordV2Detail record={selectedRecord} onBack={onCloseRecord} />;
+    return (
+      <RecordV2Detail
+        record={selectedRecord}
+        onBack={onCloseRecord}
+        defaultTargetHospitalCode={defaultTargetHospitalCode}
+        onSubmitExchangeRecord={
+          selectedExchangeRecord ? onSubmitExchangeRecord : undefined
+        }
+        onRefreshExchangeSubmission={
+          selectedExchangeRecord ? onRefreshExchangeSubmission : undefined
+        }
+      />
+    );
   }
 
   if (selectedRecordId && !loading && !error) {
@@ -96,6 +200,27 @@ export function RecordsV2View({
         </div>
       </Surface>
 
+      {pendingShareCount > 0 && (
+        <Surface className="pending-share-recovery" role="status">
+          <div>
+            <strong>มีเอกสาร {pendingShareCount} รายการที่รอส่งต่อ</strong>
+            <p>
+              ระบบเก็บเอกสารที่คุณยืนยันไว้แล้ว
+              สามารถลองส่งต่ออีกครั้งโดยไม่ต้องสร้างรายการใหม่
+            </p>
+            {shareRecoveryError && <small>{shareRecoveryError}</small>}
+          </div>
+          <Button
+            className="secondary"
+            disabled={recoveringShares || !onRecoverPendingShares}
+            onClick={() => void recoverPendingShares()}
+          >
+            <RefreshCw size={17} />
+            {recoveringShares ? "กำลังลองส่ง..." : "ลองส่งอีกครั้ง"}
+          </Button>
+        </Surface>
+      )}
+
       <Surface className="document-controls">
         <label className="search-box">
           <Search size={18} />
@@ -127,7 +252,7 @@ export function RecordsV2View({
               <code>{error}</code>
             </details>
           </div>
-          <Button className="secondary" onClick={reload}>
+          <Button className="secondary" onClick={reloadAll}>
             <RefreshCw size={17} /> ลองอีกครั้ง
           </Button>
         </Surface>
@@ -186,15 +311,66 @@ export function RecordsV2View({
   );
 }
 
-const recordPhotoDocumentTypes = new Set<string>(
-  photoBearingCredentialTypes,
-);
+export function mergeRecordSources(
+  repositoryRecords: readonly WalletDocumentRecordV2[],
+  exchangeRecords: readonly WalletDocumentRecordV2[],
+): { records: WalletDocumentRecordV2[]; error: string } {
+  try {
+    const recordsByOwner = new Map<string, WalletDocumentRecordV2[]>();
+    const ownerByRecordId = new Map<string, string>();
+    for (const record of [...repositoryRecords, ...exchangeRecords]) {
+      const conflictingOwner = ownerByRecordId.get(record.id);
+      if (conflictingOwner && conflictingOwner !== record.owner.id) {
+        throw new Error(
+          `Wallet document ${record.id} belongs to conflicting owner partitions.`,
+        );
+      }
+      ownerByRecordId.set(record.id, record.owner.id);
+      const ownerRecords = recordsByOwner.get(record.owner.id) ?? [];
+      ownerRecords.push(record);
+      recordsByOwner.set(record.owner.id, ownerRecords);
+    }
 
-function RecordV2Thumbnail({
-  record,
-}: {
-  record: WalletDocumentRecordV2;
-}) {
+    return {
+      records: Array.from(recordsByOwner.values()).flatMap((ownerRecords) =>
+        mergeWalletDocumentRecordsV2([], ownerRecords),
+      ),
+      error: "",
+    };
+  } catch (reason) {
+    return {
+      records: [],
+      error:
+        reason instanceof Error
+          ? reason.message
+          : "Wallet document sources could not be merged safely.",
+    };
+  }
+}
+
+export function recordMatchesSearch(
+  record: WalletDocumentRecordV2,
+  search: string,
+): boolean {
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  if (!normalizedSearch) return true;
+  return [
+    record.title.th,
+    record.title.en,
+    record.documentType,
+    record.provenance.issuerName,
+    record.clinicalContext.facility?.name,
+    record.clinicalContext.practitioner?.name,
+  ]
+    .filter(Boolean)
+    .some((value) =>
+      String(value).toLocaleLowerCase().includes(normalizedSearch),
+    );
+}
+
+const recordPhotoDocumentTypes = new Set<string>(photoBearingCredentialTypes);
+
+function RecordV2Thumbnail({ record }: { record: WalletDocumentRecordV2 }) {
   const photoRequired = recordPhotoDocumentTypes.has(record.documentType);
   const candidates = useMemo(() => {
     if (!photoRequired) return [];
@@ -238,11 +414,62 @@ function RecordV2Thumbnail({
 function RecordV2Detail({
   record,
   onBack,
+  defaultTargetHospitalCode,
+  onSubmitExchangeRecord,
+  onRefreshExchangeSubmission,
 }: {
   record: WalletDocumentRecordV2;
   onBack: () => void;
+  defaultTargetHospitalCode: PortalHospitalCode;
+  onSubmitExchangeRecord?: (
+    record: WalletDocumentRecordV2,
+    targetHospitalCode: PortalHospitalCode,
+  ) => Promise<RecordExchangeSubmissionResult>;
+  onRefreshExchangeSubmission?: (
+    clientSubmissionId: string,
+  ) => Promise<RecordExchangeSubmissionResult>;
 }) {
   const trust = recordTrustPresentation(record);
+  const [targetHospitalCode, setTargetHospitalCode] =
+    useState<PortalHospitalCode>(defaultTargetHospitalCode);
+  const [submission, setSubmission] =
+    useState<RecordExchangeSubmissionResult | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState("");
+  const submit = async () => {
+    if (!onSubmitExchangeRecord) return;
+    setShareBusy(true);
+    setShareError("");
+    try {
+      setSubmission(await onSubmitExchangeRecord(record, targetHospitalCode));
+    } catch (reason) {
+      setShareError(
+        reason instanceof Error
+          ? reason.message
+          : "ไม่สามารถส่งเอกสารไปยังโรงพยาบาลได้",
+      );
+    } finally {
+      setShareBusy(false);
+    }
+  };
+  const refreshSubmission = async () => {
+    if (!submission || !onRefreshExchangeSubmission) return;
+    setShareBusy(true);
+    setShareError("");
+    try {
+      setSubmission(
+        await onRefreshExchangeSubmission(submission.clientSubmissionId),
+      );
+    } catch (reason) {
+      setShareError(
+        reason instanceof Error
+          ? reason.message
+          : "ไม่สามารถตรวจสถานะการส่งเอกสารได้",
+      );
+    } finally {
+      setShareBusy(false);
+    }
+  };
   return (
     <div className="view-stack records-v2-view">
       <Button className="secondary record-v2-back" onClick={onBack}>
@@ -280,6 +507,70 @@ function RecordV2Detail({
             <dd>{record.content.originalAttachments.length} ไฟล์</dd>
           </div>
         </dl>
+        {onSubmitExchangeRecord ? (
+          <div className="record-v2-share-panel">
+            <div>
+              <strong>แชร์เอกสารกับโรงพยาบาล</strong>
+              <p>
+                Wallet
+                จะสร้างลายเซ็นใหม่สำหรับการแชร์ครั้งนี้และส่งเฉพาะเอกสารที่เลือก
+              </p>
+            </div>
+            <label>
+              โรงพยาบาลผู้รับ
+              <select
+                value={targetHospitalCode}
+                onChange={(event) =>
+                  setTargetHospitalCode(
+                    event.target.value as PortalHospitalCode,
+                  )
+                }
+                disabled={shareBusy || Boolean(submission)}
+              >
+                <option value="TCC">TrustCare Central Hospital</option>
+                <option value="TCP">
+                  TrustCare Phuket International Hospital
+                </option>
+                <option value="TCM">TrustCare Medical Center</option>
+              </select>
+            </label>
+            {!submission ? (
+              <Button onClick={() => void submit()} disabled={shareBusy}>
+                {shareBusy ? (
+                  <RefreshCw className="spin-icon" size={17} />
+                ) : (
+                  <Share2 size={17} />
+                )}
+                {shareBusy ? "กำลังส่ง" : "ยืนยันและแชร์เอกสารนี้"}
+              </Button>
+            ) : (
+              <div className="record-v2-submission-status" aria-live="polite">
+                <Badge tone={submissionTone(submission.status)}>
+                  {submissionStatusLabel(submission.status)}
+                </Badge>
+                <small>รหัสอ้างอิง {submission.submissionId}</small>
+                {onRefreshExchangeSubmission ? (
+                  <Button
+                    className="secondary"
+                    onClick={() => void refreshSubmission()}
+                    disabled={shareBusy}
+                  >
+                    <RefreshCw
+                      className={shareBusy ? "spin-icon" : undefined}
+                      size={17}
+                    />
+                    ตรวจสถานะล่าสุด
+                  </Button>
+                ) : null}
+              </div>
+            )}
+            {shareError ? (
+              <p className="record-v2-share-error" role="alert">
+                {shareError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <details className="record-v2-checks">
           <summary>รายละเอียดการตรวจสอบขั้นสูง</summary>
           {record.trust.checks.map((check, index) => (
@@ -291,8 +582,41 @@ function RecordV2Detail({
           ))}
         </details>
       </Surface>
+      <Surface className="record-v2-document-surface">
+        <div className="record-v2-document-heading">
+          <div>
+            <span className="eyebrow">เอกสารต้นฉบับ</span>
+            <h3>แสดงจากข้อมูลที่โรงพยาบาลลงนาม</h3>
+          </div>
+          <Badge tone="neutral">Shared Renderer</Badge>
+        </div>
+        <div className="record-v2-document-preview">
+          <CredentialDocument card={walletCardForDocumentRendering(record)} />
+        </div>
+      </Surface>
     </div>
   );
+}
+
+function submissionStatusLabel(status: string): string {
+  return (
+    (
+      {
+        received: "Portal รับเอกสารแล้ว",
+        needs_review: "รอโรงพยาบาลตรวจทาน",
+        accepted: "โรงพยาบาลรับเอกสารแล้ว",
+        partial: "รับเอกสารบางส่วน",
+        rejected: "โรงพยาบาลไม่รับเอกสาร",
+      } as Record<string, string>
+    )[status] ?? status
+  );
+}
+
+function submissionTone(status: string): "neutral" | "blue" | "yellow" | "red" {
+  if (status === "accepted") return "blue";
+  if (status === "rejected") return "red";
+  if (status === "needs_review" || status === "partial") return "yellow";
+  return "neutral";
 }
 
 export function recordTrustPresentation(record: WalletDocumentRecordV2): {
