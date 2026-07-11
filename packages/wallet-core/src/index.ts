@@ -49,3 +49,5 @@ export * from "./serviceInterfaces";
 export * from "./demoWalletRepository";
 export * from "./walletDocumentV2";
 export * from "./verificationEvidence";
+export * from "./walletExchangeState";
+export * from "./holderIdentity";
