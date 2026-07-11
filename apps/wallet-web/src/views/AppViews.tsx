@@ -12,8 +12,11 @@ import {
   ArrowLeft,
   BadgeCheck,
   Bell,
+  Building2,
+  CalendarDays,
   Camera,
   CheckCircle2,
+  ChevronRight,
   Clock,
   Cloud,
   Copy,
@@ -28,6 +31,7 @@ import {
   Globe2,
   History,
   Home,
+  IdCard,
   Inbox,
   KeyRound,
   Layers3,
@@ -37,6 +41,7 @@ import {
   LogOut,
   Network,
   Pin,
+  Pill,
   Printer,
   QrCode,
   RefreshCw,
@@ -87,6 +92,7 @@ import {
   buildPortalInteroperabilityFixtures,
   getDemoUser,
   getDemoWalletCards,
+  getValueAtPath,
   initialsFromName,
   normalizePhotoUrl,
   normalizePhotoUrlCandidates,
@@ -334,6 +340,9 @@ export function NavButton({
       type="button"
       className={active ? "nav-button active" : "nav-button"}
       onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      aria-label={label}
+      title={label}
     >
       {icon}
       <span>{label}</span>
@@ -407,31 +416,50 @@ export function HomeView({
   onSyncPortal: () => void;
   onPrepareContext: (context: ReadinessContext) => void;
 }) {
-  const [readinessExpanded, setReadinessExpanded] = useState(false);
   const activeCards = useMemo(
     () => cards.filter((card) => canPresentCredential(card)),
     [cards],
   );
-  const criticalCards = useMemo(
-    () =>
-      activeCards
-        .filter((card) => card.pinned || criticalCardTypes.has(card.cardType))
-        .slice(0, 5),
-    [activeCards],
-  );
+  const importantCards = useMemo(() => {
+    const selected = [
+      activeCards.find((card) => card.cardType === "patient_identity"),
+      activeCards.find(
+        (card) =>
+          card.cardType.includes("coverage") ||
+          card.cardType.includes("eligibility"),
+      ),
+      activeCards.find((card) =>
+        ["medication_summary", "prescription"].includes(card.cardType),
+      ),
+    ].filter((card): card is WalletCard => Boolean(card));
+
+    const unique = new Map(selected.map((card) => [card.id, card]));
+    for (const card of activeCards) {
+      if (unique.size >= 3) break;
+      if (card.pinned || criticalCardTypes.has(card.cardType)) {
+        unique.set(card.id, card);
+      }
+    }
+    return [...unique.values()].slice(0, 3);
+  }, [activeCards]);
   const recentCards = useMemo(
     () =>
       [...activeCards]
         .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-        .slice(0, 4),
+        .slice(0, 3),
     [activeCards],
   );
-  const nextAppointment = useMemo(
-    () => activeCards.find((card) => card.cardType === "appointment"),
-    [activeCards],
-  );
-  const readinessScore = readiness?.readiness?.score ?? 0;
-  const readyForService = Boolean(readiness?.readiness?.criticalReady);
+  const nextAppointment = useMemo(() => {
+    const now = Date.now();
+    return activeCards
+      .filter((card) => card.cardType === "appointment")
+      .map((card) => ({ card, start: appointmentStartFromCard(card) }))
+      .filter(
+        (entry): entry is { card: WalletCard; start: string } =>
+          typeof entry.start === "string" && Date.parse(entry.start) >= now,
+      )
+      .sort((a, b) => Date.parse(a.start) - Date.parse(b.start))[0]?.card;
+  }, [activeCards]);
   const sortedReadiness = useMemo(
     () =>
       [...serviceReadiness].sort((a, b) => {
@@ -441,262 +469,271 @@ export function HomeView({
       }),
     [serviceReadiness],
   );
-  const visibleReadiness = useMemo(
-    () => (readinessExpanded ? sortedReadiness : sortedReadiness.slice(0, 3)),
-    [readinessExpanded, sortedReadiness],
+  const activeService = useMemo(
+    () =>
+      sortedReadiness.find(
+        (item) => item.context === activeReadinessContext,
+      ) ?? sortedReadiness[0],
+    [activeReadinessContext, sortedReadiness],
   );
+  const evidenceReviewCards = useMemo(
+    () =>
+      activeCards.filter((card) => {
+        const trust = homeCardTrust(card);
+        return trust.tone === "yellow" || trust.tone === "red";
+      }),
+    [activeCards],
+  );
+  const appointmentStart = nextAppointment
+    ? appointmentStartFromCard(nextAppointment)
+    : null;
+  const appointmentDate = appointmentStart
+    ? homeDisplayDateTime(appointmentStart)
+    : null;
+  const appointmentIssuer = nextAppointment?.issuerHospitalName ?? null;
+  const todayLabel = new Intl.DateTimeFormat("th-TH", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date());
 
   return (
-    <div className="view-stack">
-      <section className="home-hero-grid">
-        <Surface className="health-passport-card">
-          <span className="eyebrow">Health Passport ส่วนตัว</span>
-          <h2>{user.nameEn}</h2>
-          <p>{user.persona}</p>
-          <div className="passport-chip-row">
-            <Badge
-              tone={user.source === "trustcare_portal" ? "blue" : "neutral"}
-            >
-              {user.sourceLabel}
-            </Badge>
-            <Badge tone="neutral">{user.hospitalCode}</Badge>
-            <Badge tone={offlineOnline ? "green" : "yellow"}>
-              {offlineOnline ? "แคชพร้อมใช้งาน" : "โหมดใช้งานออฟไลน์"}
-            </Badge>
-          </div>
-          <div
-            className="passport-summary-grid"
-            aria-label="ภาพรวม Health Passport"
-          >
-            <div>
-              <span>เอกสารพร้อมใช้</span>
-              <strong>{activeCards.length}</strong>
-            </div>
-            <div>
-              <span>เอกสารสำคัญ</span>
-              <strong>{criticalCards.length}</strong>
-            </div>
-            <div>
-              <span>นัดหมายถัดไป</span>
-              <strong>{nextAppointment ? "มีนัด" : "ไม่มี"}</strong>
-            </div>
-          </div>
-          <div className="home-action-row">
-            <Button onClick={() => onView("documents")}>
-              <FileText size={18} /> เอกสาร
-            </Button>
-            {canSyncPortalWallet && (
+    <div className="clinical-home" data-testid="clinical-home">
+      <header className="clinical-home-greeting">
+        <div>
+          <p>{todayLabel}</p>
+          <h2>สวัสดีครับ {user.nameTh}</h2>
+        </div>
+        <span className={offlineOnline ? "is-online" : "is-offline"}>
+          <i aria-hidden="true" />
+          {offlineOnline ? "พร้อมใช้งาน" : "ใช้งานแบบออฟไลน์"}
+        </span>
+      </header>
+
+      <section className="clinical-appointment-hero">
+        <div className="clinical-appointment-copy">
+          <span className="clinical-appointment-icon" aria-hidden="true">
+            <CalendarDays />
+          </span>
+          <div>
+            <p className="clinical-eyebrow">นัดหมายถัดไป</p>
+            <h1>
+              {nextAppointment
+                ? "พร้อมสำหรับนัดหมายถัดไป"
+                : "เตรียมเอกสารสำหรับบริการครั้งถัดไป"}
+            </h1>
+            {appointmentIssuer ? <strong>{appointmentIssuer}</strong> : null}
+            {appointmentDate ? <span>{appointmentDate}</span> : null}
+            {activeService ? (
+              <small>
+                เอกสารจำเป็น {activeService.requiredReady}/
+                {activeService.requiredTotal} รายการ
+              </small>
+            ) : null}
+            <div className="clinical-hero-actions">
               <Button
-                className="secondary portal-sync-primary"
-                onClick={onSyncPortal}
-                disabled={portalSyncBusy}
+                onClick={() =>
+                  onPrepareContext(
+                    activeService?.context ?? activeReadinessContext,
+                  )
+                }
               >
-                <RefreshCw
-                  size={18}
-                  className={portalSyncBusy ? "spin-icon" : undefined}
-                />{" "}
-                {portalSyncBusy ? "กำลัง Sync" : "Sync Portal"}
+                เตรียมเข้ารับบริการ <ChevronRight size={18} />
               </Button>
-            )}
-            <Button className="secondary" onClick={() => onView("receive")}>
-              <Inbox size={18} /> รับเอกสาร
-            </Button>
-            <Button className="secondary" onClick={() => onView("share")}>
-              <Share2 size={18} /> แชร์
-            </Button>
+              {nextAppointment ? (
+                <button
+                  type="button"
+                  className="clinical-text-action"
+                  onClick={() => onOpenCard(nextAppointment)}
+                >
+                  ดูรายละเอียดนัดหมาย
+                </button>
+              ) : null}
+            </div>
           </div>
-          <div
-            className="passport-document-stack"
-            aria-label="เอกสารสำคัญในกระเป๋า"
+        </div>
+        <img
+          className="clinical-hospital-illustration"
+          src="/assets/illustrations/appointment-hospital.png"
+          alt=""
+        />
+      </section>
+
+      <section className="clinical-home-section clinical-important-section">
+        <div className="clinical-section-heading">
+          <div>
+            <p className="clinical-eyebrow">หยิบใช้ได้ทันที</p>
+            <h2>เอกสารสำคัญ</h2>
+          </div>
+          <button
+            type="button"
+            className="clinical-text-action"
+            onClick={() => onView("documents")}
           >
-            {criticalCards.slice(0, 3).map((card) => (
+            ดูเอกสารทั้งหมด <ChevronRight size={16} />
+          </button>
+        </div>
+        <div className="clinical-important-grid">
+          {importantCards.map((card) => {
+            const trust = homeCardTrust(card);
+            const isIdentity = card.cardType === "patient_identity";
+            return (
               <button
                 key={card.id}
                 type="button"
-                className="passport-document-row"
+                className="clinical-document-pass"
                 onClick={() => onOpenCard(card)}
               >
-                <ShieldCheck size={17} />
-                <span>
-                  <strong>{card.displayNameEn ?? card.displayName}</strong>
-                  <small>{categoryLabel(card.documentCategory)}</small>
-                </span>
-                <Badge tone={credentialStatusTone(card.credentialStatus)}>
-                  {credentialStatusLabel(card.credentialStatus)}
-                </Badge>
-              </button>
-            ))}
-          </div>
-        </Surface>
-        <Surface className="home-readiness-panel">
-          <div className="readiness-ring">{readinessScore}%</div>
-          <div className="home-readiness-copy">
-            <h3>{readyForService ? "พร้อมเข้ารับบริการ" : "ยังขาดเอกสาร"}</h3>
-            <p>
-              {readyForService
-                ? "เอกสารจำเป็นสำหรับบริบทบริการนี้พร้อมแล้ว"
-                : "ตรวจเอกสารที่ขาดก่อนสร้างชุดเอกสารบริการ"}
-            </p>
-            <div
-              className="service-readiness-list"
-              aria-label="ความพร้อมแยกตามเรื่องบริการ"
-            >
-              {visibleReadiness.map((item) => (
-                <button
-                  key={item.context}
-                  type="button"
-                  className={`service-readiness-row ${item.context === activeReadinessContext ? "active" : ""}`}
-                  onClick={() => onPrepareContext(item.context)}
-                >
-                  <span>
-                    <strong>{item.label}</strong>
-                    <small>{item.purpose}</small>
-                  </span>
-                  <span className="service-readiness-meta">
-                    <Badge tone={item.criticalReady ? "green" : "yellow"}>
-                      {item.criticalReady
-                        ? "พร้อม"
-                        : `ขาด ${item.missingRequired}`}
-                    </Badge>
-                    <small>
-                      {item.requiredReady}/{item.requiredTotal} จำเป็น
-                    </small>
-                  </span>
-                  <i className="service-readiness-meter" aria-hidden="true">
-                    <b style={{ width: `${item.score}%` }} />
-                  </i>
-                  {readinessExpanded && (
-                    <em>
-                      พร้อม: {item.readyLabels.join(", ") || "ยังไม่มี"} · ขาด:{" "}
-                      {item.missingLabels.join(", ") || "ไม่มี"}
-                    </em>
+                <span className="clinical-pass-icon" aria-hidden="true">
+                  {isIdentity ? (
+                    <UserAvatarImage user={user} cards={[card]} />
+                  ) : card.cardType.includes("medication") ||
+                    card.cardType === "prescription" ? (
+                    <Pill />
+                  ) : card.cardType.includes("coverage") ||
+                    card.cardType.includes("eligibility") ? (
+                    <Building2 />
+                  ) : (
+                    <IdCard />
                   )}
-                </button>
-              ))}
-            </div>
-            <div className="readiness-action-row">
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => setReadinessExpanded((value) => !value)}
-              >
-                {readinessExpanded
-                  ? "ย่อรายละเอียด"
-                  : `ดูรายละเอียดทั้งหมด ${serviceReadiness.length} เรื่อง`}
-              </button>
-              <Button
-                className={readyForService ? "green" : "purple"}
-                onClick={() => onView("prepare")}
-              >
-                <ListChecks size={18} /> เตรียมบริการ
-              </Button>
-            </div>
-          </div>
-        </Surface>
-      </section>
-
-      <section className="critical-strip">
-        <div className="section-title-row">
-          <div>
-            <h2>เอกสารสำคัญที่ปักหมุด</h2>
-            <p>
-              บัตรตัวตน ประวัติแพ้ยา รายการยา นัดหมาย
-              และสิทธิ์รักษาอยู่ใกล้มือเสมอ
-            </p>
-          </div>
-          <Badge tone="green">{criticalCards.length} พร้อมใช้</Badge>
-        </div>
-        <div className="critical-card-row">
-          {criticalCards.map((card) => (
-            <button
-              key={card.id}
-              type="button"
-              className="critical-card"
-              onClick={() => onOpenCard(card)}
-            >
-              <Pin size={16} />
-              <strong>{card.displayNameEn ?? card.displayName}</strong>
-              <small>
-                {card.expiresAt
-                  ? `หมดอายุ ${new Date(card.expiresAt).toLocaleDateString("th-TH")}`
-                  : "ไม่มีวันหมดอายุ"}
-              </small>
-              <Badge tone={credentialStatusTone(card.credentialStatus)}>
-                {credentialStatusLabel(card.credentialStatus)}
-              </Badge>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <div className="home-two-column">
-        <Surface>
-          <div className="section-title-row">
-            <h2>เอกสารล่าสุด</h2>
-            <button
-              type="button"
-              className="link-button"
-              onClick={() => onView("documents")}
-            >
-              ดูทั้งหมด
-            </button>
-          </div>
-          <div className="compact-list">
-            {recentCards.map((card) => {
-              const trust = homeCardTrust(card);
-              return (
-                <button
-                  key={card.id}
-                  type="button"
-                  onClick={() => onOpenCard(card)}
-                >
-                  <FileText size={18} />
+                </span>
+                <span className="clinical-pass-copy">
+                  <strong>{card.displayName}</strong>
+                  <small>
+                    {card.issuerHospitalName ??
+                      categoryLabel(card.documentCategory)}
+                  </small>
                   <span>
-                    <strong>{card.displayNameEn ?? card.displayName}</strong>
-                    <small>{categoryLabel(card.documentCategory)}</small>
+                    {card.expiresAt
+                      ? `ใช้ได้ถึง ${homeDisplayDate(card.expiresAt)}`
+                      : categoryLabel(card.documentCategory)}
                   </span>
-                  <Badge tone={trust.tone}>{trust.label}</Badge>
-                </button>
-              );
-            })}
+                </span>
+                <span className={`clinical-trust-state tone-${trust.tone}`}>
+                  <ShieldCheck size={14} /> {trust.label}
+                </span>
+                <ChevronRight className="clinical-pass-chevron" size={18} />
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="clinical-home-section clinical-recent-section">
+        <div className="clinical-section-heading">
+          <div>
+            <p className="clinical-eyebrow">อัปเดตจากแหล่งข้อมูลเดิม</p>
+            <h2>ล่าสุด</h2>
           </div>
-        </Surface>
-        <Surface>
-          <div className="section-title-row">
-            <h2>สิ่งที่ควรทำต่อ</h2>
-            <Badge tone={nextAppointment ? "blue" : "neutral"}>
-              {nextAppointment ? "นัดหมาย" : "พร้อมใช้งาน"}
-            </Badge>
-          </div>
-          {nextAppointment ? (
-            <div className="next-action-card">
-              <Clock size={20} />
-              <strong>
-                {nextAppointment.displayNameEn ?? nextAppointment.displayName}
-              </strong>
-              <span>
-                {nextAppointment.expiresAt
-                  ? new Date(nextAppointment.expiresAt).toLocaleString("th-TH")
-                  : "Upcoming service"}
-              </span>
-              <Button
-                className="secondary"
-                onClick={() => onOpenCard(nextAppointment)}
+          {canSyncPortalWallet ? (
+            <button
+              type="button"
+              className="clinical-sync-action"
+              onClick={onSyncPortal}
+              disabled={portalSyncBusy}
+            >
+              <RefreshCw
+                size={16}
+                className={portalSyncBusy ? "spin-icon" : undefined}
+              />
+              {portalSyncBusy ? "กำลังอัปเดต" : "อัปเดตจาก Portal"}
+            </button>
+          ) : null}
+        </div>
+        <div className="clinical-recent-list">
+          {recentCards.map((card) => {
+            const trust = homeCardTrust(card);
+            return (
+              <button
+                key={card.id}
+                type="button"
+                onClick={() => onOpenCard(card)}
               >
-                เปิดเอกสาร
-              </Button>
-            </div>
-          ) : (
-            <div className="next-action-card">
-              <ShieldCheck size={20} />
-              <strong>ยังไม่มีนัดหมายเร่งด่วน</strong>
-              <span>แชร์ล่าสุด: {history[0]?.verifierName ?? "ยังไม่มี"}</span>
-            </div>
-          )}
-        </Surface>
-      </div>
+                <span className="clinical-list-icon" aria-hidden="true">
+                  <FileText size={19} />
+                </span>
+                <span>
+                  <strong>{card.displayName}</strong>
+                  <small>
+                    {card.issuerHospitalName ??
+                      categoryLabel(card.documentCategory)}
+                    {card.sourceSystem === "trustcare_portal"
+                      ? " · จาก TrustCare Portal"
+                      : ""}
+                  </small>
+                </span>
+                <time dateTime={card.createdAt}>
+                  {homeDisplayDate(card.createdAt)}
+                </time>
+                <span className={`clinical-list-trust tone-${trust.tone}`}>
+                  {trust.label}
+                </span>
+                <ChevronRight size={17} />
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {evidenceReviewCards.length ? (
+        <section className="clinical-evidence-alert" role="status">
+          <AlertTriangle aria-hidden="true" />
+          <span>
+            <strong>ยังต้องตรวจหลักฐาน</strong>
+            <small>
+              มี {evidenceReviewCards.length} เอกสารที่ยังตรวจ proof, issuer,
+              status, expiry หรือ policy ไม่ครบ
+            </small>
+          </span>
+          <button
+            type="button"
+            className="clinical-text-action"
+            onClick={() => onView("documents")}
+          >
+            ดูรายการที่ต้องตรวจสอบ <ChevronRight size={16} />
+          </button>
+        </section>
+      ) : null}
     </div>
   );
+}
+
+function homeDisplayDate(value?: string | null): string {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("th-TH", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(parsed);
+}
+
+function homeDisplayDateTime(value?: string | null): string {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("th-TH", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function appointmentStartFromCard(card: WalletCard): string | null {
+  const paths = [
+    "credentialSubject.appointment.start",
+    "vc.credentialSubject.appointment.start",
+  ];
+  for (const path of paths) {
+    const value = getValueAtPath(card.credentialData, path);
+    if (typeof value === "string" && Number.isFinite(Date.parse(value))) {
+      return value;
+    }
+  }
+  return null;
 }
 
 export function DocumentsHubView({

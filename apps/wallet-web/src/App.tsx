@@ -26,6 +26,8 @@ import {
   LogOut,
   Moon,
   Network,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCw,
   Settings,
   Share2,
@@ -35,7 +37,6 @@ import {
 import {
   portalSyncApi,
   payerApi,
-  shareGatewayApi,
   shlApi,
   verifierApi,
   walletApi,
@@ -46,7 +47,6 @@ import {
   countCardsByCategory,
   assessLocalReadiness,
   createDocumentRequestDraft,
-  credentialPresentationPolicy,
   documentRequestFormatLabel,
   documentRequestReturnChannelLabel,
   documentRequestSourceLabel,
@@ -55,8 +55,6 @@ import {
   getDemoUser,
   groupCardsByCategory,
   importWalletExchange,
-  assertPrimaryVerifierQrPayload,
-  buildSharePackage,
   parseShlLink,
   fetchShlManifest,
   mergePortalSyncedCards,
@@ -84,7 +82,6 @@ import {
   type WalletExportResult,
   type WalletImportResult,
   type WalletImportJob,
-  type WalletPresentationResponse,
   type WalletStoredObject,
   type VerifierResult,
 } from "@trustcare/wallet-core";
@@ -95,7 +92,6 @@ import { useOfflineWallet } from "./hooks/useOfflineWallet";
 import { useScanHistory } from "./hooks/useScanHistory";
 import { useStoredExtras } from "./hooks/useStoredExtras";
 import { useWebAuthn } from "./hooks/useWebAuthn";
-import { toQrDataUrl } from "./utils/qrCode";
 import {
   isPlaceholderRouteId,
   pathForView,
@@ -124,8 +120,6 @@ import {
   UserScopePanel,
   clearScanPayloadFromLocation,
   copyText,
-  createScannableWebUrl,
-  currentAppBaseUrl,
   currentShareGatewayBaseUrl,
   describeScannablePayload,
   downloadExport,
@@ -160,12 +154,6 @@ const QrScannerDialog = lazy(() =>
     default: module.QrScannerDialog,
   })),
 );
-const SelectiveDisclosureDialog = lazy(() =>
-  import("./components/SelectiveDisclosureDialog").then((module) => ({
-    default: module.SelectiveDisclosureDialog,
-  })),
-);
-
 const baseApiOptions = {
   url: env.apiUrl,
   runtimeEnvironment: env.runtimeEnvironment,
@@ -188,25 +176,9 @@ const baseApiOptions = {
 
 const walletSessionKey = `trustcare-wallet-active-user:${env.runtimeEnvironment}:v1`;
 const legacyWalletSessionKey = "trustcare-wallet-active-user";
+const sidebarCollapsedKey = "trustcare-wallet-sidebar-collapsed:v1";
 const defaultLoginUserId = "demo-patient-001";
-const walletRuntimeRelease = "authoritative-photo-sources";
-
-function isResolverBackedQrPayload(payload: string): boolean {
-  const canonical = extractScannablePayload(payload);
-  const shareGatewayBaseUrl = currentShareGatewayBaseUrl();
-  if (!shareGatewayBaseUrl) return false;
-  try {
-    const url = new URL(canonical);
-    const gateway = new URL(`${shareGatewayBaseUrl.replace(/\/$/, "")}/`);
-    return (
-      url.origin === gateway.origin &&
-      url.pathname.startsWith(`${gateway.pathname}presentations/`) &&
-      url.pathname.endsWith(".jwt")
-    );
-  } catch {
-    return false;
-  }
-}
+const walletRuntimeRelease = "premium-clinical-home-inspector";
 
 function readWalletSessionUserId() {
   return readStringStorage(
@@ -226,6 +198,10 @@ export default function App() {
   const routeView = routeMatch.route.view;
   const view: View = routeView ?? "home";
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const stored = readStringStorage(sidebarCollapsedKey);
+    return stored === null ? true : stored === "true";
+  });
   const [documentsTab, setDocumentsTab] = useState<DocumentsTab>("cards");
   const [developerMode, setDeveloperMode] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>(() => {
@@ -239,11 +215,8 @@ export default function App() {
   const [shlPackages, setShlPackages] = useState<ShlPackage[]>([]);
   const [selectedCard, setSelectedCard] = useState<WalletCard | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const detailReturnPathRef = useRef("/home");
   const [scannerOpen, setScannerOpen] = useState(false);
-  const [selectiveOpen, setSelectiveOpen] = useState(false);
-  const [qrDataUrl, setQrDataUrl] = useState("");
-  const [presentation, setPresentation] =
-    useState<WalletPresentationResponse | null>(null);
   const [verifierResult, setVerifierResult] = useState<VerifierResult | null>(
     null,
   );
@@ -285,6 +258,11 @@ export default function App() {
     useScanHistory<ScanOutcome>(selectedUserId);
   const { storedExtras, setStoredExtrasByUser } =
     useStoredExtras(selectedUserId);
+
+  useEffect(() => {
+    writeStringStorage(sidebarCollapsedKey, String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
   const activeUser = useMemo(
     () => getDemoUser(selectedUserId),
     [selectedUserId],
@@ -320,6 +298,8 @@ export default function App() {
   }, [activeUser, canSyncPortalWallet, selectedUserId]);
   const navigateTo = useCallback(
     (nextView: View, options?: { replace?: boolean }) => {
+      setDetailOpen(false);
+      setSelectedCard(null);
       routerNavigate(pathForView(nextView), { replace: options?.replace });
     },
     [routerNavigate],
@@ -398,8 +378,6 @@ export default function App() {
     });
     setSelectedCard(null);
     setDetailOpen(false);
-    setQrDataUrl("");
-    setPresentation(null);
     setVerifierResult(null);
     setScanOutcome(null);
     setScanResponseOpen(false);
@@ -458,27 +436,41 @@ export default function App() {
 
   const openRecord = useCallback(
     (card: WalletCard) => {
+      detailReturnPathRef.current = location.pathname;
       setSelectedCard(card);
-      setQrDataUrl("");
-      setPresentation(null);
       setDetailOpen(true);
-      routerNavigate(
-        `/records/${encodeURIComponent(String(card.credentialId))}`,
-      );
     },
-    [routerNavigate],
+    [location.pathname],
   );
 
   const openV2Record = useCallback(
     (record: WalletDocumentRecordV2) => {
+      detailReturnPathRef.current = "/records";
       setSelectedCard(walletCardForDocumentRendering(record));
-      setQrDataUrl("");
-      setPresentation(null);
       setDetailOpen(true);
       const routeId = record.credential.credentialId ?? record.id;
       routerNavigate(`/records/${encodeURIComponent(routeId)}`);
     },
     [routerNavigate],
+  );
+
+  const closeCredentialInspector = useCallback(() => {
+    setDetailOpen(false);
+    if (routeMatch.params.recordId) {
+      routerNavigate(detailReturnPathRef.current, { replace: true });
+    }
+  }, [routeMatch.params.recordId, routerNavigate]);
+
+  const shareCredentialFromInspector = useCallback(
+    (card: WalletCard) => {
+      setPayerShareSelection({
+        context: readinessContext,
+        cardIds: [card.id],
+      });
+      setDetailOpen(false);
+      routerNavigate(pathForView("share"));
+    },
+    [readinessContext, routerNavigate],
   );
 
   useEffect(() => {
@@ -729,158 +721,6 @@ export default function App() {
       }));
     },
     [setScanHistoryByUser],
-  );
-
-  const generateQr = useCallback(
-    async (fields: string[] = []) => {
-      if (!selectedCard) return;
-      const presentationPolicy = credentialPresentationPolicy(selectedCard);
-      if (!presentationPolicy.presentable) {
-        alert(
-          presentationPolicy.reason ??
-            "Credential นี้ไม่ได้อยู่ในสถานะใช้งานได้",
-        );
-        return;
-      }
-      if (webAuthn.isRegistered) {
-        const ok = await webAuthn.authenticate();
-        if (!ok) return;
-      }
-      if (!offlineWallet.isOnline && !fields.length) {
-        const cached = await offlineWallet.getOfflineQr(selectedCard.id);
-        if (cached && isResolverBackedQrPayload(cached.qrData)) {
-          const scannableCachedQr = createScannableWebUrl(cached.qrData);
-          setPresentation({
-            presentationId: cached.presentationId,
-            format: "jwt-vp",
-            mode: "offline_cached_gateway_resolver",
-            credentialCount: 1,
-            selectedFields: [],
-            expiresAt: cached.expiresAt ?? new Date().toISOString(),
-            qrData: scannableCachedQr,
-            verificationChecklist: [
-              {
-                key: "gateway",
-                label: "Public resolver URL",
-                ok: true,
-                detail: extractScannablePayload(scannableCachedQr),
-              },
-            ],
-          });
-          setQrDataUrl(
-            await toQrDataUrl(scannableCachedQr, { margin: 1, width: 260 }),
-          );
-          await offlineWallet.cacheQr(
-            selectedCard.id,
-            scannableCachedQr,
-            cached.presentationId,
-            cached.expiresAt,
-          );
-          return;
-        }
-      }
-      const shareGatewayBaseUrl = currentShareGatewayBaseUrl();
-      if (!shareGatewayBaseUrl) {
-        alert(
-          "ยังไม่ได้ตั้งค่า Share Gateway สำหรับสร้าง QR ที่สแกนข้ามเครื่องและตรวจ proof ได้",
-        );
-        return;
-      }
-      try {
-        const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
-        const context: ReadinessContext = readinessContext;
-        const purposeLabel = readinessContextLabels[context]?.th ?? context;
-        const holderDid = selectedCard.holderDid ?? activeUser.holderDid;
-        const result = buildSharePackage({
-          mode: "PurposeVP",
-          context,
-          cards: [selectedCard],
-          selectedCardIds: [selectedCard.id],
-          holderDid,
-          recipient: "TrustCare credential verifier",
-          purpose: `${selectedCard.displayName} · ${purposeLabel}`,
-          selectedFields: fields,
-          expiresAt,
-          origin: currentAppBaseUrl(),
-          gatewayBaseUrl: shareGatewayBaseUrl,
-          viewerBaseUrl: currentAppBaseUrl(),
-        });
-        if (!("presentation" in result)) {
-          throw new Error("สร้าง VP package ไม่สำเร็จ");
-        }
-        const publication = await shareGatewayApi.publishVpSharePackage({
-          gatewayBaseUrl: shareGatewayBaseUrl,
-          result,
-          userId: selectedUserId,
-          holderDid,
-          purpose: context,
-          purposeLabel,
-          recipient: "TrustCare credential verifier",
-          expiresAt,
-        });
-        const resolverPayload =
-          publication.qrPayload ??
-          publication.publicUrl ??
-          result.presentation.qrData;
-        assertPrimaryVerifierQrPayload(resolverPayload);
-        const scannableQr = createScannableWebUrl(resolverPayload);
-        const presentationWithWebQr: WalletPresentationResponse = {
-          ...result.presentation,
-          mode: "gateway_resolver_vp",
-          qrData: scannableQr,
-          transportDecision: {
-            mode: "share_gateway_resolver",
-            label: "Public verifier URL",
-            reason:
-              "Credential detail QR is published through the Share Gateway so another device opens the public verifier and resolves the backend-signed VP.",
-          },
-          verificationChecklist: [
-            ...(Array.isArray(result.presentation.verificationChecklist)
-              ? result.presentation.verificationChecklist
-              : []),
-            {
-              key: "gateway",
-              label: "Public resolver URL",
-              ok: true,
-              detail: resolverPayload,
-            },
-            {
-              key: "proof",
-              label: "Backend signed VP",
-              ok: true,
-              detail: publication.jwksUrl ?? publication.publicUrl,
-            },
-          ],
-        };
-        setPresentation(presentationWithWebQr);
-        const nextQr = await toQrDataUrl(scannableQr, {
-          margin: 1,
-          width: 260,
-        });
-        setQrDataUrl(nextQr);
-        await offlineWallet.cacheQr(
-          selectedCard.id,
-          scannableQr,
-          result.presentation.presentationId,
-          result.presentation.expiresAt,
-        );
-        setSelectiveOpen(false);
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "สร้าง QR Code สำหรับ VP ไม่สำเร็จ";
-        alert(message);
-      }
-    },
-    [
-      activeUser.holderDid,
-      offlineWallet,
-      readinessContext,
-      selectedCard,
-      selectedUserId,
-      webAuthn,
-    ],
   );
 
   const importPayload = useCallback(
@@ -1364,10 +1204,16 @@ export default function App() {
       data-release={walletRuntimeRelease}
       data-view={routeMatch.route.id}
       data-runtime={env.runtimeEnvironment}
+      data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
+      data-inspector-open={detailOpen && selectedCard ? "true" : "false"}
     >
       <header className="app-top-shell">
         <div className="brand-block">
-          <div className="brand-mark">TC</div>
+          <img
+            className="brand-mark-image"
+            src="/assets/brand/trustcare-shield.png"
+            alt=""
+          />
           <div className="brand-copy">
             <strong>TrustCare Wallet</strong>
             <small>เอกสารสุขภาพส่วนตัวที่ตรวจสอบได้</small>
@@ -1413,7 +1259,11 @@ export default function App() {
       </header>
       <aside className="side-nav">
         <div className="brand-block">
-          <div className="brand-mark">TC</div>
+          <img
+            className="brand-mark-image"
+            src="/assets/brand/trustcare-shield.png"
+            alt=""
+          />
           <div className="brand-copy">
             <strong>TrustCare Wallet</strong>
             <small>เอกสารสุขภาพส่วนตัวที่ตรวจสอบได้</small>
@@ -1469,6 +1319,21 @@ export default function App() {
             onClick={() => navigateTo("settings")}
           />
         </nav>
+        <button
+          type="button"
+          className="side-nav-toggle"
+          aria-label={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"}
+          title={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"}
+          aria-expanded={!sidebarCollapsed}
+          onClick={() => setSidebarCollapsed((value) => !value)}
+        >
+          {sidebarCollapsed ? (
+            <PanelLeftOpen size={19} />
+          ) : (
+            <PanelLeftClose size={19} />
+          )}
+          <span>{sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"}</span>
+        </button>
         <UserScopePanel
           activeUser={activeUser}
           cards={allCards}
@@ -1750,6 +1615,17 @@ export default function App() {
         )}
       </section>
 
+      <Suspense fallback={<DialogLoadingFallback />}>
+        {detailOpen && selectedCard ? (
+          <CredentialDetailDialog
+            card={selectedCard}
+            open={detailOpen}
+            onClose={closeCredentialInspector}
+            onShare={shareCredentialFromInspector}
+          />
+        ) : null}
+      </Suspense>
+
       {documentFlow && (
         <DocumentFlowDialog
           mode={documentFlow.mode}
@@ -1804,31 +1680,6 @@ export default function App() {
       </nav>
 
       <Suspense fallback={<DialogLoadingFallback />}>
-        {detailOpen && (
-          <CredentialDetailDialog
-            card={selectedCard}
-            open={detailOpen}
-            qrDataUrl={qrDataUrl}
-            presentation={presentation}
-            history={history}
-            onClose={() => {
-              setDetailOpen(false);
-              if (routeMatch.params.recordId) {
-                routerNavigate("/records", { replace: true });
-              }
-            }}
-            onGenerateQr={generateQr}
-            onSelectiveDisclosure={() => setSelectiveOpen(true)}
-          />
-        )}
-        {selectiveOpen && (
-          <SelectiveDisclosureDialog
-            card={selectedCard}
-            open={selectiveOpen}
-            onClose={() => setSelectiveOpen(false)}
-            onConfirm={(fields) => void generateQr(fields)}
-          />
-        )}
         {scannerOpen && (
           <QrScannerDialog
             open={scannerOpen}
