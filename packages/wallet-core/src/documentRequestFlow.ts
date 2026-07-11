@@ -23,6 +23,7 @@ export type DocumentRequestFormat =
 
 export type DocumentRequestReturnChannel =
   | "portal_sync"
+  | "payer_exchange"
   | "oid4vci_offer"
   | "fhir_pull"
   | "shl_link"
@@ -107,6 +108,7 @@ export type DocumentRequestDraft = {
   trustPolicy: DocumentRequestPlan["trustPolicy"];
   destinationLabel: string;
   formatLabel: string;
+  routeSelection: "automatic" | "explicit";
   nextSteps: string[];
   warnings: string[];
 };
@@ -187,6 +189,11 @@ const returnChannelLabels: Record<
     label: "Sync จาก TrustCare Portal",
     description: "ดึง VC/VP ที่ issuer ลงนามแล้วกลับเข้ากระเป๋าของผู้ใช้",
   },
+  payer_exchange: {
+    label: "รับผ่าน Payer Adapter",
+    description:
+      "รับเอกสารสิทธิหรือหลักฐานเคลมจากผู้จ่ายเงินที่รับผิดชอบโดยตรง",
+  },
   oid4vci_offer: {
     label: "รับผ่าน OID4VCI",
     description: "เปิด offer link หรือสแกน QR เพื่อรับ credential",
@@ -210,6 +217,27 @@ const returnChannelLabels: Record<
     label: "รับจาก Wallet ภายนอก",
     description: "นำเข้า VP, SHL หรือ offer จาก partner wallet อื่น",
   },
+};
+
+const patientSourceLabels: Record<DocumentRequestSource, string> = {
+  trustcare_portal: "โรงพยาบาลหรือคลินิกในเครือข่าย TrustCare",
+  connected_fhir: "ระบบเวชระเบียนของโรงพยาบาลที่เชื่อมต่อ",
+  payer: "บริษัทประกันหรือผู้รับผิดชอบค่าใช้จ่าย",
+  patient_upload: "ไฟล์ที่คุณนำเข้าเอง",
+  external_wallet: "ผู้ให้บริการหรือกระเป๋าสุขภาพภายนอก",
+};
+
+const patientReturnChannelLabels: Record<
+  DocumentRequestReturnChannel,
+  string
+> = {
+  portal_sync: "รับเอกสารรับรองกลับเข้ากระเป๋านี้โดยตรง",
+  payer_exchange: "รับเอกสารจากบริษัทประกันเข้ากระเป๋านี้โดยตรง",
+  oid4vci_offer: "รับเอกสารรับรองกลับเข้ากระเป๋านี้โดยตรง",
+  fhir_pull: "รับข้อมูลจากเวชระเบียนต้นทางเข้ากระเป๋านี้",
+  shl_link: "รับลิงก์เอกสารที่ควบคุมการเข้าถึงได้",
+  manual_upload: "เก็บเป็นสำเนาที่นำเข้าและรอการตรวจสอบ",
+  external_wallet: "รับเอกสารจากผู้ให้บริการภายนอกเข้ากระเป๋านี้",
 };
 
 export function buildDocumentRequestPlan(
@@ -319,8 +347,34 @@ export function createDocumentRequestDraft(input: {
     trustPolicy: plan.trustPolicy,
     destinationLabel: sourceLabels[plan.selectedSource].label,
     formatLabel: formatLabels[plan.selectedFormat].label,
+    routeSelection: "explicit",
     warnings: plan.warnings,
     nextSteps: plan.nextSteps,
+  };
+}
+
+export function createAutomaticDocumentRequestDraft(input: {
+  context: ReadinessContext;
+  requirements: ReadonlyArray<
+    ReadinessRequirement | DocumentRequestRequirement
+  >;
+  patientId?: number | string;
+}): DocumentRequestDraft {
+  const plan = buildDocumentRequestPlan({
+    context: input.context,
+    requirements: input.requirements,
+  });
+  const draft = createDocumentRequestDraft({
+    context: input.context,
+    requirements: input.requirements,
+    source: plan.selectedSource,
+    format: plan.selectedFormat,
+    scope: plan.selectedScope,
+    patientId: input.patientId,
+  });
+  return {
+    ...draft,
+    routeSelection: "automatic",
   };
 }
 
@@ -340,6 +394,18 @@ export function documentRequestReturnChannelLabel(
   channel: DocumentRequestReturnChannel,
 ): string {
   return returnChannelLabels[channel].label;
+}
+
+export function documentRequestPatientSourceLabel(
+  source: DocumentRequestSource,
+): string {
+  return patientSourceLabels[source];
+}
+
+export function documentRequestPatientReturnChannelLabel(
+  channel: DocumentRequestReturnChannel,
+): string {
+  return patientReturnChannelLabels[channel];
 }
 
 function normalizeRequirements(
@@ -408,14 +474,15 @@ function chooseDefaultFormat(
   if (scope === "document_bundle" && source === "trustcare_portal")
     return "certified_shl_manifest";
   if (scope === "document_bundle" && source !== "payer") return "standard_shl";
-  if (
-    source === "connected_fhir" &&
-    types.some((type) => type === "lab_result" || type === "diagnostic_report")
-  ) {
-    return "fhir_bundle";
+  if (source === "connected_fhir") {
+    return scope === "document_bundle" ||
+      types.some(
+        (type) => type === "lab_result" || type === "diagnostic_report",
+      )
+      ? "fhir_bundle"
+      : "fhir_document_reference";
   }
-  if (source === "external_wallet") return "vc_vp";
-  return "oid4vci_offer";
+  return "vc_vp";
 }
 
 function buildSourceOptions(
@@ -514,6 +581,7 @@ function buildReturnChannelOptions(
       enabled,
       recommended:
         (source === "trustcare_portal" && id === "portal_sync") ||
+        (source === "payer" && id === "payer_exchange") ||
         (format === "oid4vci_offer" && id === "oid4vci_offer") ||
         (format === "standard_shl" && id === "shl_link") ||
         (format === "certified_shl_manifest" && id === "shl_link") ||
@@ -533,6 +601,7 @@ function returnChannelEnabled(
   format: DocumentRequestFormat,
 ): boolean {
   if (channel === "portal_sync") return source === "trustcare_portal";
+  if (channel === "payer_exchange") return source === "payer";
   if (channel === "oid4vci_offer") return format === "oid4vci_offer";
   if (channel === "fhir_pull")
     return format === "fhir_document_reference" || format === "fhir_bundle";

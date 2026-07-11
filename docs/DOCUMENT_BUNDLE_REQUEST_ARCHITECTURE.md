@@ -98,16 +98,25 @@ Forbidden bundle outputs:
 
 ## Request Missing Documents Flow
 
-The button `ขอเอกสารที่ขาด` opens a request planner, not a silent action.
+The button `ขอเอกสารที่ขาด` opens a patient review step backed by an automatic
+route planner. The patient does not choose VC/VP, OID4VCI, FHIR, SHL, package
+scope, or a technical return channel.
 
 The planner must answer:
 
 - Which canonical document types are missing?
 - Which source can issue or provide them?
-- Which format is appropriate?
-- Which return channel is valid?
+- Which source capability can satisfy the semantic requirement and trust policy?
+- Which format and return channel are valid for both source and Wallet?
 - Which controls must be enabled or disabled?
 - What trust state will the returned object have?
+
+These are internal resolver decisions. The patient sees only the responsible
+organization, what will return to the Wallet, and the proof/policy checks that
+must pass. If no compatible route exists, the request is blocked with a
+patient-readable next action. The resolver must not silently downgrade a signed
+credential to an upload, certified evidence to uncertified transport, or a
+payer artifact to a Wallet-generated substitute.
 
 Source decisions:
 
@@ -119,7 +128,10 @@ Source decisions:
 
 ## Import Documents Flow
 
-The button `นำเข้าเอกสาร` uses the same planner but defaults to patient upload. It can also accept SHL, VC/VP, OID4VCI, or FHIR JSON if the user changes the source/format.
+The button `นำเข้าเอกสาร` is a separate explicit import flow. It defaults to
+patient upload and may accept SHL, VC/VP, OID4VCI, or FHIR JSON for advanced
+interoperability. Imported evidence never silently satisfies a requirement that
+needs an issuer-signed document.
 
 Every imported object must show a visible trust badge:
 
@@ -143,5 +155,8 @@ Clinical timeline sorts by `recordTime`. Activity history sorts by `packageTime`
 - Prepare checks readiness only and routes users to Share or request/import flow.
 - Share generates exactly one package and QR.
 - Store lists persisted VCs, VPs, SHLs, Manifest VPs, Holder VCs, OID4VCI offers, OID4VP requests, sync receipts, and DocumentReferences.
-- Disabled options must remain visible with reason text so users understand why a format cannot be used.
+- Missing-document requests must not expose technical format choices. When no
+  safe route exists, show the reason and a patient action instead of changing
+  format silently. Advanced import tooling may show disabled formats with a
+  reason.
 - Technical properties such as watermark, UI state, payload hash, transport fields, and manifest metadata are not selectable disclosure claims.

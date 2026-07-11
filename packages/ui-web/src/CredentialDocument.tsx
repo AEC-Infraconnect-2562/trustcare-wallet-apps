@@ -1,6 +1,7 @@
 import {
   Building2,
   FileText,
+  ImageOff,
   Landmark,
   ShieldAlert,
   ShieldCheck,
@@ -63,6 +64,7 @@ export function CredentialDocument({
   const photoCandidates = photoDocumentTypes.has(renderModel.documentType)
     ? photoCandidatesForCard(card)
     : [];
+  const photoRequired = photoDocumentTypes.has(renderModel.documentType);
 
   if (paper.formFactor.kind === "iso_id_1") {
     return (
@@ -70,6 +72,7 @@ export function CredentialDocument({
         card={card}
         paper={paper}
         photos={photoCandidates}
+        photoRequired={photoRequired}
         envelope={presentation}
         qrDataUrl={qrDataUrl}
         verification={verification}
@@ -96,7 +99,11 @@ export function CredentialDocument({
       <InstitutionLetterhead paper={paper} />
       <DocumentTitle paper={paper} />
       <DocumentMetadata fields={paper.metadataFields} />
-      <PatientBlock fields={paper.patientFields} photos={photoCandidates} />
+      <PatientBlock
+        fields={paper.patientFields}
+        photos={photoCandidates}
+        photoRequired={photoRequired}
+      />
 
       <div className="tc-document-sections">
         {paper.sections.map((section) => (
@@ -120,6 +127,7 @@ function CredentialIdentityCard({
   card,
   paper,
   photos,
+  photoRequired,
   envelope,
   qrDataUrl,
   verification,
@@ -129,6 +137,7 @@ function CredentialIdentityCard({
   card: WalletCard;
   paper: CredentialPaperModel;
   photos: PhotoCandidate[];
+  photoRequired: boolean;
   envelope: PortablePresentationEnvelope;
   qrDataUrl?: string;
   verification?: CredentialDocumentVerification;
@@ -204,7 +213,7 @@ function CredentialIdentityCard({
       </header>
 
       <section className="tc-id-card-main">
-        <CredentialHolderPhoto candidates={photos} />
+        <CredentialHolderPhoto candidates={photos} required={photoRequired} />
         <div className="tc-id-card-holder">
           <p>{paper.title.th}</p>
           <h1>
@@ -344,9 +353,11 @@ function DocumentMetadata({ fields }: { fields: CredentialRenderField[] }) {
 function PatientBlock({
   fields,
   photos,
+  photoRequired,
 }: {
   fields: CredentialRenderField[];
   photos: PhotoCandidate[];
+  photoRequired: boolean;
 }) {
   if (!fields.length && !photos.length) return null;
   const nameTh = fields.find((field) => field.label === "ชื่อ-นามสกุล");
@@ -360,7 +371,7 @@ function PatientBlock({
       className="tc-patient"
       aria-labelledby="credential-patient-heading"
     >
-      <CredentialHolderPhoto candidates={photos} />
+      <CredentialHolderPhoto candidates={photos} required={photoRequired} />
       <div className="tc-patient-content">
         <div className="tc-section-heading tc-patient-heading">
           <span id="credential-patient-heading">ข้อมูลผู้ป่วย</span>
@@ -378,12 +389,25 @@ function PatientBlock({
 
 function CredentialHolderPhoto({
   candidates,
+  required = false,
 }: {
   candidates: PhotoCandidate[];
+  required?: boolean;
 }) {
   const { candidate, imageSrc, isLoaded, markFailed, markLoaded } =
     useLoadedPhotoCandidate(candidates);
-  if (!candidate || !imageSrc) return null;
+  if (!candidate || !imageSrc) {
+    return required ? (
+      <figure
+        className="tc-patient-photo tc-patient-photo-missing"
+        role="status"
+        aria-label="ไม่พบรูปผู้ถือเอกสารใน credential ต้นฉบับ"
+      >
+        <ImageOff aria-hidden="true" />
+        <figcaption>ไม่พบรูปใน credential</figcaption>
+      </figure>
+    ) : null;
+  }
   return (
     <figure className="tc-patient-photo">
       <img

@@ -153,6 +153,12 @@ const returnChannelCopy: Record<DocumentRequestReturnChannel, UxCopy> = {
     description: "เมื่อ Portal ออกเอกสารแล้ว Wallet จะดึงเข้ามาตามผู้ใช้คนนี้",
     tone: "green",
   },
+  payer_exchange: {
+    label: "รับจากบริษัทประกัน",
+    description:
+      "ระบบรับเอกสารสิทธิหรือหลักฐานเคลมจากผู้จ่ายเงินที่รับผิดชอบโดยตรง",
+    tone: "green",
+  },
   oid4vci_offer: {
     label: "รับผ่าน offer QR/link",
     description: "สแกนหรือเปิด offer เพื่อรับ credential จาก issuer",

@@ -12,6 +12,7 @@ import {
   buildIpsDocumentBundle,
   buildSharePackage,
   buildDocumentRequestPlan,
+  createAutomaticDocumentRequestDraft,
   createDocumentRequestDraft,
   buildMissingDocumentCards,
   buildPurposePickerCards,
@@ -446,6 +447,40 @@ describe("wallet-core", () => {
     expect(draft.returnChannel).toBe("manual_upload");
     expect(draft.destinationLabel).toContain("นำเข้าเอง");
     expect(draft.formatLabel).toContain("PDF");
+  });
+
+  it("selects a missing-document route automatically from the semantic requirement", () => {
+    const requirement = canonicalServiceProfiles.opd_visit.requirements.find(
+      (item) => item.key === "allergy",
+    )!;
+    const draft = createAutomaticDocumentRequestDraft({
+      context: "opd_visit",
+      requirements: [requirement],
+      patientId: 9501,
+    });
+
+    expect(draft.routeSelection).toBe("automatic");
+    expect(draft.source).toBe("connected_fhir");
+    expect(draft.format).toBe("fhir_document_reference");
+    expect(draft.returnChannel).toBe("fhir_pull");
+    expect(draft.scope).toBe("single_document");
+  });
+
+  it("routes payer documents through the payer exchange without a patient format choice", () => {
+    const requirement = canonicalServiceProfiles.opd_visit.requirements.find(
+      (item) => item.key === "coverage",
+    )!;
+    const draft = createAutomaticDocumentRequestDraft({
+      context: "opd_visit",
+      requirements: [requirement],
+      patientId: 9501,
+    });
+
+    expect(draft.routeSelection).toBe("automatic");
+    expect(draft.source).toBe("payer");
+    expect(draft.format).toBe("vc_vp");
+    expect(draft.returnChannel).toBe("payer_exchange");
+    expect(draft.trustPolicy).toBe("issuer_signed");
   });
 
   it("enables SHL policy controls only for SHL formats", () => {

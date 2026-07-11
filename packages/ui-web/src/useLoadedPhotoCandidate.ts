@@ -52,7 +52,10 @@ export function useLoadedPhotoCandidate(candidates: PhotoCandidate[]) {
     candidate,
     imageSrc,
     isLoaded: Boolean(imageSrc && loadedUrl === imageSrc),
-    markFailed: () => setCandidateIndex((index) => index + 1),
+    markFailed: () =>
+      setCandidateIndex((index) =>
+        candidates[index]?.url === candidateUrl ? index + 1 : index,
+      ),
     markLoaded: () => {
       if (imageSrc) setLoadedUrl(imageSrc);
     },

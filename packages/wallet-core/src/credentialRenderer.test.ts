@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   completeWalletSeedCards,
+  credentialCompactSummaryRows,
   credentialRenderModelFromCard,
   getDemoWalletCards,
   presentationEnvelopeFromWalletCard,
@@ -13,6 +14,54 @@ describe("shared credential renderer", () => {
   const somchaiCards = getDemoWalletCards("demo-patient-001");
   const completeCards = getDemoWalletCards("demo-patient-complete-001");
   const staffCards = getDemoWalletCards("demo-staff-complete-001");
+
+  it("projects compact Home facts from the shared renderer only", () => {
+    const identity = completeCards.find(
+      (card) => card.cardType === "patient_identity",
+    )!;
+    const eligibility = completeCards.find(
+      (card) => card.cardType === "insurance_eligibility",
+    )!;
+    const medication = completeCards.find(
+      (card) => card.cardType === "medication_summary",
+    )!;
+
+    const identityRows = credentialCompactSummaryRows(
+      credentialRenderModelFromCard(identity),
+    );
+    const eligibilityRows = credentialCompactSummaryRows(
+      credentialRenderModelFromCard(eligibility),
+    );
+    const medicationRows = credentialCompactSummaryRows(
+      credentialRenderModelFromCard(medication),
+    );
+
+    expect(identityRows.map((row) => row.label)).toEqual([
+      "HN",
+      "CarePass ID",
+      "วันเกิด",
+    ]);
+    expect(eligibilityRows.map((row) => row.label)).toEqual([
+      "ผู้รับประกัน",
+      "สถานะสิทธิ",
+      "เครือข่าย",
+    ]);
+    expect(medicationRows[0]).toMatchObject({
+      value: expect.stringMatching(/\d+ รายการ/),
+    });
+    expect(medicationRows.some((row) => /Metformin/i.test(row.value))).toBe(
+      true,
+    );
+
+    const compactText = [
+      ...identityRows,
+      ...eligibilityRows,
+      ...medicationRows,
+    ]
+      .map((row) => `${row.label} ${row.value} ${row.sourcePath ?? ""}`)
+      .join(" ");
+    expect(compactText).not.toMatch(/proof|issuer did|credential payload/i);
+  });
 
   it("renders Somchai insurance eligibility from the same central model used by VP envelopes", () => {
     const card = requiredCard("insurance_eligibility");

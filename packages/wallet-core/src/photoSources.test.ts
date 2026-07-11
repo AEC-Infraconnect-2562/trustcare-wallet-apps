@@ -47,7 +47,7 @@ describe("photoSources", () => {
     ]);
   });
 
-  it("prioritizes canonical renderData photo over legacy card metadata", () => {
+  it("keeps fallbacks scoped to the canonical renderData photo", () => {
     const candidates = photoCandidatesForCard({
       ...baseCard,
       patientAvatarUrl:
@@ -73,7 +73,13 @@ describe("photoSources", () => {
         "credentialSubject.humanDocument.renderData.patient.photoUrl",
       url: "https://trustcarehealth.live/manus-storage/canonical-patient.jpg",
     });
-    expect(candidates.at(-1)?.url).toContain("legacy-owner.jpg");
+    expect(candidates.map((candidate) => candidate.url)).toEqual([
+      "https://trustcarehealth.live/manus-storage/canonical-patient.jpg",
+      "https://trustcarehealth.live/api/storage-proxy/canonical-patient.jpg",
+    ]);
+    expect(candidates.map((candidate) => candidate.url).join(" ")).not.toContain(
+      "legacy-owner.jpg",
+    );
   });
 
   it("does not cross-fallback from a staff credential to a patient portrait", () => {
@@ -94,6 +100,54 @@ describe("photoSources", () => {
     );
     expect(candidates.map((candidate) => candidate.url).join(" ")).not.toContain(
       "wrong-patient.jpg",
+    );
+  });
+
+  it("normalizes staff aliases before selecting the subject portrait", () => {
+    const candidates = photoCandidatesForCard({
+      ...baseCard,
+      cardType: "staff_badge",
+      patientAvatarUrl: "/manus-storage/wrong-owner.jpg",
+      credentialData: {
+        credentialSubject: {
+          patient: { photoUrl: "/manus-storage/wrong-patient.jpg" },
+          staff: { photoUrl: "/manus-storage/correct-staff.jpg" },
+        },
+      },
+    });
+
+    expect(candidates.map((candidate) => candidate.url).join(" ")).toContain(
+      "correct-staff.jpg",
+    );
+    expect(candidates.map((candidate) => candidate.url).join(" ")).not.toContain(
+      "wrong-patient.jpg",
+    );
+    expect(candidates.map((candidate) => candidate.url).join(" ")).not.toContain(
+      "wrong-owner.jpg",
+    );
+  });
+
+  it("uses the legacy staff renderData subject without borrowing another photo", () => {
+    const candidates = photoCandidatesForCard({
+      ...baseCard,
+      cardType: "staff_identity",
+      patientAvatarUrl: "/manus-storage/wrong-owner.jpg",
+      credentialData: {
+        credentialSubject: {
+          humanDocument: {
+            renderData: {
+              patient: { photoUrl: "/manus-storage/correct-staff.jpg" },
+            },
+          },
+        },
+      },
+    });
+
+    expect(candidates.map((candidate) => candidate.url).join(" ")).toContain(
+      "correct-staff.jpg",
+    );
+    expect(candidates.map((candidate) => candidate.url).join(" ")).not.toContain(
+      "wrong-owner.jpg",
     );
   });
 

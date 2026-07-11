@@ -1,4 +1,5 @@
 import type { WalletCard } from "./models";
+import { normalizeDocumentType } from "./canonicalDocuments";
 
 export type PhotoCandidate = {
   label: string;
@@ -17,27 +18,42 @@ export function getValueAtPath(source: unknown, path: string): unknown {
 }
 
 export function photoCandidatesForCard(card: WalletCard): PhotoCandidate[] {
-  const candidates: PhotoCandidate[] = [];
   const data = card.credentialData;
-  const subjectKey = card.cardType === "staff_identity" ? "staff" : "patient";
-  const embeddedPaths = photoPathsForSubject(subjectKey);
+  const documentType = normalizeDocumentType(card.cardType) ?? card.cardType;
+  const embeddedPaths = photoPathsForDocumentType(documentType);
   for (const path of embeddedPaths) {
-    addPhotoCandidates(candidates, path, getValueAtPath(data, path));
+    const candidates = photoCandidatesFromValue(path, getValueAtPath(data, path));
+    if (candidates.length) return candidates;
   }
-  addPhotoCandidates(
-    candidates,
+
+  return photoCandidatesFromValue(
     "wallet_cards.patientAvatarUrl",
     card.patientAvatarUrl,
   );
-  return dedupePhotoCandidates(candidates);
 }
 
-function photoPathsForSubject(subjectKey: "patient" | "staff"): string[] {
-  const prefixes = [
-    `credentialSubject.humanDocument.renderData.${subjectKey}`,
-    `credentialSubject.${subjectKey}`,
-    subjectKey,
-  ];
+function photoPathsForDocumentType(documentType: string): string[] {
+  const prefixes =
+    documentType === "staff_identity"
+      ? [
+          "credentialSubject.humanDocument.renderData.staff",
+          "credentialSubject.staff",
+          "staff",
+          // Some Portal staff credentials use the legacy renderData.patient
+          // slot for the staff subject. Keep the same resolution order as the
+          // shared renderer so the displayed name and portrait stay bound.
+          "credentialSubject.humanDocument.renderData.patient",
+          "credentialSubject.patient",
+          "patient",
+        ]
+      : [
+          "credentialSubject.humanDocument.renderData.patient",
+          "credentialSubject.patient",
+          "patient",
+          "credentialSubject.holder",
+          "credentialSubject.staff",
+          "credentialSubject.student",
+        ];
   const suffixes = [
     "photoUrl",
     "avatarUrl",
@@ -148,18 +164,17 @@ export function initialsFromName(name: string): string {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 }
 
-function addPhotoCandidates(
-  candidates: PhotoCandidate[],
+function photoCandidatesFromValue(
   label: string,
   value: unknown,
-): void {
-  if (typeof value !== "string" || !value.trim()) return;
-  for (const [index, url] of normalizePhotoUrlCandidates(value).entries()) {
-    candidates.push({
+): PhotoCandidate[] {
+  if (typeof value !== "string" || !value.trim()) return [];
+  return dedupePhotoCandidates(
+    normalizePhotoUrlCandidates(value).map((url, index) => ({
       label: index === 0 ? label : `${label}:candidate:${index + 1}`,
       url,
-    });
-  }
+    })),
+  );
 }
 
 function dedupePhotoCandidates(candidates: PhotoCandidate[]): PhotoCandidate[] {

@@ -4,7 +4,11 @@ import {
   CredentialDocument,
   PresentationCoverDocument,
 } from "@trustcare/ui-web";
-import { getCompleteWalletSeed, type WalletCard } from "@trustcare/wallet-core";
+import {
+  getCompleteWalletSeed,
+  photoBearingCredentialTypes,
+  type WalletCard,
+} from "@trustcare/wallet-core";
 
 describe("shared credential document", () => {
   const cards = getCompleteWalletSeed("demo-patient-complete-001");
@@ -18,6 +22,83 @@ describe("shared credential document", () => {
     expect(html).toContain("tc-id-card-identifiers");
     expect(html).not.toContain("tc-form-a4-portrait");
     expect(html).not.toContain("tc-document-sections");
+  });
+
+  it("renders the authoritative subject portrait for every photo-bearing type", () => {
+    const expected = {
+      patient_identity: {
+        subject: "นายสมชาย ใจดี",
+        file: "patient_somsak_a2e00e97.jpg",
+      },
+      staff_identity: {
+        subject: "พญ.สิริรักษ์ รักษาดี",
+        file: "doctor_napa_abd67502.jpg",
+      },
+      travel_document_verification: {
+        subject: "นายสมชาย ใจดี",
+        file: "patient_somsak_a2e00e97.jpg",
+      },
+    } as const;
+
+    for (const documentType of photoBearingCredentialTypes) {
+      const card = getCompleteWalletSeed().find(
+        (item) => item.cardType === documentType,
+      );
+      expect(card, documentType).toBeTruthy();
+      const html = renderToStaticMarkup(<CredentialDocument card={card!} />);
+
+      expect(html, documentType).toContain(
+        `data-document-type="${documentType}"`,
+      );
+      expect(html, documentType).toContain(expected[documentType].subject);
+      expect(html, documentType).toContain(expected[documentType].file);
+      expect(html, documentType).not.toContain("tc-patient-photo-missing");
+    }
+  });
+
+  it("fails closed with a visible missing-photo state", () => {
+    const card = cards.find((item) => item.cardType === "patient_identity")!;
+    const credentialData = structuredClone(card.credentialData!);
+    const queue: unknown[] = [credentialData];
+    while (queue.length) {
+      const value = queue.pop();
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      for (const [key, child] of Object.entries(value)) {
+        if (
+          [
+            "photoUrl",
+            "avatarUrl",
+            "imageUrl",
+            "profileImageUrl",
+            "portraitUrl",
+          ].includes(key)
+        ) {
+          delete (value as Record<string, unknown>)[key];
+        } else {
+          queue.push(child);
+        }
+      }
+    }
+    const html = renderToStaticMarkup(
+      <CredentialDocument
+        card={{ ...card, credentialData, patientAvatarUrl: null }}
+      />,
+    );
+
+    expect(html).toContain("tc-patient-photo-missing");
+    expect(html).toContain("ไม่พบรูปใน credential");
+  });
+
+  it("never shows a person portrait on non-photo credential types", () => {
+    for (const card of getCompleteWalletSeed().filter(
+      (item) =>
+        !photoBearingCredentialTypes.includes(
+          item.cardType as (typeof photoBearingCredentialTypes)[number],
+        ),
+    )) {
+      const html = renderToStaticMarkup(<CredentialDocument card={card} />);
+      expect(html, card.cardType).not.toContain("tc-patient-photo");
+    }
   });
 
   it("renders prescription claims as a semantic paper table", () => {

@@ -2125,6 +2125,94 @@ export function credentialFieldHasValue(
   return isFieldWithValue(fieldValue);
 }
 
+export type CredentialCompactSummaryRow = {
+  key: string;
+  label: string;
+  value: string;
+  sourcePath?: string;
+};
+
+/**
+ * Projects the shared credential render model into a small, patient-readable
+ * summary. This deliberately consumes normalized renderer fields and tables so
+ * compact cards never grow their own credential-type parsers.
+ */
+export function credentialCompactSummaryRows(
+  model: CredentialRenderModel,
+  limit = 3,
+): CredentialCompactSummaryRow[] {
+  if (limit <= 0) return [];
+
+  const result: CredentialCompactSummaryRow[] = [];
+
+  for (const item of model.fields) {
+    if (!credentialFieldHasValue(item)) continue;
+    if (
+      typeof item.value !== "string" &&
+      typeof item.value !== "number" &&
+      typeof item.value !== "boolean"
+    ) {
+      continue;
+    }
+
+    result.push({
+      key: item.path ?? item.label,
+      label: item.label,
+      value: displayCredentialValue(item.value),
+      sourcePath: item.path,
+    });
+
+    if (result.length === limit) return result;
+  }
+
+  const table = model.paper.sections.find(
+    (section) =>
+      section.kind === "table" &&
+      Boolean(section.rows?.length) &&
+      Boolean(section.columns?.length),
+  );
+
+  if (!table?.rows || !table.columns) return result;
+
+  result.push({
+    key: `${table.key}:count`,
+    label: table.title,
+    value: `${table.rows.length} รายการ`,
+    sourcePath: table.sourcePath,
+  });
+
+  for (const [index, row] of table.rows.entries()) {
+    if (result.length === limit) break;
+
+    const cells = table.columns
+      .map((column) => ({
+        label: column.label,
+        value: row[column.key],
+      }))
+      .filter(
+        (cell) =>
+          cell.value !== undefined &&
+          cell.value !== null &&
+          displayCredentialValue(cell.value).trim().length > 0,
+      );
+
+    if (!cells.length) continue;
+
+    result.push({
+      key: `${table.key}:${index}`,
+      label: cells[0].label,
+      value: cells
+        .map((cell) => displayCredentialValue(cell.value))
+        .join(" · "),
+      sourcePath: table.sourcePath
+        ? `${table.sourcePath}.${index}`
+        : undefined,
+    });
+  }
+
+  return result.slice(0, limit);
+}
+
 function fieldsForCredentialType(
   card: WalletCard,
   documentType: string,
