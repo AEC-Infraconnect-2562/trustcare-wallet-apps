@@ -16,7 +16,7 @@
   },
   "deploy": {
     "startCommand": "node scripts/serve-wallet-web.mjs",
-    "healthcheckPath": "/",
+    "healthcheckPath": "/api/share-gateway/health",
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
