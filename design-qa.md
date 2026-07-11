@@ -7,8 +7,11 @@ Date: 2026-07-11
 - Source visual truth: `C:\Users\DELL\.codex\generated_images\019f4ad0-056f-7983-8000-17b5f77edff7\exec-b443ab3e-dedf-4158-a384-16c76b805b5c.png`
 - Production URL: `https://wallet-web-production-6a00.up.railway.app`
 - Desktop implementation: `C:\Users\DELL\AppData\Local\Temp\trustcare-railway-desktop-id-inspector.png`
+- Current desktop polish: `C:\Users\DELL\AppData\Local\Temp\trustcare-local-desktop-final-reference-state.png`
 - Mobile implementation: `C:\Users\DELL\AppData\Local\Temp\trustcare-railway-mobile-id-inspector.png`
 - Mobile A4 implementation: `C:\Users\DELL\AppData\Local\Temp\trustcare-railway-mobile-a4-final.png`
+- Current mobile A4 completion: `C:\Users\DELL\AppData\Local\Temp\trustcare-local-mobile-a4-complete-final.png`
+- Current automatic request dialog: `C:\Users\DELL\AppData\Local\Temp\trustcare-local-mobile-auto-request-final.png`
 - Full-view comparison: `C:\Users\DELL\.codex\visualizations\2026\07\10\019f4ad0-056f-7983-8000-17b5f77edff7\trustcare-design-comparison-full.png`
 - Focused inspector comparison: `C:\Users\DELL\.codex\visualizations\2026\07\10\019f4ad0-056f-7983-8000-17b5f77edff7\trustcare-design-comparison-focus.png`
 
@@ -23,6 +26,8 @@ Date: 2026-07-11
 
 The source and production captures were placed together in the full-view comparison before judging overall composition. A separate focused comparison aligns the docked credential and mobile credential states so typography, spacing, patient image, credential proportions, provenance, controls, and navigation remain readable.
 
+The current desktop capture was also placed beside the same source visual truth after the final polish pass. At the 1280 × 800 inspector state, the appointment banner is 220 px high; its 25 px, weight-600 heading stays on one line. The three important credential cards are 208.8 px high and expose 3, 3, and 2 compact source-backed summary rows respectively. Summary values come from the shared credential renderer, not a Home-specific payload parser.
+
 Primary interactions tested in the production browser:
 
 - Collapsed side navigation expands, exposes labels, and collapses again.
@@ -32,6 +37,8 @@ Primary interactions tested in the production browser:
 - A4 documents preserve 210 × 297 mm layout geometry while scaling as one sheet on narrow screens; the full-document toggle works.
 - Desktop and mobile pages have no horizontal overflow.
 - Browser console error and warning logs were empty for the inspected states.
+- The current mobile expanded A4 frame measures 1,233 px naturally, has `aspect-ratio: auto`, preserves a 297 mm minimum paper height, and leaves the full document bottom reachable above the action bar with zero horizontal overflow.
+- The current missing-document request dialog contains no Full VC, SD, ZKP, OID4VCI, FHIR Bundle, Standard SHL, or Document Bundle choices; the patient sees the responsible source, return path, and verification conditions instead.
 
 ## Required fidelity surfaces
 
@@ -56,6 +63,8 @@ Acceptable differences:
 - Earlier P2: the A4 document reflowed into a responsive card on mobile and no longer represented physical paper. Fix: excluded the scaled physical frame from responsive paper rules and retained 14 mm/16 mm print geometry. Post-fix evidence: `trustcare-railway-mobile-a4-final.png` shows the complete paper sheet scaled inside a bounded preview without horizontal overflow.
 - Earlier P2: desktop A4 content was vertically compressed inside the inspector. Fix: measured the viewport, applied a uniform document scale, and guarded resize/font observer cleanup. Post-fix evidence: the final A4 captures preserve letterhead columns, metadata columns, 14 px paper type, and the physical page ratio.
 - Earlier P2: the first inspector pass competed with the Home layout. Fix: docked the desktop inspector and made mobile a full-screen dialog above the bottom navigation. Post-fix evidence: the full and focused comparison images show both states aligned with the selected reference.
+- Earlier P2: the desktop appointment banner was too tall and its heavy heading wrapped to two lines. Fix: reduced the banner to 220 px, set the heading to 25 px/600 at the 1280 px inspector state, and kept the heading on one line where desktop space is sufficient.
+- Earlier P2: important document cards were visually empty compared with the selected reference. Fix: added compact HN, coverage, and medication summaries projected from `credentialRenderModelFromCard`, while retaining the actual lifecycle/trust state and source-bound patient photo.
 
 ## Follow-up polish
 
