@@ -39,6 +39,8 @@ describe("credential inspector", () => {
 
     expect(html).toContain('data-document-form-factor="a4_portrait"');
     expect(html).toContain("credential-inspector-preview is-paper");
+    expect(html).toContain("credential-paper-scaled-viewport");
+    expect(html).toContain("credential-paper-scaled-frame");
     expect(html).toContain("เปิดเอกสารเต็ม");
     expect(html).toContain("tc-form-a4-portrait");
   });

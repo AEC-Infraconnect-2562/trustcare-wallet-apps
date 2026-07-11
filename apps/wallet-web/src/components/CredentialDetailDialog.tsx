@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -32,12 +38,20 @@ export function CredentialDetailDialog({
 }) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const backButtonRef = useRef<HTMLButtonElement | null>(null);
+  const paperViewportRef = useRef<HTMLDivElement | null>(null);
+  const paperFrameRef = useRef<HTMLDivElement | null>(null);
   const [mobileInspector, setMobileInspector] = useState(false);
   const [documentExpanded, setDocumentExpanded] = useState(false);
+  const [paperLayout, setPaperLayout] = useState({
+    scale: 1,
+    width: 0,
+    height: 0,
+  });
   const renderModel = useMemo(
     () => (card ? credentialRenderModelFromCard(card) : null),
     [card],
   );
+  const isIdentity = renderModel?.paper.formFactor.kind === "iso_id_1";
   const record = useMemo(
     () => (card ? walletDocumentRecordV2FromCard(card) : null),
     [card],
@@ -56,6 +70,54 @@ export function CredentialDetailDialog({
         : [],
     [renderModel],
   );
+
+  useLayoutEffect(() => {
+    if (
+      !open ||
+      isIdentity ||
+      !paperViewportRef.current ||
+      !paperFrameRef.current
+    ) {
+      return;
+    }
+    const viewport = paperViewportRef.current;
+    const frame = paperFrameRef.current;
+    let frameId = 0;
+
+    const updatePaperLayout = () => {
+      const naturalWidth = frame.offsetWidth;
+      if (!naturalWidth || !viewport.clientWidth) return;
+      const scale = Math.min(1, viewport.clientWidth / naturalWidth);
+      const naturalHeight = Math.max(frame.offsetHeight, frame.scrollHeight);
+      const next = {
+        scale,
+        width: naturalWidth * scale,
+        height: naturalHeight * scale,
+      };
+      setPaperLayout((previous) =>
+        Math.abs(previous.scale - next.scale) < 0.001 &&
+        Math.abs(previous.width - next.width) < 0.5 &&
+        Math.abs(previous.height - next.height) < 0.5
+          ? previous
+          : next,
+      );
+    };
+
+    const scheduleUpdate = () => {
+      window.cancelAnimationFrame(frameId);
+      frameId = window.requestAnimationFrame(updatePaperLayout);
+    };
+    const observer = new ResizeObserver(scheduleUpdate);
+    observer.observe(viewport);
+    observer.observe(frame);
+    scheduleUpdate();
+    void document.fonts?.ready.then(scheduleUpdate);
+
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [card?.id, isIdentity, open]);
 
   useEffect(() => {
     setDocumentExpanded(false);
@@ -94,7 +156,6 @@ export function CredentialDetailDialog({
 
   if (!open || !card || !renderModel || !record || !trust) return null;
 
-  const isIdentity = renderModel.paper.formFactor.kind === "iso_id_1";
   const issuerName =
     renderModel.paper.letterhead.nameTh ??
     renderModel.paper.letterhead.nameEn ??
@@ -153,12 +214,35 @@ export function CredentialDetailDialog({
 
       <div className="credential-inspector-scroll">
         <section
+          ref={isIdentity ? undefined : paperViewportRef}
           className={`credential-inspector-preview${
             isIdentity ? " is-id-card" : " is-paper"
           }${documentExpanded ? " is-expanded" : ""}`}
           aria-label="ตัวอย่างเอกสารจากข้อมูลจริง"
         >
-          <CredentialDocument card={card} />
+          {isIdentity ? (
+            <CredentialDocument card={card} />
+          ) : (
+            <div
+              className="credential-paper-scaled-viewport"
+              style={{
+                width: paperLayout.width
+                  ? `${paperLayout.width}px`
+                  : "100%",
+                height: paperLayout.height
+                  ? `${paperLayout.height}px`
+                  : undefined,
+              }}
+            >
+              <div
+                ref={paperFrameRef}
+                className="credential-paper-scaled-frame"
+                style={{ transform: `scale(${paperLayout.scale})` }}
+              >
+                <CredentialDocument card={card} />
+              </div>
+            </div>
+          )}
         </section>
         {!isIdentity ? (
           <button

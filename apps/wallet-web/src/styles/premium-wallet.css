@@ -836,10 +836,27 @@ body {
   pointer-events: none;
 }
 
-.credential-inspector-preview.is-paper > .credential-doc {
-  width: 100%;
+.credential-paper-scaled-viewport {
+  position: relative;
   max-width: 100%;
   margin-inline: auto;
+}
+
+.credential-paper-scaled-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 210mm;
+  min-width: 210mm;
+  transform-origin: top left;
+}
+
+.credential-paper-scaled-frame
+  > .credential-doc.tc-clinical-paper.tc-form-a4-portrait {
+  width: 210mm;
+  min-width: 210mm;
+  max-width: 210mm;
+  margin: 0;
 }
 
 .credential-open-full {
@@ -1421,5 +1438,19 @@ body {
   body.printing-credential-inspector
     .credential-inspector-preview.is-paper::after {
     display: none !important;
+  }
+
+  body.printing-credential-inspector .credential-paper-scaled-viewport {
+    width: 210mm !important;
+    height: auto !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+  }
+
+  body.printing-credential-inspector .credential-paper-scaled-frame {
+    position: static !important;
+    width: 210mm !important;
+    min-width: 210mm !important;
+    transform: none !important;
   }
 }
