@@ -26,7 +26,7 @@ Date: 2026-07-11
 
 The source and production captures were placed together in the full-view comparison before judging overall composition. A separate focused comparison aligns the docked credential and mobile credential states so typography, spacing, patient image, credential proportions, provenance, controls, and navigation remain readable.
 
-The current desktop capture was also placed beside the same source visual truth after the final polish pass. At the 1280 × 800 inspector state, the appointment banner is 220 px high; its 25 px, weight-600 heading stays on one line. The three important credential cards are 208.8 px high and expose 3, 3, and 2 compact source-backed summary rows respectively. Summary values come from the shared credential renderer, not a Home-specific payload parser.
+The current desktop capture was also placed beside the same source visual truth after the final polish pass. At the 1280 × 800 inspector state, the appointment banner is 220 px high; its 22 px, weight-600 heading stays on one line. Page, section, card, and inspector headers are reduced by roughly 10–15% while body and metadata sizes remain unchanged. The three important credential cards are approximately 188 px high and expose 3, 3, and 2 compact source-backed summary rows respectively. Summary values come from the shared credential renderer, not a Home-specific payload parser.
 
 Primary interactions tested in the production browser:
 
