@@ -1,48 +1,74 @@
-# TrustCare Wallet Shared A4 Renderer — Design QA
+# TrustCare Wallet Premium Home and Credential Inspector — Design QA
 
-Date: 2026-07-10
+Date: 2026-07-11
 
-## Source references
+## Comparison target
 
-- `C:\Users\DELL\AppData\Local\Temp\codex-clipboard-784c2c17-bf39-4019-849d-949d948f6446.png`
-- `C:\Users\DELL\AppData\Local\Temp\codex-clipboard-be416a81-0e12-4755-bfa3-d01be2e91c76.png`
-- `C:\Users\DELL\AppData\Local\Temp\codex-clipboard-e977a372-1eb7-4d85-8731-9a61f08ebf5c.png`
-- The remaining six screenshots supplied in the same request were reviewed for wallet navigation, identity documents, tables, signatures, status treatment, and modal proportions.
+- Source visual truth: `C:\Users\DELL\.codex\generated_images\019f4ad0-056f-7983-8000-17b5f77edff7\exec-b443ab3e-dedf-4158-a384-16c76b805b5c.png`
+- Production URL: `https://wallet-web-production-6a00.up.railway.app`
+- Desktop implementation: `C:\Users\DELL\AppData\Local\Temp\trustcare-railway-desktop-id-inspector.png`
+- Mobile implementation: `C:\Users\DELL\AppData\Local\Temp\trustcare-railway-mobile-id-inspector.png`
+- Mobile A4 implementation: `C:\Users\DELL\AppData\Local\Temp\trustcare-railway-mobile-a4-final.png`
+- Full-view comparison: `C:\Users\DELL\.codex\visualizations\2026\07\10\019f4ad0-056f-7983-8000-17b5f77edff7\trustcare-design-comparison-full.png`
+- Focused inspector comparison: `C:\Users\DELL\.codex\visualizations\2026\07\10\019f4ad0-056f-7983-8000-17b5f77edff7\trustcare-design-comparison-focus.png`
 
-## Implementation captures
+## Viewports and state
 
-- Desktop prescription: `C:\Users\DELL\AppData\Local\Temp\trustcare-prescription-a4-desktop.png`
-- Desktop payer eligibility: `C:\Users\DELL\AppData\Local\Temp\trustcare-payer-a4-desktop.png`
-- Mobile payer eligibility (final): `C:\Users\DELL\AppData\Local\Temp\trustcare-payer-a4-mobile-final.png`
+- Desktop: 1440 × 1024, authenticated complete demo fixture, Home with the patient identity credential open in the docked inspector.
+- Mobile: 390 × 844 requested viewport (375 px browser client width), the same identity credential open in a full-screen inspector above the persistent five-item navigation.
+- Mobile A4: the medical certificate open in the same inspector with the physical A4 frame scaled to fit the bounded preview.
+- Railway revision inspected: `ad34e0e0a931cdda28c7d2dd5fb1ae4513d9e4d7`.
 
-The desktop payer capture and the quotation reference were inspected together in one comparison input. The implementation keeps the useful hospital-document hierarchy while removing the reference defects: horizontal document scrolling, nested vertical scrolling, oversized modal chrome, issuer/payer ambiguity, and lifecycle-as-verification styling.
+## Evidence reviewed
 
-## Browser QA
+The source and production captures were placed together in the full-view comparison before judging overall composition. A separate focused comparison aligns the docked credential and mobile credential states so typography, spacing, patient image, credential proportions, provenance, controls, and navigation remain readable.
 
-- Browser: Codex in-app Browser
-- Desktop viewport: 1440 × 1000
-- Mobile viewports: 390 × 844 and 320 × 700
-- Complete fixture: `demo-patient-complete-001`
-- Records V2 opened the Shared Renderer for all 24 canonical credential types.
-- All 24 documents had a source-backed title and issuer, no page/dialog/body horizontal overflow, exactly one modal vertical scroll owner, and no false verified claim.
-- Identity and travel documents showed the exact subject photo; non-photo credential types showed no person fallback.
-- Every table document used semantic `table` and `thead` markup.
-- Payer eligibility and guarantee documents used payer letterhead; claim package, claim receipt, and quotation retained provider issuer provenance.
-- At 320 px, patient identity, prescription, and quotation had zero page/dialog/body horizontal overflow; identity retained one correct photo and table documents retained semantic tables.
-- Wallet previews remained neutral/pending because the demo fixtures have no issuer proof. Green verification wording is gated by successful proof/signature, issuer, status, expiry, and policy checks.
-- Multi-document Public Verifier output now has one source-backed VP cover followed by each nested VC on a new printed page.
-- Print CSS uses A4 portrait, 14 mm top and 16 mm side/bottom margins, repeated table headers, non-splitting rows/signatures, and screen-only chrome removal.
+Primary interactions tested in the production browser:
 
-## Resolved findings
+- Collapsed side navigation expands, exposes labels, and collapses again.
+- Opening an ID-1 credential keeps the desktop Home context visible and presents a modal dialog on mobile.
+- Mobile focus enters the dialog, the underlying main region becomes inert, and the back action is available.
+- Share and print/PDF actions remain visible without exposing Full VC, SD, or ZKP terminology.
+- A4 documents preserve 210 × 297 mm layout geometry while scaling as one sheet on narrow screens; the full-document toggle works.
+- Desktop and mobile pages have no horizontal overflow.
+- Browser console error and warning logs were empty for the inspected states.
 
-- P1: verification wording was not fail-closed when required checklist items were missing.
-- P1: staff details could pair with the patient fixture photo/text.
-- P1: mixed payer/provider payloads could choose the hospital before the declared payer issuer.
-- P1: Records V2 did not invoke the Shared Renderer.
-- P2: `statusPurpose` and a raw array index could appear as document facts.
-- P2: print from a non-preview tab could silently do nothing.
-- P2: mobile identity output omitted source-backed photos.
-- P2: printed multi-document VP output lacked a presentation cover and purpose/audience context.
-- P2: demo payer artifacts omitted payer role and guarantee/pre-authorization aliases.
+## Required fidelity surfaces
 
-result: passed
+- Fonts and typography: the implementation preserves the source's calm clinical hierarchy, bilingual document labels, compact metadata, and stronger patient/document titles. Production copy is denser where actual source-backed claims require additional rows, but remains readable and does not truncate critical values silently.
+- Spacing and layout rhythm: the collapsed rail, appointment hero, three important-document cards, recent-document list, warning strip, and docked inspector follow the source composition. The production inspector uses a slightly more compact card and tighter claim rows to keep actions reachable at 1024 px height.
+- Colors and visual tokens: white, soft clinical blue, navy text, muted borders, green readiness, and amber caution states map consistently to the reference. Verification is not shown in green when proof and policy checks are incomplete.
+- Image quality and asset fidelity: the hospital illustration and TrustCare shield are real raster assets. Identity credentials use the exact subject image from the credential record; non-photo credentials do not borrow a person image.
+- Copy and content: production shows actual credential, issuer, lifecycle, source, and policy values. Differences from the mock's names, identifiers, dates, and verified labels are intentional data-integrity constraints rather than visual drift.
+
+## Findings
+
+No actionable P0, P1, or P2 visual or interaction findings remain.
+
+Acceptable differences:
+
+- The source shows idealized verified cards; production correctly shows pending/manual-review language for proofless demo credentials.
+- The production ID-1 card is slightly smaller than the mock so it keeps the ISO/IEC 7810 ID-1 aspect ratio and leaves room for source-backed details and actions.
+- The production recent list contains payer demo artifacts because the complete fixture reflects the current repository data rather than invented mock content.
+
+## Comparison history
+
+- Earlier P2: the A4 document reflowed into a responsive card on mobile and no longer represented physical paper. Fix: excluded the scaled physical frame from responsive paper rules and retained 14 mm/16 mm print geometry. Post-fix evidence: `trustcare-railway-mobile-a4-final.png` shows the complete paper sheet scaled inside a bounded preview without horizontal overflow.
+- Earlier P2: desktop A4 content was vertically compressed inside the inspector. Fix: measured the viewport, applied a uniform document scale, and guarded resize/font observer cleanup. Post-fix evidence: the final A4 captures preserve letterhead columns, metadata columns, 14 px paper type, and the physical page ratio.
+- Earlier P2: the first inspector pass competed with the Home layout. Fix: docked the desktop inspector and made mobile a full-screen dialog above the bottom navigation. Post-fix evidence: the full and focused comparison images show both states aligned with the selected reference.
+
+## Follow-up polish
+
+- P3: production claim rows could use abbreviated localized values for gender and nationality once canonical localization mappings are supplied by the product contract.
+- P3: a hospital-provided high-resolution logo can replace the demo shield without changing renderer architecture.
+
+## Implementation checklist
+
+- [x] Premium Home composition matches the selected direction.
+- [x] Side menu collapses and expands.
+- [x] Desktop and mobile credential inspectors preserve surrounding navigation.
+- [x] ID-1 and A4 credentials use their correct physical form factors.
+- [x] Share copy is patient-friendly and technical disclosure mode selection remains internal.
+- [x] Production Railway Browser QA completed with clean console output.
+
+final result: passed
