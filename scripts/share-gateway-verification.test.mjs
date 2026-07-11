@@ -23,9 +23,13 @@ test("returns bound V1 evidence only after independently verifying VP and every 
   );
   assert.equal(evidence.subjects[0].issuerDid, fixture.gateway.issuerDid);
   assert.equal(evidence.subjects[0].holderDid, fixture.holderDid);
-  assert.ok(evidence.subjects.every((subject) => subject.digest.startsWith("sha256:")));
+  assert.ok(
+    evidence.subjects.every((subject) => subject.digest.startsWith("sha256:")),
+  );
   assert.deepEqual(
-    Object.fromEntries(evidence.checks.map((check) => [check.key, check.state])),
+    Object.fromEntries(
+      evidence.checks.map((check) => [check.key, check.state]),
+    ),
     {
       proof: "pass",
       issuer: "pass",
@@ -129,8 +133,8 @@ async function signedFixture(options = {}) {
     privateKey,
   );
   const hospital = context(
-    "did:web:wallet.example:hospital:tcc",
-    "hospital-tcc-signing-key",
+    "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
+    "active-key",
     publicJwk,
     privateKey,
   );

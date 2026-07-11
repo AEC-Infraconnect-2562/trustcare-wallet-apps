@@ -8,6 +8,7 @@ import {
   getDemoHistory,
   getDemoUser,
   getDemoWalletCards,
+  groupCardsByCategory,
   simulateImportForService,
   type ReadinessContext,
   type ReadinessResult,
@@ -26,7 +27,6 @@ import {
   classifyQrPayload,
   fetchShlManifest,
   buildPortalInteroperabilityFixtures,
-  evaluateCredentialLifecycle,
   mhdDocumentReferenceFromRecord,
   recordFromMhdDocumentReference,
   validateDocumentReference,
@@ -46,12 +46,6 @@ import {
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
 import { verifyQr } from "./verifier";
-import {
-  canUsePortalDemoSync,
-  syncTrustCarePortalCardsByCategory,
-  type PortalSyncMode,
-} from "./portalSync";
-import { signCredentialWithShareGateway } from "./shareGatewayClient";
 import { usesDemoRuntime } from "./runtime";
 
 export type WalletApiOptions = TrustCareClientOptions & {
@@ -60,8 +54,6 @@ export type WalletApiOptions = TrustCareClientOptions & {
   shlGatewayUrl?: string;
   shlViewerUrl?: string;
   userId?: string | number;
-  portalSyncMode?: PortalSyncMode;
-  portalOrigin?: string;
 };
 
 export type WalletReadinessResponse = {
@@ -118,15 +110,6 @@ export type WalletSharePackageResolution = {
   shl: Awaited<ReturnType<typeof fetchShlManifest>> | null;
   resolvedAt: string;
 };
-
-function usesPortalLiveSync(
-  options: Pick<WalletApiOptions, "portalSyncMode" | "userId">,
-): boolean {
-  return (
-    options.portalSyncMode === "live_demo" &&
-    canUsePortalDemoSync(options.userId)
-  );
-}
 
 export async function cardsByCategory(
   options: WalletApiOptions,
@@ -326,10 +309,7 @@ export async function superseded(
 export async function history(
   options: WalletApiOptions,
 ): Promise<PresentationHistoryItem[]> {
-  if (usesDemoRuntime(options)) {
-    if (usesPortalLiveSync(options)) return [];
-    return getDemoHistory(options.userId);
-  }
+  if (usesDemoRuntime(options)) return getDemoHistory(options.userId);
   return callTrpcProcedure<PresentationHistoryItem[]>(
     options,
     "wallet.history",
@@ -725,30 +705,6 @@ export async function interoperabilityFixtures(
   options: WalletApiOptions,
 ): Promise<WalletInteroperabilityFixtures> {
   if (usesDemoRuntime(options)) {
-    if (usesPortalLiveSync(options)) {
-      const user = getDemoUser(options.userId);
-      return {
-        user,
-        counts: {
-          cards: 0,
-          shlPackages: 0,
-          oid4vciOffers: 0,
-          oid4vpRequests: 0,
-        },
-        credentialOfferUrl: "",
-        presentationRequestUrl: "",
-        shlQrPayload: undefined,
-        sampleCredentialIds: [],
-        samplePresentationIds: [],
-        scope: {
-          ownerUserId: user.id,
-          patientId: user.patientId,
-          holderDid: user.holderDid,
-          sourceSystem: "trustcare_portal",
-          portalOpenId: user.portalOpenId,
-        },
-      };
-    }
     return buildPortalInteroperabilityFixtures(
       options.userId,
       options.demoOrigin,
@@ -766,88 +722,7 @@ async function demoCardsByCategory(
 }
 
 async function demoWalletCards(options: WalletApiOptions) {
-  const cards = usesPortalLiveSync(options)
-    ? Object.values(await syncTrustCarePortalCardsByCategory(options)).flat()
-    : getDemoWalletCards(options.userId);
-  return hydrateIssuerSignedCredentials(options, cards);
-}
-
-async function hydrateIssuerSignedCredentials(
-  options: WalletApiOptions,
-  cards: WalletCard[],
-): Promise<WalletCard[]> {
-  const gatewayBaseUrl = demoCredentialSigningGatewayBaseUrl(options);
-  const signableCards = cards.filter(shouldRequestIssuerSignature);
-  if (!gatewayBaseUrl || !signableCards.length) return cards;
-  const signedCards = new Map<string | number, WalletCard>();
-  await Promise.all(
-    signableCards.map(async (card) => {
-      const lifecycle = evaluateCredentialLifecycle({ card });
-      const signed = await signCredentialWithShareGateway({
-        gatewayBaseUrl,
-        issuerServiceOperation: "demo_issuer_reissue",
-        sourceAuthority: lifecycle.sourceAuthority,
-        signingOwner: lifecycle.signingOwner,
-        sourceSystem: card.sourceSystem,
-        credential: card.credentialData ?? {},
-        cardId: card.id,
-        credentialId: card.credentialId,
-        credentialType: card.credentialType,
-        holderDid: card.holderDid,
-        expiresAt: card.expiresAt,
-        audience: TRUSTCARE_WALLET_VERIFIER_AUDIENCE,
-      });
-      signedCards.set(card.id, {
-        ...card,
-        credentialJwt: signed.credentialJwt,
-        credentialProof: signed.credentialProof,
-        issuerDid: signed.issuerDid ?? card.issuerDid,
-        credentialData: signed.signedCredential ?? card.credentialData,
-      });
-    }),
-  );
-  return cards.map((card) => signedCards.get(card.id) ?? card);
-}
-
-function shouldRequestIssuerSignature(card: WalletCard): boolean {
-  const lifecycle = evaluateCredentialLifecycle({ card });
-  return Boolean(
-    card.credentialData &&
-    card.credentialStatus === "active" &&
-    lifecycle.action === "issue_and_sign" &&
-    lifecycle.signingOwner === "source_issuer",
-  );
-}
-
-function demoCredentialSigningGatewayBaseUrl(
-  options: WalletApiOptions,
-): string | undefined {
-  if (!isBrowserRuntime()) return undefined;
-  if (options.shareGatewayUrl) return options.shareGatewayUrl;
-  if (!options.demoOrigin) return undefined;
-  try {
-    const origin = new URL(options.demoOrigin);
-    if (origin.hostname.endsWith("github.io")) return undefined;
-    return `${origin.origin}/api/share-gateway`;
-  } catch {
-    return undefined;
-  }
-}
-
-function isBrowserRuntime(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.document !== "undefined" &&
-    typeof fetch === "function"
-  );
-}
-
-function groupCardsByCategory(cards: WalletCard[]): WalletCardsByCategory {
-  return cards.reduce<WalletCardsByCategory>((grouped, card) => {
-    grouped[card.documentCategory] ??= [];
-    grouped[card.documentCategory].push(card);
-    return grouped;
-  }, {});
+  return getDemoWalletCards(options.userId);
 }
 
 const TRUSTCARE_WALLET_VERIFIER_AUDIENCE = "https://trustcare.network/verifier";

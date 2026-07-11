@@ -8,7 +8,7 @@ import {
 describe("portal render contract", () => {
   it("normalizes humanDocument.renderData into the shared renderer subject", () => {
     const credential = {
-      issuer: { id: "did:web:trustcare.network:hospital:tcc" },
+      issuer: { id: "did:web:portal.example:hospital:tcc" },
     };
     const subject = {
       id: "Patient/demo-patient-001",
@@ -47,7 +47,7 @@ describe("portal render contract", () => {
       status: "active",
     });
     expect(normalized.issuer).toMatchObject({
-      id: "did:web:trustcare.network:hospital:tcc",
+      id: "did:web:portal.example:hospital:tcc",
       code: "tcc",
     });
   });

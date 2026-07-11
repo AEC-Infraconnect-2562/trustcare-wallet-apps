@@ -35,7 +35,6 @@ import {
   Wallet,
 } from "lucide-react";
 import {
-  portalSyncApi,
   payerApi,
   shlApi,
   verifierApi,
@@ -57,7 +56,6 @@ import {
   importWalletExchange,
   parseShlLink,
   fetchShlManifest,
-  mergePortalSyncedCards,
   mergePayerArtifactCards,
   mergeWalletObjects,
   normalizePhotoUrl,
@@ -86,12 +84,29 @@ import {
   type VerifierResult,
 } from "@trustcare/wallet-core";
 import { env } from "./env";
-import { RecordsV2View } from "./components/records/RecordsV2View";
+import {
+  RecordsV2View,
+  type PortalHospitalCode,
+} from "./components/records/RecordsV2View";
 import { RoutePlaceholderView } from "./components/shell/RoutePlaceholderView";
 import { useOfflineWallet } from "./hooks/useOfflineWallet";
 import { useScanHistory } from "./hooks/useScanHistory";
 import { useStoredExtras } from "./hooks/useStoredExtras";
 import { useWebAuthn } from "./hooks/useWebAuthn";
+import { useWalletExchange } from "./hooks/useWalletExchange";
+import {
+  credentialRequestStatusLabel,
+  createMissingCredentialRequestInput,
+  createdCredentialRequestViewModel,
+  mergeCredentialRequestStatus,
+  persistedCredentialRequestViewModel,
+  type WalletCredentialRequestViewModel,
+} from "./walletExchangeCredentialRequest";
+import {
+  defaultPortalHospitalCode,
+  refreshWalletExchangeSubmission,
+  submitWalletExchangeRecord,
+} from "./walletExchangeSubmission";
 import {
   isPlaceholderRouteId,
   pathForView,
@@ -167,11 +182,6 @@ const baseApiOptions = {
     typeof window !== "undefined"
       ? (currentShareGatewayBaseUrl() ?? undefined)
       : env.shareGatewayUrl,
-  portalOrigin:
-    env.runtimeEnvironment === "demo"
-      ? "https://trustcarehealth.live"
-      : undefined,
-  portalSyncMode: "disabled" as const,
 };
 
 const walletSessionKey = `trustcare-wallet-active-user:${env.runtimeEnvironment}:v1`;
@@ -258,17 +268,18 @@ export default function App() {
   );
   const [prepareWorkbench, setPrepareWorkbench] = useState<any>(null);
   const [documentRequests, setDocumentRequests] = useState<
-    WalletDocumentRequest[]
+    WalletCredentialRequestViewModel[]
   >([]);
   const [documentFlow, setDocumentFlow] = useState<DocumentFlowState | null>(
     null,
   );
+  const [documentFlowError, setDocumentFlowError] = useState("");
   const [importJob, setImportJob] = useState<WalletImportJob | null>(null);
   const [lastImportMessage, setLastImportMessage] = useState("");
   const [portalSyncMessage, setPortalSyncMessage] = useState("");
   const [portalSyncBusy, setPortalSyncBusy] = useState(false);
   const [storeFilter, setStoreFilter] = useState<StoreFilter>("all");
-  const offlineWallet = useOfflineWallet();
+  const offlineWallet = useOfflineWallet(env.demoMode);
   const webAuthn = useWebAuthn();
   const { scanHistory, setScanHistoryByUser } =
     useScanHistory<ScanOutcome>(selectedUserId);
@@ -283,30 +294,57 @@ export default function App() {
     () => getDemoUser(selectedUserId),
     [selectedUserId],
   );
+  const walletExchange = useWalletExchange({
+    enabled:
+      isAuthenticated &&
+      routeMatch.route.id !== "verify" &&
+      !(pendingScanPayload && isPublicVerifierScanLocation()),
+    portalBaseUrl: env.portalBaseUrl,
+    appId: env.walletExchangeAppId,
+    runtimeEnvironment: env.runtimeEnvironment,
+    walletVersion: "0.1.0",
+    localUserKey: selectedUserId,
+  });
   const apiOptions = useMemo(
     () => ({
       ...baseApiOptions,
-      portalSyncMode: "disabled" as const,
       userId: selectedUserId,
     }),
     [selectedUserId],
   );
-  const portalSyncOptions = useMemo(
-    () => ({
-      ...baseApiOptions,
-      portalSyncMode:
-        env.runtimeEnvironment === "demo"
-          ? ("live_demo" as const)
-          : ("disabled" as const),
-      userId: selectedUserId,
-    }),
-    [selectedUserId],
-  );
-  const canSyncPortalWallet =
-    env.runtimeEnvironment === "demo" &&
-    portalSyncApi.canUsePortalDemoSync(selectedUserId);
+
+  useEffect(() => {
+    setDocumentRequests([]);
+  }, [selectedUserId]);
+
+  useEffect(() => {
+    if (!walletExchange.requestLinks.length) return;
+    setDocumentRequests((previous) => {
+      const byClientId = new Map(
+        previous
+          .filter((request) => request.clientRequestId)
+          .map((request) => [request.clientRequestId!, request] as const),
+      );
+      for (const link of walletExchange.requestLinks) {
+        if (!byClientId.has(link.clientRequestId)) {
+          byClientId.set(
+            link.clientRequestId,
+            persistedCredentialRequestViewModel(link),
+          );
+        }
+      }
+      return [
+        ...byClientId.values(),
+        ...previous.filter((request) => !request.clientRequestId),
+      ];
+    });
+  }, [walletExchange.requestLinks]);
+
+  const canSyncPortalWallet = Boolean(walletExchange.workflow);
   const interopFixtures = useMemo(() => {
-    if (canSyncPortalWallet) return emptyPortalInteropFixtures(activeUser);
+    if (canSyncPortalWallet || !env.demoMode) {
+      return emptyPortalInteropFixtures(activeUser);
+    }
     return buildPortalInteroperabilityFixtures(
       selectedUserId,
       baseApiOptions.demoOrigin,
@@ -361,6 +399,21 @@ export default function App() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
+    if (!env.demoMode) {
+      setGrouped({});
+      setHistory([]);
+      setShlPackages([]);
+      setContractHub(null);
+      setSelectedCard(null);
+      setDetailOpen(false);
+      setVerifierResult(null);
+      setScanOutcome(null);
+      setScanResponseOpen(false);
+      setImportJob(null);
+      setLastImportMessage("");
+      setPayerShareSelection(null);
+      return;
+    }
     let cancelled = false;
     async function loadWallet() {
       setPortalSyncMessage("");
@@ -413,17 +466,34 @@ export default function App() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
+    if (!env.demoMode) {
+      setReadiness(null);
+      setPrepareWorkbench(null);
+      setDocumentRequests((previous) =>
+        previous.filter((request) => request.clientRequestId),
+      );
+      return;
+    }
     let cancelled = false;
+    const existingRequestPromise =
+      env.demoMode && !canSyncPortalWallet
+        ? walletApi.documentRequests(apiOptions, {
+            context: readinessContext,
+          })
+        : Promise.resolve([] as WalletDocumentRequest[]);
     void Promise.all([
       walletApi.readiness(apiOptions, { context: readinessContext }),
       walletApi.prepareWorkbench(apiOptions, { context: readinessContext }),
-      walletApi.documentRequests(apiOptions, { context: readinessContext }),
+      existingRequestPromise,
     ])
       .then(([nextReadiness, workbench, requests]) => {
         if (cancelled) return;
         setReadiness(nextReadiness);
         setPrepareWorkbench(workbench);
-        setDocumentRequests(requests);
+        setDocumentRequests((previous) => [
+          ...previous.filter((request) => request.clientRequestId),
+          ...requests,
+        ]);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -439,16 +509,25 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiOptions, isAuthenticated, readinessContext]);
+  }, [apiOptions, canSyncPortalWallet, isAuthenticated, readinessContext]);
+
+  const exchangeCards = useMemo(
+    () =>
+      walletExchange.documents.map((record) =>
+        walletCardForDocumentRendering(record),
+      ),
+    [walletExchange.documents],
+  );
 
   const allCards = useMemo(() => {
+    if (!env.demoMode) return exchangeCards;
     const online = flattenCardsByCategory(grouped);
     return online.length
       ? online
       : offlineWallet.offlineCards.filter(
           (card) => card.ownerUserId === selectedUserId,
         );
-  }, [grouped, offlineWallet.offlineCards, selectedUserId]);
+  }, [exchangeCards, grouped, offlineWallet.offlineCards, selectedUserId]);
 
   const openRecord = useCallback(
     (card: WalletCard) => {
@@ -464,12 +543,60 @@ export default function App() {
     (record: WalletDocumentRecordV2) => {
       preserveDesktopScrollPosition();
       detailReturnPathRef.current = "/records";
-      setSelectedCard(walletCardForDocumentRendering(record));
-      setDetailOpen(true);
+      setSelectedCard(null);
+      setDetailOpen(false);
       const routeId = record.credential.credentialId ?? record.id;
       routerNavigate(`/records/${encodeURIComponent(routeId)}`);
     },
     [routerNavigate],
+  );
+
+  const submitExchangeRecord = useCallback(
+    async (
+      record: WalletDocumentRecordV2,
+      targetHospitalCode: PortalHospitalCode,
+    ) => {
+      const workflow = walletExchange.workflow;
+      if (!workflow) {
+        throw new Error(
+          walletExchange.error ||
+            "Wallet Exchange V2 ยังไม่พร้อม ระบบจะไม่ส่งเอกสารผ่านช่องทางเดิม",
+        );
+      }
+      return submitWalletExchangeRecord({
+        workflow,
+        record,
+        targetHospitalCode,
+        portalBaseUrl: env.portalBaseUrl,
+        context: readinessContext,
+        purpose: readinessPurposeTh[readinessContext],
+        reload: walletExchange.reload,
+      });
+    },
+    [
+      readinessContext,
+      walletExchange.error,
+      walletExchange.reload,
+      walletExchange.workflow,
+    ],
+  );
+
+  const refreshExchangeSubmission = useCallback(
+    async (clientSubmissionId: string) => {
+      const workflow = walletExchange.workflow;
+      if (!workflow) {
+        throw new Error(
+          walletExchange.error ||
+            "Wallet Exchange V2 ยังไม่พร้อม ระบบจะไม่ตรวจสถานะจากช่องทางเดิม",
+        );
+      }
+      return refreshWalletExchangeSubmission({
+        workflow,
+        clientSubmissionId,
+        reload: walletExchange.reload,
+      });
+    },
+    [walletExchange.error, walletExchange.reload, walletExchange.workflow],
   );
 
   const closeCredentialInspector = useCallback(() => {
@@ -499,7 +626,7 @@ export default function App() {
       previous
         ? { ...previous, readiness: nextReadiness }
         : {
-            patientId: activeUser.patientId,
+            patientId: env.demoMode ? activeUser.patientId : undefined,
             readiness: nextReadiness,
             requests: [],
             previousChecks: [],
@@ -515,7 +642,10 @@ export default function App() {
     );
   }, [activeUser.patientId, allCards, readinessContext]);
 
-  const counts = useMemo(() => countCardsByCategory(grouped), [grouped]);
+  const counts = useMemo(
+    () => countCardsByCategory(groupCardsByCategory(allCards)),
+    [allCards],
+  );
   const serviceReadinessSummaries = useMemo<ServiceReadinessSummary[]>(
     () =>
       readinessContexts.map((context) => {
@@ -611,6 +741,11 @@ export default function App() {
       selectedCardIds: number[];
       consentReceiptId: string;
     }) => {
+      if (!env.demoMode) {
+        throw new Error(
+          "Payer sandbox adapters are disabled in Wallet Exchange runtime; configure a real Portal/Contract Hub adapter instead of falling back to demo data.",
+        );
+      }
       const result = await payerApi.runPayerLifecycle(apiOptions, {
         ...input,
         patientId: activeUser.id,
@@ -651,65 +786,18 @@ export default function App() {
       return;
     }
     setPortalSyncBusy(true);
-    setPortalSyncMessage("กำลัง Sync VC/VP จาก TrustCare Portal...");
+    setPortalSyncMessage(
+      "กำลังตรวจ Contract, DPoP และ Sync VC จาก TrustCare Portal...",
+    );
     try {
-      const result = await portalSyncApi.syncTrustCarePortalWallet({
-        ...portalSyncOptions,
-        currentCards: allCards,
-      });
-      if (result.report.ownerUserId !== selectedUserId) {
-        throw new Error(
-          `Portal sync owner mismatch: expected ${selectedUserId}, received ${result.report.ownerUserId}`,
-        );
-      }
-      const syncedCards = flattenCardsByCategory(result.cardsByCategory);
-      if (syncedCards.some((card) => card.ownerUserId !== selectedUserId)) {
-        throw new Error(
-          "Portal sync returned credentials for another wallet user",
-        );
-      }
-      const existingPortalCards = allCards.filter(
-        (card) =>
-          card.ownerUserId === selectedUserId &&
-          card.sourceSystem === "trustcare_portal",
-      );
-      const preservedWalletCards = allCards.filter(
-        (card) => card.sourceSystem !== "trustcare_portal",
-      );
-      const mergedSync = mergePortalSyncedCards({
-        existingCards: existingPortalCards,
-        incomingCards: syncedCards,
-        syncedAt: result.report.syncedAt,
-        authoritativeSnapshot: true,
-      });
-      const activeCards = [...preservedWalletCards, ...mergedSync.cards];
-      const activeCardsByCategory = groupCardsByCategory(activeCards);
-      setGrouped(activeCardsByCategory);
-      setHistory(result.presentations);
-      setShlPackages([]);
-      if (mergedSync.archivedObjects.length) {
-        setStoredExtrasByUser((previous) => ({
-          ...previous,
-          [selectedUserId]: mergeWalletObjects(
-            previous[selectedUserId] ?? [],
-            mergedSync.archivedObjects,
-          ),
-        }));
-      }
-      await offlineWallet.syncCards(activeCards);
-      const warningText = result.report.warnings.length
-        ? ` (${result.report.warnings.join(" / ")})`
-        : "";
+      const result = await walletExchange.synchronize();
       setPortalSyncMessage(
         [
-          `Sync จาก TrustCare Portal สำเร็จ: ใช้งาน VC ${mergedSync.report.active} รายการ`,
-          `เพิ่ม ${mergedSync.report.added}`,
-          `อัปเดต ${mergedSync.report.updated}`,
-          `ซ้ำเดิม ${mergedSync.report.unchanged}`,
-          mergedSync.report.archived
-            ? `เก็บเวอร์ชันเดิม ${mergedSync.report.archived}`
-            : null,
-          `และ VP ${result.presentations.length} รายการ สำหรับ ${activeUser.nameTh}${warningText}`,
+          `Sync Wallet Exchange V2 สำเร็จ ${result.pages} หน้า`,
+          `รับ/อัปเดต ${result.applied}`,
+          `เก็บประวัติสถานะ ${result.archived}`,
+          result.rejected ? `กักกัน ${result.rejected}` : null,
+          result.pendingAckRecovered ? "กู้คืน ACK ที่ค้างแล้ว" : null,
         ]
           .filter(Boolean)
           .join(" · "),
@@ -720,14 +808,7 @@ export default function App() {
     } finally {
       setPortalSyncBusy(false);
     }
-  }, [
-    activeUser,
-    allCards,
-    canSyncPortalWallet,
-    offlineWallet,
-    portalSyncOptions,
-    selectedUserId,
-  ]);
+  }, [canSyncPortalWallet, walletExchange]);
 
   const addScanHistory = useCallback(
     (outcome: ScanOutcome) => {
@@ -759,6 +840,11 @@ export default function App() {
 
   const acceptCredentialOffer = useCallback(
     async (value: string) => {
+      if (!env.demoMode) {
+        throw new Error(
+          "OID4VCI receive is not enabled for the live Portal contract; Wallet will not fall back to the legacy API.",
+        );
+      }
       const payload = extractScannablePayload(value);
       const result = await walletApi.acceptCredentialOffer(apiOptions, {
         offerPayload: payload,
@@ -952,6 +1038,7 @@ export default function App() {
         );
         return;
       }
+      setDocumentFlowError("");
       setDocumentFlow({ mode, requirements: missing });
     },
     [getMissingRequirements],
@@ -960,6 +1047,11 @@ export default function App() {
   const submitDocumentFlow = useCallback(
     async (draft: DocumentRequestDraft, mode: DocumentFlowMode) => {
       if (mode === "import") {
+        if (!env.demoMode) {
+          throw new Error(
+            "Document import is not defined by Wallet Exchange V2; Wallet will not send a Portal patientId or fall back to the legacy API.",
+          );
+        }
         const documentType =
           draft.requestedDocumentTypes[0] ?? "patient_summary";
         const result = await walletApi.importForService(apiOptions, {
@@ -1004,47 +1096,96 @@ export default function App() {
         return;
       }
 
-      const result = await walletApi.requestDocument(apiOptions, {
-        context: draft.context,
-        patientId: activeUser.patientId,
-        documentTypes: draft.requestedDocumentTypes,
-        sourceType: draft.source,
-        requestFormat: draft.format,
-        returnChannel: draft.returnChannel,
-        accessPolicy: draft.accessPolicy,
-        selectiveDisclosureFields: draft.selectiveDisclosureFields,
+      const workflow = walletExchange.workflow;
+      if (!workflow) {
+        throw new Error(
+          walletExchange.error ||
+            "Wallet Exchange V2 ยังไม่พร้อม ระบบจะไม่ส่งคำขอผ่านช่องทางเดิม",
+        );
+      }
+      const requestInput = createMissingCredentialRequestInput({
+        draft,
+        hospitalCode: activeUser.hospitalCode,
       });
-      const requestId = (result as any).requestId ?? `wdr_demo_${Date.now()}`;
-      setDocumentRequests((prev) => [
-        {
-          ...(result as WalletDocumentRequest),
-          id: (result as any).id ?? requestId,
-          requestId,
-          context: draft.context,
-          documentType: draft.requestedDocumentTypes.join(","),
-          sourceType: draft.source,
-          sourceName: draft.destinationLabel,
-          status: (result as any).status ?? "requested",
-          notes: [
-            draft.formatLabel,
-            documentRequestReturnChannelLabel(draft.returnChannel),
-            ...draft.nextSteps,
-          ].join(" · "),
-          createdAt: new Date().toISOString(),
-          requestFormat: draft.format,
-          returnChannel: draft.returnChannel,
-          packageScope: draft.scope,
-          trustPolicy: draft.trustPolicy,
-          requestedDocumentTypes: draft.requestedDocumentTypes,
-        } as WalletDocumentRequest,
-        ...prev,
+      const result = await workflow.requestMissingCredentials(requestInput);
+      const requestView = createdCredentialRequestViewModel({
+        response: result,
+        context: draft.context,
+        documentTypes: draft.requestedDocumentTypes,
+        hospitalCode: requestInput.targetHospitalCode,
+        hospitalName: activeUser.hospitalNameTh,
+      });
+      setDocumentRequests((previous) => [
+        requestView,
+        ...previous.filter(
+          (request) => request.clientRequestId !== result.clientRequestId,
+        ),
       ]);
+      await walletExchange.reload();
       setLastImportMessage(
-        `ส่งคำขอเอกสาร ${requestId} ไปที่ ${draft.destinationLabel} แล้ว · ${draft.formatLabel}`,
+        `ส่งคำขอเอกสาร ${result.requestId} ไปที่ ${activeUser.hospitalNameTh} แล้ว · ${credentialRequestStatusLabel(result.status)}`,
       );
       setDocumentFlow(null);
     },
-    [activeUser.patientId, addStoredObject, apiOptions],
+    [
+      activeUser.hospitalCode,
+      activeUser.hospitalNameTh,
+      activeUser.patientId,
+      addStoredObject,
+      apiOptions,
+      walletExchange.error,
+      walletExchange.reload,
+      walletExchange.workflow,
+    ],
+  );
+
+  const refreshDocumentRequest = useCallback(
+    async (request: WalletCredentialRequestViewModel) => {
+      const workflow = walletExchange.workflow;
+      if (!workflow || !request.clientRequestId) {
+        throw new Error(
+          walletExchange.error ||
+            "ไม่พบคำขอ Wallet Exchange V2 ที่ตรวจสอบสถานะได้",
+        );
+      }
+      setDocumentRequests((previous) =>
+        previous.map((candidate) =>
+          candidate.clientRequestId === request.clientRequestId
+            ? { ...candidate, refreshing: true, refreshError: undefined }
+            : candidate,
+        ),
+      );
+      try {
+        const status = await workflow.refreshCredentialRequest(
+          request.clientRequestId,
+        );
+        setDocumentRequests((previous) =>
+          previous.map((candidate) =>
+            candidate.clientRequestId === request.clientRequestId
+              ? mergeCredentialRequestStatus(candidate, status)
+              : candidate,
+          ),
+        );
+        await walletExchange.reload();
+        setLastImportMessage(
+          `อัปเดตคำขอ ${status.requestId} แล้ว · ${credentialRequestStatusLabel(status.status)}`,
+        );
+      } catch (error) {
+        const message = friendlyWalletRuntimeError(
+          error,
+          "ตรวจสอบสถานะคำขอไม่สำเร็จ",
+        );
+        setDocumentRequests((previous) =>
+          previous.map((candidate) =>
+            candidate.clientRequestId === request.clientRequestId
+              ? { ...candidate, refreshing: false, refreshError: message }
+              : candidate,
+          ),
+        );
+        throw error;
+      }
+    },
+    [walletExchange.error, walletExchange.reload, walletExchange.workflow],
   );
 
   const exportResult = useCallback((result: WalletExportResult) => {
@@ -1439,7 +1580,10 @@ export default function App() {
 
         <div className="status-strip">
           <div className="status-documents">
-            <Wallet size={18} /> <strong>{allCards.length} เอกสาร</strong>
+            <Wallet size={18} />{" "}
+            <strong>
+              {allCards.length + walletExchange.documents.length} เอกสาร
+            </strong>
           </div>
           <div className="interop-ok status-source">
             <Network size={18} />{" "}
@@ -1449,7 +1593,9 @@ export default function App() {
           </div>
           <div className="status-holder">
             <Fingerprint size={18} />{" "}
-            <strong>{shortDid(activeUser.holderDid)}</strong>
+            <strong>
+              {shortDid(walletExchange.holderDid ?? activeUser.holderDid)}
+            </strong>
           </div>
           <div
             className={`status-connectivity ${offlineWallet.isOnline ? "online" : "offline"}`}
@@ -1536,9 +1682,20 @@ export default function App() {
             runtimeEnvironment={env.runtimeEnvironment}
             userId={selectedUserId}
             apiUrl={env.apiUrl}
-            selectedRecordId={
-              detailOpen ? undefined : routeMatch.params.recordId
-            }
+            exchangeRecords={walletExchange.documents}
+            exchangeLoading={walletExchange.initializing}
+            exchangeError={walletExchange.error}
+            onReloadExchange={() => void walletExchange.reload()}
+            pendingShareCount={walletExchange.pendingSubmissions.length}
+            onRecoverPendingShares={async () => {
+              await walletExchange.recoverPendingSubmissions();
+            }}
+            defaultTargetHospitalCode={defaultPortalHospitalCode(
+              activeUser.hospitalCode,
+            )}
+            onSubmitExchangeRecord={submitExchangeRecord}
+            onRefreshExchangeSubmission={refreshExchangeSubmission}
+            selectedRecordId={routeMatch.params.recordId}
             onOpenRecord={openV2Record}
             onCloseRecord={() => routerNavigate("/records")}
           />
@@ -1616,6 +1773,9 @@ export default function App() {
             onImportMissing={(requirements) =>
               openDocumentFlow("import", requirements)
             }
+            onRefreshRequest={(request) =>
+              void refreshDocumentRequest(request).catch(() => undefined)
+            }
           />
         )}
         {routeView === "store" && (
@@ -1661,10 +1821,22 @@ export default function App() {
           user={activeUser}
           context={readinessContext}
           requirements={documentFlow.requirements}
-          onClose={() => setDocumentFlow(null)}
-          onSubmit={(draft) =>
-            void submitDocumentFlow(draft, documentFlow.mode)
-          }
+          errorMessage={documentFlowError}
+          onClose={() => {
+            setDocumentFlow(null);
+            setDocumentFlowError("");
+          }}
+          onSubmit={(draft) => {
+            setDocumentFlowError("");
+            void submitDocumentFlow(draft, documentFlow.mode).catch((error) => {
+              const message = friendlyWalletRuntimeError(
+                error,
+                "ส่งคำขอเอกสารไม่สำเร็จ",
+              );
+              setLastImportMessage(message);
+              setDocumentFlowError(message);
+            });
+          }}
         />
       )}
 

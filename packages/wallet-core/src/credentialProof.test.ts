@@ -109,11 +109,16 @@ describe("credential proof standards layer", () => {
   });
 
   it("centralizes TrustCare DID/JWKS candidate and kid matching rules", () => {
+    const portalOrigin =
+      "https://trustcare-hospital-network-production.up.railway.app";
     const candidates = buildTrustCareJwksCandidates({
       header: { jku: "https://wallet.example/.well-known/jwks.json" },
-      payload: { iss: "did:web:trustcare.network:hospital:TCC" },
+      payload: {
+        iss: "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
+      },
       sourceUrl:
         "https://wallet.example/api/share-gateway/presentations/vp.jwt",
+      trustcareOrigins: [portalOrigin],
     });
 
     expect(candidates).toContain(
@@ -122,12 +127,45 @@ describe("credential proof standards layer", () => {
     expect(candidates).toContain(
       "https://wallet.example/api/share-gateway/.well-known/jwks.json",
     );
-    expect(candidates).toContain(
-      "https://trustcarehealth.live/hospital/tcc/did/jwks.json",
-    );
+    expect(candidates).toContain(`${portalOrigin}/hospital/tcc/did/jwks.json`);
+    expect(candidates).not.toContain(`${portalOrigin}/.well-known/jwks.json`);
     expect(
       keyMatchesKid({ kid: "did:web:issuer.example#key-1" }, "key-1"),
     ).toBe(true);
+  });
+
+  it("does not resolve a legacy hospital DID through the configured Portal origin", () => {
+    const portalOrigin =
+      "https://trustcare-hospital-network-production.up.railway.app";
+    const candidates = buildTrustCareJwksCandidates({
+      header: {},
+      payload: { iss: "did:web:trustcare.network:hospital:tcc" },
+      sourceUrl: "inline-jwt",
+      trustcareOrigins: [portalOrigin],
+    });
+
+    expect(candidates).toEqual([]);
+  });
+
+  it("keeps issuer-bound hospital VC resolution away from source and gateway keys", () => {
+    const portalOrigin =
+      "https://trustcare-hospital-network-production.up.railway.app";
+    const issuer =
+      "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc";
+    const result = buildTrustCareJwksCandidateResult({
+      header: { jku: "https://wallet.example/.well-known/jwks.json" },
+      payload: { iss: issuer },
+      sourceUrl:
+        "https://wallet.example/api/share-gateway/presentations/vp.jwt",
+      issuerBound: true,
+    });
+
+    expect(result.candidates).toEqual([
+      `${portalOrigin}/hospital/tcc/did/jwks.json`,
+      `${portalOrigin}/hospital/tcc/did.json`,
+    ]);
+    expect(result.candidates.join(" ")).not.toContain("wallet.example");
+    expect(result.warnings.join(" ")).toContain("issuer-bound");
   });
 
   it("rejects untrusted cross-origin jku before verifier fetches JWKS", () => {

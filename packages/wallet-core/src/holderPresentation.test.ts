@@ -4,7 +4,7 @@ import {
   generateHolderIdentity,
   type HolderKeyAlgorithm,
 } from "./holderIdentity";
-import { createHolderSignedDirectVp } from "./portalWalletPush";
+import { createHolderSignedDirectVp } from "./holderPresentation";
 
 const NOW = new Date("2026-07-11T10:00:00.000Z");
 const AUDIENCE =

@@ -117,7 +117,7 @@ async function putCachedQr(entry: QrCacheEntry) {
   });
 }
 
-export function useOfflineWallet() {
+export function useOfflineWallet(enabled = true) {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [meta, setMetaState] = useState<{
     isLoaded: boolean;
@@ -129,6 +129,11 @@ export function useOfflineWallet() {
   const [offlineCards, setOfflineCards] = useState<WalletCard[]>([]);
 
   useEffect(() => {
+    if (!enabled) {
+      setOfflineCards([]);
+      setMetaState({ isLoaded: true, lastSyncTime: null });
+      return;
+    }
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online", handleOnline);
@@ -144,15 +149,23 @@ export function useOfflineWallet() {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, []);
+  }, [enabled]);
 
-  const syncCards = useCallback(async (cards: WalletCard[]) => {
-    const now = new Date().toISOString();
-    await putCards(cards);
-    await setMeta("lastSyncTime", now);
-    setOfflineCards(cards);
-    setMetaState({ isLoaded: true, lastSyncTime: now });
-  }, []);
+  const syncCards = useCallback(
+    async (cards: WalletCard[]) => {
+      if (!enabled) {
+        throw new Error(
+          "Legacy offline card storage is disabled outside explicit demo runtime.",
+        );
+      }
+      const now = new Date().toISOString();
+      await putCards(cards);
+      await setMeta("lastSyncTime", now);
+      setOfflineCards(cards);
+      setMetaState({ isLoaded: true, lastSyncTime: now });
+    },
+    [enabled],
+  );
 
   const cacheQr = useCallback(
     async (
@@ -161,6 +174,11 @@ export function useOfflineWallet() {
       presentationId: string,
       expiresAt?: string,
     ) => {
+      if (!enabled) {
+        throw new Error(
+          "Legacy offline QR storage is disabled outside explicit demo runtime.",
+        );
+      }
       const qrDataUrl = await toQrDataUrl(qrData, { margin: 1, width: 260 });
       await putCachedQr({
         cardId,
@@ -172,15 +190,19 @@ export function useOfflineWallet() {
       });
       return qrDataUrl;
     },
-    [],
+    [enabled],
   );
 
-  const getOfflineQr = useCallback(async (cardId: number) => {
-    const cached = await getCachedQr(cardId);
-    if (!cached) return null;
-    if (isExpired(cached.expiresAt)) return null;
-    return cached;
-  }, []);
+  const getOfflineQr = useCallback(
+    async (cardId: number) => {
+      if (!enabled) return null;
+      const cached = await getCachedQr(cardId);
+      if (!cached) return null;
+      if (isExpired(cached.expiresAt)) return null;
+      return cached;
+    },
+    [enabled],
+  );
 
   return {
     isOnline,

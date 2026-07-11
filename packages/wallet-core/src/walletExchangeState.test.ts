@@ -32,7 +32,7 @@ const hashB = `sha256:${"b".repeat(64)}` as `sha256:${string}`;
 describe("Wallet Exchange V2 state", () => {
   it("partitions durable state by normalized Portal origin and holder did:key", () => {
     const partition = createWalletExchangePartition({
-      portalOrigin: `${portalOrigin}/api/wallet/v2/`,
+      portalOrigin: `${portalOrigin}/`,
       holderDid,
     });
     expect(partition.portalOrigin).toBe(portalOrigin);
@@ -43,6 +43,12 @@ describe("Wallet Exchange V2 state", () => {
         holderDid: "did:key:z6MkhAnotherHolder",
       }).key,
     ).not.toBe(partition.key);
+    expect(() =>
+      createWalletExchangePartition({
+        portalOrigin: `${portalOrigin}/api/wallet/v2`,
+        holderDid,
+      }),
+    ).toThrow("origin");
     expect(() =>
       createWalletExchangePartition({
         portalOrigin: "http://portal.example.test",
@@ -232,6 +238,48 @@ describe("Wallet Exchange V2 state", () => {
     });
   });
 
+  it("allows bounded clock skew but rejects issuer evidence too far in the future", () => {
+    const withinSkew = signedUpsert({
+      eventId: "wce_evidence_within_skew",
+      credentialId: "credential-evidence-within-skew",
+      documentId: "document-evidence-within-skew",
+      version: "1",
+      contentHash: hashA,
+      issuerEvidence: {
+        ...issuerEvidence(liveIssuerDid),
+        checkedAt: "2026-07-11T10:00:01.000Z",
+      },
+    });
+    const accepted = prepareWalletExchangeSyncCommit(
+      createWalletExchangeState({ portalOrigin, holderDid }),
+      page({ syncId: "sync_evidence_within_skew", changes: [withinSkew] }),
+    );
+    expect(accepted.state.documents).toHaveLength(1);
+    expect(accepted.plan.pendingAck.results[0]).toMatchObject({
+      outcome: "applied",
+    });
+
+    const outsideSkew = signedUpsert({
+      eventId: "wce_evidence_outside_skew",
+      credentialId: "credential-evidence-outside-skew",
+      documentId: "document-evidence-outside-skew",
+      version: "1",
+      contentHash: hashB,
+      issuerEvidence: {
+        ...issuerEvidence(liveIssuerDid),
+        checkedAt: "2026-07-11T10:05:01.000Z",
+      },
+    });
+    const rejected = prepareWalletExchangeSyncCommit(
+      createWalletExchangeState({ portalOrigin, holderDid }),
+      page({ syncId: "sync_evidence_outside_skew", changes: [outsideSkew] }),
+    );
+    expect(rejected.state.documents).toEqual([]);
+    expect(rejected.state.quarantine[0]).toMatchObject({
+      reason: "issuer_unresolved",
+    });
+  });
+
   it("rejects Portal patientId and holder-boundary violations", () => {
     const patientIdChange = signedUpsert({
       eventId: "wce_patient_id",
@@ -271,6 +319,45 @@ describe("Wallet Exchange V2 state", () => {
       page({ syncId: "sync_wrong_holder", changes: [wrongHolder] }),
     );
     expect(holder.state.quarantine[0]?.reason).toBe("holder_mismatch");
+
+    const conflictingOwner = signedUpsert({
+      eventId: "wce_owner_conflict",
+      credentialId: "credential-owner-conflict",
+      documentId: "document-owner-conflict",
+      version: "1",
+      contentHash: hashA,
+    });
+    conflictingOwner.document = {
+      ...conflictingOwner.document!,
+      owner: {
+        id: "did:key:z6MkhAnotherOwner",
+        holderDid,
+      },
+    };
+    const owner = prepareWalletExchangeSyncCommit(
+      createWalletExchangeState({ portalOrigin, holderDid }),
+      page({ syncId: "sync_owner_conflict", changes: [conflictingOwner] }),
+    );
+    expect(owner.state.quarantine[0]?.reason).toBe("holder_mismatch");
+  });
+
+  it("rejects duplicate event identifiers within one sync page", () => {
+    const duplicate = signedUpsert({
+      eventId: "wce_duplicate",
+      credentialId: "credential-duplicate",
+      documentId: "document-duplicate",
+      version: "1",
+      contentHash: hashA,
+    });
+    expect(() =>
+      prepareWalletExchangeSyncCommit(
+        createWalletExchangeState({ portalOrigin, holderDid }),
+        page({
+          syncId: "sync_duplicate",
+          changes: [duplicate, structuredClone(duplicate)],
+        }),
+      ),
+    ).toThrow("repeats eventId");
   });
 
   it("archives every prior version while keeping one active lineage", () => {

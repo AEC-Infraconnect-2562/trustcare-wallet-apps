@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { WalletCard } from "@trustcare/wallet-core";
+import {
+  TRUSTCARE_PORTAL_ASSET_ORIGIN,
+  type WalletCard,
+} from "@trustcare/wallet-core";
 import { photoCandidatesForNativeDocument } from "./credentialDocumentPhotoPolicy";
 
 const baseCard: WalletCard = {
@@ -36,7 +39,7 @@ describe("mobile credential document photo policy", () => {
 
     expect(candidates[0]).toMatchObject({
       label: "credentialSubject.humanDocument.renderData.patient.photoUrl",
-      url: "https://trustcarehealth.live/manus-storage/patient-source.jpg",
+      url: `${TRUSTCARE_PORTAL_ASSET_ORIGIN}/manus-storage/patient-source.jpg`,
     });
   });
 

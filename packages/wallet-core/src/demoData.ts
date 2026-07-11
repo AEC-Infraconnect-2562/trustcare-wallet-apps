@@ -17,9 +17,10 @@ import {
 } from "./demoResolvers";
 import { createTrustCareShlGatewayPublication } from "./shlGateway";
 import {
-  TRUSTCARE_PORTAL_WEB_ORIGIN,
+  NON_AUTHORITATIVE_DEMO_ISSUER_DIDS,
+  TRUSTCARE_PORTAL_ASSET_ORIGIN,
   trustCarePortalPersonImages,
-} from "./portalSyncData";
+} from "./demoSeedAssets";
 import { canPresentCredential } from "./statusTone";
 
 export {
@@ -77,12 +78,11 @@ export type WalletDemoUser = {
   cardBase: number;
 };
 
-export const TRUSTCARE_PORTAL_ASSET_ORIGIN = TRUSTCARE_PORTAL_WEB_ORIGIN;
 export {
-  TRUSTCARE_PORTAL_WEB_ORIGIN,
-  portalSyncedUsers,
+  NON_AUTHORITATIVE_DEMO_ISSUER_DIDS,
+  TRUSTCARE_PORTAL_ASSET_ORIGIN,
   trustCarePortalPersonImages,
-} from "./portalSyncData";
+} from "./demoSeedAssets";
 
 export const walletNativePersonImages = {
   nativeFemale: "assets/users/wallet-native-02.png",
@@ -111,7 +111,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-TH-2026-000001",
     hn: "HN-TCC-00100001",
     holderDid: "did:key:z6MkhSomchaiPortalWallet001",
-    issuerDid: "did:web:trustcare.network:hospital:tcc",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.demoPatient001,
     avatarSource: "trustcare_portal",
     persona:
@@ -142,7 +142,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-TH-2026-000002",
     hn: "HN-TCC-00100002",
     holderDid: "did:key:z6MkhMaleePortalWallet002",
-    issuerDid: "did:web:trustcare.network:hospital:tcc",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.demoPatient002,
     avatarSource: "trustcare_portal",
     persona:
@@ -174,7 +174,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-INT-2026-000003",
     hn: "HN-TCP-00100003",
     holderDid: "did:key:z6MkhJohnPortalWallet003",
-    issuerDid: "did:web:trustcare.network:hospital:tcp",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcp,
     avatarUrl: trustCarePortalPersonImages.demoPatient003,
     avatarSource: "trustcare_portal",
     persona:
@@ -205,7 +205,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "STAFF-TCC-000408",
     hn: "STAFF-TCC-000408",
     holderDid: "did:key:z6MkhWipaPortalStaff004",
-    issuerDid: "did:web:trustcare.network:hospital:tcc",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.demoHospadmin001,
     avatarSource: "trustcare_portal",
     persona:
@@ -236,7 +236,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-SYNC-EMPTY-001",
     hn: "HN-SYNC-EMPTY-001",
     holderDid: "did:key:z6MkhTrustCareEmptyPatientSync001",
-    issuerDid: "did:web:trustcare.network:hospital:tcc",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.patientFemale,
     avatarSource: "trustcare_portal",
     persona:
@@ -267,7 +267,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "STAFF-SYNC-EMPTY-001",
     hn: "STAFF-SYNC-EMPTY-001",
     holderDid: "did:key:z6MkhTrustCareEmptyStaffSync001",
-    issuerDid: "did:web:trustcare.network:hospital:tcc",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.nurseFemale,
     avatarSource: "trustcare_portal",
     persona:
@@ -299,7 +299,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-TH-2026-COMPLETE-001",
     hn: "HN-TCC-670001",
     holderDid: "did:key:z6MkhTrustCareCompletePatient001",
-    issuerDid: "did:web:trustcare.network:hospital:tcc",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.demoPatient001,
     avatarSource: "trustcare_portal",
     persona:
@@ -340,7 +340,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "STAFF-TCC-MD-14527",
     hn: "STAFF-TCC-MD-14527",
     holderDid: "did:key:z6MkhTrustCareStaffDoctor001",
-    issuerDid: "did:web:trustcare.network:hospital:tcc",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.doctorFemale,
     avatarSource: "trustcare_portal",
     persona:
@@ -633,7 +633,9 @@ export function buildPortalInteroperabilityFixtures(
       : "PatientSummaryCredential";
   const credentialOffer = {
     credential_issuer:
-      user.source === "trustcare_portal" ? TRUSTCARE_PORTAL_WEB_ORIGIN : origin,
+      user.source === "trustcare_portal"
+        ? TRUSTCARE_PORTAL_ASSET_ORIGIN
+        : origin,
     credential_configuration_ids: cards
       .map((card) => card.credentialType)
       .filter(Boolean),
@@ -662,7 +664,7 @@ export function buildPortalInteroperabilityFixtures(
     client_id:
       user.source === "trustcare_portal"
         ? "did:web:partner-wallet.example:verifier"
-        : "did:web:trustcarehealth.live:verifier",
+        : "did:web:wallet-demo.invalid:verifier:trustcare-portal",
     redirect_uri: `${origin}/verifier/callback`,
     nonce,
     state,
@@ -1351,7 +1353,10 @@ function baseCard(
     expiresAt: input.expiresAt,
     ownerUserId: user.id,
     patientId: user.patientId,
-    sourceSystem: user.source,
+    sourceSystem:
+      user.source === "trustcare_portal"
+        ? "trustcare_demo_issuer"
+        : user.source,
     scopeLabel: user.sourceLabel,
     credentialData: {
       "@context": [
@@ -1372,7 +1377,10 @@ function baseCard(
         ...input.subject,
         documentReference,
         source: {
-          system: user.source,
+          system:
+            user.source === "trustcare_portal"
+              ? "trustcare_demo_issuer"
+              : user.source,
           label: user.sourceLabel,
           portalOpenId: user.portalOpenId,
           userId: user.id,

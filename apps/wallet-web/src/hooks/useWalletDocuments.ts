@@ -7,6 +7,7 @@ import type {
 import { createWalletRepository } from "../repositories/walletRepositoryFactory";
 
 export type UseWalletDocumentsOptions = {
+  enabled?: boolean;
   runtimeEnvironment: RuntimeEnvironment;
   userId: string;
   apiUrl: string;
@@ -30,6 +31,14 @@ export function useWalletDocuments(options: UseWalletDocumentsOptions) {
 
   useEffect(() => {
     let active = true;
+    if (options.enabled === false) {
+      setRecords([]);
+      setLoading(false);
+      setError("");
+      return () => {
+        active = false;
+      };
+    }
     setLoading(true);
     setError("");
     const query: WalletDocumentQuery = {
@@ -57,7 +66,7 @@ export function useWalletDocuments(options: UseWalletDocumentsOptions) {
     return () => {
       active = false;
     };
-  }, [options.search, options.userId, repository, revision]);
+  }, [options.enabled, options.search, options.userId, repository, revision]);
 
   const reload = useCallback(() => setRevision((value) => value + 1), []);
   return { records, loading, error, reload, repository };

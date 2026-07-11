@@ -58,8 +58,10 @@ function discoveryFixture() {
     },
     protocols: {
       credentialLifecycle: "TrustCare durable cursor sync v2",
-      presentation: "Wallet-created VP JWT or Certified SHL/Manifest VP reference",
-      documentMetadata: "FHIR R4 DocumentReference; IHE MHD ITI-65 compatible intake mapping",
+      presentation:
+        "Wallet-created VP JWT or Certified SHL/Manifest VP reference",
+      documentMetadata:
+        "FHIR R4 DocumentReference; IHE MHD ITI-65 compatible intake mapping",
       errors: "RFC 9457 problem details",
     },
     ownership: {
@@ -119,10 +121,12 @@ function syncedCredentialFixture() {
       jwt: JWT,
       alg: "ES256",
       kid: `${PORTAL}:hospital:tcc#vc-signing-current`,
-      issuer: "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
+      issuer:
+        "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
     },
     selectiveDisclosure: null,
-    issuerDid: "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
+    issuerDid:
+      "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
     issuerHospitalName: "TrustCare Central Hospital",
     holderDid: HOLDER_DID,
     sourceSystem: "trustcare_portal",
@@ -144,7 +148,9 @@ function syncedCredentialFixture() {
 
 describe("Wallet Exchange V2 live contracts", () => {
   it("pins both live contract versions", () => {
-    expect(WALLET_EXCHANGE_V2_CONTRACT_VERSION).toBe("2026.07.wallet-exchange.v2");
+    expect(WALLET_EXCHANGE_V2_CONTRACT_VERSION).toBe(
+      "2026.07.wallet-exchange.v2",
+    );
     expect(PORTAL_WALLET_V2_CONTRACT_VERSION).toBe("2026.07.portal-wallet.v2");
   });
 
@@ -208,7 +214,11 @@ describe("Wallet Exchange V2 live contracts", () => {
         cursor: CURSOR,
         limit: 100,
         knownCredentials: [
-          { credentialId: "urn:uuid:credential-1", contentHash: HASH, status: "active" },
+          {
+            credentialId: "urn:uuid:credential-1",
+            contentHash: HASH,
+            status: "active",
+          },
         ],
       }),
     ).toMatchObject({ limit: 100 });
@@ -253,7 +263,11 @@ describe("Wallet Exchange V2 live contracts", () => {
         cursor: CURSOR,
         results: [
           { eventId: "wse_event123", outcome: "applied" },
-          { eventId: "wse_event124", outcome: "archived", reasonCode: "issuer_revoked" },
+          {
+            eventId: "wse_event124",
+            outcome: "archived",
+            reasonCode: "issuer_revoked",
+          },
         ],
       }),
     ).toMatchObject({ syncId: "sync_batch123" });
@@ -335,7 +349,8 @@ describe("Wallet Exchange V2 live contracts", () => {
           artifactId: "vp_referral_00045",
           binding: {
             purpose: "Referral intake",
-            recipient: "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
+            recipient:
+              "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
             audience: "https://trustcare.network/verifier",
             subjectDigest: HASH,
             packageDigest: HASH,
@@ -355,7 +370,8 @@ describe("Wallet Exchange V2 live contracts", () => {
           artifactId: "vp_referral_00046",
           binding: {
             purpose: "Different purpose",
-            recipient: "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
+            recipient:
+              "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
             audience: "https://trustcare.network/verifier",
             subjectDigest: HASH,
             packageDigest: HASH,
@@ -384,14 +400,18 @@ describe("Wallet Exchange V2 live contracts", () => {
       updatedAt: "2026-07-11T10:10:00.000Z",
       idempotent: false,
     };
-    expect(assertWalletSubmission(response)).toMatchObject({ status: "needs_review" });
-    expect(assertWalletSubmissionStatus(response)).toMatchObject({ presentationId: "wvp_presentation123" });
+    expect(assertWalletSubmission(response)).toMatchObject({
+      status: "needs_review",
+    });
+    expect(assertWalletSubmissionStatus(response)).toMatchObject({
+      presentationId: "wvp_presentation123",
+    });
   });
 
   it("validates RFC 9457 Wallet problem details", () => {
     expect(
       assertWalletProblemDetails({
-        type: "https://trustcarehealth.live/problems/wallet-exchange/invalid_request",
+        type: "https://portal.example/problems/wallet-exchange/invalid_request",
         title: "Invalid Wallet exchange request",
         status: 400,
         detail: "patientId is not allowed",
@@ -403,7 +423,9 @@ describe("Wallet Exchange V2 live contracts", () => {
   });
 
   it("rejects patientId and every unknown request field", () => {
-    const cases: Array<[string, (value: unknown) => unknown, Record<string, unknown>]> = [
+    const cases: Array<
+      [string, (value: unknown) => unknown, Record<string, unknown>]
+    > = [
       [
         "challenge",
         assertWalletSessionChallengeRequest,
@@ -455,7 +477,11 @@ describe("Wallet Exchange V2 live contracts", () => {
         `${label} must reject patientId`,
       ).toThrow(/patientId/);
       expect(
-        () => assertion({ ...valid, unknownRequiredField: "future-contract-field" }),
+        () =>
+          assertion({
+            ...valid,
+            unknownRequiredField: "future-contract-field",
+          }),
         `${label} must fail closed on unknown fields`,
       ).toThrow(/unknownRequiredField/);
     }

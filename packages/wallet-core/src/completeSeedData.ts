@@ -4,7 +4,10 @@ import type {
   WalletCard,
   WalletCardsByCategory,
 } from "./models";
-import { trustCarePortalPersonImages } from "./portalSyncData";
+import {
+  NON_AUTHORITATIVE_DEMO_ISSUER_DIDS,
+  trustCarePortalPersonImages,
+} from "./demoSeedAssets";
 import { createTrustCareShlGatewayPublication } from "./shlGateway";
 
 /**
@@ -463,7 +466,7 @@ const hospital = {
   code: "TCC",
   nameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
   nameEn: "TrustCare Central Hospital",
-  issuerDid: "did:web:trustcare.network:hospital:tcc",
+  issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
   role: "healthcare_provider",
   licenseNo: "HOS-TCC-2566-001",
   address: "188 TrustCare Tower, Bangkok 10120",
@@ -474,7 +477,7 @@ const partnerHospital = {
   code: "TCP",
   nameTh: "โรงพยาบาลทรัสต์แคร์ ภูเก็ต อินเตอร์เนชันแนล",
   nameEn: "TrustCare Phuket International Hospital",
-  issuerDid: "did:web:trustcare.network:hospital:tcp",
+  issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcp,
   role: "healthcare_provider",
   licenseNo: "HOS-TCP-2566-014",
   address: "88/8 Thepkrasattri Road, Phuket 83110",

@@ -23,7 +23,12 @@
       "expo-secure-store",
       "expo-local-authentication",
       "expo-screen-capture",
-      "expo-sqlite",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
       "expo-camera"
     ]
   }

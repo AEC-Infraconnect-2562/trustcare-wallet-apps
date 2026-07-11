@@ -53,11 +53,7 @@ describe("shared credential renderer", () => {
       true,
     );
 
-    const compactText = [
-      ...identityRows,
-      ...eligibilityRows,
-      ...medicationRows,
-    ]
+    const compactText = [...identityRows, ...eligibilityRows, ...medicationRows]
       .map((row) => `${row.label} ${row.value} ${row.sourcePath ?? ""}`)
       .join(" ");
     expect(compactText).not.toMatch(/proof|issuer did|credential payload/i);
@@ -520,7 +516,9 @@ describe("shared credential renderer", () => {
       const card = completeCards.find((item) => item.cardType === cardType)!;
       const paper = credentialRenderModelFromCard(card).paper;
 
-      expect(card.issuerDid, cardType).toContain(":hospital:");
+      expect(card.issuerDid, cardType).toMatch(
+        /^did:web:wallet-demo\.invalid:issuer:(?:tcc|tcp|tcm)$/,
+      );
       expect(paper.issuerRole, cardType).toBe("healthcare_provider");
       expect(paper.letterhead.did, cardType).toBe(card.issuerDid);
     }

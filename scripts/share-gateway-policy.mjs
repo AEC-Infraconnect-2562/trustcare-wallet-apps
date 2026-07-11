@@ -2,7 +2,6 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 export const GATEWAY_MUTATION_PATHS = new Set([
   "/api/share-gateway/artifacts",
-  "/api/share-gateway/credentials/sign",
   "/api/share-gateway/payer/credentials/issue",
 ]);
 
@@ -51,12 +50,7 @@ export function authorizeGatewayMutation(input) {
     return { ok: true, reason: "not_gateway_mutation" };
   }
 
-  if (
-    serviceTokenMatches(
-      input.authorization,
-      input.configuredServiceToken,
-    )
-  ) {
+  if (serviceTokenMatches(input.authorization, input.configuredServiceToken)) {
     return { ok: true, reason: "service_token" };
   }
 
@@ -87,9 +81,7 @@ export function credentialSourceMetadata(body, credential) {
       trustcare?.shareSourceAuthority,
   );
   const sourceSystem = lowerText(
-    body?.sourceSystem ??
-      shareSource?.sourceSystem ??
-      trustcare?.sourceSystem,
+    body?.sourceSystem ?? shareSource?.sourceSystem ?? trustcare?.sourceSystem,
   );
   const issuerId = lowerText(issuerIdFromCredential(credential));
   const credentialTypes = credentialTypeText(credential);
@@ -102,9 +94,7 @@ export function credentialSourceMetadata(body, credential) {
     return {
       authority: "portal_synced",
       sourceSystem,
-      signingOwner: lowerText(
-        body?.signingOwner ?? shareSource?.signingOwner,
-      ),
+      signingOwner: lowerText(body?.signingOwner ?? shareSource?.signingOwner),
     };
   }
 
@@ -113,66 +103,20 @@ export function credentialSourceMetadata(body, credential) {
     sourceSystem.includes("payer") ||
     sourceSystem.includes("insurance") ||
     issuerId.includes(":payer:") ||
-    /(^|\s)(payer|eligibility|claim|guarantee)(\s|$)/.test(
-      credentialTypes,
-    )
+    /(^|\s)(payer|eligibility|claim|guarantee)(\s|$)/.test(credentialTypes)
   ) {
     return {
       authority: "payer_adapter",
       sourceSystem,
-      signingOwner: lowerText(
-        body?.signingOwner ?? shareSource?.signingOwner,
-      ),
+      signingOwner: lowerText(body?.signingOwner ?? shareSource?.signingOwner),
     };
   }
 
   return {
     authority: explicitAuthority || "unknown",
     sourceSystem,
-    signingOwner: lowerText(
-      body?.signingOwner ?? shareSource?.signingOwner,
-    ),
+    signingOwner: lowerText(body?.signingOwner ?? shareSource?.signingOwner),
   };
-}
-
-export function validateIssuerSigningRequest(body, credential) {
-  const source = credentialSourceMetadata(body, credential);
-  if (PROTECTED_CREDENTIAL_SOURCES.has(source.authority)) {
-    return {
-      ok: false,
-      status: 422,
-      source,
-      message:
-        source.authority === "portal_synced"
-          ? "Portal-synced credentials require proof from the original Portal/hospital issuer and cannot be re-signed by the Wallet gateway."
-          : "Payer artifacts require proof from the configured payer adapter or integration issuer and cannot be re-signed by the Wallet gateway.",
-    };
-  }
-
-  if (body?.issuerServiceOperation !== "demo_issuer_reissue") {
-    return {
-      ok: false,
-      status: 422,
-      source,
-      message:
-        "credentials/sign is an explicit demo issuer-service operation; issuerServiceOperation=demo_issuer_reissue is required.",
-    };
-  }
-
-  if (
-    source.authority !== "issuer_signed" ||
-    source.signingOwner !== "source_issuer"
-  ) {
-    return {
-      ok: false,
-      status: 422,
-      source,
-      message:
-        "Only an eligible demo source issuer may request credential re-issuance from this endpoint.",
-    };
-  }
-
-  return { ok: true, status: 200, source };
 }
 
 export function validateDemoPayerIssuanceRequest(body, credential) {

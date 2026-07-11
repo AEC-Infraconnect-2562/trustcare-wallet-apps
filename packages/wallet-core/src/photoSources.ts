@@ -1,12 +1,13 @@
 import type { WalletCard } from "./models";
 import { normalizeDocumentType } from "./canonicalDocuments";
+import walletExchangeConfig from "../../../config/wallet-exchange-v2.json";
 
 export type PhotoCandidate = {
   label: string;
   url: string;
 };
 
-const TRUSTCARE_PORTAL_ORIGIN = "https://trustcarehealth.live";
+const TRUSTCARE_PORTAL_ORIGIN = walletExchangeConfig.portalBaseUrl;
 const STORAGE_PROXY_PATH = "/api/storage-proxy/";
 const MANUS_STORAGE_PATH = "/manus-storage/";
 
@@ -22,7 +23,10 @@ export function photoCandidatesForCard(card: WalletCard): PhotoCandidate[] {
   const documentType = normalizeDocumentType(card.cardType) ?? card.cardType;
   const embeddedPaths = photoPathsForDocumentType(documentType);
   for (const path of embeddedPaths) {
-    const candidates = photoCandidatesFromValue(path, getValueAtPath(data, path));
+    const candidates = photoCandidatesFromValue(
+      path,
+      getValueAtPath(data, path),
+    );
     if (candidates.length) return candidates;
   }
 
@@ -144,12 +148,8 @@ export function normalizePhotoUrlCandidates(value: string): string[] {
 
   if (/^[\w.-]+\.(?:avif|gif|jpe?g|png|webp)$/i.test(trimmed)) {
     const fileName = trimmed.replace(/^\/+/, "");
-    add(
-      `${TRUSTCARE_PORTAL_ORIGIN}${MANUS_STORAGE_PATH}${fileName}`,
-    );
-    add(
-      `${TRUSTCARE_PORTAL_ORIGIN}${STORAGE_PROXY_PATH}${fileName}`,
-    );
+    add(`${TRUSTCARE_PORTAL_ORIGIN}${MANUS_STORAGE_PATH}${fileName}`);
+    add(`${TRUSTCARE_PORTAL_ORIGIN}${STORAGE_PROXY_PATH}${fileName}`);
   }
 
   add(trimmed);

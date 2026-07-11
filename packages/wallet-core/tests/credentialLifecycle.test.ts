@@ -11,7 +11,7 @@ describe("credential lifecycle policy", () => {
   it("does not let the wallet re-sign Portal-synced credentials", () => {
     const portalCard = walletCard({
       sourceSystem: "trustcare_portal",
-      issuerDid: "did:web:trustcare.network:hospital:tcc",
+      issuerDid: "did:web:portal.example:hospital:tcc",
       credentialProof: {
         type: "DataIntegrityProof",
         format: "vc+json",
@@ -36,7 +36,7 @@ describe("credential lifecycle policy", () => {
   it("requires source issuer proof when Portal sync has no proof", () => {
     const portalCard = walletCard({
       sourceSystem: "trustcare_portal",
-      issuerDid: "did:web:trustcare.network:hospital:tcp",
+      issuerDid: "did:web:portal.example:hospital:tcp",
       credentialProof: undefined,
       credentialJwt: undefined,
       portalVerification: { verified: false, trustLevel: "yellow" },
@@ -167,7 +167,7 @@ describe("credential lifecycle policy", () => {
       cardType: "claim_package",
       credentialType: "ClaimPackageCredential",
       sourceSystem: "trustcare_demo_issuer",
-      issuerDid: "did:web:trustcare.network:hospital:tcc",
+      issuerDid: "did:web:wallet-demo.invalid:issuer:tcc",
       credentialProof: undefined,
       credentialJwt: undefined,
     });
@@ -187,18 +187,18 @@ function walletCard(overrides: Partial<WalletCard> = {}): WalletCard {
     credentialId: "credential-1",
     credentialStatus: "active",
     issuerHospitalName: "TrustCare Hospital",
-    issuerDid: "did:web:trustcare.network:hospital:tcc",
+    issuerDid: "did:web:portal.example:hospital:tcc",
     holderDid: "did:key:holder",
     credentialData: {
       id: "urn:credential:1",
       type: ["VerifiableCredential", "PatientIdentityCredential"],
-      issuer: { id: "did:web:trustcare.network:hospital:tcc" },
+      issuer: { id: "did:web:portal.example:hospital:tcc" },
       credentialSubject: { id: "did:key:holder" },
     },
     credentialProof: {
       type: "DataIntegrityProof",
       format: "vc+json",
-      kid: "did:web:trustcare.network:hospital:tcc#key-1",
+      kid: "did:web:portal.example:hospital:tcc#key-1",
     },
     createdAt: "2026-07-10T00:00:00.000Z",
     ...overrides,

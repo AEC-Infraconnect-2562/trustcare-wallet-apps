@@ -1,4 +1,4 @@
-import type { WalletCard } from "./models";
+import type { WalletCard, WalletCardsByCategory } from "./models";
 import { identityCredentialTypes } from "./credentialTypes";
 
 const identitySet = new Set<string>(identityCredentialTypes);
@@ -19,6 +19,16 @@ export function flattenCardsByCategory(
 ): WalletCard[] {
   if (!grouped) return [];
   return sortIdentityFirst(Object.values(grouped).flat());
+}
+
+export function groupCardsByCategory(
+  cards: readonly WalletCard[],
+): WalletCardsByCategory {
+  return cards.reduce<WalletCardsByCategory>((grouped, card) => {
+    grouped[card.documentCategory] ??= [];
+    grouped[card.documentCategory].push(card);
+    return grouped;
+  }, {});
 }
 
 export function countCardsByCategory(

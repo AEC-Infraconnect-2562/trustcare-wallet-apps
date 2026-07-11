@@ -7,16 +7,13 @@ import {
   publicationRequestDigest,
   unsignedCredentialPublicationPolicy,
   validateDemoPayerIssuanceRequest,
-  validateIssuerSigningRequest,
 } from "./share-gateway-policy.mjs";
 
 const artifactPath = "/api/share-gateway/artifacts";
-const credentialPath = "/api/share-gateway/credentials/sign";
 
 test("production mutations require a trusted Origin or configured service token", () => {
   for (const pathname of [
     artifactPath,
-    credentialPath,
     "/api/share-gateway/payer/credentials/issue",
   ]) {
     assert.equal(
@@ -71,7 +68,10 @@ test("demo payer issuance accepts only allowlisted matching payer profiles", () 
     },
   );
   assert.equal(accepted.ok, true);
-  assert.equal(accepted.profile.name, "International TPA Demo Integration Issuer");
+  assert.equal(
+    accepted.profile.name,
+    "International TPA Demo Integration Issuer",
+  );
 
   const arbitrary = validateDemoPayerIssuanceRequest(
     {
@@ -95,43 +95,6 @@ test("demo payer issuance accepts only allowlisted matching payer profiles", () 
   );
   assert.equal(mismatch.ok, false);
   assert.match(mismatch.message, /does not match/);
-});
-
-test("issuer signing rejects Portal and payer sources", () => {
-  const portal = validateIssuerSigningRequest(
-    {
-      issuerServiceOperation: "demo_issuer_reissue",
-      sourceAuthority: "portal_synced",
-      signingOwner: "source_issuer",
-    },
-    { issuer: "did:web:hospital.example" },
-  );
-  assert.equal(portal.ok, false);
-  assert.match(portal.message, /original Portal\/hospital issuer/);
-
-  const payer = validateIssuerSigningRequest(
-    {
-      issuerServiceOperation: "demo_issuer_reissue",
-      sourceAuthority: "issuer_signed",
-      signingOwner: "source_issuer",
-    },
-    { issuer: "did:web:payer.example:payer:demo" },
-  );
-  assert.equal(payer.ok, false);
-  assert.equal(payer.source.authority, "payer_adapter");
-});
-
-test("issuer signing permits an explicit eligible demo source issuer", () => {
-  const result = validateIssuerSigningRequest(
-    {
-      issuerServiceOperation: "demo_issuer_reissue",
-      sourceAuthority: "issuer_signed",
-      sourceSystem: "EMR / IPS Summary",
-      signingOwner: "source_issuer",
-    },
-    { issuer: "did:web:hospital.example:hospital:tcc" },
-  );
-  assert.equal(result.ok, true);
 });
 
 test("production VP publication rejects every raw credential with source-aware errors", () => {

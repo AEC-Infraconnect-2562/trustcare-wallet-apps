@@ -227,6 +227,7 @@ const allowedHospitalCodes = new Set<WalletExchangeHospitalCode>(
   WALLET_EXCHANGE_V2_HOSPITAL_CODES,
 );
 const sha256Pattern = /^sha256:[a-f0-9]{64}$/;
+const MAX_ISSUER_EVIDENCE_CLOCK_SKEW_MS = 5 * 60 * 1_000;
 
 export function createWalletExchangePartition(input: {
   portalOrigin: string;
@@ -820,6 +821,15 @@ function validateUpsert(
   serverTime: string,
 ): { reason: WalletExchangeQuarantineReason; detail: string } | null {
   const credential = change.credential;
+  if (
+    Object.prototype.hasOwnProperty.call(credential, "patientId") ||
+    change.document?.owner.patientId !== undefined
+  ) {
+    return {
+      reason: "portal_patient_id_forbidden",
+      detail: "Wallet Exchange must not trust a Portal patientId.",
+    };
+  }
   if (credential.deliveryState === "unsigned_metadata") {
     return {
       reason: "unsigned_metadata",
@@ -831,12 +841,6 @@ function validateUpsert(
     return {
       reason: "document_missing",
       detail: "Signed credential was not normalized to WalletDocumentRecordV2.",
-    };
-  }
-  if ("patientId" in credential || change.document.owner.patientId) {
-    return {
-      reason: "portal_patient_id_forbidden",
-      detail: "Wallet Exchange must not trust a Portal patientId.",
     };
   }
   if (
@@ -868,30 +872,6 @@ function validateUpsert(
       detail: "Issuer is not one of the live TCC/TCP/TCM Portal hospitals.",
     };
   }
-  if (!evidence.proofVerified) {
-    return {
-      reason: "proof_invalid",
-      detail: "Issuer JWT did not verify against the live hospital JWKS.",
-    };
-  }
-  if (!evidence.issuerActive) {
-    return {
-      reason: "issuer_inactive",
-      detail: "Live Portal issuer status is not active.",
-    };
-  }
-  const checkedAt = Date.parse(evidence.checkedAt);
-  const observedAt = Date.parse(serverTime);
-  if (
-    !Number.isFinite(checkedAt) ||
-    !Number.isFinite(observedAt) ||
-    checkedAt > observedAt
-  ) {
-    return {
-      reason: "issuer_unresolved",
-      detail: "Live issuer evidence has an invalid or future checkedAt time.",
-    };
-  }
   const issuerCandidates: Array<string | null | undefined> = [
     credential.issuerDid,
     change.document.provenance.issuerDid,
@@ -911,6 +891,31 @@ function validateUpsert(
       reason: "issuer_conflict",
       detail:
         "Credential issuer conflicts with the currently resolved live Portal hospital DID; Portal reissue is required.",
+    };
+  }
+  if (!evidence.proofVerified) {
+    return {
+      reason: "proof_invalid",
+      detail: "Issuer JWT did not verify against the live hospital JWKS.",
+    };
+  }
+  if (!evidence.issuerActive) {
+    return {
+      reason: "issuer_inactive",
+      detail: "Live Portal issuer status is not active.",
+    };
+  }
+  const checkedAt = Date.parse(evidence.checkedAt);
+  const observedAt = Date.parse(serverTime);
+  if (
+    !Number.isFinite(checkedAt) ||
+    !Number.isFinite(observedAt) ||
+    checkedAt > observedAt + MAX_ISSUER_EVIDENCE_CLOCK_SKEW_MS
+  ) {
+    return {
+      reason: "issuer_unresolved",
+      detail:
+        "Live issuer evidence is outside the allowed Portal clock-skew window.",
     };
   }
   if (
@@ -1077,6 +1082,19 @@ function assertSyncPage(
   if ((page as unknown as Record<string, unknown>).patientId !== undefined) {
     throw new Error("Wallet Exchange sync must not contain Portal patientId.");
   }
+  const pageFingerprints = new Map<string, string>();
+  for (const change of page.changes) {
+    const fingerprint = changeFingerprint(change);
+    const previous = pageFingerprints.get(change.eventId);
+    if (previous !== undefined) {
+      throw new Error(
+        previous === fingerprint
+          ? `Wallet Exchange sync page repeats eventId ${change.eventId}.`
+          : `Wallet Exchange sync page reuses eventId ${change.eventId} for conflicting state.`,
+      );
+    }
+    pageFingerprints.set(change.eventId, fingerprint);
+  }
   const pendingReplay =
     state.pendingAck?.syncId === page.syncId &&
     state.pendingAck.cursor === page.nextCursor &&
@@ -1107,7 +1125,7 @@ function assertState(state: WalletExchangeState): void {
   }
   for (const document of state.documents) {
     if (
-      document.owner.patientId ||
+      document.owner.patientId !== undefined ||
       !documentBelongsToHolder(document, state.partition.holderDid)
     ) {
       throw new Error(
@@ -1163,7 +1181,7 @@ function documentBelongsToHolder(
   holderDid: string,
 ): boolean {
   return (
-    document.owner.id === holderDid || document.owner.holderDid === holderDid
+    document.owner.id === holderDid && document.owner.holderDid === holderDid
   );
 }
 
@@ -1205,7 +1223,13 @@ function normalizePortalOrigin(value: string): string {
   if (url.protocol !== "https:") {
     throw new Error("Wallet Exchange Portal origin must use HTTPS.");
   }
-  if (url.username || url.password || url.search || url.hash) {
+  if (
+    url.username ||
+    url.password ||
+    (url.pathname !== "/" && url.pathname !== "") ||
+    url.search ||
+    url.hash
+  ) {
     throw new Error(
       "Wallet Exchange Portal origin cannot contain credentials, query, or fragment.",
     );

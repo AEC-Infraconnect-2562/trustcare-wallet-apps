@@ -81,8 +81,8 @@ describe("login user photos", () => {
     );
 
     expect(candidates.slice(0, 2)).toEqual([
-      "https://trustcarehealth.live/manus-storage/patient_john_williams_b4e9e7f3.jpg",
-      "https://trustcarehealth.live/api/storage-proxy/patient_john_williams_b4e9e7f3.jpg",
+      "https://trustcare-hospital-network-production.up.railway.app/manus-storage/patient_john_williams_b4e9e7f3.jpg",
+      "https://trustcare-hospital-network-production.up.railway.app/api/storage-proxy/patient_john_williams_b4e9e7f3.jpg",
     ]);
     expect(
       candidates.some((candidate) => candidate.includes("wallet-native")),

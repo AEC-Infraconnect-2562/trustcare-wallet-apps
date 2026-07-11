@@ -178,6 +178,74 @@
   padding: 10px 0;
 }
 
+.record-v2-document-surface {
+  display: grid;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.record-v2-share-panel {
+  align-items: end;
+  background: #f6f8ff;
+  border: 1px solid #dbe3ff;
+  border-radius: 14px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.65fr) auto;
+  padding: 16px;
+}
+
+.record-v2-share-panel p,
+.record-v2-share-panel strong {
+  margin: 0;
+}
+
+.record-v2-share-panel p,
+.record-v2-submission-status small {
+  color: var(--muted-foreground, #647084);
+}
+
+.record-v2-share-panel label,
+.record-v2-submission-status {
+  display: grid;
+  gap: 6px;
+}
+
+.record-v2-share-panel select {
+  background: #fff;
+  border: 1px solid var(--border, #d8dfe4);
+  border-radius: 10px;
+  color: inherit;
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.record-v2-share-error {
+  color: #b42318 !important;
+  grid-column: 1 / -1;
+}
+
+.record-v2-document-heading {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.record-v2-document-heading h3 {
+  margin: 2px 0 0;
+}
+
+.record-v2-document-preview {
+  background: #eef2f6;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 14px;
+  max-height: min(74dvh, 980px);
+  overflow: auto;
+  padding: clamp(10px, 2vw, 24px);
+  scrollbar-gutter: stable;
+}
+
 @media (max-width: 720px) {
   .record-v2-row {
     align-items: flex-start;
@@ -191,6 +259,21 @@
 
   .record-v2-checks > div {
     grid-template-columns: 1fr;
+  }
+
+  .record-v2-document-heading {
+    align-items: flex-start;
+  }
+
+  .record-v2-share-panel {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .record-v2-document-preview {
+    max-height: none;
+    overflow: visible;
+    padding: 8px;
   }
 }
 
@@ -564,6 +647,38 @@
   grid-template-columns: minmax(280px, 1fr) 220px;
   gap: 12px;
   padding: 12px;
+}
+
+.pending-share-recovery {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
+  border-color: rgba(196, 137, 31, 0.3);
+  background: #fffaf0;
+}
+
+.pending-share-recovery strong {
+  color: var(--text-primary);
+}
+
+.pending-share-recovery p,
+.pending-share-recovery small {
+  display: block;
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+}
+
+.pending-share-recovery small {
+  color: #9a5d14;
+}
+
+@media (max-width: 680px) {
+  .pending-share-recovery {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 .search-box,
@@ -11884,6 +11999,89 @@ body {
   font-weight: 800;
 }
 
+.credential-request-row {
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.request-row-content {
+  min-width: 0;
+}
+
+.request-row-content > strong,
+.request-row-content > small {
+  display: block;
+}
+
+.credential-request-progress {
+  display: grid;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.credential-request-progress > span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--muted) 30%, var(--card));
+}
+
+.credential-request-progress b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.credential-request-progress small {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.credential-request-next-action {
+  margin-top: 8px !important;
+  color: var(--foreground) !important;
+  font-weight: 650;
+}
+
+.credential-request-error {
+  margin-top: 7px !important;
+  color: #b91c1c !important;
+}
+
+.credential-request-actions {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+}
+
+.credential-request-refresh {
+  min-height: 34px;
+  padding: 7px 10px;
+  white-space: nowrap;
+  font-size: 11.5px;
+}
+
+.document-flow-submit-error {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  margin-bottom: 12px;
+  padding: 11px 12px;
+  border: 1px solid rgba(185, 28, 28, 0.2);
+  border-radius: 10px;
+  background: rgba(254, 242, 242, 0.94);
+  color: #991b1b;
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
 @media (max-width: 1180px) and (min-width: 941px) {
   .app-shell {
     grid-template-columns: 232px minmax(0, 1fr);
@@ -12022,5 +12220,17 @@ body {
   .prepare-support-grid > .tc-surface,
   .critical-strip {
     padding: 16px;
+  }
+
+  .credential-request-row {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .credential-request-actions {
+    grid-column: 2;
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    justify-items: start;
   }
 }

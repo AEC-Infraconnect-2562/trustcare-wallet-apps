@@ -133,7 +133,6 @@ import {
   type ShareValidationResult,
   type WalletCard,
   type WalletDemoUser,
-  type WalletDocumentRequest,
   type WalletExportResult,
   type WalletImportJob,
   type WalletImportResult,
@@ -153,6 +152,12 @@ import { TrustChecklist } from "../components/trust/TrustChecklist";
 import { defaultPublicShareGatewayUrl, env } from "../env";
 import { useWebAuthn } from "../hooks/useWebAuthn";
 import { toQrDataUrl } from "../utils/qrCode";
+import {
+  credentialRequestDocumentLabel,
+  credentialRequestNextActionLabel,
+  credentialRequestStatusLabel,
+  type WalletCredentialRequestViewModel,
+} from "../walletExchangeCredentialRequest";
 import {
   categoryLabels,
   criticalCardTypes,
@@ -486,9 +491,8 @@ export function HomeView({
   );
   const activeService = useMemo(
     () =>
-      sortedReadiness.find(
-        (item) => item.context === activeReadinessContext,
-      ) ?? sortedReadiness[0],
+      sortedReadiness.find((item) => item.context === activeReadinessContext) ??
+      sortedReadiness[0],
     [activeReadinessContext, sortedReadiness],
   );
   const evidenceReviewCards = useMemo(
@@ -627,10 +631,7 @@ export function HomeView({
                 {summaryRows.length ? (
                   <dl className="clinical-pass-summary">
                     {summaryRows.map((row) => (
-                      <div
-                        className="clinical-pass-summary-row"
-                        key={row.key}
-                      >
+                      <div className="clinical-pass-summary-row" key={row.key}>
                         <dt>{row.label}</dt>
                         <dd title={row.value}>{row.value}</dd>
                       </div>
@@ -2648,6 +2649,7 @@ export function DocumentFlowDialog({
   user,
   context,
   requirements,
+  errorMessage,
   onClose,
   onSubmit,
 }: {
@@ -2655,6 +2657,7 @@ export function DocumentFlowDialog({
   user: WalletDemoUser;
   context: ReadinessContext;
   requirements: ReadinessRequirement[];
+  errorMessage?: string;
   onClose: () => void;
   onSubmit: (draft: DocumentRequestDraft) => void;
 }) {
@@ -2712,7 +2715,6 @@ export function DocumentFlowDialog({
         createAutomaticDocumentRequestDraft({
           context,
           requirements,
-          patientId: user.patientId,
         }),
       );
       return;
@@ -2766,6 +2768,12 @@ export function DocumentFlowDialog({
         </div>
 
         <div className="document-flow-body">
+          {errorMessage && (
+            <div className="document-flow-submit-error" role="alert">
+              <AlertTriangle size={18} />
+              <span>{errorMessage}</span>
+            </div>
+          )}
           <AcquisitionPlanner
             mode={mode}
             plan={plan}
@@ -2964,6 +2972,7 @@ export function PrepareView({
   onRunPayerLifecycle,
   onRequestMissing,
   onImportMissing,
+  onRefreshRequest,
 }: {
   user: WalletDemoUser;
   cards: WalletCard[];
@@ -2971,7 +2980,7 @@ export function PrepareView({
   readiness: any;
   contractHub: ContractHubCatalog | null;
   workbench: any;
-  requests: WalletDocumentRequest[];
+  requests: WalletCredentialRequestViewModel[];
   importJob: WalletImportJob | null;
   onContext: (context: ReadinessContext) => void;
   onPrepareAll: (selectedCardIds?: number[]) => void;
@@ -2982,6 +2991,7 @@ export function PrepareView({
   }) => Promise<PayerLifecycleResult>;
   onRequestMissing: (requirements?: ReadinessRequirement[]) => void;
   onImportMissing: (requirements?: ReadinessRequirement[]) => void;
+  onRefreshRequest: (request: WalletCredentialRequestViewModel) => void;
 }) {
   const activeContract = contractHub?.contracts.find(
     (item) => item.context === context,
@@ -3002,7 +3012,7 @@ export function PrepareView({
   const packetContents = cardsSelectedByReadiness(cards, readinessResult);
   const isPrepared = canCreateFullPacket;
   const contextRequests = requests.filter(
-    (request: any) => !request.context || request.context === context,
+    (request) => !request.context || request.context === context,
   );
   const contextImportJob =
     importJob &&
@@ -3340,19 +3350,65 @@ export function PrepareView({
           <h3>คำขอเอกสาร</h3>
           {contextRequests.length ? (
             <div className="request-list">
-              {contextRequests.map((request: any) => (
+              {contextRequests.map((request) => (
                 <div
                   key={request.requestId ?? request.id}
-                  className="request-row"
+                  className="request-row credential-request-row"
                 >
                   <FilePlus2 size={18} />
-                  <span>
+                  <div className="request-row-content">
                     <strong>{request.documentType ?? "เอกสารที่ขาด"}</strong>
                     <small>
-                      {statusLabel(request.status)} ·{" "}
-                      {request.sourceType ?? "hospital"}
+                      {credentialRequestStatusLabel(request.status)} ·{" "}
+                      {request.sourceName ?? request.sourceType ?? "โรงพยาบาล"}
                     </small>
-                  </span>
+                    {!!request.items?.length && (
+                      <div className="credential-request-progress">
+                        {request.items.map((item) => (
+                          <span key={`${item.requestId}:${item.documentType}`}>
+                            <b>
+                              {credentialRequestDocumentLabel(
+                                item.documentType,
+                              )}
+                            </b>
+                            <small>
+                              {credentialRequestStatusLabel(item.status)}
+                            </small>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {request.nextAction && (
+                      <small className="credential-request-next-action">
+                        {credentialRequestNextActionLabel(request.nextAction)}
+                      </small>
+                    )}
+                    {request.refreshError && (
+                      <small className="credential-request-error" role="alert">
+                        {request.refreshError}
+                      </small>
+                    )}
+                  </div>
+                  {request.clientRequestId && (
+                    <div className="credential-request-actions">
+                      <Badge tone={credentialRequestTone(request.status)}>
+                        {credentialRequestStatusLabel(request.status)}
+                      </Badge>
+                      <Button
+                        className="secondary credential-request-refresh"
+                        disabled={request.refreshing}
+                        onClick={() => onRefreshRequest(request)}
+                      >
+                        <RefreshCw
+                          size={15}
+                          className={
+                            request.refreshing ? "spin-icon" : undefined
+                          }
+                        />
+                        {request.refreshing ? "กำลังตรวจ" : "ตรวจสถานะ"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -4837,6 +4893,15 @@ export function statusLabel(status?: string | null): string {
   return labels[String(status ?? "")] ?? String(status ?? "-");
 }
 
+function credentialRequestTone(
+  status?: string | null,
+): "green" | "yellow" | "blue" | "red" {
+  if (status === "ready" || status === "completed") return "green";
+  if (status === "rejected" || status === "cancelled") return "red";
+  if (status === "in_progress" || status === "partial") return "blue";
+  return "yellow";
+}
+
 export function verifierBadgeTone(
   result: VerifierResult,
 ): "green" | "yellow" | "blue" | "red" {
@@ -5360,7 +5425,7 @@ export function friendlyPortalSyncError(error: unknown): string {
     return [
       "Browser ติดต่อ TrustCare Portal ไม่สำเร็จ",
       "กรุณาตรวจ CORS/Network ของ Portal สำหรับ GitHub Pages และ localhost",
-      "โดยต้องอนุญาต /api/auth/demo-login, /api/wallet/sync และ /api/wallet/sync/verify",
+      "โดยต้องอนุญาต Wallet Exchange V2 discovery, session, DPoP sync และ contract endpoints",
     ].join(" · ");
   }
   return message;
