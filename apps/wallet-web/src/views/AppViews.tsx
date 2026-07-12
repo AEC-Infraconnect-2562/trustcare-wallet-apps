@@ -1164,6 +1164,10 @@ export function ShareView({
               certificationAttempt?.status === "submitted"
                 ? certificationAttempt.response.status
                 : (certificationAttempt?.status ?? "not_requested"),
+            certificationRequestId:
+              certificationAttempt?.status === "submitted"
+                ? certificationAttempt.response.certificationRequestId
+                : undefined,
             manifestCredentialId:
               certifiedPublication?.objectLinks.manifestCredentialId,
           },
