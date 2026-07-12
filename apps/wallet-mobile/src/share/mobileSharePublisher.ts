@@ -4,11 +4,13 @@ import {
   assertPrimaryVerifierQrPayload,
   canPresentCredential,
   credentialStatusLabel,
+  createHolderSignedDirectVp,
   readinessContextLabels,
   type ReadinessContext,
   type SharePackageMode,
   type WalletCard,
   type WalletPresentationResponse,
+  type HolderSigningIdentity,
 } from "@trustcare/wallet-core";
 
 type WalletApiOptions = Parameters<typeof walletApi.createSharePackage>[0];
@@ -38,6 +40,7 @@ export async function publishMobileVpShare(input: {
   card: WalletCard;
   userId: string | number;
   holderDid: string;
+  holderIdentity?: HolderSigningIdentity;
   shareGatewayUrl: string;
   context?: ReadinessContext;
   recipient?: string;
@@ -67,6 +70,7 @@ export async function publishMobileSharePackage(input: {
   selectedCardIds: Array<number | string>;
   userId: string | number;
   holderDid: string;
+  holderIdentity?: HolderSigningIdentity;
   shareGatewayUrl: string;
   mode: SharePackageMode;
   context: ReadinessContext;
@@ -124,21 +128,32 @@ export async function publishMobileSharePackage(input: {
     gatewayBaseUrl: gatewayUrl,
     viewerBaseUrl: input.apiOptions.demoOrigin,
   });
-  const publication =
-    "presentation" in result
-      ? await shareGatewayApi.publishVpSharePackage({
+  if (!("presentation" in result)) {
+    throw new Error("Mobile SHL publication is unavailable until the holder key workflow is connected.");
+  }
+  if (!input.holderIdentity || input.holderIdentity.did !== holderDid) {
+    throw new Error("Mobile ต้องเชื่อมต่อ holder key ก่อนลงนามและแชร์ VP");
+  }
+  const credentialJwts = selected.map((card) => card.credentialProof?.jwt ?? card.credentialJwt);
+  if (credentialJwts.some((jwt) => !jwt)) {
+    throw new Error("เอกสารที่เลือกต้องมีลายเซ็น issuer ครบทุกฉบับก่อนสร้าง VP");
+  }
+  const holderPresentation = await createHolderSignedDirectVp({
+    identity: input.holderIdentity,
+    holderDid,
+    presentationId: result.presentation.presentationId,
+    audience: "https://trustcare.network/verifier",
+    recipient,
+    context,
+    purpose: purposeLabel,
+    consentRef: `urn:trustcare:consent:share-event:${result.presentation.presentationId}`,
+    credentialJwts: credentialJwts as string[],
+    expiresAt,
+  });
+  const publication = await shareGatewayApi.publishVpSharePackage({
           gatewayBaseUrl: gatewayUrl,
           result,
-          userId: input.userId,
-          holderDid,
-          purpose: context,
-          purposeLabel,
-          recipient,
-          expiresAt,
-        })
-      : await shareGatewayApi.publishShlSharePackage({
-          gatewayBaseUrl: gatewayUrl,
-          result,
+          holderPresentationJwt: holderPresentation.vpJwt,
           userId: input.userId,
           holderDid,
           purpose: context,
@@ -149,9 +164,7 @@ export async function publishMobileSharePackage(input: {
   const qrPayload =
     publication.qrPayload ??
     publication.publicUrl ??
-    ("presentation" in result
-      ? result.presentation.qrData
-      : result.shl.qrPayload);
+    result.presentation.qrData;
   if (!qrPayload) {
     throw new Error("Share Gateway ไม่ได้ส่ง resolver QR กลับมา");
   }
@@ -162,17 +175,11 @@ export async function publishMobileSharePackage(input: {
     qrPayload,
     artifactUrl: publication.publicUrl,
     warnings: publication.warnings ?? [],
-    presentation:
-      "presentation" in result
-        ? {
-            ...result.presentation,
-            qrData: qrPayload,
-          }
-        : undefined,
-    packageId:
-      "presentation" in result
-        ? result.presentation.presentationId
-        : String(result.shl.gatewayPublicationId ?? result.shl.shlId),
+    presentation: {
+      ...result.presentation,
+      qrData: qrPayload,
+    },
+    packageId: result.presentation.presentationId,
     expiresAt,
     credentialCount: selected.length,
   };
