@@ -253,7 +253,7 @@ describe("Certified SHL trust-layer primitives", () => {
       "did:web:trustcare.network:hospital:tcc",
     );
     await expect(prepare([document], holder)).rejects.toThrow(
-      "is not a live Portal TCC, TCP, or TCM did:web",
+      "was not resolved from the live Portal trust registry",
     );
   });
 
@@ -362,6 +362,7 @@ async function prepare(
     manifestUrl: "https://share.example/shl/publication-001/manifest",
     fileBaseUrl: "https://share.example/shl/publication-001/files/",
     documents,
+    trustedIssuerDids: [TCC_ISSUER],
     purpose: "OPD registration",
     recipient: "TrustCare TCC registration desk",
     audience: `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,

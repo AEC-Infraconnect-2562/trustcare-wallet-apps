@@ -208,11 +208,13 @@ describe("SqliteWalletExchangePersistence", () => {
 });
 
 function repository(storage: MobileWalletExchangeStorage) {
-  return new SqliteWalletExchangePersistence({
+  const persistence = new SqliteWalletExchangePersistence({
     portalOrigin,
     holderDid,
     storage,
   });
+  persistence.configureTrustedIssuers([issuerDid]);
+  return persistence;
 }
 
 function requestLink() {

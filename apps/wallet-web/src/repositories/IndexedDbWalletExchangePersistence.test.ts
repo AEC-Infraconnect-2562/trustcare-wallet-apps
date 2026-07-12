@@ -208,7 +208,7 @@ describe("IndexedDbWalletExchangePersistence", () => {
       ],
     };
     await expect(persistence.persistRetryOutboxState(forged)).rejects.toThrow(
-      "live Portal hospital did:web",
+      "live Portal trust registry",
     );
   });
 
@@ -366,11 +366,13 @@ async function testSha256(value: string): Promise<`sha256:${string}`> {
 }
 
 function repository(storage: IndexedDbWalletExchangeStorage) {
-  return new IndexedDbWalletExchangePersistence({
+  const persistence = new IndexedDbWalletExchangePersistence({
     portalOrigin,
     holderDid,
     storage,
   });
+  persistence.configureTrustedIssuers([issuerDid]);
+  return persistence;
 }
 
 function syncPage(): WalletExchangePreparedSyncPage {

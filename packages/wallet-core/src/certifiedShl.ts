@@ -1,6 +1,5 @@
 import {
   WALLET_EXCHANGE_V2_CONTEXTS,
-  WALLET_EXCHANGE_V2_HOSPITAL_CODES,
   type WalletExchangeServiceContext,
 } from "@trustcare/contracts";
 import {
@@ -160,6 +159,7 @@ export type PrepareCertifiedShlInput = {
   manifestUrl: string;
   fileBaseUrl: string;
   documents: readonly WalletDocumentRecordV2[];
+  trustedIssuerDids: readonly string[];
   purpose: string;
   recipient: string;
   audience: string;
@@ -191,7 +191,17 @@ export async function prepareCertifiedShl(
 ): Promise<PreparedCertifiedShl> {
   assertNoPatientId(input);
   assertHolderIdentity(input.identity);
-  const portalOrigin = normalizeHttpsUrl(input.portalOrigin, "Portal origin");
+  normalizeHttpsUrl(input.portalOrigin, "Portal origin");
+  const trustedIssuerDids = new Set(
+    input.trustedIssuerDids.map((issuerDid) =>
+      requireDidWeb(issuerDid, "trusted issuer DID"),
+    ),
+  );
+  if (!trustedIssuerDids.size) {
+    throw new Error(
+      "Certified SHL requires issuer DIDs resolved from the live Portal trust registry.",
+    );
+  }
   const publicationId = requireIdentifier(
     input.publicationId,
     "publication ID",
@@ -245,7 +255,7 @@ export async function prepareCertifiedShl(
     const credential = assertPresentablePortalCredential({
       record,
       holderDid: input.identity.did,
-      portalOrigin,
+      trustedIssuerDids,
       now,
       shareExpiresAt: new Date(expiresAt),
     });
@@ -531,7 +541,7 @@ export async function decryptCertifiedShlFile(input: {
 function assertPresentablePortalCredential(input: {
   record: WalletDocumentRecordV2;
   holderDid: string;
-  portalOrigin: string;
+  trustedIssuerDids: ReadonlySet<string>;
   now: Date;
   shareExpiresAt: Date;
 }): {
@@ -540,7 +550,7 @@ function assertPresentablePortalCredential(input: {
   credentialType: string;
   issuerDid: string;
 } {
-  const { record, holderDid, portalOrigin, now, shareExpiresAt } = input;
+  const { record, holderDid, trustedIssuerDids, now, shareExpiresAt } = input;
   if (record.owner.holderDid !== holderDid) {
     throw new Error(
       `Certified SHL document ${record.id} does not belong to the signing holder did:key.`,
@@ -572,7 +582,7 @@ function assertPresentablePortalCredential(input: {
   }
   const issuerDid = requirePortalHospitalIssuerDid(
     record.provenance.issuerDid,
-    portalOrigin,
+    trustedIssuerDids,
   );
   const jwt = requireCompactJwt(
     record.credential.jwt,
@@ -816,21 +826,25 @@ function assertManifestCredentialEvidence(input: {
 
 function requirePortalHospitalIssuerDid(
   issuerDid: string | undefined,
-  portalOrigin: string,
+  trustedIssuerDids: ReadonlySet<string>,
 ): string {
   if (typeof issuerDid !== "string" || !issuerDid) {
     throw new Error("Certified SHL document is missing its Portal issuer DID.");
   }
-  const host = new URL(portalOrigin).host.replace(/:/g, "%3A");
-  const valid = WALLET_EXCHANGE_V2_HOSPITAL_CODES.map(
-    (code) => `did:web:${host}:hospital:${code.toLowerCase()}`,
-  );
-  if (!valid.includes(issuerDid as (typeof valid)[number])) {
+  if (!trustedIssuerDids.has(issuerDid)) {
     throw new Error(
-      `Certified SHL issuer ${issuerDid} is not a live Portal TCC, TCP, or TCM did:web.`,
+      `Certified SHL issuer ${issuerDid} was not resolved from the live Portal trust registry.`,
     );
   }
   return issuerDid;
+}
+
+function requireDidWeb(value: string, label: string): string {
+  const normalized = requireText(value, label, 700);
+  if (!normalized.startsWith("did:web:")) {
+    throw new Error(`${label} must be a did:web identifier.`);
+  }
+  return normalized;
 }
 
 function assertHolderIdentity(identity: HolderSigningIdentity): void {

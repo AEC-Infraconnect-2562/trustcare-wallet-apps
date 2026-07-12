@@ -559,7 +559,6 @@ export default function App() {
         workflow,
         record,
         targetHospitalCode,
-        portalBaseUrl: env.portalBaseUrl,
         context: readinessContext,
         purpose: readinessPurposeTh[readinessContext],
         reload: walletExchange.reload,

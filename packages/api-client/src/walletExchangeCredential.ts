@@ -8,11 +8,9 @@ import {
 } from "@trustcare/wallet-core";
 import type { WalletSyncUpsertChange } from "@trustcare/contracts";
 import {
-  portalHospitalDid,
-  resolvePortalHospitalIssuer,
+  resolveAllPortalHospitalIssuers,
   verifyPortalHospitalCredentialJwt,
   type ResolvedPortalHospitalIssuer,
-  type TrustCarePortalHospitalCode,
 } from "./portalIssuerResolver";
 import { normalizePortalOrigin } from "./walletContractLoader";
 
@@ -34,26 +32,23 @@ export async function prepareWalletExchangeCredential(
 ): Promise<WalletExchangePreparedUpsertChange> {
   const portalOrigin = normalizePortalOrigin(input.portalBaseUrl);
   const issuerDid = input.change.credential.issuerDid ?? "";
-  const hospitalCode = hospitalCodeFromIssuerDid(issuerDid);
-  if (!hospitalCode) return { ...input.change };
-
-  const expectedIssuerDid = portalHospitalDid(portalOrigin, hospitalCode);
   let resolvedIssuer = input.resolvedIssuer;
   if (!resolvedIssuer) {
     try {
-      resolvedIssuer = await resolvePortalHospitalIssuer({
+      resolvedIssuer = (await resolveAllPortalHospitalIssuers({
         portalBaseUrl: portalOrigin,
-        hospitalCode,
         fetchImpl: input.fetchImpl,
-      });
+      })).find((issuer) => issuer.issuerDid === issuerDid);
     } catch {
       return { ...input.change };
     }
   }
+  if (!resolvedIssuer) return { ...input.change };
+  const hospitalCode = resolvedIssuer.hospitalCode;
+  const expectedIssuerDid = resolvedIssuer.issuerDid;
   if (
     resolvedIssuer.portalOrigin !== portalOrigin ||
-    resolvedIssuer.hospitalCode !== hospitalCode ||
-    resolvedIssuer.issuerDid !== expectedIssuerDid ||
+    issuerDid !== expectedIssuerDid ||
     resolvedIssuer.didDocument.id !== expectedIssuerDid ||
     resolvedIssuer.jwks.issuer !== expectedIssuerDid
   ) {
@@ -291,13 +286,6 @@ function signedDocumentTitle(
     th: stringValue(document.titleTh) ?? fallback,
     en: stringValue(document.titleEn),
   };
-}
-
-function hospitalCodeFromIssuerDid(
-  issuerDid: string,
-): TrustCarePortalHospitalCode | undefined {
-  const match = issuerDid.match(/:hospital:(tcc|tcp|tcm)$/i);
-  return match?.[1]?.toUpperCase() as TrustCarePortalHospitalCode | undefined;
 }
 
 function normalizeCategory(value: string | null): CanonicalDocumentCategory {

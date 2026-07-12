@@ -1,7 +1,6 @@
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { describe, expect, it } from "vitest";
 import {
-  portalHospitalDid,
   resolvePortalHospitalIssuer,
   verifyPortalHospitalCredentialJwt,
 } from "./portalIssuerResolver";
@@ -9,6 +8,32 @@ import {
 const portalOrigin = "https://portal.example";
 
 describe("Portal hospital did:web resolver", () => {
+  it("uses the issuer DID returned by Portal instead of deriving it from the hostname", async () => {
+    const discoveredDid = "did:web:issuer-authority.example:tcc";
+    const fixture = await issuerFixture("TCC", discoveredDid);
+    const issuer = await resolvePortalHospitalIssuer({
+      portalBaseUrl: portalOrigin,
+      hospitalCode: "TCC",
+      fetchImpl: fixture.fetchImpl,
+    });
+
+    expect(issuer.issuerDid).toBe(discoveredDid);
+  });
+
+  it("rejects the retired issuer authority even when the endpoint serves matching keys", async () => {
+    const fixture = await issuerFixture(
+      "TCC",
+      "did:web:trustcare.network:hospital:tcc",
+    );
+    await expect(
+      resolvePortalHospitalIssuer({
+        portalBaseUrl: portalOrigin,
+        hospitalCode: "TCC",
+        fetchImpl: fixture.fetchImpl,
+      }),
+    ).rejects.toThrow("retired authority");
+  });
+
   it("cross-checks the Portal DID document and JWKS without fallback", async () => {
     const fixture = await issuerFixture("TCC");
     const issuer = await resolvePortalHospitalIssuer({
@@ -169,8 +194,10 @@ describe("Portal hospital did:web resolver", () => {
   });
 });
 
-async function issuerFixture(codeInput: "TCC" | "TCP" | "TCM") {
-  const issuerDid = portalHospitalDid(portalOrigin, codeInput);
+async function issuerFixture(
+  codeInput: "TCC" | "TCP" | "TCM",
+  issuerDid = testIssuerDid(codeInput),
+) {
   const { privateKey, publicKey } = await generateKeyPair("ES256", {
     extractable: true,
   });
@@ -198,6 +225,10 @@ async function issuerFixture(codeInput: "TCC" | "TCP" | "TCM") {
     return jsonResponse({ title: "Not found" }, 404);
   };
   return { fetchImpl, calls, did, jwks, kid, privateKey };
+}
+
+function testIssuerDid(code: "TCC" | "TCP" | "TCM"): string {
+  return `did:web:portal.example:hospital:${code.toLowerCase()}`;
 }
 
 function jsonResponse(

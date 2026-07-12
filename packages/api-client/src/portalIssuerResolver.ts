@@ -61,7 +61,6 @@ export async function resolvePortalHospitalIssuer(input: {
   const portalOrigin = normalizePortalOrigin(input.portalBaseUrl);
   const hospitalCode = normalizeHospitalCode(input.hospitalCode);
   const code = hospitalCode.toLowerCase();
-  const issuerDid = portalHospitalDid(portalOrigin, hospitalCode);
   const didUrl = `${portalOrigin}/hospital/${code}/did.json`;
   const jwksUrl = `${portalOrigin}/hospital/${code}/did/jwks.json`;
   const fetcher = input.fetchImpl ?? fetch;
@@ -79,9 +78,9 @@ export async function resolvePortalHospitalIssuer(input: {
     jwksResponse,
     `Portal JWKS ${hospitalCode}`,
   );
+  const issuerDid = requireDiscoveredIssuerDid(didDocument.id);
 
   if (
-    didDocument.id !== issuerDid ||
     didDocument.trustcare?.hospitalCode !== hospitalCode ||
     didDocument.trustcare?.syntheticTestData === true ||
     jwks.issuer !== issuerDid ||
@@ -235,15 +234,6 @@ export async function verifyPortalHospitalCredentialJwt(input: {
   }
 }
 
-export function portalHospitalDid(
-  portalBaseUrl: string,
-  hospitalCode: TrustCarePortalHospitalCode,
-): string {
-  const origin = new URL(normalizePortalOrigin(portalBaseUrl));
-  const methodHost = origin.host.replace(/:/g, "%3A");
-  return `did:web:${methodHost}:hospital:${hospitalCode.toLowerCase()}`;
-}
-
 function normalizeHospitalCode(value: string): TrustCarePortalHospitalCode {
   const normalized = value.trim().toUpperCase();
   if (
@@ -254,6 +244,19 @@ function normalizeHospitalCode(value: string): TrustCarePortalHospitalCode {
     throw issuerError(`Unsupported TrustCare hospital code: ${value}`);
   }
   return normalized as TrustCarePortalHospitalCode;
+}
+
+function requireDiscoveredIssuerDid(value: string): string {
+  if (
+    typeof value !== "string" ||
+    !value.startsWith("did:web:") ||
+    value.startsWith("did:web:trustcare.network:")
+  ) {
+    throw issuerError(
+      "Portal hospital issuer DID is missing, invalid, or belongs to the retired authority.",
+    );
+  }
+  return value;
 }
 
 async function strictJson<T>(response: Response, label: string): Promise<T> {

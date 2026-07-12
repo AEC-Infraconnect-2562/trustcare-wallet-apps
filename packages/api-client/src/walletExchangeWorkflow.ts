@@ -78,6 +78,7 @@ export type WalletExchangePendingSubmissionDraft = {
 
 export interface WalletExchangePersistencePort {
   readonly partition: WalletExchangePartition;
+  configureTrustedIssuers(issuerDids: readonly string[]): void;
   loadOrCreateState(): Promise<WalletExchangeState>;
   commitSyncReduction(reduction: WalletExchangeSyncReduction): Promise<void>;
   persistAcknowledgedState(state: WalletExchangeState): Promise<void>;
@@ -169,13 +170,31 @@ export class WalletExchangeWorkflow {
     }
   }
 
+  async issuerDidForHospital(
+    hospitalCode: WalletExchangeHospitalCode,
+  ): Promise<string> {
+    const issuer = (await this.issuers()).find(
+      (candidate) => candidate.hospitalCode === hospitalCode,
+    );
+    if (!issuer) {
+      throw new TrustCareApiError(
+        `Portal trust registry has no active issuer for ${hospitalCode}.`,
+        { code: "portal_issuer_not_found" },
+      );
+    }
+    return issuer.issuerDid;
+  }
+
   async synchronize(limit = 100): Promise<WalletExchangeSyncResult> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
       throw new TrustCareApiError("Wallet Exchange sync limit must be 1-200.", {
         code: "wallet_sync_limit_invalid",
       });
     }
-    const client = await this.client();
+    const [client, issuers] = await Promise.all([
+      this.client(),
+      this.issuers(),
+    ]);
     let state = await this.options.persistence.loadOrCreateState();
     let pendingAckRecovered = false;
     if (state.pendingAck) {
@@ -183,7 +202,6 @@ export class WalletExchangeWorkflow {
       pendingAckRecovered = true;
     }
 
-    const issuers = await this.issuers();
     const issuerByDid = new Map(
       issuers.map((issuer) => [issuer.issuerDid, issuer] as const),
     );
@@ -615,7 +633,11 @@ export class WalletExchangeWorkflow {
       portalBaseUrl: this.options.portalBaseUrl,
       fetchImpl: this.options.fetchImpl,
     });
-    return this.issuersPromise;
+    const issuers = await this.issuersPromise;
+    this.options.persistence.configureTrustedIssuers(
+      issuers.map((issuer) => issuer.issuerDid),
+    );
+    return issuers;
   }
 
   private async acknowledgePendingState(

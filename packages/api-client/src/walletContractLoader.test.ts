@@ -29,6 +29,9 @@ describe("Wallet Exchange live contract loader", () => {
     expect(result.renderContract.payload.primaryPath).toBe(
       "credentialSubject.humanDocument.renderData",
     );
+    expect(result.renderContract.payload.referenceCommit).toBe(
+      "41175474e8c0214587a7c8dca1209b49bd2f43c8",
+    );
   });
 
   it("fails closed when the body digest and ETag do not match", async () => {

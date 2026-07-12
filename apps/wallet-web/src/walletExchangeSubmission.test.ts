@@ -29,6 +29,9 @@ const submission = {
 describe("Wallet Exchange record submission adapter", () => {
   it("creates a holder submission for the selected Portal hospital without patientId", async () => {
     const submitDirectPresentation = vi.fn().mockResolvedValue(submission);
+    const issuerDidForHospital = vi
+      .fn()
+      .mockResolvedValue("did:web:issuer.portal.example:tcp");
     const reload = vi.fn().mockResolvedValue(undefined);
     const uuids = [
       "00000000-0000-4000-8000-000000000001",
@@ -36,10 +39,9 @@ describe("Wallet Exchange record submission adapter", () => {
     ];
 
     const result = await submitWalletExchangeRecord({
-      workflow: { submitDirectPresentation } as never,
+      workflow: { issuerDidForHospital, submitDirectPresentation },
       record,
       targetHospitalCode: "TCP",
-      portalBaseUrl,
       context: "referral",
       purpose: "ส่งต่อการดูแล",
       reload,
@@ -52,8 +54,7 @@ describe("Wallet Exchange record submission adapter", () => {
       context: "referral",
       purpose: "ส่งต่อการดูแล",
       consentRef: "wallet-consent:00000000-0000-4000-8000-000000000002",
-      recipient:
-        "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcp",
+      recipient: "did:web:issuer.portal.example:tcp",
       documentIds: [record.id],
     });
     expect(submitDirectPresentation.mock.calls[0]?.[0]).not.toHaveProperty(
@@ -89,6 +90,9 @@ describe("Wallet Exchange record submission adapter", () => {
   it("reloads the durable outbox after a failed send without masking the original error", async () => {
     const original = new TypeError("connection closed after upload");
     const submitDirectPresentation = vi.fn().mockRejectedValue(original);
+    const issuerDidForHospital = vi
+      .fn()
+      .mockResolvedValue("did:web:issuer.portal.example:tcc");
     const reload = vi.fn().mockRejectedValue(new Error("reload failed"));
     const uuids = [
       "00000000-0000-4000-8000-000000000003",
@@ -97,10 +101,9 @@ describe("Wallet Exchange record submission adapter", () => {
 
     await expect(
       submitWalletExchangeRecord({
-        workflow: { submitDirectPresentation } as never,
+        workflow: { issuerDidForHospital, submitDirectPresentation },
         record,
         targetHospitalCode: "TCC",
-        portalBaseUrl,
         context: "opd_visit",
         purpose: "รับบริการต่อเนื่อง",
         reload,

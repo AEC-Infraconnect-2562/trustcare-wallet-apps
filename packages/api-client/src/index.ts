@@ -16,5 +16,6 @@ export * from "./walletExchangeV2";
 export * from "./portalBaseUrl";
 export * from "./walletExchangeCredential";
 export * from "./walletExchangeWorkflow";
+export * from "./walletExchangePersistencePolicy";
 export * from "./queryKeys";
 export * from "./walletRepository";

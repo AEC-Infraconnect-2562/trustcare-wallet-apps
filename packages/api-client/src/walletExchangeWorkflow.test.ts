@@ -23,7 +23,6 @@ import {
 import { decodeJwt, exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
-  portalHospitalDid,
   type TrustCarePortalHospitalCode,
 } from "./portalIssuerResolver";
 import {
@@ -629,6 +628,10 @@ class MemoryPersistence implements WalletExchangePersistencePort {
     this.operations = operations;
   }
 
+  configureTrustedIssuers(issuerDids: readonly string[]): void {
+    expect(issuerDids.length).toBeGreaterThan(0);
+  }
+
   async loadOrCreateState(): Promise<WalletExchangeState> {
     return structuredClone(this.state);
   }
@@ -909,7 +912,7 @@ type IssuerFixture = {
 async function createIssuerFixture(
   hospitalCode: TrustCarePortalHospitalCode,
 ): Promise<IssuerFixture> {
-  const issuerDid = portalHospitalDid(portalOrigin, hospitalCode);
+  const issuerDid = `did:web:portal.example:hospital:${hospitalCode.toLowerCase()}`;
   const { privateKey, publicKey } = await generateKeyPair("ES256", {
     extractable: true,
   });
