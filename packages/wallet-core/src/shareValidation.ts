@@ -222,7 +222,7 @@ export function validateShareDraft(
 
   const primaryDisabledReason =
     disabledReasons.find((reason) => reason.severity === "blocked") ??
-    issueToDisabledReason(blockers[0], policy.mode) ??
+    issueToDisabledReason(blockers[0]) ??
     null;
 
   return {
@@ -257,7 +257,6 @@ function issue(
 
 function issueToDisabledReason(
   validationIssue: ShareValidationIssue | undefined,
-  packageMode: SharePackageMode,
 ): DisabledReason | null {
   if (!validationIssue) return null;
   return {

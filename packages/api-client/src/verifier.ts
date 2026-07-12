@@ -1897,22 +1897,6 @@ function failedJwtVerification(input: {
   };
 }
 
-function manifestFilesAreStandard(
-  manifest: Record<string, unknown> | undefined,
-): boolean {
-  if (!manifest) return false;
-  const files = manifest.files;
-  if (!Array.isArray(files) || !files.length) return false;
-  return files.every((file) => {
-    if (!file || typeof file !== "object") return false;
-    const object = file as Record<string, unknown>;
-    return (
-      typeof object.location === "string" ||
-      Boolean(object.embedded && typeof object.embedded === "object")
-    );
-  });
-}
-
 export async function verify(
   options: VerifierApiOptions,
   input: { token?: string; vpUrl?: string },

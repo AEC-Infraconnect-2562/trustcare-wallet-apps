@@ -170,7 +170,6 @@ describe("Portal hospital did:web resolver", () => {
 });
 
 async function issuerFixture(codeInput: "TCC" | "TCP" | "TCM") {
-  const code = codeInput.toLowerCase();
   const issuerDid = portalHospitalDid(portalOrigin, codeInput);
   const { privateKey, publicKey } = await generateKeyPair("ES256", {
     extractable: true,

@@ -6,7 +6,6 @@
   useMemo,
   useRef,
   useState,
-  type ReactElement,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -43,22 +42,17 @@ import {
 import { useLanguage } from "@trustcare/i18n/src/provider.web";
 import {
   buildPortalInteroperabilityFixtures,
-  countCardsByCategory,
   assessLocalReadiness,
-  createDocumentRequestDraft,
   documentRequestFormatLabel,
-  documentRequestReturnChannelLabel,
   documentRequestSourceLabel,
   exportWalletObjects,
   flattenCardsByCategory,
   getDemoUser,
   groupCardsByCategory,
   importWalletExchange,
-  parseShlLink,
   fetchShlManifest,
   mergePayerArtifactCards,
   mergeWalletObjects,
-  normalizePhotoUrl,
   readinessContextLabels,
   walletObjectsFromCards,
   walletObjectsFromHistory,
@@ -76,9 +70,7 @@ import {
   type WalletCardsByCategory,
   type WalletDocumentRequest,
   type WalletDocumentRecordV2,
-  type WalletDemoUser,
   type WalletExportResult,
-  type WalletImportResult,
   type WalletImportJob,
   type WalletStoredObject,
   type VerifierResult,
@@ -642,10 +634,6 @@ export default function App() {
     );
   }, [activeUser.patientId, allCards, readinessContext]);
 
-  const counts = useMemo(
-    () => countCardsByCategory(groupCardsByCategory(allCards)),
-    [allCards],
-  );
   const serviceReadinessSummaries = useMemo<ServiceReadinessSummary[]>(
     () =>
       readinessContexts.map((context) => {
@@ -1661,8 +1649,6 @@ export default function App() {
           <HomeView
             cards={allCards}
             user={activeUser}
-            readiness={readiness}
-            history={history}
             offlineOnline={offlineWallet.isOnline}
             onOpenCard={openRecord}
             onView={navigateTo}

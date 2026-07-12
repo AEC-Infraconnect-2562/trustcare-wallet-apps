@@ -569,7 +569,7 @@ describe("verifyQr VP resolver behavior", () => {
       {
         url: "https://trustcare.example.com/trpc",
         verificationEvidenceProvider: completeEvidenceProvider,
-        fetchImpl: async (input, init) => {
+        fetchImpl: async (input) => {
           const url = String(input);
           if (url === hospitalJwksUrl) {
             return new Response(
@@ -632,7 +632,7 @@ describe("verifyQr VP resolver behavior", () => {
       {
         url: "https://trustcare.example.com/trpc",
         verificationEvidenceProvider: completeEvidenceProvider,
-        fetchImpl: async (input, init) => {
+        fetchImpl: async (input) => {
           const url = String(input);
           requestedUrls.push(url);
           if (url === hospitalJwksUrl) {
@@ -903,7 +903,7 @@ describe("verifyQr VP resolver behavior", () => {
       {
         url: "https://trustcare.example.com/trpc",
         verificationEvidenceProvider: completeEvidenceProvider,
-        fetchImpl: async (input, init) => {
+        fetchImpl: async (input) => {
           const url = String(input);
           if (url === hospitalJwksUrl) {
             return new Response(

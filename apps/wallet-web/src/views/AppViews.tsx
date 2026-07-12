@@ -7,17 +7,14 @@
   type ReactElement,
 } from "react";
 import {
-  Activity,
   AlertTriangle,
   ArrowLeft,
   BadgeCheck,
-  Bell,
   Building2,
   CalendarDays,
   Camera,
   CheckCircle2,
   ChevronRight,
-  Clock,
   Cloud,
   Copy,
   Database,
@@ -30,7 +27,6 @@ import {
   Filter,
   Globe2,
   History,
-  Home,
   IdCard,
   ImageOff,
   Inbox,
@@ -48,10 +44,8 @@ import {
   RefreshCw,
   Search,
   Send,
-  Settings,
   Shield,
   ShieldCheck,
-  Share2,
   Smartphone,
   Upload,
   UserCheck,
@@ -78,19 +72,13 @@ import {
   cardsSelectedByReadiness,
   createAutomaticDocumentRequestDraft,
   createDocumentRequestDraft,
-  createPresentationQrPayload,
   createShareDraftFromPrepare,
   createSharePolicy,
   createShlViewerUrl,
   credentialCompactSummaryRows,
-  credentialPresentationPolicy,
   credentialRenderModelFromCard,
   credentialStatusLabel,
   credentialStatusTone,
-  credentialTypeForDocument,
-  documentRequestFormatLabel,
-  documentRequestReturnChannelLabel,
-  documentRequestSourceLabel,
   exportWalletObject,
   exportWalletObjects,
   buildPortalInteroperabilityFixtures,
@@ -135,8 +123,6 @@ import {
   type WalletDemoUser,
   type WalletExportResult,
   type WalletImportJob,
-  type WalletImportResult,
-  type WalletPresentationResponse,
   type WalletStoredObject,
   type VerifierResult,
 } from "@trustcare/wallet-core";
@@ -162,7 +148,6 @@ import {
   categoryLabels,
   criticalCardTypes,
   defaultShlPolicyForContext,
-  documentTabBreadcrumbLabels,
   maskShlPasscode,
   normalizeShlPasscode,
   protocolForTransport,
@@ -174,8 +159,6 @@ import {
   shareTrustStatusLabel,
   shlPasscodeReady,
   shlPolicyExpiry,
-  viewBreadcrumbLabels,
-  vpDisclosureFields,
   type DocumentFlowMode,
   type DocumentsTab,
   type PackageProtocol,
@@ -399,8 +382,6 @@ export function UserScopePanel({
 export function HomeView({
   cards,
   user,
-  readiness,
-  history,
   offlineOnline,
   onOpenCard,
   onView,
@@ -413,8 +394,6 @@ export function HomeView({
 }: {
   cards: WalletCard[];
   user: WalletDemoUser;
-  readiness: any;
-  history: PresentationHistoryItem[];
   offlineOnline: boolean;
   onOpenCard: (card: WalletCard) => void;
   onView: (view: View) => void;

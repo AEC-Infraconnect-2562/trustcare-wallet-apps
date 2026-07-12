@@ -28,7 +28,6 @@ import {
 } from "./portalIssuerResolver";
 import {
   TRUSTCARE_RENDER_VERSION,
-  type WalletExchangeContractSet,
 } from "./walletContractLoader";
 import {
   createWalletExchangeV2Client,

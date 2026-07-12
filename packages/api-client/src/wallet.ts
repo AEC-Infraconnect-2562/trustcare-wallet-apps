@@ -27,7 +27,6 @@ import {
   classifyQrPayload,
   fetchShlManifest,
   buildPortalInteroperabilityFixtures,
-  mhdDocumentReferenceFromRecord,
   recordFromMhdDocumentReference,
   validateDocumentReference,
   verifyShlManifestTrust,
@@ -40,7 +39,6 @@ import {
   type DemoOid4vciIssuedCredential,
   type FhirDocumentReferenceLike,
   type SharePackageBuildInput,
-  type WalletCard,
   type WalletDocumentRecord,
 } from "@trustcare/wallet-core";
 import type { TrustCareClientOptions } from "./trpc";
@@ -724,8 +722,6 @@ async function demoCardsByCategory(
 async function demoWalletCards(options: WalletApiOptions) {
   return getDemoWalletCards(options.userId);
 }
-
-const TRUSTCARE_WALLET_VERIFIER_AUDIENCE = "https://trustcare.network/verifier";
 
 function presentationCardSnapshot(
   options: WalletApiOptions,
