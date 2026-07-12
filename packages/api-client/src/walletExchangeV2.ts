@@ -120,7 +120,7 @@ export class WalletExchangeV2Client {
   private clockOffsetSeconds = 0;
 
   constructor(private readonly options: WalletExchangeV2ClientOptions) {
-    this.fetcher = options.fetchImpl ?? fetch;
+    this.fetcher = resolveWalletExchangeFetch(options.fetchImpl);
     this.clock = options.now ?? (() => new Date());
     this.sleep =
       options.sleep ??
@@ -561,6 +561,13 @@ export class WalletExchangeV2Client {
   private requestIdentifier(): string {
     return `wallet-${this.randomUUID()}`.slice(0, 100);
   }
+}
+
+export function resolveWalletExchangeFetch(
+  fetchImpl?: typeof fetch,
+  runtimeFetch: typeof fetch = globalThis.fetch,
+): typeof fetch {
+  return fetchImpl ?? runtimeFetch.bind(globalThis);
 }
 
 export function createWalletExchangeV2Client(
