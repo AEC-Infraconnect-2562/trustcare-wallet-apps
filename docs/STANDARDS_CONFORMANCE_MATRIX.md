@@ -21,8 +21,8 @@ not recorded as production conformance.
 | Purpose VP                      | Partial        | Purpose/disclosure package paths exist; production interoperability, consent binding and active-share lifecycle remain                                                                            |
 | Standard SHL                    | Partial        | Canonical SHLink/manifest transport exists; cross-implementation golden fixtures need expansion                                                                                                   |
 | Manifest Credential             | Partial        | Generation and binding fields exist; complete issuer/status/trust-policy verification fixtures remain                                                                                             |
-| Holder Authorization Credential | Partial        | Holder binding artifact exists; complete proof, lifecycle and revocation fixtures remain                                                                                                          |
-| Manifest VP                     | Partial        | Composition and proof paths exist; complete nested credential/status/policy verification remains                                                                                                  |
+| Holder-signed SHL VP            | Implemented    | Binds holder, package, manifest/files, source credentials, purpose, recipient/audience, consent and expiry                                                                                          |
+| Hospital Manifest Credential    | Partial        | Wallet verification is implemented; live Portal certification endpoint and Maker/Checker/KMS issuance are still required                                                                           |
 | Certified SHL                   | Partial        | Trust-chain artifacts and hashes exist, but structural presence is not verification; evidence-provider integration, full-path regression, revocation and access lifecycle remain release blockers |
 | Credential status/revocation    | Partial        | Lifecycle states and verifier semantics exist; production status services are external                                                                                                            |
 | Contract Hub                    | Demo/Sandbox   | Hand-authored demo catalog only; generated signed V2 contracts pending                                                                                                                            |
@@ -47,8 +47,8 @@ not recorded as production conformance.
 ## Non-conformance guardrails
 
 - SHL parsing yields transport-valid, not verified.
-- A Certified SHL object containing Manifest Credential, Holder Authorization,
-  Manifest VP and hashes is still pending until every cryptographic, lifecycle,
+- A hospital-certified SHL object containing the hospital Manifest Credential,
+  original holder VP and hashes is still pending until every cryptographic, lifecycle,
   issuer, holder, hash and policy check succeeds. The shared-envelope path now
   preserves this pending state and requires regression coverage to prevent a
   structural-presence promotion from returning.

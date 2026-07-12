@@ -4,19 +4,19 @@ Status: Wallet Exchange V2 hard cutover
 
 This document describes the current SHL boundary. The live discovery and
 Contract Hub resources from the configured TrustCare Portal are authoritative.
-The older Wallet-created `portalRequest` model and `/api/wallet/shl-packages`
-flow are not a production integration path.
+There is one production model with two explicit trust modes. No legacy SHL
+certification request, unsigned credential, or automatic fallback is accepted.
 
 ## Responsibility boundary
 
 - Wallet selects the minimum necessary documents, owns the holder `did:key`,
-  signs the holder authorization and manifest VP, and encrypts every SHL file.
+  signs one holder VP, and encrypts every SHL file.
 - Portal or another accountable integration issuer signs the Manifest VC. A
   Wallet or Share Gateway key must never impersonate TCC, TCP, or TCM.
 - Portal publishes and resolves the encrypted manifest/files, enforces expiry,
   access count, passcode, revocation, and audit policy.
-- SHL is transport. The Manifest VC, holder authorization, manifest VP, and
-  exact plaintext/JWE hashes are the trust layer.
+- SHL is transport. The holder VP, optional hospital-signed Manifest VC, and
+  exact manifest/plaintext/JWE hashes are the trust layer.
 - Wallet Exchange requests and SHL artifacts never contain or trust a Portal
   `patientId`. Portal binds the authenticated holder DID internally.
 
@@ -38,19 +38,33 @@ The discovery document supplies the Share Gateway endpoint. Production code
 must not substitute a localhost, Wallet-owned hospital DID/JWKS, V1 sync
 endpoint, or client-generated manifest endpoint when discovery is unavailable.
 
-## Certified SHL creation
+## Trust modes
+
+### `holder_attested`
+
+The Wallet creates the Standard SHL manifest and encrypted JWE files, then
+signs one VP JWT with the holder `did:key`. That VP binds holder DID, SHL
+package ID, manifest URL/hash, plaintext and JWE file hashes, source credential
+IDs/hashes, purpose, recipient/audience, consent reference, issue time, and
+expiry. It is immediately shareable as Standard SHL and is never labelled as
+hospital-certified.
+
+### `hospital_certified`
 
 1. Wallet validates document ownership, lifecycle, original issuer proof, and
    live Portal hospital DID/JWKS evidence.
 2. Wallet serializes each selected document, records its plaintext hash,
    encrypts it as compact JWE with A256GCM and a unique IV, and records the JWE
    hash.
-3. `prepareCertifiedShl` produces the exact Manifest VC signing request.
-4. The accountable Portal/integration issuer signs that Manifest VC. Wallet
-   verifies the returned issuer JWT and evidence before continuing.
-5. `finalizeCertifiedShl` binds the signed Manifest VC to the prepared file
-   hashes, creates the holder authorization, and signs a fresh manifest VP with
-   the holder `did:key`.
+3. `prepareHolderAttestedShl` creates the holder VP and exact certification
+   request without creating a Manifest Credential.
+4. Wallet sends that request through Wallet Exchange V2 with DPoP. Portal runs
+   Maker/Checker and signs a W3C VC 2.0 direct-claims Manifest Credential with
+   the responsible hospital `did:web` key in Cosmian KMS.
+5. `finalizeCertifiedShl` accepts only `application/vc+jwt`, verifies the
+   hospital signature, issuer/kid, issuer and credential status, holder,
+   manifest/file hashes, purpose, audience and expiry, then associates it with
+   the original holder VP byte-for-byte. The Wallet does not sign again.
 6. The gateway publishes the encrypted files and trust artifacts. A service
    token, if required, is used only by a Wallet server/BFF and is never placed
    in a Vite or Expo bundle.
@@ -71,9 +85,9 @@ production.
 2. Decrypt each file and compare both ciphertext and plaintext hashes.
 3. Verify the Manifest VC against its original issuer DID/JWKS and require the
    exact prepared manifest digest.
-4. Verify the holder authorization and manifest VP against the holder
-   `did:key`, recipient, purpose, context, consent reference, audience, and
-   expiry.
+4. Verify the original holder VP against the holder `did:key`, recipient,
+   purpose, context, consent reference, audience, expiry, SHL package ID, and
+   every source/file hash.
 5. Verify every nested VC against its own issuer DID/JWKS, credential status,
    schema, expiry, and policy. Never use the gateway key as fallback for a
    hospital VC.
@@ -119,5 +133,7 @@ are available.
 - reused IV or missing encryption key
 - `patientId` at any depth
 - Share Gateway wrapper that replaces the holder-signed VP
+- copied hospital issuer claims, unsigned JSON credentials, VC JWT wrappers,
+  wrong issuer/kid/signature/hash/audience/expiry/status
 - expired/revoked credential or unknown required contract field
 - lost response followed by retry/session renewal

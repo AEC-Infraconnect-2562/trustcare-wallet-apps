@@ -17,7 +17,7 @@ Every synced credential that should render as a human medical document must incl
           "code": "tcp",
           "nameTh": "โรงพยาบาลทรัสต์แคร์ ภูเก็ต อินเตอร์เนชั่นแนล",
           "nameEn": "TrustCare Phuket International Hospital",
-          "did": "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcp"
+          "did": "did:web:<issuer returned by Portal discovery>"
         },
         "patient": {
           "fullNameTh": "Mr. John Williams",
@@ -66,7 +66,17 @@ Every synced credential that should render as a human medical document must incl
 
 ## Shared Component Direction
 
-The current Wallet implementation normalizes Portal payloads through `@trustcare/wallet-core/portalRenderContract`. When Portal publishes the renderer as a shared package, both apps should consume the same renderer and keep this contract as the payload boundary.
+Wallet owns the renderer implementation in `@trustcare/wallet-core` and
+`@trustcare/ui-web`. Portal publishes and pins the compatible render-contract
+and JSON Schema versions, then records the Wallet release-manifest version used
+for inspection. A repository Git commit may be displayed as provenance but is
+not a compatibility gate. Portal must not publish a duplicate renderer or
+reject an exchange only because its inspected commit differs from the running
+Wallet commit.
+
+The current Wallet implementation normalizes Portal payloads through
+`@trustcare/wallet-core/portalRenderContract`; the payload boundary remains
+`credentialSubject.humanDocument.renderData`.
 
 ## Physical Form Factor and VP Presentation Contract
 

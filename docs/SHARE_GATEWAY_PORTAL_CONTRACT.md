@@ -47,9 +47,9 @@ SHL remains encrypted transport to a manifest and JWE files. The trust layer is:
 
 1. externally issuer-signed Manifest VC;
 2. exact manifest, access-policy, plaintext, and encrypted-file hashes;
-3. Wallet holder authorization bound to purpose, recipient, audience, context,
-   consent, and expiry; and
-4. a fresh holder-signed Manifest VP preserving all nested issuer JWT bytes.
+3. the original Wallet holder VP bound to package ID, manifest/file/source
+   hashes, purpose, recipient/audience, consent, issue time, and expiry.
 
-A standard SHL without these artifacts may be transported as standard SHL, but
-must not receive a TrustCare-certified badge.
+A holder-attested SHL may be shared immediately as Standard SHL. It must not
+receive a hospital-certified badge until the Portal/KMS Manifest VC passes
+cryptographic and policy verification.

@@ -81,7 +81,11 @@ audience, consent, and policy. Resolver-only, metadata-only, unverified Data
 Integrity proof shapes, or legacy `tc_payload` flows must stay yellow/red,
 never green.
 
-The browser wallet must not own production private keys. Local development uses an in-memory Vite gateway to simulate the backend signer; production should use Portal Backend/KMS/S3-backed persistence.
+The browser wallet must not own production private keys. Local development uses
+an in-memory Vite gateway to simulate the backend signer. Production uses a
+server-side Share Gateway with durable database storage and a persistent
+signing JWK or KMS key; no service token or private key may enter Vite/Expo
+bundles.
 
 ## Other external exchange formats
 
