@@ -17,6 +17,7 @@ import type { WalletExchangeContractSet } from "./walletContractLoader";
 import {
   WalletExchangeProblemError,
   createWalletExchangeV2Client,
+  resolveWalletExchangeFetch,
 } from "./walletExchangeV2";
 
 const PORTAL_ORIGIN = "https://portal.example";
@@ -37,6 +38,17 @@ const CONTENT_HASH = `sha256:${"a".repeat(64)}`;
 const VP_JWT = `${"a".repeat(32)}.${"b".repeat(32)}.${"c".repeat(32)}`;
 
 describe("Wallet Exchange v2 client", () => {
+  it("binds the browser fetch implementation before storing it on the client", async () => {
+    const runtimeFetch = vi.fn(function (this: unknown) {
+      expect(this).toBe(globalThis);
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }) as unknown as typeof fetch;
+
+    const fetcher = resolveWalletExchangeFetch(undefined, runtimeFetch);
+    await fetcher(`${PORTAL_ORIGIN}/health`);
+
+    expect(runtimeFetch).toHaveBeenCalledTimes(1);
+  });
   it("signs the exact Portal session challenge and accepts only the holder cnf", async () => {
     const harness = await createHarness();
     const session = await harness.client.createSession();
