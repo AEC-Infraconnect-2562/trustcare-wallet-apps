@@ -40,7 +40,7 @@ import {
   UserCheck,
   Wallet,
 } from "lucide-react";
-import { shareGatewayApi } from "@trustcare/api-client";
+import * as shareGatewayApi from "@trustcare/api-client/shareGatewayClient";
 import {
   Badge,
   Button,

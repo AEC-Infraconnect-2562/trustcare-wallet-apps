@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ApiWalletRepository } from "@trustcare/api-client";
+import { ApiWalletRepository } from "@trustcare/api-client/walletRepository";
 import { DemoWalletRepository } from "@trustcare/wallet-core";
 import { createWalletRepository } from "./walletRepositoryFactory";
 

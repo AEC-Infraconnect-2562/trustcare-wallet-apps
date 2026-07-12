@@ -10,11 +10,13 @@ import {
 } from "@trustcare/wallet-core";
 import {
   createWalletExchangePersistencePolicy,
+  type WalletExchangePersistencePolicy,
+} from "@trustcare/api-client/walletExchangePersistencePolicy";
+import type {
   WalletExchangeCredentialRequestLink,
   WalletExchangePendingSubmissionDraft,
   WalletExchangeSubmissionLink,
-  type WalletExchangePersistencePolicy,
-} from "@trustcare/api-client";
+} from "@trustcare/api-client/walletExchangeWorkflow";
 
 export const INDEXED_DB_WALLET_EXCHANGE_SCHEMA =
   "wallet-exchange-v2@2" as const;

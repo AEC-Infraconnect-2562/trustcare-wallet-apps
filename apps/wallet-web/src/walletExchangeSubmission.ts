@@ -1,7 +1,7 @@
 import {
-  type TrustCarePortalHospitalCode,
   type WalletExchangeWorkflow,
-} from "@trustcare/api-client";
+} from "@trustcare/api-client/walletExchangeWorkflow";
+import type { TrustCarePortalHospitalCode } from "@trustcare/api-client/portalIssuerResolver";
 import type { WalletDocumentRecordV2 } from "@trustcare/wallet-core";
 
 export type PortalHospitalCode = TrustCarePortalHospitalCode;

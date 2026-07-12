@@ -1,11 +1,13 @@
 import {
   createWalletExchangePersistencePolicy,
   type WalletExchangePersistencePolicy,
+} from "@trustcare/api-client/walletExchangePersistencePolicy";
+import type {
   WalletExchangeCredentialRequestLink,
   WalletExchangePendingSubmissionDraft,
   WalletExchangePersistencePort,
   WalletExchangeSubmissionLink,
-} from "@trustcare/api-client";
+} from "@trustcare/api-client/walletExchangeWorkflow";
 import {
   createWalletExchangePartition,
   createWalletExchangeState,

@@ -1,4 +1,5 @@
-import { shareGatewayApi, walletApi } from "@trustcare/api-client";
+import * as shareGatewayApi from "@trustcare/api-client/shareGatewayClient";
+import * as walletApi from "@trustcare/api-client/wallet";
 import {
   assertPrimaryVerifierQrPayload,
   canPresentCredential,

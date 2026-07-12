@@ -1,4 +1,4 @@
-import { ApiWalletRepository } from "@trustcare/api-client";
+import { ApiWalletRepository } from "@trustcare/api-client/walletRepository";
 import {
   DemoWalletRepository,
   type RuntimeEnvironment,

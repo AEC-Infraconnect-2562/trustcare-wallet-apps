@@ -25,12 +25,10 @@ import {
   Sun,
   Wallet,
 } from "lucide-react";
-import {
-  payerApi,
-  shlApi,
-  verifierApi,
-  walletApi,
-} from "@trustcare/api-client";
+import * as payerApi from "@trustcare/api-client/payer";
+import * as shlApi from "@trustcare/api-client/shl";
+import * as verifierApi from "@trustcare/api-client/verifier";
+import * as walletApi from "@trustcare/api-client/wallet";
 import { useLanguage } from "@trustcare/i18n/src/provider.web";
 import {
   buildPortalInteroperabilityFixtures,

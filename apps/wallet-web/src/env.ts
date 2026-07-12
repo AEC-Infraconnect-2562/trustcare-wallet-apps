@@ -3,7 +3,7 @@ import {
   runtimeEnvironmentDescriptor,
   runtimeAllowsSyntheticData,
 } from "@trustcare/wallet-core";
-import { resolvePortalBaseUrl } from "@trustcare/api-client";
+import { resolvePortalBaseUrl } from "@trustcare/api-client/portalBaseUrl";
 
 export const defaultPublicShareGatewayUrl =
   import.meta.env.VITE_TRUSTCARE_PUBLIC_SHARE_GATEWAY_URL ??

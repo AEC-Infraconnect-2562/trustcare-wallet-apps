@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   WalletExchangeProblemError,
+} from "@trustcare/api-client/walletExchangeV2";
+import { normalizePortalOrigin } from "@trustcare/api-client/walletContractLoader";
+import {
   WalletExchangeWorkflow,
-  normalizePortalOrigin,
   type WalletExchangeCredentialRequestLink,
   type WalletExchangePendingSubmissionDraft,
-} from "@trustcare/api-client";
+} from "@trustcare/api-client/walletExchangeWorkflow";
 import {
   generateHolderIdentity,
   type RuntimeEnvironment,
