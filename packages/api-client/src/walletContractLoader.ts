@@ -183,7 +183,7 @@ export async function fetchVerifiedContractResource<T>(
   const contentDigest = response.headers.get("content-digest") ?? "";
   const expectedEtag = `"sha256-${sha256}"`;
   const expectedContentDigest = `sha-256=:${base64(digestBytes)}:`;
-  if (etag !== expectedEtag) {
+  if (etag !== expectedEtag && etag !== `W/${expectedEtag}`) {
     throw new TrustCareApiError(`Contract ETag integrity failed for ${url}`, {
       status: response.status,
       code: "contract_etag_mismatch",
