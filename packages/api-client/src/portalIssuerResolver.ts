@@ -156,6 +156,7 @@ export async function verifyPortalHospitalCredentialJwt(input: {
   issuer: ResolvedPortalHospitalIssuer;
   expectedHolderDid?: string;
   expectedCredentialData?: Record<string, unknown>;
+  profile?: "portal_credential" | "shl_manifest_credential";
   now?: Date;
 }): Promise<PortalCredentialJwtVerification> {
   const errors: string[] = [];
@@ -167,6 +168,8 @@ export async function verifyPortalHospitalCredentialJwt(input: {
       typeof protectedHeader.alg === "string" ? protectedHeader.alg : "";
     const typ =
       typeof protectedHeader.typ === "string" ? protectedHeader.typ : "";
+    const cty =
+      typeof protectedHeader.cty === "string" ? protectedHeader.cty : "";
     const jwk = input.issuer.jwks.keys.find(
       (candidate) => candidate.kid === kid,
     );
@@ -178,7 +181,8 @@ export async function verifyPortalHospitalCredentialJwt(input: {
       !kid.startsWith(`${input.issuer.issuerDid}#`) ||
       alg !== "ES256" ||
       jwk.alg !== "ES256" ||
-      typ.toLowerCase() !== "vc+jwt"
+      typ.toLowerCase() !== "vc+jwt" ||
+      (input.profile === "shl_manifest_credential" && cty !== "vc")
     ) {
       throw issuerError(
         "Credential kid is not governed by the Portal hospital DID.",
@@ -191,11 +195,21 @@ export async function verifyPortalHospitalCredentialJwt(input: {
       algorithms: ["ES256"],
     });
     const payload = verified.payload as Record<string, unknown>;
+    if (
+      input.profile === "shl_manifest_credential" &&
+      Object.prototype.hasOwnProperty.call(payload, "vc")
+    ) {
+      throw issuerError(
+        "Manifest Credential must use W3C VC 2.0 direct claims without a vc wrapper.",
+      );
+    }
     const credential = credentialPayload(payload);
-    const declaredDigest = stringValue(payload.trustcare_claim_digest);
-    const actualDigest = await sha256Canonical(credential);
-    if (!declaredDigest || declaredDigest !== actualDigest) {
-      errors.push("credential_claim_digest_mismatch");
+    if (input.profile !== "shl_manifest_credential") {
+      const declaredDigest = stringValue(payload.trustcare_claim_digest);
+      const actualDigest = await sha256Canonical(credential);
+      if (!declaredDigest || declaredDigest !== actualDigest) {
+        errors.push("credential_claim_digest_mismatch");
+      }
     }
     if (
       input.expectedCredentialData &&
@@ -247,13 +261,9 @@ function normalizeHospitalCode(value: string): TrustCarePortalHospitalCode {
 }
 
 function requireDiscoveredIssuerDid(value: string): string {
-  if (
-    typeof value !== "string" ||
-    !value.startsWith("did:web:") ||
-    value.startsWith("did:web:trustcare.network:")
-  ) {
+  if (typeof value !== "string" || !value.startsWith("did:web:")) {
     throw issuerError(
-      "Portal hospital issuer DID is missing, invalid, or belongs to the retired authority.",
+      "Portal hospital issuer DID is missing or invalid.",
     );
   }
   return value;

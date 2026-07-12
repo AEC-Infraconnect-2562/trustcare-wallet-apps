@@ -31,10 +31,16 @@ import {
 import {
   signHolderCompactJws,
   type HolderSigningIdentity,
+  type ShlCertificationRequest,
 } from "@trustcare/wallet-core";
 import { createDpopProof } from "./dpop";
 import { TrustCareApiError } from "./errors";
 import type { WalletExchangeContractSet } from "./walletContractLoader";
+import {
+  assertShlCertificationRequest,
+  assertShlCertificationResponse,
+  type ShlCertificationResponse,
+} from "./shlCertification";
 
 export type WalletExchangeSessionState = {
   accessToken: string;
@@ -324,6 +330,52 @@ export class WalletExchangeV2Client {
         requestId: this.requestIdentifier(),
       },
       assertWalletSubmissionStatus,
+    );
+  }
+
+  async requestShlCertification(
+    input: ShlCertificationRequest,
+    idempotencyKey: string,
+  ): Promise<ShlCertificationResponse> {
+    const endpoint =
+      this.options.contracts.discovery.endpoints.shlCertifications;
+    if (!endpoint) {
+      throw new TrustCareApiError(
+        "Portal has not published the SHL certification endpoint in Wallet Exchange discovery.",
+        { code: "shl_certification_unavailable" },
+      );
+    }
+    const request = assertShlCertificationRequest(input);
+    return this.protectedJson(
+      {
+        method: "POST",
+        url: endpoint,
+        body: JSON.stringify(request),
+        idempotencyKey: requireIdempotencyKey(idempotencyKey),
+        requestId: this.requestIdentifier(),
+      },
+      assertShlCertificationResponse,
+    );
+  }
+
+  async getShlCertificationStatus(
+    certificationRequestId: string,
+  ): Promise<ShlCertificationResponse> {
+    const endpoint =
+      this.options.contracts.discovery.endpoints.shlCertifications;
+    if (!endpoint) {
+      throw new TrustCareApiError(
+        "Portal has not published the SHL certification endpoint in Wallet Exchange discovery.",
+        { code: "shl_certification_unavailable" },
+      );
+    }
+    return this.protectedJson(
+      {
+        method: "GET",
+        url: childEndpoint(endpoint, certificationRequestId),
+        requestId: this.requestIdentifier(),
+      },
+      assertShlCertificationResponse,
     );
   }
 

@@ -77,7 +77,10 @@ export type ScanPayloadDescriptor = {
   passcodeRequired?: boolean;
   expiresAt?: string;
   trustcareBinding?:
-    "pending_manifest_vp" | "certified_manifest_vp" | "standard_only";
+    | "pending_hospital_certification"
+    | "hospital_certified"
+    | "holder_attested"
+    | "standard_only";
 };
 
 export type SharePublicationState = {

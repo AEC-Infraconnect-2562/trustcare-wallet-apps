@@ -26,10 +26,15 @@ export type ShlTrustVerificationResult = {
 
 export type ShlCryptographicVerificationEvidence = {
   manifestCredentialSignatureVerified: boolean;
-  holderAuthorizationSignatureVerified: boolean;
-  manifestVpSignatureVerified: boolean;
+  holderPresentationSignatureVerified: boolean;
   issuerTrusted: boolean;
   credentialStatusValid: boolean;
+  subjectBindingVerified: boolean;
+  manifestHashVerified: boolean;
+  fileHashesVerified: boolean;
+  purposeVerified: boolean;
+  audienceVerified: boolean;
+  expiryVerified: boolean;
   policyVerified: boolean;
   verifiedAt?: string;
 };
@@ -85,15 +90,17 @@ export function verifyShlManifestTrust(
         .map((item) => item.label),
     };
   }
-  if (trustLayerStatus !== "certified_manifest_vp") {
+  if (trustLayerStatus !== "hospital_certified") {
     return {
       status:
-        trustLayerStatus === "pending_manifest_vp"
+        trustLayerStatus === "pending_hospital_certification"
           ? "trustcare_pending"
           : "transport_valid",
       verified: false,
       trustLevel:
-        trustLayerStatus === "pending_manifest_vp" ? "yellow" : "blue",
+        trustLayerStatus === "pending_hospital_certification"
+          ? "yellow"
+          : "blue",
       fileCount: files.length,
       checklist: [
         ...standardChecks,
@@ -105,7 +112,7 @@ export function verifyShlManifestTrust(
         },
       ],
       warnings: [
-        trustLayerStatus === "pending_manifest_vp"
+        trustLayerStatus === "pending_hospital_certification"
           ? "SHL นี้กำลังรอ TrustCare Manifest verification และยังไม่เป็น TrustCare-certified."
           : "SHL นี้เป็น Standard SMART Health Link ที่อ่านได้ แต่ยังไม่เป็น TrustCare-certified.",
       ],
@@ -113,57 +120,30 @@ export function verifyShlManifestTrust(
     };
   }
 
-  const manifestCredential = objectValue(trustcare.manifestCredential);
-  const holderAuthorizationCredential = objectValue(
-    trustcare.holderAuthorizationCredential,
+  const manifestCredentialJwt = stringValue(
+    trustcare.manifestCredentialJwt,
   );
-  const manifestVp = objectValue(trustcare.manifestVp);
+  const holderPresentationJwt = stringValue(
+    trustcare.holderPresentationJwt,
+  );
   const expectedManifestHash = hashJson({
     files,
     documents: arrayValue(objectValue(object.documentBundle)?.documents),
   });
-  const manifestCredentialSubject =
-    objectValue(manifestCredential?.credentialSubject) ?? {};
-  const manifestVpHashOk = Boolean(
-    manifestVp && trustcare.manifestVpHash === hashJson(manifestVp),
-  );
-  const manifestHashOk =
-    manifestCredentialSubject.manifestHash === expectedManifestHash;
-  const holderDid = String(manifestVp?.holder ?? "");
-  const holderSubject = String(
-    objectValue(holderAuthorizationCredential?.credentialSubject)?.id ?? "",
-  );
+  const manifestHashOk = trustcare.manifestHash === expectedManifestHash;
   const certifiedChecks: ShlTrustChecklistItem[] = [
     ...standardChecks,
     {
       key: "manifest_vc",
-      label: "มี Manifest Credential",
-      ok:
-        hasType(manifestCredential, "TrustCareManifestCredential") &&
-        manifestHashOk,
-      detail: String(manifestCredential?.id ?? "-"),
+      label: "มี Manifest Credential JWT",
+      ok: looksLikeCompactJwt(manifestCredentialJwt) && manifestHashOk,
+      detail: String(trustcare.manifestCredentialId ?? "-"),
     },
     {
-      key: "holder_vc",
-      label: "มี Holder Authorization Credential",
-      ok:
-        hasType(
-          holderAuthorizationCredential,
-          "HolderAuthorizationCredential",
-        ) && Boolean(holderSubject),
-      detail: String(holderAuthorizationCredential?.id ?? "-"),
-    },
-    {
-      key: "manifest_vp",
-      label: "มี Manifest VP",
-      ok: hasType(manifestVp, "TrustCareManifestVP") && manifestVpHashOk,
-      detail: String(trustcare.manifestVpHash ?? "-"),
-    },
-    {
-      key: "holder_binding",
-      label: "Holder binding ตรงกัน",
-      ok: Boolean(holderDid && holderSubject && holderDid === holderSubject),
-      detail: holderDid || "-",
+      key: "holder_vp",
+      label: "มี Holder Presentation JWT",
+      ok: looksLikeCompactJwt(holderPresentationJwt),
+      detail: String(trustcare.holderPresentationId ?? "-"),
     },
     {
       key: "maker_checker",
@@ -191,15 +171,9 @@ export function verifyShlManifestTrust(
       detail: cryptographicEvidence?.verifiedAt ?? "not_verified",
     },
     {
-      key: "holder_vc_signature",
-      label: "ตรวจลายเซ็น Holder Authorization Credential",
-      ok: cryptographicEvidence?.holderAuthorizationSignatureVerified === true,
-      detail: cryptographicEvidence?.verifiedAt ?? "not_verified",
-    },
-    {
-      key: "manifest_vp_signature",
-      label: "ตรวจลายเซ็น Manifest VP",
-      ok: cryptographicEvidence?.manifestVpSignatureVerified === true,
+      key: "holder_vp_signature",
+      label: "ตรวจลายเซ็น Holder Presentation",
+      ok: cryptographicEvidence?.holderPresentationSignatureVerified === true,
       detail: cryptographicEvidence?.verifiedAt ?? "not_verified",
     },
     {
@@ -213,6 +187,36 @@ export function verifyShlManifestTrust(
       label: "ตรวจสถานะ Credential",
       ok: cryptographicEvidence?.credentialStatusValid === true,
       detail: cryptographicEvidence ? "checked" : "not_checked",
+    },
+    {
+      key: "subject_binding",
+      label: "ตรวจ subject/holder binding",
+      ok: cryptographicEvidence?.subjectBindingVerified === true,
+    },
+    {
+      key: "manifest_hash",
+      label: "ตรวจ manifest hash",
+      ok: cryptographicEvidence?.manifestHashVerified === true,
+    },
+    {
+      key: "file_hashes",
+      label: "ตรวจ file hashes",
+      ok: cryptographicEvidence?.fileHashesVerified === true,
+    },
+    {
+      key: "purpose",
+      label: "ตรวจวัตถุประสงค์",
+      ok: cryptographicEvidence?.purposeVerified === true,
+    },
+    {
+      key: "audience",
+      label: "ตรวจผู้รับ/audience",
+      ok: cryptographicEvidence?.audienceVerified === true,
+    },
+    {
+      key: "certification_expiry",
+      label: "ตรวจอายุการรับรอง",
+      ok: cryptographicEvidence?.expiryVerified === true,
     },
     {
       key: "verification_policy",
@@ -259,18 +263,16 @@ function fileHasStandardLocation(file: Record<string, unknown>): boolean {
   );
 }
 
-function hasType(
-  value: Record<string, unknown> | null,
-  expected: string,
-): boolean {
-  if (!value) return false;
-  const type = value.type;
-  const values = Array.isArray(type)
-    ? type.map(String)
-    : typeof type === "string"
-      ? [type]
-      : [];
-  return values.includes(expected);
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function looksLikeCompactJwt(value: string): boolean {
+  const parts = value.split(".");
+  return (
+    parts.length === 3 &&
+    parts.every((part) => Boolean(part) && /^[A-Za-z0-9_-]+$/.test(part))
+  );
 }
 
 function objectValue(value: unknown): Record<string, unknown> | null {

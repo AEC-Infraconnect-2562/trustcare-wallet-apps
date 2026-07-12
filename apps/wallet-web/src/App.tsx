@@ -1619,6 +1619,9 @@ export default function App() {
             verifierResult={verifierResult}
             scanOutcome={scanOutcome}
             biometricEnabled={webAuthn.isRegistered}
+            exchangeDocuments={walletExchange.documents}
+            holderIdentity={walletExchange.identity}
+            walletExchangeWorkflow={walletExchange.workflow}
             onConfirmBiometric={async () =>
               webAuthn.isRegistered ? webAuthn.authenticate() : true
             }

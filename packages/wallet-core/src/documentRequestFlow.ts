@@ -172,7 +172,7 @@ const formatLabels: Record<
   certified_shl_manifest: {
     label: "SHL + Manifest VP",
     description:
-      "ใช้ SHL เป็น transport และเพิ่ม Manifest VP/Holder VC สำหรับ TrustCare verifier",
+      "ใช้ SHL เป็น transport พร้อม holder VP และขอ Manifest Credential จากโรงพยาบาลเมื่อจำเป็น",
   },
   pdf_image: {
     label: "PDF / Image Upload",
@@ -555,7 +555,7 @@ function formatDisabledReason(
   }
   if (format === "certified_shl_manifest") {
     if (source !== "trustcare_portal") {
-      return "Certified SHL ต้องมาจาก TrustCare Portal หรือโรงพยาบาลในเครือข่ายที่ออก Manifest VP/VC ได้";
+      return "Certified SHL ต้องมี Manifest Credential ที่ TrustCare Portal ออกด้วยกุญแจโรงพยาบาลและ Wallet ตรวจผ่าน";
     }
     if (scope !== "document_bundle") {
       return "Manifest VP เหมาะกับชุดเอกสารหลายรายการ";
@@ -652,12 +652,12 @@ function buildWarnings(
   }
   if (format === "standard_shl") {
     warnings.push(
-      "Standard SHL ใช้ร่วมกับระบบภายนอกได้ แต่ยังไม่ถือเป็น TrustCare-certified จนกว่าจะมี Manifest VP และ Holder VC",
+      "Standard SHL ใช้ร่วมกับระบบภายนอกได้ แต่ยังไม่ถือว่าโรงพยาบาลรับรองจนกว่าจะมี Manifest Credential ที่ตรวจผ่าน",
     );
   }
   if (format === "certified_shl_manifest") {
     warnings.push(
-      "Certified SHL ต้องเก็บ Manifest VP/Holder VC และ hash ของไฟล์ไว้ให้ verifier ตรวจสอบได้",
+      "Certified SHL ต้องเก็บ holder VP, Manifest Credential และ source/file hashes ไว้ให้ verifier ตรวจสอบได้",
     );
   }
   if (format === "fhir_bundle" && scope === "document_bundle") {
@@ -682,7 +682,7 @@ function buildNextSteps(
   if (format === "certified_shl_manifest") {
     return [
       "ส่งคำขอไป TrustCare Portal",
-      "Portal สร้าง SHL manifest และ Manifest VP",
+      "Wallet สร้าง SHL manifest และ holder VP; Portal ออก Manifest Credential หลังอนุมัติ",
       "Wallet sync กลับเข้ามาเป็น SHL+Manifest package",
     ];
   }

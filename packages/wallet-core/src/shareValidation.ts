@@ -198,7 +198,7 @@ export function validateShareDraft(
           issue(
             "certified_shl_not_ready",
             "ยังสร้าง Certified SHL ไม่ได้",
-            "ต้องมี Manifest VP, Manifest Credential, Holder VC, hash และ gateway ที่ตรวจได้",
+            "ต้องมี holder VP, Manifest Credential, source/file hashes และ gateway ที่ตรวจได้",
           ),
         );
       }

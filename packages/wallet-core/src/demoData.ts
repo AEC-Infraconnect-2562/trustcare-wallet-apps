@@ -531,7 +531,6 @@ export function getDemoShlPackages(
   const publication = createTrustCareShlGatewayPublication({
     context,
     ownerUserId: user.id,
-    patientId: user.patientId,
     selectedCardIds: cards.map((card) => card.id),
     cards,
     receiver:
@@ -542,7 +541,7 @@ export function getDemoShlPackages(
       ? "medical_tourist_intake"
       : "patient_summary",
     origin: "https://aec-infraconnect-2562.github.io/trustcare-wallet-apps",
-    includeTrustCareManifestVp: trustcareCertified,
+    requestHospitalCertification: trustcareCertified,
     policy: {
       expiresAt: demoShlPolicyExpiresAt,
       passcodeRequired: false,
@@ -561,24 +560,10 @@ export function getDemoShlPackages(
         : "patient_summary",
       context: user.tags.includes("insurance") ? "insurance" : "treatment",
       status: "active",
-      manifestCredentialId: publication.manifest.trustcare.manifestCredentialId,
-      presentationId: publication.manifest.trustcare.holderPresentationId,
-      manifestCredential: publication.manifest.trustcare.manifestCredential,
-      holderAuthorizationCredential:
-        publication.manifest.trustcare.holderAuthorizationCredential,
-      manifestVp: publication.manifest.trustcare.manifestVp,
-      manifestVpUrl: publication.manifest.trustcare.manifestVpUrl,
-      manifestVpHash: publication.manifest.trustcare.manifestVpHash,
       trustcareCertification: trustcareCertified
         ? {
-            status: "maker_checker_approved",
-            ownerConfirmed: true,
-            makerId: `maker-${user.id}`,
-            makerName: `${user.hospitalName} Issuer Attestor`,
-            makerApprovedAt: isoOffset(-2),
-            checkerId: `checker-${user.id}`,
-            checkerName: `${user.hospitalName} Trust Verifier`,
-            checkerApprovedAt: isoOffset(-1),
+            status: "pending_maker_checker",
+            ownerConfirmed: false,
             networkHospitalDid: user.issuerDid,
             consentReceiptId: `consent-${user.id}`,
             policyVersion: "trustcare-shl-governance-2026.07",

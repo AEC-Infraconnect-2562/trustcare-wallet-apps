@@ -36,7 +36,7 @@ export function classifyQrPayload(raw: string): QrPayloadClassification {
   }
   if (value.startsWith("shlink:/") || value.includes("#shlink:/")) {
     return result(
-      value.includes("certified_manifest_vp")
+      value.includes("hospital_certified")
         ? "certified_shl"
         : "standard_shl",
       true,

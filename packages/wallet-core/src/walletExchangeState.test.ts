@@ -210,7 +210,7 @@ describe("Wallet Exchange V2 state", () => {
   });
 
   it("rejects old or conflicting issuer DIDs until the live Portal reissues", () => {
-    const oldIssuerDid = "did:web:trustcare.network:hospital:tcc";
+    const oldIssuerDid = "did:web:untrusted-issuer.example:hospital:tcc";
     const change = signedUpsert({
       eventId: "wce_old_issuer",
       credentialId: "credential-old-issuer",
@@ -628,7 +628,7 @@ function signedUpsert(input: {
     renderer: {
       authority: "trustcare_wallet",
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      referenceCommit: "41175474e8c0214587a7c8dca1209b49bd2f43c8",
+      referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
       renderVersion: "2.0",
     },
   };
@@ -688,7 +688,7 @@ function unsignedUpsert(input: {
       renderer: {
         authority: "trustcare_wallet",
         repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-        referenceCommit: "41175474e8c0214587a7c8dca1209b49bd2f43c8",
+        referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
         renderVersion: "2.0",
       },
     },

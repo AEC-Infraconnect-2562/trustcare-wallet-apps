@@ -32,11 +32,9 @@ export function shareGatewayArtifactPath(
     case "certified_shl_manifest":
       return `/manifests/${encoded}.json`;
     case "manifest_vp":
-      return `/manifest-vps/${encoded}.json`;
+      return `/manifest-vps/${encoded}.jwt`;
     case "manifest_credential":
-      return `/manifest-credentials/${encoded}.json`;
-    case "holder_authorization":
-      return `/holder-authorizations/${encoded}.json`;
+      return `/manifest-credentials/${encoded}.jwt`;
     case "shl_file":
       return `/files/${encoded}`;
   }

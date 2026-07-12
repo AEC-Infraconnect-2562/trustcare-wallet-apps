@@ -57,6 +57,7 @@ export type WalletExchangeDiscovery = {
     publicContracts: string;
     shareGateway: string;
     issuerJwks: string;
+    shlCertifications?: string;
   };
   protocols: {
     credentialLifecycle: string;
@@ -663,9 +664,14 @@ function validateDiscoveryEndpoints(value: unknown, issues: TrustCareValidationI
   const path = "$.endpoints";
   const object = nestedObject(value, path, issues);
   if (!object) return;
-  const keys = ["credentialSync", "credentialSyncAck", "credentialRequests", "documentSubmissions", "publicContracts", "shareGateway", "issuerJwks"];
-  exactKeys(object, keys, path, issues);
-  keys.forEach((key) => absoluteUrlString(object, key, path, issues));
+  const requiredKeys = ["credentialSync", "credentialSyncAck", "credentialRequests", "documentSubmissions", "publicContracts", "shareGateway", "issuerJwks"];
+  exactKeys(object, [...requiredKeys, "shlCertifications"], path, issues);
+  requiredKeys.forEach((key) =>
+    absoluteUrlString(object, key, path, issues),
+  );
+  if (object.shlCertifications !== undefined) {
+    absoluteUrlString(object, "shlCertifications", path, issues);
+  }
   if (typeof object.issuerJwks === "string") {
     try {
       if (new URL(object.issuerJwks).pathname !== "/.well-known/jwks.json") {
@@ -697,6 +703,7 @@ function validateDiscoveryOriginCoherence(
     endpoints?.publicContracts,
     endpoints?.shareGateway,
     endpoints?.issuerJwks,
+    endpoints?.shlCertifications,
   ].filter((value): value is string => typeof value === "string");
   const origins = new Set<string>();
   for (const value of urls) {

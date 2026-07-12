@@ -139,7 +139,7 @@ describe("credential proof standards layer", () => {
       "https://trustcare-hospital-network-production.up.railway.app";
     const candidates = buildTrustCareJwksCandidates({
       header: {},
-      payload: { iss: "did:web:trustcare.network:hospital:tcc" },
+      payload: { iss: "did:web:issuer-registry.example:hospital:tcc" },
       sourceUrl: "inline-jwt",
       trustcareOrigins: [portalOrigin],
     });

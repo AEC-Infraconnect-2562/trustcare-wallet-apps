@@ -13,7 +13,7 @@ export type VerificationCheckKey =
   (typeof REQUIRED_VERIFICATION_CHECK_KEYS)[number];
 export type VerificationCheckState = "pass" | "fail" | "indeterminate";
 export type VerificationArtifactRole =
-  "vc" | "vp" | "manifest_vc" | "holder_authorization_vc" | "manifest_vp";
+  "vc" | "vp" | "manifest_vc" | "manifest_vp";
 export type Sha256Digest = `sha256:${string}`;
 
 export type VerificationSubject = {

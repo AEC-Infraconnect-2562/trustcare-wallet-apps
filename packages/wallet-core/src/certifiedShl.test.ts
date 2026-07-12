@@ -3,9 +3,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 import {
   decryptCertifiedShlFile,
   finalizeCertifiedShl,
-  prepareCertifiedShl,
+  prepareHolderAttestedShl,
   type ManifestCredentialVerifier,
-  type PreparedCertifiedShl,
+  type PreparedHolderAttestedShl,
 } from "./certifiedShl";
 import {
   generateHolderIdentity,
@@ -15,10 +15,8 @@ import type { WalletDocumentRecordV2 } from "./walletDocumentV2";
 
 const PORTAL_ORIGIN =
   "https://trustcare-hospital-network-production.up.railway.app";
-const TCC_ISSUER =
-  "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc";
-const MANIFEST_ISSUER =
-  "did:web:trustcare-hospital-network-production.up.railway.app";
+const TCC_ISSUER = "did:web:issuer-authority.example:hospital:tcc";
+const MANIFEST_ISSUER = TCC_ISSUER;
 const NOW = new Date("2026-07-11T10:00:00.000Z");
 const EXPIRES_AT = new Date("2026-07-11T10:30:00.000Z");
 
@@ -71,6 +69,26 @@ describe("Certified SHL trust-layer primitives", () => {
     expect(Object.isFrozen(prepared.manifest.documents)).toBe(true);
     expect(prepared.manifestJson).not.toContain(prepared.shlContentKey);
     expect(prepared.manifestJson).not.toContain(documents[0].credential.jwt);
+    expect(prepared.trustMode).toBe("holder_attested");
+    const holderClaims = decodeJwtPayload(prepared.holderPresentationJwt);
+    expect(holderClaims).toMatchObject({
+      iss: holder.did,
+      sub: holder.did,
+      aud: `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,
+      jti: prepared.holderPresentationId,
+    });
+    expect(
+      ((holderClaims.vp as Record<string, unknown>).trustcare as Record<
+        string,
+        unknown
+      >).manifestHash,
+    ).toBe(prepared.manifestHash);
+    expect(prepared.certificationRequest).toMatchObject({
+      targetHospitalCode: "TCC",
+      shlPackageId: prepared.manifest.publicationId,
+      holderPresentationJwt: prepared.holderPresentationJwt,
+      manifestHash: prepared.manifestHash,
+    });
 
     await expect(
       decryptCertifiedShlFile({
@@ -86,7 +104,7 @@ describe("Certified SHL trust-layer primitives", () => {
     ).resolves.toBe(documents[1].credential.jwt);
   });
 
-  it("retains the external Manifest VC and original issuer VCs inside a holder-signed VP", async () => {
+  it("associates the external Manifest VC with the original holder-signed VP", async () => {
     const documents = await Promise.all([
       documentRecord(
         "document-1",
@@ -114,37 +132,27 @@ describe("Certified SHL trust-layer primitives", () => {
       now: NOW,
     });
 
+    expect(publication.trustMode).toBe("hospital_certified");
     expect(publication.manifestCredentialJwt).toBe(manifestCredentialJwt);
-    const vpClaims = decodeJwtPayload(publication.manifestVpJwt);
+    expect(publication.holderPresentationJwt).toBe(
+      prepared.holderPresentationJwt,
+    );
+    expect(publication.holderPresentationId).toBe(
+      prepared.holderPresentationId,
+    );
+    const vpClaims = decodeJwtPayload(publication.holderPresentationJwt);
     const vp = vpClaims.vp as Record<string, unknown>;
     expect(vp.holder).toBe(holder.did);
-    expect(vp.verifiableCredential).toEqual([
-      manifestCredentialJwt,
-      publication.holderAuthorizationJwt,
-      documents[0].credential.jwt,
-      documents[1].credential.jwt,
-    ]);
+    expect(vp).not.toHaveProperty("verifiableCredential");
     expect((vp.trustcare as Record<string, unknown>).manifestHash).toBe(
       prepared.manifestHash,
     );
-
-    const authorizationClaims = decodeJwtPayload(
-      publication.holderAuthorizationJwt,
-    );
-    const authorizationVc = authorizationClaims.vc as Record<string, unknown>;
-    const subject = authorizationVc.credentialSubject as Record<
-      string,
-      unknown
-    >;
-    expect(subject).toMatchObject({
-      id: holder.did,
-      purpose: "OPD registration",
-      recipient: "TrustCare TCC registration desk",
-      audience: `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,
-      context: "opd_visit",
-      consentRef: "consent:receipt:1",
-      expiresAt: EXPIRES_AT.toISOString(),
+    expect(publication.objectLinks).toMatchObject({
+      shlPackageId: prepared.manifest.publicationId,
       manifestHash: prepared.manifestHash,
+      manifestCredentialJwt,
+      holderPresentationId: prepared.holderPresentationId,
+      holderPresentationJwt: prepared.holderPresentationJwt,
     });
   });
 
@@ -169,7 +177,7 @@ describe("Certified SHL trust-layer primitives", () => {
     const tamperedPrepared = {
       ...prepared,
       files: [{ ...prepared.files[0], jwe: tamperedJwe }],
-    } as PreparedCertifiedShl;
+    } as PreparedHolderAttestedShl;
     await expect(
       finalizeCertifiedShl({
         identity: holder,
@@ -184,24 +192,20 @@ describe("Certified SHL trust-layer primitives", () => {
     ).rejects.toThrow("JWE hash changed");
   });
 
-  it("binds every Manifest VP issuer credential to the encrypted-file plaintext hash", async () => {
+  it("rejects a replaced holder VP instead of re-signing it during certification", async () => {
     const document = await documentRecord(
       "document-1",
       "credential-1",
       holder.did,
       hospitalPrivateKey,
     );
-    const replacement = await documentRecord(
-      "document-2",
-      "credential-2",
-      holder.did,
-      hospitalPrivateKey,
-    );
     const prepared = await prepare([document], holder);
     const tamperedPrepared = {
       ...prepared,
-      issuerCredentialJwts: [replacement.credential.jwt!],
-    } as PreparedCertifiedShl;
+      holderPresentationJwt: `${prepared.holderPresentationJwt.slice(0, -1)}${
+        prepared.holderPresentationJwt.endsWith("A") ? "B" : "A"
+      }`,
+    } as PreparedHolderAttestedShl;
 
     await expect(
       finalizeCertifiedShl({
@@ -214,7 +218,7 @@ describe("Certified SHL trust-layer primitives", () => {
         verifyManifestCredential: manifestVerifier(manifestPublicKey),
         now: NOW,
       }),
-    ).rejects.toThrow("no longer matches its plaintext hash");
+    ).rejects.toThrow("Holder-attested SHL VP signature");
   });
 
   it("rejects a cross-holder document and every patientId field", async () => {
@@ -250,7 +254,7 @@ describe("Certified SHL trust-layer primitives", () => {
       "credential-old-issuer",
       holder.did,
       hospitalPrivateKey,
-      "did:web:trustcare.network:hospital:tcc",
+      "did:web:issuer-registry.example:hospital:tcc",
     );
     await expect(prepare([document], holder)).rejects.toThrow(
       "was not resolved from the live Portal trust registry",
@@ -285,6 +289,130 @@ describe("Certified SHL trust-layer primitives", () => {
         now: NOW,
       }),
     ).rejects.toThrow("requires an injected Manifest VC signature verifier");
+  });
+
+  it("rejects copied issuer claims, unsigned JSON, and wrapped Manifest credentials", async () => {
+    const document = await documentRecord(
+      "document-1",
+      "credential-1",
+      holder.did,
+      hospitalPrivateKey,
+    );
+    const prepared = await prepare([document], holder);
+    const verify = manifestVerifier(manifestPublicKey);
+
+    for (const unsigned of [
+      JSON.stringify({ issuer: MANIFEST_ISSUER }),
+      JSON.stringify({
+        issuer: document.provenance.issuerDid,
+        credentialSubject: prepared.expectedManifestCredentialBinding,
+      }),
+    ]) {
+      await expect(
+        finalizeCertifiedShl({
+          identity: holder,
+          prepared,
+          manifestCredentialJwt: unsigned,
+          verifyManifestCredential: verify,
+          now: NOW,
+        }),
+      ).rejects.toThrow("signed compact JWT");
+    }
+
+    await expect(
+      finalizeCertifiedShl({
+        identity: holder,
+        prepared,
+        manifestCredentialJwt: await signManifestCredential(
+          prepared,
+          manifestPrivateKey,
+          prepared.expectedManifestCredentialBinding,
+          { useVcWrapper: true },
+        ),
+        verifyManifestCredential: verify,
+        now: NOW,
+      }),
+    ).rejects.toThrow("without a vc wrapper");
+  });
+
+  it("rejects wrong issuer, kid, signature, audience, expiry, and status", async () => {
+    const document = await documentRecord(
+      "document-1",
+      "credential-1",
+      holder.did,
+      hospitalPrivateKey,
+    );
+    const prepared = await prepare([document], holder);
+    const verify = manifestVerifier(manifestPublicKey);
+    const cases: Array<{
+      name: string;
+      jwt: Promise<string>;
+      verifier?: ManifestCredentialVerifier;
+    }> = [
+      {
+        name: "issuer",
+        jwt: signManifestCredential(
+          prepared,
+          manifestPrivateKey,
+          prepared.expectedManifestCredentialBinding,
+          { issuer: "did:web:wrong-issuer.example:hospital:tcc" },
+        ),
+      },
+      {
+        name: "kid",
+        jwt: signManifestCredential(
+          prepared,
+          manifestPrivateKey,
+          prepared.expectedManifestCredentialBinding,
+          { kid: "did:web:wrong-issuer.example#key" },
+        ),
+      },
+      {
+        name: "signature",
+        jwt: signManifestCredential(prepared, hospitalPrivateKey),
+      },
+      {
+        name: "audience",
+        jwt: signManifestCredential(
+          prepared,
+          manifestPrivateKey,
+          prepared.expectedManifestCredentialBinding,
+          { audience: "https://wrong-audience.example/intake" },
+        ),
+      },
+      {
+        name: "expiry",
+        jwt: signManifestCredential(
+          prepared,
+          manifestPrivateKey,
+          prepared.expectedManifestCredentialBinding,
+          { expiresAt: new Date(NOW.getTime() - 1_000) },
+        ),
+      },
+      {
+        name: "status",
+        jwt: signManifestCredential(prepared, manifestPrivateKey),
+        verifier: async (jwt) => {
+          const evidence = await verify(jwt);
+          return evidence.verified
+            ? { ...evidence, credentialStatus: "suspended" as never }
+            : evidence;
+        },
+      },
+    ];
+
+    for (const negative of cases) {
+      await expect(
+        finalizeCertifiedShl({
+          identity: holder,
+          prepared,
+          manifestCredentialJwt: await negative.jwt,
+          verifyManifestCredential: negative.verifier ?? verify,
+          now: NOW,
+        }),
+        negative.name,
+      ).rejects.toThrow();
+    }
   });
 
   it("rejects a validly signed Manifest VC whose binding does not match", async () => {
@@ -355,7 +483,7 @@ async function prepare(
   documents: readonly WalletDocumentRecordV2[],
   identity: GeneratedHolderIdentity,
 ) {
-  return prepareCertifiedShl({
+  return prepareHolderAttestedShl({
     identity,
     portalOrigin: PORTAL_ORIGIN,
     publicationId: "publication-001",
@@ -368,6 +496,7 @@ async function prepare(
     audience: `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,
     context: "opd_visit",
     consentRef: "consent:receipt:1",
+    targetHospitalCode: "TCC",
     now: NOW,
     expiresAt: EXPIRES_AT,
     passcodeRequired: true,
@@ -451,27 +580,52 @@ async function documentRecord(
 }
 
 async function signManifestCredential(
-  prepared: PreparedCertifiedShl,
+  prepared: PreparedHolderAttestedShl,
   privateKey: CryptoKey,
   binding: unknown = prepared.expectedManifestCredentialBinding,
+  options: {
+    issuer?: string;
+    kid?: string;
+    audience?: string;
+    expiresAt?: Date;
+    useVcWrapper?: boolean;
+  } = {},
 ): Promise<string> {
-  return new SignJWT({
-    vc: {
-      "@context": ["https://www.w3.org/ns/credentials/v2"],
-      type: ["VerifiableCredential", "TrustCareShlManifestCredential"],
-      credentialSubject: binding,
+  const issuer = options.issuer ?? MANIFEST_ISSUER;
+  const directClaims = {
+    "@context": ["https://www.w3.org/ns/credentials/v2"],
+    id: `urn:trustcare:vc:shl-manifest:${prepared.manifest.publicationId}`,
+    type: ["VerifiableCredential", "TrustCareShlManifestCredential"],
+    issuer,
+    validFrom: NOW.toISOString(),
+    validUntil: (options.expiresAt ?? EXPIRES_AT).toISOString(),
+    credentialSubject: binding,
+    credentialStatus: {
+      id: `urn:trustcare:status:shl-manifest:${prepared.manifest.publicationId}`,
+      type: "BitstringStatusListEntry",
+      statusPurpose: "revocation",
+      statusListIndex: "1",
+      statusListCredential: "https://issuer-authority.example/status/shl",
     },
-  })
+  };
+  return new SignJWT(
+    options.useVcWrapper ? { vc: directClaims } : directClaims,
+  )
     .setProtectedHeader({
       alg: "ES256",
       typ: "vc+jwt",
-      kid: `${MANIFEST_ISSUER}#manifest-signing-current`,
+      cty: "vc",
+      kid: options.kid ?? `${issuer}#manifest-signing-current`,
     })
-    .setIssuer(MANIFEST_ISSUER)
+    .setIssuer(issuer)
     .setSubject(prepared.manifest.holderDid)
+    .setAudience(options.audience ?? prepared.manifest.accessPolicy.audience)
+    .setJti(`urn:trustcare:vc:shl-manifest:${prepared.manifest.publicationId}`)
     .setIssuedAt(Math.floor(NOW.getTime() / 1_000))
     .setNotBefore(Math.floor(NOW.getTime() / 1_000))
-    .setExpirationTime(Math.floor(EXPIRES_AT.getTime() / 1_000))
+    .setExpirationTime(
+      Math.floor((options.expiresAt ?? EXPIRES_AT).getTime() / 1_000),
+    )
     .sign(privateKey);
 }
 

@@ -72,7 +72,7 @@ describe("Wallet Exchange credential normalization", () => {
   });
 
   it("quarantines a legacy Wallet issuer DID instead of retaining it as fallback", async () => {
-    const legacyIssuerDid = "did:web:trustcare.network:hospital:tcc";
+    const legacyIssuerDid = "did:web:untrusted-issuer.example:hospital:tcc";
     const fixture = await signedPortalCredential({
       syncIssuerDid: legacyIssuerDid,
       proofIssuer: legacyIssuerDid,

@@ -93,7 +93,6 @@ const verificationArtifactRoles = new Set<VerificationArtifactRole>([
   "vc",
   "vp",
   "manifest_vc",
-  "holder_authorization_vc",
   "manifest_vp",
 ]);
 const verificationCheckKeys = new Set<string>(REQUIRED_VERIFICATION_CHECK_KEYS);
@@ -302,7 +301,7 @@ async function verifyQrUnsafe(
           : []),
         ...(!trustResult?.verified && fetched.ok
           ? [
-              "SHL นี้เป็น transport-valid เท่านั้น ยังไม่ถือเป็น TrustCare-certified จนกว่าจะมี Manifest VP + Manifest Credential + Holder VC ที่ verify ได้ครบ.",
+              "SHL นี้ใช้ส่งข้อมูลได้และผู้ถือกุญแจยืนยันได้ แต่ยังไม่ถือว่าโรงพยาบาลรับรองจนกว่า holder VP และ Manifest Credential จะตรวจผ่านครบ.",
             ]
           : []),
       ],
@@ -401,7 +400,7 @@ async function verifyQrUnsafe(
           : []),
         ...(!trustcarePolicyApproved
           ? [
-              "พบ TrustCare Manifest VP/VC แต่ยังไม่นับเป็น TrustCare verified จนกว่าจะตรวจผู้ถือเอกสาร แหล่งที่มา และ Manifest policy ครบ",
+              "พบ holder VP/Manifest Credential แต่ยังไม่นับว่าโรงพยาบาลรับรองจนกว่าจะตรวจ proof ผู้ออก สถานะ hashes ผู้ถือ และ policy ครบ",
             ]
           : []),
         ...(JSON.stringify(jsonPayload).includes("pending:trustcare")
@@ -450,7 +449,7 @@ async function verifyQrUnsafe(
       warnings:
         parsed.kind === "shlink"
           ? [
-              "อ่าน Standard SHL สำเร็จ โดย Manifest VP/VC เป็นส่วนขยายของ TrustCare และจะเชื่อถือได้หลังตรวจผู้ถือเอกสาร แหล่งที่มา และ Manifest policy ครบเท่านั้น",
+              "อ่าน Standard SHL สำเร็จ; การรับรองของโรงพยาบาลต้องมี Manifest Credential และ holder VP ที่ตรวจ proof แหล่งที่มา hashes และ policy ครบ",
             ]
           : parsed.kind === "vp-url" || parsed.kind === "presentation-id"
             ? [
@@ -471,110 +470,28 @@ async function verifyQrUnsafe(
 
 async function verifyShlCryptographicEvidence(
   trustcare: Record<string, unknown>,
-  manifest: Record<string, unknown>,
-  options: VerifierApiOptions,
+  _manifest: Record<string, unknown>,
+  _options: VerifierApiOptions,
 ): Promise<ShlCryptographicVerificationEvidence> {
-  const fetcher = options.fetchImpl ?? fetch;
-  const manifestCredential = objectValue(trustcare.manifestCredential);
-  const holderAuthorizationCredential = objectValue(
-    trustcare.holderAuthorizationCredential,
-  );
-  const manifestVp = objectValue(trustcare.manifestVp);
-  const manifestIssuer = artifactIssuerDid(manifestCredential);
-  const holderAuthorizationIssuer = artifactIssuerDid(
-    holderAuthorizationCredential,
-  );
-  const manifestHolder = stringOrUndefined(manifestVp?.holder);
-  const [manifestCredentialProof, holderAuthorizationProof, manifestVpProof] =
-    await Promise.all([
-      verifyDataIntegrityProof(manifestCredential ?? {}, {
-        fetcher,
-        expectedProofPurpose: "assertionMethod",
-        expectedControllerDid: manifestIssuer,
-      }),
-      verifyDataIntegrityProof(holderAuthorizationCredential ?? {}, {
-        fetcher,
-        expectedProofPurpose: "assertionMethod",
-        expectedControllerDid: holderAuthorizationIssuer,
-      }),
-      verifyDataIntegrityProof(manifestVp ?? {}, {
-        fetcher,
-        expectedProofPurpose: "authentication",
-        expectedControllerDid: manifestHolder,
-      }),
-    ]);
-  const manifestCredentialLocalProof = localDataIntegrityProof(
-    manifestCredentialProof,
-    manifestIssuer,
-    "assertionMethod",
-  );
-  const holderAuthorizationLocalProof = localDataIntegrityProof(
-    holderAuthorizationProof,
-    holderAuthorizationIssuer,
-    "assertionMethod",
-  );
-  const manifestVpLocalProof = localDataIntegrityProof(
-    manifestVpProof,
-    manifestHolder,
-    "authentication",
-  );
-  const access = objectValue(manifest.access);
-  const evaluation = await evaluateArtifactTrust(
-    options,
-    [
-      {
-        role: "manifest_vc",
-        artifact: manifestCredential ?? {},
-        issuerDid: manifestIssuer,
-        holderDid: artifactSubjectDid(manifestCredential),
-        validUntil: artifactValidUntil(manifestCredential),
-        statusReference: manifestCredential?.credentialStatus,
-        localProof: manifestCredentialLocalProof,
-      },
-      {
-        role: "holder_authorization_vc",
-        artifact: holderAuthorizationCredential ?? {},
-        issuerDid: holderAuthorizationIssuer,
-        holderDid: artifactSubjectDid(holderAuthorizationCredential),
-        validUntil: artifactValidUntil(holderAuthorizationCredential),
-        statusReference: holderAuthorizationCredential?.credentialStatus,
-        localProof: holderAuthorizationLocalProof,
-      },
-      {
-        role: "manifest_vp",
-        artifact: manifestVp ?? {},
-        holderDid: manifestHolder,
-        validUntil: artifactValidUntil(manifestVp),
-        localProof: manifestVpLocalProof,
-      },
-    ],
-    {
-      recipient: stringOrUndefined(manifest.receiver),
-      purpose: stringOrUndefined(manifest.purpose),
-      policyVersion: stringOrUndefined(trustcare.contractHubVersion),
-      access,
-    },
-  );
-
+  // Raw embedded JSON credentials and copied issuer identifiers are never
+  // accepted. Hospital certification is promoted only by the dedicated
+  // Certified SHL finalizer after vc+jwt and holder VP verification succeeds.
+  // The generic SHL parser therefore remains pending instead of inventing
+  // cryptographic evidence from manifest metadata.
+  void trustcare.manifestCredentialJwt;
+  void trustcare.holderPresentationJwt;
   return {
-    manifestCredentialSignatureVerified: Boolean(manifestCredentialLocalProof),
-    holderAuthorizationSignatureVerified: Boolean(
-      holderAuthorizationLocalProof,
-    ),
-    manifestVpSignatureVerified: Boolean(manifestVpLocalProof),
-    issuerTrusted: verificationEvidenceCheckPassed(
-      evaluation.assessment,
-      "issuer",
-    ),
-    credentialStatusValid: verificationEvidenceCheckPassed(
-      evaluation.assessment,
-      "status",
-    ),
-    policyVerified: verificationEvidenceCheckPassed(
-      evaluation.assessment,
-      "policy",
-    ),
-    verifiedAt: evaluation.evidenceCheckedAt,
+    manifestCredentialSignatureVerified: false,
+    holderPresentationSignatureVerified: false,
+    issuerTrusted: false,
+    credentialStatusValid: false,
+    subjectBindingVerified: false,
+    manifestHashVerified: false,
+    fileHashesVerified: false,
+    purposeVerified: false,
+    audienceVerified: false,
+    expiryVerified: false,
+    policyVerified: false,
   };
 }
 

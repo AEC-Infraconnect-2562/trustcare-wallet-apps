@@ -32,9 +32,7 @@ const contextOptions: ReadinessContext[] = [
 ];
 
 const packageOptions: Array<{ mode: SharePackageMode; label: string }> = [
-  { mode: "PurposeVP", label: "VP" },
-  { mode: "StandardSHL", label: "SHL" },
-  { mode: "CertifiedSHLManifestPackage", label: "Certified SHL" },
+  { mode: "PurposeVP", label: "แชร์เอกสารที่เลือก" },
 ];
 
 export function ShareScreen() {

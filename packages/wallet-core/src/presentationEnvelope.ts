@@ -435,7 +435,6 @@ export function presentationEnvelopeFromShl(
   const trustStatus = classifyPortableTrustStatus(publication);
   const documents = publication.manifest.documentBundle.documents ?? [];
   const hashes = [
-    publication.manifest.trustcare.manifestVpHash,
     ...publication.manifest.files
       .map((file) => stringOrUndefined(portalRecord(file).hash))
       .filter((value): value is string => Boolean(value)),
@@ -458,28 +457,13 @@ export function presentationEnvelopeFromShl(
     envelopeId: stableEnvelopeId("shl", publication.gatewayPublicationId),
     envelopeVersion: "2026.07.v1",
     kind: "shl",
-    mode:
-      publication.trustLayerStatus === "certified_manifest_vp"
-        ? "CertifiedSHLManifestPackage"
-        : "StandardSHL",
+    mode: "StandardSHL",
     sourceArtifactType: "TrustCareShlGatewayPublication",
     sourceObjectClass: "link_manifest",
-    subject: {
-      id: stringOrUndefined(publication.portalRequest.patientId),
-      identifiers: publication.portalRequest.patientId
-        ? [
-            {
-              system: "trustcare.patient",
-              value: String(publication.portalRequest.patientId),
-            },
-          ]
-        : [],
-    },
+    subject: { identifiers: [] },
     issuer: {
       name: "TrustCare SHL Gateway",
-      did: stringOrUndefined(
-        publication.manifest.trustcare.manifestCredential?.issuer,
-      ),
+      did: undefined,
     },
     recipient: { name: publication.manifest.receiver },
     display: {
@@ -543,20 +527,12 @@ export function presentationEnvelopeFromShl(
           publication.manifestUrl,
         ),
         checklistItem(
-          "manifest_vp",
-          "TrustCare Manifest VP",
-          publication.trustLayerStatus === "certified_manifest_vp" &&
-            Boolean(publication.manifest.trustcare.manifestVp),
-          publication.manifest.trustcare.manifestVpUrl,
-        ),
-        checklistItem(
-          "holder_authorization",
-          "Holder authorization credential",
-          publication.trustLayerStatus !== "certified_manifest_vp" ||
-            Boolean(
-              publication.manifest.trustcare.holderAuthorizationCredential,
-            ),
-          publication.manifest.trustcare.holderAuthorizationCredentialId,
+          "hospital_certification",
+          "Hospital Manifest Credential",
+          false,
+          publication.trustLayerStatus === "pending_hospital_certification"
+            ? "pending"
+            : "not_requested",
         ),
       ],
       warnings: publication.warnings,
@@ -755,11 +731,7 @@ export function classifyPortableTrustStatus(
   }
   if (isShlPublication(input)) {
     const shl = input;
-    if (shl.trustLayerStatus === "pending_manifest_vp")
-      return "trustcare_pending";
-    // A gateway publication is the artifact under review, not independent
-    // evidence. Manifest object presence and hashes alone never certify it.
-    if (shl.trustLayerStatus === "certified_manifest_vp")
+    if (shl.trustLayerStatus === "pending_hospital_certification")
       return "trustcare_pending";
     return "transport_valid";
   }

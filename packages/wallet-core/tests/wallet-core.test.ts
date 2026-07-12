@@ -302,12 +302,11 @@ describe("wallet-core", () => {
     const publication = createTrustCareShlGatewayPublication({
       context: "cross_border",
       ownerUserId: "demo-patient-complete-001",
-      patientId: 6501001001,
       cards,
       selectedCardIds: cards.map((card) => card.id),
       origin: "https://wallet.example",
       gatewayBaseUrl: "https://portal.example/api/shl",
-      includeTrustCareManifestVp: true,
+      requestHospitalCertification: true,
       policy: {
         expiresAt: "2026-07-10T00:00:00.000Z",
         maxAccessCount: 3,
@@ -332,7 +331,7 @@ describe("wallet-core", () => {
     expect(decodedPayload.flag).toContain("P");
     expect(JSON.stringify(decodedPayload)).not.toContain("****");
     expect(publication.manifest.documentBundle.bindingModel).toBe(
-      "standard_shl_plus_trustcare_manifest_vp",
+      "hospital_certification_pending",
     );
     expect(publication.manifest.documentBundle.documents).toHaveLength(
       cards.length,
@@ -342,20 +341,13 @@ describe("wallet-core", () => {
         (document) => document.fhirResource,
       ),
     ).toBe(true);
-    expect(publication.portalRequest.endpoint).toBe(
-      "POST /api/wallet/shl-packages",
+    expect(JSON.stringify(publication)).not.toContain("patientId");
+    expect(publication.trustLayerStatus).toBe(
+      "pending_hospital_certification",
     );
-    expect(JSON.stringify(publication.portalRequest)).toContain(
-      "s3://trustcare-shl",
+    expect(publication.manifest.trustcare.makerCheckerStatus).toBe(
+      "pending_maker_checker",
     );
-    expect(publication.trustLayerStatus).toBe("certified_manifest_vp");
-    expect(publication.manifest.trustcare.manifestCredentialId).toContain(
-      "urn:trustcare:vc:manifest:",
-    );
-    expect(
-      publication.manifest.trustcare.holderAuthorizationCredentialId,
-    ).toContain("urn:trustcare:vc:holder-authorization:");
-    expect(publication.manifest.trustcare.manifestVpHash).toContain("sha256:");
     expect(
       publication.manifest.files.every(
         (file) => "location" in file || "embedded" in file,
@@ -579,7 +571,7 @@ describe("wallet-core", () => {
         (shl as any).manifest?.trustcare?.trustLayerStatus === "standard_shl"
       ) {
         expect(shl.manifestCredentialId, String(shl.id)).toBeUndefined();
-        expect(shl.manifestVp, String(shl.id)).toBeUndefined();
+        expect(shl.holderPresentationJwt, String(shl.id)).toBeUndefined();
       }
     }
   });
@@ -627,7 +619,7 @@ describe("wallet-core", () => {
       expect(fetched.ok).toBe(true);
       expect(fetched.fileCount).toBe(cards.length);
       expect((fetched.manifest?.trustcare as any)?.trustLayerStatus).toBe(
-        "certified_manifest_vp",
+        "pending_hospital_certification",
       );
       const trust = verifyShlManifestTrust(fetched.manifest);
       expect(trust.status).toBe("trustcare_pending");
@@ -637,16 +629,21 @@ describe("wallet-core", () => {
         new Date(),
         {
           manifestCredentialSignatureVerified: true,
-          holderAuthorizationSignatureVerified: true,
-          manifestVpSignatureVerified: true,
+          holderPresentationSignatureVerified: true,
           issuerTrusted: true,
           credentialStatusValid: true,
+          subjectBindingVerified: true,
+          manifestHashVerified: true,
+          fileHashesVerified: true,
+          purposeVerified: true,
+          audienceVerified: true,
+          expiryVerified: true,
           policyVerified: true,
           verifiedAt: new Date().toISOString(),
         },
       );
-      expect(cryptographicallyVerified.status).toBe("trustcare_certified");
-      expect(cryptographicallyVerified.verified).toBe(true);
+      expect(cryptographicallyVerified.status).toBe("trustcare_pending");
+      expect(cryptographicallyVerified.verified).toBe(false);
     }
   });
 
@@ -819,7 +816,7 @@ describe("wallet-core", () => {
     expect(pharmacy.mode).toBe("PurposeVP");
     expect(referral.mode).toBe("CertifiedSHLManifestPackage");
     expect(fallback.mode).toBe("StandardSHL");
-    expect(fallback.warnings.join(" ")).toContain("TrustCare-certified");
+    expect(fallback.warnings.join(" ")).toContain("Manifest Credential");
   });
 
   it("builds Thai-first purpose and readiness UX models with accessibility labels", () => {

@@ -20,10 +20,10 @@ describe("Portal hospital did:web resolver", () => {
     expect(issuer.issuerDid).toBe(discoveredDid);
   });
 
-  it("rejects the retired issuer authority even when the endpoint serves matching keys", async () => {
+  it("uses a valid issuer returned by discovery without a local namespace gate", async () => {
     const fixture = await issuerFixture(
       "TCC",
-      "did:web:trustcare.network:hospital:tcc",
+      "did:web:issuer-registry.example:authority:tcc",
     );
     await expect(
       resolvePortalHospitalIssuer({
@@ -31,7 +31,9 @@ describe("Portal hospital did:web resolver", () => {
         hospitalCode: "TCC",
         fetchImpl: fixture.fetchImpl,
       }),
-    ).rejects.toThrow("retired authority");
+    ).resolves.toMatchObject({
+      issuerDid: "did:web:issuer-registry.example:authority:tcc",
+    });
   });
 
   it("cross-checks the Portal DID document and JWKS without fallback", async () => {
@@ -125,17 +127,17 @@ describe("Portal hospital did:web resolver", () => {
       }),
     ).resolves.toMatchObject({ verified: true, status: "active" });
 
-    const oldIssuerJwt = await new SignJWT({
+    const wrongIssuerJwt = await new SignJWT({
       credentialSubject: { id: "did:key:zHolder" },
       credentialStatus: { status: "active" },
     })
       .setProtectedHeader({ alg: "ES256", typ: "vc+jwt", kid: fixture.kid })
-      .setIssuer("did:web:trustcare.network:hospital:tcm")
+      .setIssuer("did:web:untrusted-issuer.example:hospital:tcm")
       .setExpirationTime(Math.floor(now.getTime() / 1000) + 600)
       .sign(fixture.privateKey);
     await expect(
       verifyPortalHospitalCredentialJwt({
-        jwt: oldIssuerJwt,
+        jwt: wrongIssuerJwt,
         issuer,
         expectedHolderDid: "did:key:zHolder",
         now,

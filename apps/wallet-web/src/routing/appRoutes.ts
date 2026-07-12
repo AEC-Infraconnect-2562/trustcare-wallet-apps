@@ -54,7 +54,7 @@ export const walletRouteDefinitions: readonly WalletRouteDefinition[] = [
     view: "store",
     title: "คลังพกพา",
     subtitle:
-      "ตรวจดูและส่งออก VC, VP, SHL, Manifest VP, Holder VC และ sync receipt ในเครื่อง",
+      "ตรวจดูและส่งออก VC, holder VP, SHL, Manifest Credential และ sync receipt ในเครื่อง",
     breadcrumb: "คลังข้อมูล",
   },
   {

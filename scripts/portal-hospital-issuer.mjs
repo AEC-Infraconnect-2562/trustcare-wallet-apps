@@ -16,8 +16,7 @@ export async function resolvePortalHospitalVerificationContext(input) {
   );
   if (
     typeof input.controller !== "string" ||
-    !input.controller.startsWith("did:web:") ||
-    input.controller.startsWith("did:web:trustcare.network:")
+    !input.controller.startsWith("did:web:")
   ) {
     return null;
   }

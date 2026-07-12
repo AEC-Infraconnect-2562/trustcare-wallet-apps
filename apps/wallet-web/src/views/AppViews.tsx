@@ -41,6 +41,7 @@ import {
   Wallet,
 } from "lucide-react";
 import * as shareGatewayApi from "@trustcare/api-client/shareGatewayClient";
+import type { WalletExchangeWorkflow } from "@trustcare/api-client/walletExchangeWorkflow";
 import {
   Badge,
   Button,
@@ -60,6 +61,7 @@ import {
   createAutomaticDocumentRequestDraft,
   createDocumentRequestDraft,
   createShareDraftFromPrepare,
+  createSharingEventArtifactId,
   createSharePolicy,
   createShlViewerUrl,
   credentialCompactSummaryRows,
@@ -103,6 +105,8 @@ import {
   type WalletDemoUser,
   type WalletExportResult,
   type WalletImportJob,
+  type WalletDocumentRecordV2,
+  type HolderSigningIdentity,
   type WalletStoredObject,
   type VerifierResult,
 } from "@trustcare/wallet-core";
@@ -761,6 +765,9 @@ export function ShareView({
   verifierResult,
   scanOutcome,
   biometricEnabled,
+  exchangeDocuments,
+  holderIdentity,
+  walletExchangeWorkflow,
   onConfirmBiometric,
   onOpenScanner,
   onVerifyText,
@@ -774,6 +781,9 @@ export function ShareView({
   verifierResult: VerifierResult | null;
   scanOutcome: ScanOutcome | null;
   biometricEnabled: boolean;
+  exchangeDocuments: WalletDocumentRecordV2[];
+  holderIdentity?: HolderSigningIdentity;
+  walletExchangeWorkflow: WalletExchangeWorkflow | null;
   onConfirmBiometric: () => Promise<boolean>;
   onOpenScanner: () => void;
   onVerifyText: (value: string) => void;
@@ -1063,6 +1073,150 @@ export function ShareView({
       });
       return;
     }
+    if (protocolRequiresShl(packageProtocol)) {
+      try {
+        if (
+          !shareGatewayBaseUrl ||
+          !holderIdentity ||
+          !walletExchangeWorkflow
+        ) {
+          throw new Error(
+            "ยังสร้าง SHL ที่ผู้ป่วยลงนามไม่ได้ กรุณาเชื่อมต่อ Wallet Exchange และ Share Gateway ก่อน",
+          );
+        }
+        const selectedCredentialIds = new Set(
+          selectedCards.map((card) => String(card.credentialId)),
+        );
+        const documents = exchangeDocuments.filter((document) =>
+          selectedCredentialIds.has(String(document.credential.credentialId)),
+        );
+        if (!documents.length || documents.length !== selectedCards.length) {
+          throw new Error(
+            "SHL ที่ผู้ป่วยลงนามใช้ได้เฉพาะเอกสาร Portal ที่ตรวจ proof, issuer, status, expiry และ policy ผ่านแล้ว",
+          );
+        }
+        const consentRef = selectedCards.find(
+          (card) => card.cardType === "consent_receipt",
+        )?.credentialId;
+        if (!consentRef) {
+          throw new Error(
+            "ยังไม่มีใบยืนยันความยินยอมสำหรับผูกกับ SHL sharing event นี้",
+          );
+        }
+        const hospitalCode = user.hospitalCode.trim().toUpperCase();
+        if (!(["TCC", "TCP", "TCM"] as const).includes(hospitalCode as never)) {
+          throw new Error(
+            "โรงพยาบาลปลายทางยังไม่อยู่ใน Portal Trust Registry สำหรับขอรับรอง SHL",
+          );
+        }
+        const prepared = await walletExchangeWorkflow.prepareHolderAttestedShl({
+          publicationId: createSharingEventArtifactId("shl"),
+          documents,
+          purpose: readinessContextLabels[purpose].th,
+          recipient,
+          context: purpose,
+          consentRef: String(consentRef),
+          targetHospitalCode: hospitalCode,
+          expiresAt,
+          passcodeRequired: shlPolicy.passcodeRequired,
+          maxAccessCount: shlPolicy.maxAccessCount,
+        });
+        const published = await shareGatewayApi.publishHolderAttestedShl({
+          gatewayBaseUrl: shareGatewayBaseUrl,
+          viewerBaseUrl: currentAppBaseUrl(),
+          prepared,
+          userId: user.id,
+          holderDid: holderIdentity.did,
+          purpose,
+          purposeLabel: readinessContextLabels[purpose].th,
+          recipient,
+        });
+        const certificationAttempt =
+          packageProtocol === "hybrid"
+            ? await walletExchangeWorkflow.requestHospitalShlCertification(
+                prepared,
+              )
+            : null;
+        const certifiedPublication =
+          certificationAttempt?.status === "submitted" &&
+          certificationAttempt.response.status === "approved"
+            ? await walletExchangeWorkflow.finalizeHospitalCertifiedShl({
+                prepared,
+                response: certificationAttempt.response,
+              })
+            : null;
+        const publishedCertification = certifiedPublication
+          ? await shareGatewayApi.publishHospitalCertifiedShl({
+              gatewayBaseUrl: shareGatewayBaseUrl,
+              publication: certifiedPublication,
+              userId: user.id,
+              holderDid: holderIdentity.did,
+              purpose,
+              purposeLabel: readinessContextLabels[purpose].th,
+              recipient,
+            })
+          : null;
+        const exportPayload = JSON.stringify(
+          {
+            type: publishedCertification
+              ? "HospitalCertifiedSHL"
+              : "HolderAttestedSHL",
+            trustMode:
+              publishedCertification?.trustMode ?? published.trustMode,
+            shlPackageId: published.shlPackageId,
+            manifestUrl:
+              publishedCertification?.manifestUrl ?? published.manifestUrl,
+            canonicalShlUrl: published.canonicalShlUrl,
+            holderPresentationId: prepared.holderPresentationId,
+            manifestHash: prepared.manifestHash,
+            fileHashes:
+              prepared.expectedManifestCredentialBinding.fileHashes,
+            certificationStatus:
+              certificationAttempt?.status === "submitted"
+                ? certificationAttempt.response.status
+                : (certificationAttempt?.status ?? "not_requested"),
+            manifestCredentialId:
+              certifiedPublication?.objectLinks.manifestCredentialId,
+          },
+          null,
+          2,
+        );
+        setSharePayload(published.qrPayload);
+        setShareExportPayload(exportPayload);
+        setShareQrDataUrl(
+          await toQrDataUrl(published.qrPayload, { margin: 1, width: 240 }),
+        );
+        setSharePublication({
+          state: "published",
+          message:
+            publishedCertification
+              ? "โรงพยาบาลรับรองแล้ว · ตรวจลายเซ็น สถานะ hashes ผู้ถือ และนโยบายครบ"
+              : packageProtocol === "hybrid"
+              ? "สร้าง SHL ที่ผู้ป่วยลงนามแล้ว · รอการรับรองจากโรงพยาบาล"
+              : "สร้าง Standard SHL ที่ผู้ป่วยลงนามแล้ว",
+          warnings: [
+            ...published.warnings,
+            ...(publishedCertification?.warnings ?? []),
+          ],
+          artifactUrl:
+            publishedCertification?.manifestUrl ?? published.manifestUrl,
+        });
+        return;
+      } catch (error) {
+        setSharePayload("");
+        setShareExportPayload("");
+        setShareQrDataUrl("");
+        setSharePublication({
+          state: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "สร้าง holder-attested SHL ไม่สำเร็จ",
+          warnings: [],
+        });
+        return;
+      }
+    }
     const result = buildSharePackage({
       mode: sharePackageMode,
       context: purpose,
@@ -1187,6 +1341,7 @@ export function ShareView({
     }
   }, [
     biometricEnabled,
+    exchangeDocuments,
     expiryMinutes,
     mode,
     onConfirmBiometric,
@@ -1195,6 +1350,7 @@ export function ShareView({
     purposeReadiness,
     recipient,
     selectedCards,
+    holderIdentity,
     sharePolicy,
     sharePackageMode,
     shareProfile,
@@ -1202,6 +1358,7 @@ export function ShareView({
     shlPolicy,
     timeAnchor,
     user,
+    walletExchangeWorkflow,
   ]);
 
   const createRequest = useCallback(async () => {
@@ -2232,7 +2389,7 @@ export function DocumentFlowControls({
         <div className="document-flow-control-panel">
           <strong>TrustCare Certification</strong>
           <p>
-            ต้องมี Manifest VP/VC, Holder VC และ issuer attestation ที่ verifier
+            ต้องมี holder VP, Manifest Credential และ issuer attestation ที่ verifier
             ตรวจสอบได้ก่อน SHL จึงจะกลายเป็น Certified SHL+Manifest VP
           </p>
         </div>
@@ -2801,7 +2958,7 @@ export function StoreView({
         <div>
           <h2>คลัง VC/VP/SHL</h2>
           <p>
-            เก็บ VC, VP, SHL, Manifest VP, Holder VC, sync receipts, OID4VCI
+            เก็บ VC, holder VP, SHL, Manifest Credential, sync receipts, OID4VCI
             offers และ OID4VP requests ใน wallet เดียว
           </p>
         </div>
@@ -3131,7 +3288,7 @@ export function ShlManifestViewer({
             <h3>
               {trustProfile.kind === "trustcare-pending"
                 ? "รอการยืนยัน TrustCare Manifest"
-                : "SHL มาตรฐานที่ไม่มี Manifest VP/VC"}
+                : "SHL มาตรฐานที่ผู้ถือกุญแจแชร์ได้โดยไม่อ้างการรับรองจากโรงพยาบาล"}
             </h3>
             <p>{trustProfile.description}</p>
           </div>
@@ -3875,7 +4032,7 @@ export function ScanResponseDialog({
               </h3>
               <p>
                 {descriptor?.payloadKind === "shl"
-                  ? "Wallet เก็บ canonical SHL เดิมไว้เพื่อ compatibility และผูก TrustCare Manifest VP/VC สำหรับให้ verifier ตรวจผู้ถือเอกสาร แหล่งที่มา และความครบถ้วนของ manifest."
+                  ? "Wallet เก็บ canonical SHL เดิมไว้และผูก holder VP; หากขอการรับรองจะเพิ่มเฉพาะ Manifest Credential ที่ Portal ลงนามและ Wallet ตรวจผ่าน."
                   : "Payload ถูกบันทึกตาม protocol ที่ตรวจพบ และต้องตรวจสอบความน่าเชื่อถือก่อนนำไปใช้ต่อ."}
               </p>
             </div>
@@ -4075,8 +4232,9 @@ export function trustcareBindingLabel(
     NonNullable<ScanPayloadDescriptor["trustcareBinding"]>,
     string
   > = {
-    pending_manifest_vp: "รอ TrustCare Manifest",
-    certified_manifest_vp: "TrustCare Manifest VP",
+    hospital_certified: "โรงพยาบาลรับรองแล้ว",
+    pending_hospital_certification: "รอการรับรองจากโรงพยาบาล",
+    holder_attested: "ผู้ป่วยยืนยันการแชร์",
     standard_only: "SHL มาตรฐาน",
   };
   return binding ? labels[binding] : "-";
@@ -4112,7 +4270,7 @@ export function describeScannablePayload(value: string): ScanPayloadDescriptor {
       label: shl.label,
       passcodeRequired: shl.passcodeRequired,
       expiresAt: shl.expiresAt,
-      trustcareBinding: "pending_manifest_vp",
+      trustcareBinding: "pending_hospital_certification",
     };
   }
   let transport: ScanPayloadDescriptor["transport"] = "raw_payload";
@@ -4373,23 +4531,77 @@ export function initials(value: string): string {
 }
 
 export function getShlTrustProfile(shl: ShlPackageDetail | null | undefined): {
-  kind: "trustcare-certified" | "trustcare-pending" | "standard-shl";
+  kind:
+    | "trustcare-certified"
+    | "trustcare-pending"
+    | "holder-attested"
+    | "standard-shl";
   label: string;
   tone: "green" | "yellow" | "blue" | "neutral";
   description: string;
 } {
-  const hasManifestBinding = Boolean(
+  const hasCertificationMetadata = Boolean(
     shl?.manifestCredentialId &&
     shl?.presentationId &&
     shl?.documentBundle?.documents?.length,
   );
-  if (hasManifestBinding) {
+  const hasManifestBinding = Boolean(
+    hasCertificationMetadata &&
+    shl?.manifestCredentialJwt &&
+    shl?.holderPresentationJwt,
+  );
+  const verification = shl?.trustVerification;
+  const fullyVerified = Boolean(
+    hasManifestBinding &&
+    verification?.verified &&
+    verification.proof &&
+    verification.issuer &&
+    verification.status &&
+    verification.expiry &&
+    verification.subject &&
+    verification.manifestHash &&
+    verification.fileHashes &&
+    verification.purpose &&
+    verification.audience &&
+    verification.policy,
+  );
+  if (fullyVerified) {
+    return {
+      kind: "trustcare-certified",
+      label: "โรงพยาบาลรับรองแล้ว",
+      tone: "green",
+      description:
+        "ตรวจลายเซ็น ผู้ออก สถานะ อายุ เอกสาร ผู้ถือ วัตถุประสงค์ ผู้รับ และ hash binding ครบแล้ว",
+    };
+  }
+  if (hasCertificationMetadata) {
     return {
       kind: "trustcare-pending",
-      label: "รอ TrustCare Manifest",
+      label: "รอการรับรองจากโรงพยาบาล",
       tone: "yellow",
       description:
-        "พบ Manifest VP/VC แต่ยังต้องตรวจลายเซ็น ผู้ออก สถานะ ผู้ถือเอกสาร และนโยบายให้ครบก่อนใช้เป็น TrustCare verified package",
+        "ยังตรวจลายเซ็น ผู้ออก สถานะ ผู้ถือเอกสาร hash และนโยบายไม่ครบ จึงยังไม่เป็นเอกสารที่โรงพยาบาลรับรอง",
+    };
+  }
+  if (
+    shl?.trustcareCertification?.status === "pending_maker_checker" ||
+    shl?.trustcareCertification?.status === "rejected"
+  ) {
+    return {
+      kind: "trustcare-pending",
+      label: "รอการรับรองจากโรงพยาบาล",
+      tone: "yellow",
+      description:
+        "ยังไม่มี Manifest Credential ที่ลงนามและตรวจสอบผ่าน จึงใช้ได้เฉพาะ SHL ที่ผู้ป่วยยืนยันเท่านั้น",
+    };
+  }
+  if (shl?.holderPresentationJwt) {
+    return {
+      kind: "holder-attested",
+      label: "ผู้ป่วยยืนยันการแชร์",
+      tone: "blue",
+      description:
+        "เป็น Standard SHL ที่ผูก manifest, file hashes, ผู้รับ วัตถุประสงค์ ความยินยอม และอายุไว้ใน VP ที่ผู้ถือกุญแจลงนาม",
     };
   }
   return {
@@ -4397,7 +4609,7 @@ export function getShlTrustProfile(shl: ShlPackageDetail | null | undefined): {
     label: "Standard SHL",
     tone: "blue",
     description:
-      "SHL มาตรฐานจากภายนอก อ่านและแชร์ต่อได้โดยไม่ต้องมี Manifest VP/VC",
+      "SHL มาตรฐานจากภายนอกอ่านและแชร์ต่อได้โดยไม่อ้างว่าโรงพยาบาลรับรอง",
   };
 }
 

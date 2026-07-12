@@ -183,8 +183,6 @@ function compactShlManifest(
       makerCheckerStatus: trustcare.makerCheckerStatus,
       manifestCredentialId: trustcare.manifestCredentialId,
       holderPresentationId: trustcare.holderPresentationId,
-      holderAuthorizationCredentialId:
-        trustcare.holderAuthorizationCredentialId,
       manifestVpUrl: trustcare.manifestVpUrl,
       manifestVpHash: trustcare.manifestVpHash,
       contractHubVersion: trustcare.contractHubVersion,
@@ -226,8 +224,12 @@ function expandDemoManifestReference(
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-  const trustLayerStatus =
+  const requestedTrustLayerStatus =
     parsed.searchParams.get("tc_status") ?? "standard_shl";
+  const trustLayerStatus =
+    requestedTrustLayerStatus === "pending_hospital_certification"
+      ? "pending_hospital_certification"
+      : "standard_shl";
   const context = parsed.searchParams.get("tc_context") ?? "opd_visit";
   const label = parsed.searchParams.get("tc_label") ?? id;
   const expiresAt = parsed.searchParams.get("tc_exp") || undefined;
@@ -264,97 +266,6 @@ function expandDemoManifestReference(
       maxAccessCount: 5,
     },
   }));
-  const manifestHash = hashJson({ files, documents });
-  const holderDid = `did:key:demo-holder-${stableHash(id).slice(0, 12)}`;
-  const accessPolicy = {
-    expiresAt,
-    recipient: "TrustCare static demo verifier",
-    purpose: label,
-    maxAccessCount: 5,
-    passcodeRequired: false,
-  };
-  const accessPolicyHash = hashJson(accessPolicy);
-  const manifestCredential =
-    trustLayerStatus === "certified_manifest_vp"
-      ? {
-          "@context": [
-            "https://www.w3.org/ns/credentials/v2",
-            "https://trustcare.network/contexts/shl-manifest/v1",
-          ],
-          id: `urn:trustcare:vc:manifest:${id}`,
-          type: ["VerifiableCredential", "TrustCareManifestCredential"],
-          issuer: "did:web:trustcare.network:contract-hub",
-          validFrom: new Date(0).toISOString(),
-          validUntil: expiresAt,
-          credentialSubject: {
-            id: holderDid,
-            shlPublicationId: id,
-            manifestUrl: parsed.toString(),
-            manifestHash,
-            fileHashes: files.map((file) => file.hash),
-            documentReferences: documents.map(
-              (document) => document.objectLinks.fhirDocumentReference,
-            ),
-            accessPolicy,
-            accessPolicyHash,
-            documentCount: documents.length,
-            context,
-            purpose: label,
-          },
-        }
-      : undefined;
-  const holderAuthorizationCredential =
-    trustLayerStatus === "certified_manifest_vp"
-      ? {
-          "@context": [
-            "https://www.w3.org/ns/credentials/v2",
-            "https://trustcare.network/contexts/holder-authorization/v1",
-          ],
-          id: `urn:trustcare:vc:holder-authorization:${id}`,
-          type: ["VerifiableCredential", "HolderAuthorizationCredential"],
-          issuer: holderDid,
-          validFrom: new Date(0).toISOString(),
-          validUntil: expiresAt,
-          credentialSubject: {
-            id: holderDid,
-            authorizedRecipient: "TrustCare static demo verifier",
-            purpose: label,
-            shlPublicationId: id,
-            authorizedManifestCredentialId: `urn:trustcare:vc:manifest:${id}`,
-            selectedDocumentIds: documents.map((document) => document.id),
-            consentReceiptId: null,
-            accessPolicyHash,
-            minimumNecessary: true,
-            accessPolicyConfirmed: true,
-          },
-        }
-      : undefined;
-  const manifestVp =
-    trustLayerStatus === "certified_manifest_vp"
-      ? {
-          "@context": [
-            "https://www.w3.org/ns/credentials/v2",
-            "https://trustcare.network/contexts/shl-manifest-presentation/v1",
-          ],
-          id: `urn:trustcare:vp:manifest:${id}`,
-          type: ["VerifiablePresentation", "TrustCareManifestVP"],
-          holder: holderDid,
-          verifiableCredential: [
-            manifestCredential,
-            holderAuthorizationCredential,
-          ],
-          trustcare: {
-            certification: "certified_manifest_vp",
-            makerCheckerStatus: "approved",
-            shlPublicationId: id,
-            manifestUrl: parsed.toString(),
-            documentIds: documents.map((document) => document.id),
-            fileHashes: files.map((file) => file.hash),
-            accessPolicyHash,
-          },
-        }
-      : undefined;
-  const manifestVpHash = manifestVp ? hashJson(manifestVp) : undefined;
   return removeUndefined({
     resourceType: "TrustCareShlManifest",
     manifestVersion: 1,
@@ -370,13 +281,10 @@ function expandDemoManifestReference(
       manifestVersion: 1,
       source: parsed.origin,
       bindingModel:
-        trustLayerStatus === "certified_manifest_vp"
-          ? "standard_shl_plus_trustcare_manifest_vp"
+        trustLayerStatus === "pending_hospital_certification"
+          ? "hospital_certification_pending"
           : "standard_shl",
-      standards:
-        trustLayerStatus === "certified_manifest_vp"
-          ? ["SMART Health Links", "FHIR DocumentReference", "W3C VC/VP"]
-          : ["SMART Health Links", "FHIR DocumentReference"],
+      standards: ["SMART Health Links", "FHIR DocumentReference"],
       status: trustLayerStatus,
       documents,
       files,
@@ -390,25 +298,9 @@ function expandDemoManifestReference(
     trustcare: removeUndefined({
       trustLayerStatus,
       makerCheckerStatus:
-        trustLayerStatus === "certified_manifest_vp"
-          ? "approved"
+        trustLayerStatus === "pending_hospital_certification"
+          ? "pending_maker_checker"
           : "not_required",
-      manifestCredentialId:
-        trustLayerStatus === "certified_manifest_vp"
-          ? `urn:trustcare:vc:manifest:${id}`
-          : undefined,
-      holderPresentationId:
-        trustLayerStatus === "certified_manifest_vp"
-          ? `urn:trustcare:vp:manifest:${id}`
-          : undefined,
-      holderAuthorizationCredentialId:
-        trustLayerStatus === "certified_manifest_vp"
-          ? `urn:trustcare:vc:holder-authorization:${id}`
-          : undefined,
-      manifestCredential,
-      holderAuthorizationCredential,
-      manifestVp,
-      manifestVpHash,
       contractHubVersion: "2026.07.prepare-service.v1",
     }),
   });

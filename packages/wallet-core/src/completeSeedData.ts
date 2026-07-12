@@ -6,6 +6,7 @@ import type {
 } from "./models";
 import {
   NON_AUTHORITATIVE_DEMO_ISSUER_DIDS,
+  NON_AUTHORITATIVE_DEMO_PAYER_ISSUER_DIDS,
   trustCarePortalPersonImages,
 } from "./demoSeedAssets";
 import { createTrustCareShlGatewayPublication } from "./shlGateway";
@@ -497,7 +498,7 @@ const payerIssuer = {
   code: "GCI",
   nameTh: payer.nameTh,
   nameEn: payer.nameEn,
-  issuerDid: "did:web:trustcare.network:payer:global-care-demo",
+  issuerDid: NON_AUTHORITATIVE_DEMO_PAYER_ISSUER_DIDS.globalCare,
   role: "payer",
   licenseNo: "INS-DEMO-2568-009",
   address: "1 Insurance Demo Plaza, Bangkok 10330",
@@ -1324,13 +1325,12 @@ function createCompleteWalletShlPackages(): ShlPackageDetail[] {
   const publication = createTrustCareShlGatewayPublication({
     context: "opd_visit",
     ownerUserId: completePatient.ownerUserId,
-    patientId: completePatient.patientId,
     selectedCardIds: shlCards.map((card) => card.id),
     cards: shlCards,
     receiver: "TrustCare Phuket International Hospital",
     purpose: "opd_visit",
     origin: "https://aec-infraconnect-2562.github.io/trustcare-wallet-apps",
-    includeTrustCareManifestVp: true,
+    requestHospitalCertification: true,
     policy: {
       expiresAt: "2030-07-15T16:59:59.000Z",
       passcodeRequired: false,
@@ -1347,23 +1347,9 @@ function createCompleteWalletShlPackages(): ShlPackageDetail[] {
       purpose: "opd_visit",
       context: "opd_visit",
       status: "active",
-      manifestCredentialId: publication.manifest.trustcare.manifestCredentialId,
-      presentationId: publication.manifest.trustcare.holderPresentationId,
-      manifestCredential: publication.manifest.trustcare.manifestCredential,
-      holderAuthorizationCredential:
-        publication.manifest.trustcare.holderAuthorizationCredential,
-      manifestVp: publication.manifest.trustcare.manifestVp,
-      manifestVpUrl: publication.manifest.trustcare.manifestVpUrl,
-      manifestVpHash: publication.manifest.trustcare.manifestVpHash,
       trustcareCertification: {
-        status: "maker_checker_approved",
-        ownerConfirmed: true,
-        makerId: "maker-tcc-001",
-        makerName: "TrustCare Central Hospital Issuer Attestor",
-        makerApprovedAt: "2026-07-01T04:44:00.000Z",
-        checkerId: "checker-tcc-001",
-        checkerName: "TrustCare Central Hospital Trust Verifier",
-        checkerApprovedAt: "2026-07-01T04:48:00.000Z",
+        status: "pending_maker_checker",
+        ownerConfirmed: false,
         networkHospitalDid: hospital.issuerDid,
         consentReceiptId: "urn:uuid:TCW-COMPLETE-0003-consent_receipt",
         policyVersion: "trustcare-shl-governance-2026.07",
@@ -1374,7 +1360,6 @@ function createCompleteWalletShlPackages(): ShlPackageDetail[] {
         {
           version: 1,
           createdAt: "2026-07-01T04:50:00.000Z",
-          manifestHash: publication.manifest.trustcare.manifestVpHash,
         },
       ],
       accessLogs: [

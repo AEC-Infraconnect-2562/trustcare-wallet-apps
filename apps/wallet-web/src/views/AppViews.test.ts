@@ -126,6 +126,41 @@ describe("TrustCare Manifest wallet copy", () => {
     ).toBe("yellow");
   });
 
+  it("shows hospital certification only after every verification signal passes", () => {
+    const signed = {
+      manifestCredentialId: "manifest-vc-1",
+      presentationId: "holder-vp-1",
+      manifestCredentialJwt: "header.payload.signature",
+      holderPresentationJwt: "header.payload.signature",
+      documentBundle: { documents: [{ id: "doc-1" }] },
+      trustVerification: {
+        verified: true,
+        checkedAt: "2026-07-10T00:02:00.000Z",
+        proof: true,
+        issuer: true,
+        status: true,
+        expiry: true,
+        subject: true,
+        manifestHash: true,
+        fileHashes: true,
+        purpose: true,
+        audience: true,
+        policy: true,
+      },
+    } as any;
+
+    expect(getShlTrustProfile(signed)).toMatchObject({
+      kind: "trustcare-certified",
+      tone: "green",
+    });
+    expect(
+      getShlTrustProfile({
+        ...signed,
+        trustVerification: { ...signed.trustVerification, status: false },
+      }).tone,
+    ).toBe("yellow");
+  });
+
   it("does not expose portal approval workflow labels in wallet trust states", () => {
     const pendingProfile = getShlTrustProfile({
       manifestCredentialId: "manifest-vc-1",
@@ -135,7 +170,7 @@ describe("TrustCare Manifest wallet copy", () => {
     } as any);
 
     const visibleCopy = [
-      trustcareBindingLabel("pending_manifest_vp"),
+      trustcareBindingLabel("pending_hospital_certification"),
       trustcareCertificationStatusLabel("pending_maker_checker"),
       pendingProfile.label,
       pendingProfile.description,
@@ -146,6 +181,6 @@ describe("TrustCare Manifest wallet copy", () => {
     );
 
     expect(visibleCopy).not.toMatch(forbiddenPortalRoleCopy);
-    expect(visibleCopy).toContain("TrustCare Manifest");
+    expect(visibleCopy).toContain("รอการรับรองจากโรงพยาบาล");
   });
 });

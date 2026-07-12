@@ -30,8 +30,37 @@ describe("Wallet Exchange live contract loader", () => {
       "credentialSubject.humanDocument.renderData",
     );
     expect(result.renderContract.payload.referenceCommit).toBe(
-      "41175474e8c0214587a7c8dca1209b49bd2f43c8",
+      "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
     );
+  });
+
+  it("treats renderer Git commit as provenance rather than a compatibility gate", async () => {
+    const fixture = await contractFixture();
+    const url = `${origin}/api/public/wallet-contracts/render-contract`;
+    const payload = JSON.parse(
+      await fixture.responses.get(url)!.clone().text(),
+    ) as Record<string, unknown>;
+    fixture.responses.set(
+      url,
+      await integrityResponse({
+        ...payload,
+        referenceCommit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      }),
+    );
+
+    await expect(
+      loadWalletExchangeContracts({
+        portalBaseUrl: origin,
+        runtimeEnvironment: "sandbox",
+        fetchImpl: fixture.fetchImpl,
+      }),
+    ).resolves.toMatchObject({
+      renderContract: {
+        payload: {
+          referenceCommit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        },
+      },
+    });
   });
 
   it("fails closed when the body digest and ETag do not match", async () => {
@@ -161,7 +190,7 @@ async function contractFixture(
     },
     renderer: {
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      referenceCommit: "41175474e8c0214587a7c8dca1209b49bd2f43c8",
+      referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
       modelPackage: "@trustcare/wallet-core",
       webPackage: "@trustcare/ui-web",
       rule: "Render human documents from credentialSubject.humanDocument.renderData.",
@@ -210,7 +239,7 @@ async function contractFixture(
     renderVersion: TRUSTCARE_RENDER_VERSION,
     authority: "wallet",
     implementationRepository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-    referenceCommit: "41175474e8c0214587a7c8dca1209b49bd2f43c8",
+    referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
     modelPackage: "@trustcare/wallet-core",
     webPackage: "@trustcare/ui-web",
     portalUsage: "shared_wallet_renderer_only",

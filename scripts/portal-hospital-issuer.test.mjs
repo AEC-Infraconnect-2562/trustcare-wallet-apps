@@ -53,20 +53,29 @@ test("resolves only the live Portal hospital DID and active JWKS key", async () 
   ]);
 });
 
-test("rejects the retired hospital DID authority without fetching", async () => {
+test("rejects a controller not returned by Portal discovery", async () => {
   let calls = 0;
   const result = await resolvePortalHospitalVerificationContext({
     portalBaseUrl: portalOrigin,
-    controller: "did:web:trustcare.network:hospital:tcc",
-    kid: "did:web:trustcare.network:hospital:tcc#key-1",
-    fetchImpl: async () => {
+    controller: "did:web:unregistered-issuer.example:hospital:tcc",
+    kid: "did:web:unregistered-issuer.example:hospital:tcc#key-1",
+    fetchImpl: async (url) => {
       calls += 1;
-      throw new Error("must not fetch");
+      return jsonResponse(
+        String(url).endsWith("did.json")
+          ? {
+              id: issuerDid,
+              verificationMethod: [],
+              assertionMethod: [],
+              trustcare: { hospitalCode: "TCC", syntheticTestData: false },
+            }
+          : { issuer: issuerDid, hospitalCode: "TCC", keys: [] },
+      );
     },
   });
 
   assert.equal(result, null);
-  assert.equal(calls, 0);
+  assert.equal(calls, 6);
 });
 
 test("fails closed when Portal reports synthetic issuer data", async () => {

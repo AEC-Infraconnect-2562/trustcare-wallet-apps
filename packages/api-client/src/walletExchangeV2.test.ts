@@ -8,6 +8,7 @@ import {
 import {
   generateHolderIdentity,
   type GeneratedHolderIdentity,
+  type ShlCertificationRequest,
 } from "@trustcare/wallet-core";
 import { compactVerify, decodeProtectedHeader } from "jose";
 import { describe, expect, it, vi } from "vitest";
@@ -205,6 +206,86 @@ describe("Wallet Exchange v2 client", () => {
     expect(proof.claims.jti).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
+  });
+
+  it("sends the holder-signed SHL certification request through DPoP without patientId", async () => {
+    const manifestCredentialJwt =
+      "eyJhbGciOiJFUzI1NiJ9.eyJ0eXBlIjpbIlZlcmlmaWFibGVDcmVkZW50aWFsIl19.c2ln";
+    const response = {
+      schema: "trustcare.wallet.shl-certification.v1" as const,
+      certificationRequestId: "certification-001",
+      requestId: "urn:uuid:request-001",
+      shlPackageId: "shl-package-001",
+      status: "approved" as const,
+      statusUrl: `${PORTAL_ORIGIN}/api/wallet/v2/shl-certifications/certification-001`,
+      createdAt: FIXED_NOW.toISOString(),
+      updatedAt: FIXED_NOW.toISOString(),
+      manifestCredentialContentType: "application/vc+jwt" as const,
+      manifestCredentialJwt,
+      correlationId: "corr-shl-001",
+      idempotent: false,
+    };
+    const harness = await createHarness({
+      protectedHandler: async () => jsonResponse(response),
+    });
+    const request = {
+      schema: "trustcare.shl-certification-request.v1",
+      requestId: "urn:uuid:request-001",
+      targetHospitalCode: "TCC",
+      shlPackageId: "shl-package-001",
+      holderDid: harness.identity.did,
+      holderPresentationId: "urn:uuid:holder-vp-001",
+      holderPresentationJwt: VP_JWT,
+      manifestUrl: "https://share.example/manifests/shl-package-001.json",
+      manifestHash: `sha256:${"b".repeat(64)}`,
+      fileHashes: [
+        {
+          fileId: "file-001",
+          documentId: "document-001",
+          plaintextSha256: `sha256:${"c".repeat(64)}`,
+          jweSha256: `sha256:${"d".repeat(64)}`,
+        },
+      ],
+      accessPolicy: {
+        purpose: "OPD registration",
+        recipient: "TrustCare TCC",
+        audience: `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,
+        context: "opd_visit",
+        consentRef: "consent:001",
+        issuedAt: FIXED_NOW.toISOString(),
+        expiresAt: new Date(FIXED_NOW.getTime() + 600_000).toISOString(),
+        passcodeRequired: false,
+        maxAccessCount: 3,
+      },
+      accessPolicyHash: `sha256:${"e".repeat(64)}`,
+      sourceCredentials: [
+        {
+          documentId: "document-001",
+          credentialId: "credential-001",
+          issuerDid: "did:web:issuer.example:hospital:tcc",
+          plaintextSha256: `sha256:${"c".repeat(64)}`,
+        },
+      ],
+    } satisfies ShlCertificationRequest;
+
+    await expect(
+      harness.client.requestShlCertification(request, "idempotency-shl-001"),
+    ).resolves.toEqual(response);
+
+    const protectedRequest = harness.protectedRequests[0]!;
+    expect(protectedRequest.url).toBe(
+      `${PORTAL_ORIGIN}/api/wallet/v2/shl-certifications`,
+    );
+    expect(protectedRequest.headers.get("idempotency-key")).toBe(
+      "idempotency-shl-001",
+    );
+    expect(protectedRequest.body).not.toContain("patientId");
+    const proof = await verifyDpop(protectedRequest, harness.identity);
+    expect(proof.claims).toMatchObject({
+      htm: "POST",
+      htu: `${PORTAL_ORIGIN}/api/wallet/v2/shl-certifications`,
+      ath: await calculateDpopAccessTokenHash("wxt_access_token_1"),
+    });
   });
 
   it("keeps ack body and idempotency stable across a 503 retry but creates fresh DPoP", async () => {
@@ -695,6 +776,7 @@ function contractSet(): WalletExchangeContractSet {
       credentialSyncAck: `${PORTAL_ORIGIN}/api/wallet/v2/credentials/sync/ack`,
       credentialRequests: `${PORTAL_ORIGIN}/api/wallet/v2/credential-requests`,
       documentSubmissions: `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,
+      shlCertifications: `${PORTAL_ORIGIN}/api/wallet/v2/shl-certifications`,
       publicContracts: `${PORTAL_ORIGIN}/api/public/wallet-contracts/manifest`,
       shareGateway: `${PORTAL_ORIGIN}/api/share-gateway`,
       issuerJwks: `${PORTAL_ORIGIN}/.well-known/jwks.json`,

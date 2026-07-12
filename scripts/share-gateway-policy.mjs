@@ -11,7 +11,6 @@ export const SUPPORTED_SHARE_ARTIFACT_KINDS = new Set([
   "certified_shl_manifest",
   "manifest_vp",
   "manifest_credential",
-  "holder_authorization",
   "shl_file",
 ]);
 
