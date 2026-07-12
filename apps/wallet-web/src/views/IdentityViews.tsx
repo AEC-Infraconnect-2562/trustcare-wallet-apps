@@ -1,15 +1,11 @@
 import { useMemo } from "react";
-import {
-  Camera,
-  LogOut,
-  QrCode,
-  ShieldCheck,
-  UserCheck,
-} from "lucide-react";
+import { Camera, LogOut, QrCode, ShieldCheck, UserCheck } from "lucide-react";
 import { Badge, Button, Surface } from "@trustcare/ui-web";
 import {
   getDemoUser,
   getDemoWalletCards,
+  readinessContextLabels,
+  walletTestUserProfile,
   type WalletCard,
   type WalletDemoUser,
 } from "@trustcare/wallet-core";
@@ -57,8 +53,8 @@ export function LoginView({
           <span className="eyebrow">เข้าสู่ระบบทดสอบช่วงพัฒนา</span>
           <h1>เลือกผู้ใช้ทดสอบ</h1>
           <p>
-            ช่วงพัฒนายังไม่ต้องใส่ password แต่ Wallet จะแยก scope เอกสาร
-            ประวัติ VP, SHL และ Store ตามผู้ใช้ที่ login จริง
+            กดผู้ใช้เพื่อเข้าสู่ระบบได้ทันทีโดยไม่ต้องกรอก username/password
+            Wallet จะแยกเอกสาร ประวัติ VP/SHL และ state ของแต่ละ test session
           </p>
           {pendingScan && (
             <Badge tone="blue">
@@ -84,7 +80,10 @@ export function LoginView({
                   ? "login-user-card active"
                   : "login-user-card"
               }
-              onClick={() => onSelect(user.id)}
+              onClick={() => {
+                onSelect(user.id);
+                onLogin(user.id);
+              }}
             >
               <UserAvatarImage
                 user={user}
@@ -96,7 +95,14 @@ export function LoginView({
                   {user.role === "staff" ? "เจ้าหน้าที่" : "ผู้ป่วย"} ·{" "}
                   {user.sourceLabel}
                 </small>
-                <em>{user.id}</em>
+                <em>
+                  {walletTestUserProfile(user.id)
+                    ?.useCases.map(
+                      (context) =>
+                        readinessContextLabels[context]?.th ?? context,
+                    )
+                    .join(" · ") ?? user.id}
+                </em>
               </span>
             </button>
           ))}

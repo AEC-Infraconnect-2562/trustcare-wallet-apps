@@ -48,7 +48,8 @@ import {
   walletObjectsFromHistory,
   walletObjectsFromShl,
   walletCardForDocumentRendering,
-  walletDemoUsers,
+  walletTestLoginUsers,
+  walletTestUserProfile,
   type ContractHubCatalog,
   type DocumentRequestDraft,
   type PresentationHistoryItem,
@@ -87,6 +88,7 @@ import {
 } from "./components/shell/AppNavigation";
 import { useOfflineWallet } from "./hooks/useOfflineWallet";
 import { useScanHistory } from "./hooks/useScanHistory";
+import { useSandboxTestSession } from "./hooks/useSandboxTestSession";
 import { useStoredExtras } from "./hooks/useStoredExtras";
 import { useWebAuthn } from "./hooks/useWebAuthn";
 import { useWalletExchange } from "./hooks/useWalletExchange";
@@ -134,10 +136,7 @@ import {
   readScanPayloadFromLocation,
 } from "./views/AppViews";
 import { LoginView, UserScopePanel } from "./views/IdentityViews";
-import {
-  UserAvatarImage,
-  shortDid,
-} from "./views/identityPresentation";
+import { UserAvatarImage, shortDid } from "./views/identityPresentation";
 import {
   documentTabBreadcrumbLabels,
   emptyPortalInteropFixtures,
@@ -238,7 +237,7 @@ export default function App() {
   const [portalSyncMessage, setPortalSyncMessage] = useState("");
   const [portalSyncBusy, setPortalSyncBusy] = useState(false);
   const [storeFilter, setStoreFilter] = useState<StoreFilter>("all");
-  const offlineWallet = useOfflineWallet(env.demoMode);
+  const offlineWallet = useOfflineWallet(env.demoMode, selectedUserId);
   const webAuthn = useWebAuthn();
   const { scanHistory, setScanHistoryByUser } =
     useScanHistory<ScanOutcome>(selectedUserId);
@@ -251,6 +250,10 @@ export default function App() {
 
   const activeUser = useMemo(
     () => getDemoUser(selectedUserId),
+    [selectedUserId],
+  );
+  const activeTestProfile = useMemo(
+    () => walletTestUserProfile(selectedUserId),
     [selectedUserId],
   );
   const walletExchange = useWalletExchange({
@@ -660,6 +663,47 @@ export default function App() {
       ),
     [allCards, history, scanHistoryObjects, shlPackages, storedExtras],
   );
+  const sandboxSessionSnapshot = useMemo(
+    () => ({
+      route: routeMatch.route.id,
+      documentCount: allCards.length,
+      storedObjectCount: storedObjects.length,
+      presentationCount: history.length,
+      shlCount: shlPackages.length,
+      credentialRequestCount: documentRequests.length,
+      pendingSubmissionCount: walletExchange.pendingSubmissions.length,
+      walletExchangeState: walletExchange.initializing
+        ? ("initializing" as const)
+        : walletExchange.syncing
+          ? ("syncing" as const)
+          : walletExchange.error
+            ? ("error" as const)
+            : walletExchange.workflow
+              ? ("ready" as const)
+              : ("not_started" as const),
+      lastError: walletExchange.error || undefined,
+    }),
+    [
+      allCards.length,
+      documentRequests.length,
+      history.length,
+      routeMatch.route.id,
+      shlPackages.length,
+      storedObjects.length,
+      walletExchange.error,
+      walletExchange.initializing,
+      walletExchange.pendingSubmissions.length,
+      walletExchange.syncing,
+      walletExchange.workflow,
+    ],
+  );
+  const sandboxTestSession = useSandboxTestSession({
+    enabled: env.runtimeEnvironment === "demo",
+    authenticated: isAuthenticated,
+    userId: selectedUserId,
+    profile: activeTestProfile,
+    snapshot: sandboxSessionSnapshot,
+  });
 
   const filteredObjects = useMemo(() => {
     if (storeFilter === "all") return storedObjects;
@@ -1192,6 +1236,10 @@ export default function App() {
     (userId: string) => {
       writeStringStorage(walletSessionKey, userId);
       setSelectedUserId(userId);
+      const testProfile = walletTestUserProfile(userId);
+      if (testProfile?.useCases[0]) {
+        setReadinessContext(testProfile.useCases[0]);
+      }
       setIsAuthenticated(true);
       navigateTo(pendingScanPayload ? "share" : "home", { replace: true });
     },
@@ -1290,7 +1338,7 @@ export default function App() {
           </div>
         )}
         <LoginView
-          users={walletDemoUsers}
+          users={walletTestLoginUsers}
           pendingScan={Boolean(pendingScanPayload)}
           selectedUserId={selectedUserId}
           onSelect={setSelectedUserId}
@@ -1628,6 +1676,7 @@ export default function App() {
             onOpenScanner={() => setScannerOpen(true)}
             onVerifyText={(value) => void verifyScan(value)}
             onExport={exportResult}
+            onPersistShare={addStoredObject}
           />
         )}
         {routeView === "prepare" && (
@@ -1686,6 +1735,9 @@ export default function App() {
               developerMode={developerMode}
               setDeveloperMode={setDeveloperMode}
               user={activeUser}
+              testProfile={activeTestProfile}
+              testSession={sandboxTestSession.activeSession}
+              testSessions={sandboxTestSession.sessions}
             />
           </Suspense>
         )}

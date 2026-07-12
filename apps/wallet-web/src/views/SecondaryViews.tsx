@@ -10,7 +10,9 @@ import { Badge, Button, Surface } from "@trustcare/ui-web";
 import type {
   PresentationHistoryItem,
   WalletDemoUser,
+  WalletTestUserProfile,
 } from "@trustcare/wallet-core";
+import type { SandboxTestSession } from "../sandbox/sandboxTestSessionStore";
 import type { useWebAuthn } from "../hooks/useWebAuthn";
 import type { ScanOutcome } from "./appViewModel";
 import { contextLabel, statusLabel } from "./appViewLabels";
@@ -28,7 +30,9 @@ export function HistoryView({
         <Surface className="history-row scan-history-row" key={item.id}>
           <QrCode size={22} />
           <span>
-            <strong>{item.verifier.protocol ?? item.importResult.format}</strong>
+            <strong>
+              {item.verifier.protocol ?? item.importResult.format}
+            </strong>
             <small>
               {new Date(item.scannedAt).toLocaleString("th-TH")} · บริบท:{" "}
               {contextLabel(item.context)}
@@ -68,6 +72,9 @@ export function SettingsView({
   developerMode,
   setDeveloperMode,
   user,
+  testProfile,
+  testSession,
+  testSessions,
 }: {
   webAuthn: ReturnType<typeof useWebAuthn>;
   theme: "light" | "dark";
@@ -75,6 +82,9 @@ export function SettingsView({
   developerMode: boolean;
   setDeveloperMode: (enabled: boolean) => void;
   user: WalletDemoUser;
+  testProfile?: WalletTestUserProfile;
+  testSession?: SandboxTestSession | null;
+  testSessions?: SandboxTestSession[];
 }) {
   return (
     <div className="settings-grid">
@@ -86,6 +96,40 @@ export function SettingsView({
           และการนำเข้า-ส่งออก VC/VP ใน Expo app
         </p>
       </Surface>
+      {testProfile && testSession ? (
+        <Surface>
+          <HistoryIcon size={28} />
+          <h3>สถานะ Test Session</h3>
+          <p>
+            Session นี้เก็บเฉพาะ metadata และ state ของการทดสอบ ไม่เก็บ token,
+            password หรือ private key
+          </p>
+          <dl className="test-session-details">
+            <dt>Session ID</dt>
+            <dd>{testSession.id}</dd>
+            <dt>Portal fixture</dt>
+            <dd>{testProfile.portalFixtureOpenId ?? "external wallet"}</dd>
+            <dt>Role scope</dt>
+            <dd>
+              {testProfile.portalRole} · {testProfile.dataScope}
+            </dd>
+            <dt>Wallet Exchange</dt>
+            <dd>{testSession.snapshot.walletExchangeState}</dd>
+            <dt>เอกสาร / Store</dt>
+            <dd>
+              {testSession.snapshot.documentCount} /{" "}
+              {testSession.snapshot.storedObjectCount}
+            </dd>
+            <dt>Request / Pending submission</dt>
+            <dd>
+              {testSession.snapshot.credentialRequestCount} /{" "}
+              {testSession.snapshot.pendingSubmissionCount}
+            </dd>
+            <dt>Sessions ที่ติดตาม</dt>
+            <dd>{testSessions?.length ?? 1}</dd>
+          </dl>
+        </Surface>
+      ) : null}
       <Surface>
         <Shield size={28} />
         <h3>ยืนยันตัวตนด้วย Biometric</h3>

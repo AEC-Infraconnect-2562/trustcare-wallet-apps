@@ -50,3 +50,4 @@ export * from "./verificationEvidence";
 export * from "./walletExchangeState";
 export * from "./holderIdentity";
 export * from "./certifiedShl";
+export * from "./testUserProfiles";

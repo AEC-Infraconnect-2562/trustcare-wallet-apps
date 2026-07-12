@@ -1,10 +1,4 @@
-﻿import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -156,14 +150,8 @@ import {
   type TimeAnchor,
   type View,
 } from "./appViewModel";
-import {
-  categoryLabel,
-  contextLabel,
-  statusLabel,
-} from "./appViewLabels";
-import {
-  CredentialSubjectAvatar,
-} from "./identityPresentation";
+import { categoryLabel, contextLabel, statusLabel } from "./appViewLabels";
+import { CredentialSubjectAvatar } from "./identityPresentation";
 
 export { NavButton } from "../components/shell/AppNavigation";
 export {
@@ -772,6 +760,7 @@ export function ShareView({
   onOpenScanner,
   onVerifyText,
   onExport,
+  onPersistShare,
 }: {
   cards: WalletCard[];
   user: WalletDemoUser;
@@ -788,6 +777,7 @@ export function ShareView({
   onOpenScanner: () => void;
   onVerifyText: (value: string) => void;
   onExport: (result: WalletExportResult) => void;
+  onPersistShare: (object: WalletStoredObject) => void;
 }) {
   const [disclosureIntent, setDisclosureIntent] =
     useState<ShareDisclosureIntent>("minimum_necessary");
@@ -1161,16 +1151,14 @@ export function ShareView({
             type: publishedCertification
               ? "HospitalCertifiedSHL"
               : "HolderAttestedSHL",
-            trustMode:
-              publishedCertification?.trustMode ?? published.trustMode,
+            trustMode: publishedCertification?.trustMode ?? published.trustMode,
             shlPackageId: published.shlPackageId,
             manifestUrl:
               publishedCertification?.manifestUrl ?? published.manifestUrl,
             canonicalShlUrl: published.canonicalShlUrl,
             holderPresentationId: prepared.holderPresentationId,
             manifestHash: prepared.manifestHash,
-            fileHashes:
-              prepared.expectedManifestCredentialBinding.fileHashes,
+            fileHashes: prepared.expectedManifestCredentialBinding.fileHashes,
             certificationStatus:
               certificationAttempt?.status === "submitted"
                 ? certificationAttempt.response.status
@@ -1188,10 +1176,9 @@ export function ShareView({
         );
         setSharePublication({
           state: "published",
-          message:
-            publishedCertification
-              ? "โรงพยาบาลรับรองแล้ว · ตรวจลายเซ็น สถานะ hashes ผู้ถือ และนโยบายครบ"
-              : packageProtocol === "hybrid"
+          message: publishedCertification
+            ? "โรงพยาบาลรับรองแล้ว · ตรวจลายเซ็น สถานะ hashes ผู้ถือ และนโยบายครบ"
+            : packageProtocol === "hybrid"
               ? "สร้าง SHL ที่ผู้ป่วยลงนามแล้ว · รอการรับรองจากโรงพยาบาล"
               : "สร้าง Standard SHL ที่ผู้ป่วยลงนามแล้ว",
           warnings: [
@@ -1200,6 +1187,20 @@ export function ShareView({
           ],
           artifactUrl:
             publishedCertification?.manifestUrl ?? published.manifestUrl,
+        });
+        onPersistShare({
+          id: `shl:${published.shlPackageId}:${createdAt}`,
+          type: "shl",
+          title: publishedCertification
+            ? "SHL ที่โรงพยาบาลรับรองแล้ว"
+            : "SHL ที่ผู้ป่วยยืนยันการแชร์",
+          subtitle: readinessContextLabels[purpose].th,
+          status: publishedCertification ? "verified" : "active",
+          protocol: "shl",
+          createdAt,
+          expiresAt,
+          source: user.id,
+          payload: JSON.parse(exportPayload),
         });
         return;
       } catch (error) {
@@ -1293,6 +1294,18 @@ export function ShareView({
           warnings: publication.warnings,
           artifactUrl: publication.publicUrl,
         });
+        onPersistShare({
+          id: `vp:${result.presentation.presentationId}`,
+          type: "vp",
+          title: "VP ที่ผู้ป่วยสร้างเพื่อการแชร์",
+          subtitle: readinessContextLabels[purpose].th,
+          status: "active",
+          protocol: "trustcare",
+          createdAt,
+          expiresAt,
+          source: user.id,
+          payload: result,
+        });
         return;
       }
 
@@ -1326,6 +1339,18 @@ export function ShareView({
           result.shl.viewerUrl ??
           result.shl.webViewerUrl,
       });
+      onPersistShare({
+        id: `shl:${String(result.shl.gatewayPublicationId ?? result.shl.shlId)}:${createdAt}`,
+        type: "shl",
+        title: "Standard SHL",
+        subtitle: readinessContextLabels[purpose].th,
+        status: "active",
+        protocol: "shl",
+        createdAt,
+        expiresAt,
+        source: user.id,
+        payload: result,
+      });
     } catch (error) {
       setSharePayload("");
       setShareExportPayload(exportPayload);
@@ -1345,6 +1370,7 @@ export function ShareView({
     expiryMinutes,
     mode,
     onConfirmBiometric,
+    onPersistShare,
     packageProtocol,
     purpose,
     purposeReadiness,
@@ -2389,8 +2415,8 @@ export function DocumentFlowControls({
         <div className="document-flow-control-panel">
           <strong>TrustCare Certification</strong>
           <p>
-            ต้องมี holder VP, Manifest Credential และ issuer attestation ที่ verifier
-            ตรวจสอบได้ก่อน SHL จึงจะกลายเป็น Certified SHL+Manifest VP
+            ต้องมี holder VP, Manifest Credential และ issuer attestation ที่
+            verifier ตรวจสอบได้ก่อน SHL จึงจะกลายเป็น Certified SHL+Manifest VP
           </p>
         </div>
       )}

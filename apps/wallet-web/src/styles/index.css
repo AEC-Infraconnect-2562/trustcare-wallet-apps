@@ -5617,6 +5617,25 @@ body {
   line-height: 1.5;
 }
 
+.test-session-details {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.7fr) minmax(0, 1.3fr);
+  gap: 6px 12px;
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.test-session-details dt {
+  color: var(--muted-foreground);
+}
+
+.test-session-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
 @media (max-width: 1180px) {
   .prepare-grid,
   .prepare-grid.wide {
