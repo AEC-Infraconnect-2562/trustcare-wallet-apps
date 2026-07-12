@@ -161,6 +161,7 @@ export async function fetchVerifiedContractResource<T>(
 ): Promise<VerifiedContractResource<T>> {
   const response = await fetcher(url, {
     headers: { accept: "application/json" },
+    cache: "no-store",
   });
   if (!response.ok) {
     throw await apiErrorFromResponse(response, `Contract fetch failed: ${url}`);
