@@ -61,16 +61,32 @@ async function getAllCards(): Promise<WalletCard[]> {
   });
 }
 
-async function putCards(cards: WalletCard[]) {
+async function putCardsForOwner(ownerUserId: string, cards: WalletCard[]) {
   const db = await openDb();
+  const existing = await getAllCards();
+  const merged = mergeOfflineCardsForOwner(ownerUserId, existing, cards);
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(storeCards, "readwrite");
     const store = tx.objectStore(storeCards);
     store.clear();
-    for (const card of cards) store.put(card);
+    for (const card of merged) store.put(card);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+export function mergeOfflineCardsForOwner(
+  ownerUserId: string,
+  existing: readonly WalletCard[],
+  replacement: readonly WalletCard[],
+): WalletCard[] {
+  if (replacement.some((card) => String(card.ownerUserId) !== ownerUserId)) {
+    throw new Error("Offline Wallet card owner boundary violation.");
+  }
+  return [
+    ...existing.filter((card) => String(card.ownerUserId) !== ownerUserId),
+    ...replacement,
+  ];
 }
 
 async function setMeta(key: string, value: unknown) {
@@ -117,7 +133,7 @@ async function putCachedQr(entry: QrCacheEntry) {
   });
 }
 
-export function useOfflineWallet(enabled = true) {
+export function useOfflineWallet(enabled = true, activeUserId = "wallet") {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [meta, setMetaState] = useState<{
     isLoaded: boolean;
@@ -140,7 +156,7 @@ export function useOfflineWallet(enabled = true) {
     window.addEventListener("offline", handleOffline);
     void Promise.all([
       getAllCards().catch(() => []),
-      getMeta("lastSyncTime").catch(() => null),
+      getMeta(`lastSyncTime:${activeUserId}`).catch(() => null),
     ]).then(([cards, syncTime]) => {
       setOfflineCards(cards);
       setMetaState({ isLoaded: true, lastSyncTime: syncTime });
@@ -149,7 +165,7 @@ export function useOfflineWallet(enabled = true) {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [enabled]);
+  }, [activeUserId, enabled]);
 
   const syncCards = useCallback(
     async (cards: WalletCard[]) => {
@@ -159,12 +175,12 @@ export function useOfflineWallet(enabled = true) {
         );
       }
       const now = new Date().toISOString();
-      await putCards(cards);
-      await setMeta("lastSyncTime", now);
-      setOfflineCards(cards);
+      await putCardsForOwner(activeUserId, cards);
+      await setMeta(`lastSyncTime:${activeUserId}`, now);
+      setOfflineCards(await getAllCards());
       setMetaState({ isLoaded: true, lastSyncTime: now });
     },
-    [enabled],
+    [activeUserId, enabled],
   );
 
   const cacheQr = useCallback(

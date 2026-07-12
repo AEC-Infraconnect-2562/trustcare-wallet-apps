@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Activity, FilePlus2, Send, Upload } from "lucide-react-native";
-import { walletApi } from "@trustcare/api-client";
+import * as walletApi from "@trustcare/api-client/wallet";
 import {
   flattenCardsByCategory,
   getDemoCardsByCategory,

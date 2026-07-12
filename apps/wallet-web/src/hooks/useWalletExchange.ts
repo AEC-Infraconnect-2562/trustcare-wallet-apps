@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   WalletExchangeProblemError,
+} from "@trustcare/api-client/walletExchangeV2";
+import { normalizePortalOrigin } from "@trustcare/api-client/walletContractLoader";
+import {
   WalletExchangeWorkflow,
-  normalizePortalOrigin,
   type WalletExchangeCredentialRequestLink,
   type WalletExchangePendingSubmissionDraft,
-} from "@trustcare/api-client";
+} from "@trustcare/api-client/walletExchangeWorkflow";
 import {
   generateHolderIdentity,
+  type HolderSigningIdentity,
   type RuntimeEnvironment,
   type WalletDocumentRecordV2,
 } from "@trustcare/wallet-core";
@@ -18,6 +21,7 @@ type WalletExchangeRuntime = {
   workflow: WalletExchangeWorkflow;
   persistence: IndexedDbWalletExchangePersistence;
   holderDid: string;
+  identity: HolderSigningIdentity;
 };
 
 type WalletExchangeDocumentState = {
@@ -210,6 +214,7 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
   return {
     workflow: activeRuntime?.workflow ?? null,
     holderDid: activeRuntime?.holderDid,
+    identity: activeRuntime?.identity,
     documents,
     requestLinks,
     pendingSubmissions,
@@ -264,6 +269,7 @@ async function initializeRuntimeOnce(
     return {
       partitionKey: locatorKey,
       holderDid: identity.did,
+      identity,
       persistence,
       workflow: new WalletExchangeWorkflow({
         ...options,
@@ -288,6 +294,7 @@ async function initializeRuntimeOnce(
   return {
     partitionKey: locatorKey,
     holderDid: identity.did,
+    identity,
     persistence,
     workflow: new WalletExchangeWorkflow({
       ...options,

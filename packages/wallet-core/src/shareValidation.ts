@@ -198,7 +198,7 @@ export function validateShareDraft(
           issue(
             "certified_shl_not_ready",
             "ยังสร้าง Certified SHL ไม่ได้",
-            "ต้องมี Manifest VP, Manifest Credential, Holder VC, hash และ gateway ที่ตรวจได้",
+            "ต้องมี holder VP, Manifest Credential, source/file hashes และ gateway ที่ตรวจได้",
           ),
         );
       }
@@ -222,7 +222,7 @@ export function validateShareDraft(
 
   const primaryDisabledReason =
     disabledReasons.find((reason) => reason.severity === "blocked") ??
-    issueToDisabledReason(blockers[0], policy.mode) ??
+    issueToDisabledReason(blockers[0]) ??
     null;
 
   return {
@@ -257,7 +257,6 @@ function issue(
 
 function issueToDisabledReason(
   validationIssue: ShareValidationIssue | undefined,
-  packageMode: SharePackageMode,
 ): DisabledReason | null {
   if (!validationIssue) return null;
   return {

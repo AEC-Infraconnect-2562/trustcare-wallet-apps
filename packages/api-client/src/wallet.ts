@@ -27,7 +27,6 @@ import {
   classifyQrPayload,
   fetchShlManifest,
   buildPortalInteroperabilityFixtures,
-  mhdDocumentReferenceFromRecord,
   recordFromMhdDocumentReference,
   validateDocumentReference,
   verifyShlManifestTrust,
@@ -40,7 +39,6 @@ import {
   type DemoOid4vciIssuedCredential,
   type FhirDocumentReferenceLike,
   type SharePackageBuildInput,
-  type WalletCard,
   type WalletDocumentRecord,
 } from "@trustcare/wallet-core";
 import type { TrustCareClientOptions } from "./trpc";
@@ -674,7 +672,6 @@ export async function generateCheckinQR(
     return createTrustCareShlGatewayPublication({
       context: input.context,
       ownerUserId: user.id,
-      patientId: input.patientId ?? user.patientId,
       selectedCardIds: input.selectedCardIds,
       cards: selected,
       receiver: input.serviceName ?? "TrustCare service intake",
@@ -684,7 +681,7 @@ export async function generateCheckinQR(
       gatewayBaseUrl: options.shlGatewayUrl,
       viewerBaseUrl: options.shlViewerUrl ?? options.demoOrigin,
       origin: options.demoOrigin,
-      includeTrustCareManifestVp: input.protocol === "hybrid",
+      requestHospitalCertification: input.protocol === "hybrid",
       policy: {
         expiresAt: input.expiresAt,
         maxAccessCount: input.maxAccessCount,
@@ -724,8 +721,6 @@ async function demoCardsByCategory(
 async function demoWalletCards(options: WalletApiOptions) {
   return getDemoWalletCards(options.userId);
 }
-
-const TRUSTCARE_WALLET_VERIFIER_AUDIENCE = "https://trustcare.network/verifier";
 
 function presentationCardSnapshot(
   options: WalletApiOptions,

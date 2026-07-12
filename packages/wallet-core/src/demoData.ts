@@ -22,6 +22,7 @@ import {
   trustCarePortalPersonImages,
 } from "./demoSeedAssets";
 import { canPresentCredential } from "./statusTone";
+import { isWalletTestLoginUser } from "./testUserProfiles";
 
 export {
   completeCardsByCategory,
@@ -76,6 +77,20 @@ export type WalletDemoUser = {
   conditions: string[];
   allergies: string[];
   cardBase: number;
+  seedDocumentSet?: Array<
+    | "identity"
+    | "patient_summary"
+    | "allergy"
+    | "medication"
+    | "prescription"
+    | "lab"
+    | "medical_certificate"
+    | "referral"
+    | "insurance"
+    | "travel"
+    | "consent"
+    | "quotation"
+  >;
 };
 
 export {
@@ -183,6 +198,198 @@ export const walletDemoUsers: WalletDemoUser[] = [
     conditions: ["M17.1"],
     allergies: ["No known drug allergy"],
     cardBase: 3000,
+  },
+  {
+    id: "demo-patient-004",
+    patientId: 9900700100004,
+    portalOpenId: "demo-patient-004",
+    source: "trustcare_portal",
+    sourceLabel: "ข้อมูลทดสอบจาก TrustCare Portal",
+    role: "patient",
+    hospitalCode: "TCM",
+    hospitalName: "TrustCare Chiang Mai Hospital",
+    hospitalNameTh: "โรงพยาบาลทรัสต์แคร์ เชียงใหม่",
+    nameTh: "นางสาวฮารุกะ ทานากะ",
+    nameEn: "Ms. Haruka Tanaka",
+    initials: "H",
+    gender: "female",
+    birthDate: "1992-04-18",
+    email: "haruka.tanaka@gmail.com",
+    phone: "081-999-0004",
+    passport: "TZ9988123",
+    carepassId: "CP-INT-2026-000004",
+    hn: "HN-TCM-00100004",
+    holderDid: "did:key:z6MkhHarukaWalletTest004",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcm,
+    avatarUrl: "",
+    avatarSource: "trustcare_portal",
+    persona:
+      "ผู้ป่วยญี่ปุ่นสำหรับทดสอบ cross-border readiness และการขอเอกสารที่ขาด",
+    tags: ["cross_border", "imaging", "lab", "readiness_gap"],
+    conditions: ["N18.2"],
+    allergies: ["Iodinated contrast medium moderate"],
+    cardBase: 904000,
+    seedDocumentSet: ["identity", "consent"],
+  },
+  {
+    id: "demo-patient-005",
+    patientId: 1100500456789,
+    portalOpenId: "demo-patient-005",
+    source: "trustcare_portal",
+    sourceLabel: "ข้อมูลทดสอบจาก TrustCare Portal",
+    role: "patient",
+    hospitalCode: "TCC",
+    hospitalName: "TrustCare Central Hospital",
+    hospitalNameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
+    nameTh: "นายวิชัย สุขสบาย",
+    nameEn: "Mr. Wichai Suksabai",
+    initials: "ว",
+    gender: "male",
+    birthDate: "1965-08-22",
+    email: "wichai.s@hotmail.com",
+    phone: "086-555-0005",
+    thaiId: "1100500456789",
+    carepassId: "CP-TH-2026-000005",
+    hn: "HN-TCC-00100005",
+    holderDid: "did:key:z6MkhWichaiWalletTest005",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+    avatarUrl: "",
+    avatarSource: "trustcare_portal",
+    persona:
+      "ผู้ป่วยสำหรับทดสอบ pharmacy dispense และการขอ prescription/medication ที่ขาด",
+    tags: ["pharmacy", "pharmacy_dispense", "readiness_gap"],
+    conditions: ["E11.9", "I10", "E78.0"],
+    allergies: ["Metformin GI intolerance", "ACE inhibitor cough"],
+    cardBase: 905000,
+    seedDocumentSet: ["identity", "allergy"],
+  },
+  {
+    id: "demo-patient-006",
+    patientId: 1100500567890,
+    portalOpenId: "demo-patient-006",
+    source: "trustcare_portal",
+    sourceLabel: "ข้อมูลทดสอบจาก TrustCare Portal",
+    role: "patient",
+    hospitalCode: "TCC",
+    hospitalName: "TrustCare Central Hospital",
+    hospitalNameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
+    nameTh: "นางพรทิพย์ มั่งมี",
+    nameEn: "Mrs. Porntip Mangmee",
+    initials: "พ",
+    gender: "female",
+    birthDate: "1975-11-03",
+    email: "porntip.m@yahoo.com",
+    phone: "092-888-0006",
+    thaiId: "1100500567890",
+    carepassId: "CP-TH-2026-000006",
+    hn: "HN-TCC-00100006",
+    holderDid: "did:key:z6MkhPorntipWalletTest006",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+    avatarUrl: "",
+    avatarSource: "trustcare_portal",
+    persona:
+      "ผู้ป่วยสำหรับทดสอบ insurance claim, payer orchestration และเอกสาร coverage/claim ที่ขาด",
+    tags: ["insurance", "claim", "insurance_claim", "readiness_gap"],
+    conditions: ["K80.2", "K81.0"],
+    allergies: ["No known drug allergy"],
+    cardBase: 906000,
+    seedDocumentSet: ["identity"],
+  },
+  {
+    id: "demo-patient-007",
+    patientId: 1100500678901,
+    portalOpenId: "demo-patient-007",
+    source: "trustcare_portal",
+    sourceLabel: "ข้อมูลทดสอบจาก TrustCare Portal",
+    role: "patient",
+    hospitalCode: "TCP",
+    hospitalName: "TrustCare Phuket International Hospital",
+    hospitalNameTh: "โรงพยาบาลทรัสต์แคร์ ภูเก็ต อินเตอร์เนชันแนล",
+    nameTh: "นายอภิชาติ รักสุขภาพ",
+    nameEn: "Mr. Apichat Raksukphap",
+    initials: "อ",
+    gender: "male",
+    birthDate: "1988-02-14",
+    email: "apichat.r@gmail.com",
+    phone: "095-111-0007",
+    thaiId: "1100500678901",
+    carepassId: "CP-TH-2026-000007",
+    hn: "HN-TCP-00100007",
+    holderDid: "did:key:z6MkhApichatWalletTest007",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcp,
+    avatarUrl: "",
+    avatarSource: "trustcare_portal",
+    persona:
+      "ผู้ป่วยสำหรับทดสอบ referral readiness และ Maker/Checker request tracking",
+    tags: ["referral", "readiness_gap"],
+    conditions: ["I25.1", "I50.9"],
+    allergies: ["Aspirin severe - angioedema"],
+    cardBase: 907000,
+    seedDocumentSet: ["identity", "allergy", "medication"],
+  },
+  {
+    id: "demo-patient-008",
+    patientId: 9900700100008,
+    portalOpenId: "demo-patient-008",
+    source: "trustcare_portal",
+    sourceLabel: "ข้อมูลทดสอบจาก TrustCare Portal",
+    role: "patient",
+    hospitalCode: "TCP",
+    hospitalName: "TrustCare Phuket International Hospital",
+    hospitalNameTh: "โรงพยาบาลทรัสต์แคร์ ภูเก็ต อินเตอร์เนชันแนล",
+    nameTh: "Mr. David Chen",
+    nameEn: "Mr. David Chen",
+    initials: "D",
+    gender: "male",
+    birthDate: "1981-01-18",
+    email: "david.chen@outlook.com",
+    phone: "081-222-0008",
+    passport: "E12345678",
+    carepassId: "CP-INT-2026-000008",
+    hn: "HN-TCP-00100008",
+    holderDid: "did:key:z6MkhDavidChenWalletTest008",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcp,
+    avatarUrl: "",
+    avatarSource: "trustcare_portal",
+    persona:
+      "ผู้ป่วยต่างชาติสำหรับทดสอบ medical tourist quotation, guarantee และ SHL",
+    tags: ["medical_tourist", "insurance", "travel_document", "readiness_gap"],
+    conditions: ["M16.1"],
+    allergies: ["No known drug allergy"],
+    cardBase: 908000,
+    seedDocumentSet: ["identity", "patient_summary"],
+  },
+  {
+    id: "demo-patient-009",
+    patientId: 1100500789012,
+    portalOpenId: "demo-patient-009",
+    source: "trustcare_portal",
+    sourceLabel: "ข้อมูลทดสอบจาก TrustCare Portal",
+    role: "patient",
+    hospitalCode: "TCC",
+    hospitalName: "TrustCare Central Hospital",
+    hospitalNameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
+    nameTh: "นางสาวสุดา ใจเย็น",
+    nameEn: "Ms. Suda Jaiyen",
+    initials: "ส",
+    gender: "female",
+    birthDate: "2001-06-30",
+    email: "suda.j@gmail.com",
+    phone: "063-444-0009",
+    thaiId: "1100500789012",
+    carepassId: "CP-TH-2026-000009",
+    hn: "HN-TCC-00100009",
+    holderDid: "did:key:z6MkhSudaWalletTest009",
+    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+    avatarUrl: "",
+    avatarSource: "trustcare_portal",
+    persona:
+      "ผู้ป่วยสำหรับทดสอบ emergency readiness และข้อมูล allergy/medication ที่ขาด",
+    tags: ["emergency", "readiness_gap"],
+    conditions: ["J45.20"],
+    allergies: ["NSAID bronchospasm severe"],
+    cardBase: 909000,
+    seedDocumentSet: ["identity"],
   },
   {
     id: "demo-hospadmin-001",
@@ -423,6 +630,9 @@ export const walletDemoUsers: WalletDemoUser[] = [
 ];
 
 export const demoPatient = walletDemoUsers[0];
+export const walletTestLoginUsers = walletDemoUsers.filter(
+  (user) => user.role === "patient" && isWalletTestLoginUser(user.id),
+);
 
 export function getDemoUser(userId?: string | number): WalletDemoUser {
   if (!userId) return demoPatient;
@@ -531,7 +741,6 @@ export function getDemoShlPackages(
   const publication = createTrustCareShlGatewayPublication({
     context,
     ownerUserId: user.id,
-    patientId: user.patientId,
     selectedCardIds: cards.map((card) => card.id),
     cards,
     receiver:
@@ -542,7 +751,7 @@ export function getDemoShlPackages(
       ? "medical_tourist_intake"
       : "patient_summary",
     origin: "https://aec-infraconnect-2562.github.io/trustcare-wallet-apps",
-    includeTrustCareManifestVp: trustcareCertified,
+    requestHospitalCertification: trustcareCertified,
     policy: {
       expiresAt: demoShlPolicyExpiresAt,
       passcodeRequired: false,
@@ -561,24 +770,10 @@ export function getDemoShlPackages(
         : "patient_summary",
       context: user.tags.includes("insurance") ? "insurance" : "treatment",
       status: "active",
-      manifestCredentialId: publication.manifest.trustcare.manifestCredentialId,
-      presentationId: publication.manifest.trustcare.holderPresentationId,
-      manifestCredential: publication.manifest.trustcare.manifestCredential,
-      holderAuthorizationCredential:
-        publication.manifest.trustcare.holderAuthorizationCredential,
-      manifestVp: publication.manifest.trustcare.manifestVp,
-      manifestVpUrl: publication.manifest.trustcare.manifestVpUrl,
-      manifestVpHash: publication.manifest.trustcare.manifestVpHash,
       trustcareCertification: trustcareCertified
         ? {
-            status: "maker_checker_approved",
-            ownerConfirmed: true,
-            makerId: `maker-${user.id}`,
-            makerName: `${user.hospitalName} Issuer Attestor`,
-            makerApprovedAt: isoOffset(-2),
-            checkerId: `checker-${user.id}`,
-            checkerName: `${user.hospitalName} Trust Verifier`,
-            checkerApprovedAt: isoOffset(-1),
+            status: "pending_maker_checker",
+            ownerConfirmed: false,
             networkHospitalDid: user.issuerDid,
             consentReceiptId: `consent-${user.id}`,
             policyVersion: "trustcare-shl-governance-2026.07",
@@ -870,6 +1065,26 @@ function buildDemoPresentationPayload(
 }
 
 function buildPatientCards(user: WalletDemoUser): WalletCard[] {
+  if (user.seedDocumentSet) {
+    const builders = {
+      identity: identityCard,
+      patient_summary: patientSummaryCard,
+      allergy: allergyCard,
+      medication: medicationSummaryCard,
+      prescription: prescriptionCard,
+      lab: labCard,
+      medical_certificate: medicalCertificateCard,
+      referral: referralCard,
+      insurance: insuranceCard,
+      travel: travelCard,
+      consent: consentReceiptCard,
+      quotation: quotationCard,
+    } satisfies Record<
+      NonNullable<WalletDemoUser["seedDocumentSet"]>[number],
+      (fixtureUser: WalletDemoUser) => WalletCard
+    >;
+    return user.seedDocumentSet.map((document) => builders[document](user));
+  }
   const cards: WalletCard[] = [identityCard(user), patientSummaryCard(user)];
   if (hasRealAllergy(user)) cards.push(allergyCard(user));
   if (user.tags.includes("pharmacy") || user.tags.includes("emergency"))
@@ -1036,6 +1251,41 @@ function prescriptionCard(user: WalletDemoUser): WalletCard {
             instructions: "Take as directed by physician",
           },
         ],
+      },
+    },
+  });
+}
+
+function medicationSummaryCard(user: WalletDemoUser): WalletCard {
+  const medicationName = medicationForCondition(user.conditions[0]);
+  return baseCard(user, {
+    offset: 9,
+    cardType: "medication_summary",
+    displayName: "สรุปรายการยาปัจจุบัน",
+    displayNameEn: "Current Medication Summary",
+    documentCategory: "medication_and_pharmacy",
+    credentialType: "MedicationSummaryCredential",
+    expiresAt: "2027-01-01T16:59:59.000Z",
+    subject: {
+      patient: patientSubject(user),
+      medicationSummary: {
+        currentAsOf: "2026-07-01",
+        medications: [
+          {
+            medicationName,
+            strength: "500 mg",
+            dosageInstruction:
+              "รับประทานครั้งละ 1 เม็ด วันละ 2 ครั้ง หลังอาหาร",
+            status: "active",
+            indication: user.conditions[0] ?? "current treatment",
+            startDate: "2026-01-15",
+          },
+        ],
+        medicationReconciliation: {
+          performedAt: "2026-07-01T02:25:00.000Z",
+          performedBy: `${user.hospitalNameTh} Pharmacy`,
+          discrepancies: [],
+        },
       },
     },
   });
@@ -1382,9 +1632,7 @@ function baseCard(
               ? "trustcare_demo_issuer"
               : user.source,
           label: user.sourceLabel,
-          portalOpenId: user.portalOpenId,
           userId: user.id,
-          patientId: user.patientId,
         },
         humanDocument: {
           rendererVersion: "trustcare-wallet-document-renderer-2026.07",

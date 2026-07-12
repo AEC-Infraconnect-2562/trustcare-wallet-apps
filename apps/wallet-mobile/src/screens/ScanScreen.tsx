@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { router } from "expo-router";
-import { verifierApi } from "@trustcare/api-client";
+import * as verifierApi from "@trustcare/api-client/verifier";
 import type { VerifierResult } from "@trustcare/wallet-core";
 import { env } from "../env";
 

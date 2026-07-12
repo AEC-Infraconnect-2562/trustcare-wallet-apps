@@ -1,7 +1,6 @@
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { describe, expect, it } from "vitest";
 import {
-  portalHospitalDid,
   resolvePortalHospitalIssuer,
   verifyPortalHospitalCredentialJwt,
 } from "./portalIssuerResolver";
@@ -9,6 +8,34 @@ import {
 const portalOrigin = "https://portal.example";
 
 describe("Portal hospital did:web resolver", () => {
+  it("uses the issuer DID returned by Portal instead of deriving it from the hostname", async () => {
+    const discoveredDid = "did:web:issuer-authority.example:tcc";
+    const fixture = await issuerFixture("TCC", discoveredDid);
+    const issuer = await resolvePortalHospitalIssuer({
+      portalBaseUrl: portalOrigin,
+      hospitalCode: "TCC",
+      fetchImpl: fixture.fetchImpl,
+    });
+
+    expect(issuer.issuerDid).toBe(discoveredDid);
+  });
+
+  it("uses a valid issuer returned by discovery without a local namespace gate", async () => {
+    const fixture = await issuerFixture(
+      "TCC",
+      "did:web:issuer-registry.example:authority:tcc",
+    );
+    await expect(
+      resolvePortalHospitalIssuer({
+        portalBaseUrl: portalOrigin,
+        hospitalCode: "TCC",
+        fetchImpl: fixture.fetchImpl,
+      }),
+    ).resolves.toMatchObject({
+      issuerDid: "did:web:issuer-registry.example:authority:tcc",
+    });
+  });
+
   it("cross-checks the Portal DID document and JWKS without fallback", async () => {
     const fixture = await issuerFixture("TCC");
     const issuer = await resolvePortalHospitalIssuer({
@@ -100,17 +127,17 @@ describe("Portal hospital did:web resolver", () => {
       }),
     ).resolves.toMatchObject({ verified: true, status: "active" });
 
-    const oldIssuerJwt = await new SignJWT({
+    const wrongIssuerJwt = await new SignJWT({
       credentialSubject: { id: "did:key:zHolder" },
       credentialStatus: { status: "active" },
     })
       .setProtectedHeader({ alg: "ES256", typ: "vc+jwt", kid: fixture.kid })
-      .setIssuer("did:web:trustcare.network:hospital:tcm")
+      .setIssuer("did:web:untrusted-issuer.example:hospital:tcm")
       .setExpirationTime(Math.floor(now.getTime() / 1000) + 600)
       .sign(fixture.privateKey);
     await expect(
       verifyPortalHospitalCredentialJwt({
-        jwt: oldIssuerJwt,
+        jwt: wrongIssuerJwt,
         issuer,
         expectedHolderDid: "did:key:zHolder",
         now,
@@ -169,9 +196,10 @@ describe("Portal hospital did:web resolver", () => {
   });
 });
 
-async function issuerFixture(codeInput: "TCC" | "TCP" | "TCM") {
-  const code = codeInput.toLowerCase();
-  const issuerDid = portalHospitalDid(portalOrigin, codeInput);
+async function issuerFixture(
+  codeInput: "TCC" | "TCP" | "TCM",
+  issuerDid = testIssuerDid(codeInput),
+) {
   const { privateKey, publicKey } = await generateKeyPair("ES256", {
     extractable: true,
   });
@@ -199,6 +227,10 @@ async function issuerFixture(codeInput: "TCC" | "TCP" | "TCM") {
     return jsonResponse({ title: "Not found" }, 404);
   };
   return { fetchImpl, calls, did, jwks, kid, privateKey };
+}
+
+function testIssuerDid(code: "TCC" | "TCP" | "TCM"): string {
+  return `did:web:portal.example:hospital:${code.toLowerCase()}`;
 }
 
 function jsonResponse(

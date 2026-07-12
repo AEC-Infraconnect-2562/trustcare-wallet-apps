@@ -3,17 +3,20 @@
 ## Backend-Owned
 
 - VC issuance and signing.
-- VP creation and persistence.
-- VC/VP verification.
+- Hospital Manifest Credential issuance and signing through Portal/KMS.
+- Incoming VC/VP verification and status services.
 - JWKS publication for issuer/verifier public keys.
 - Revocation and credential status.
-- SHL manifest generation, encryption, access policy, and audit.
+- Share Gateway persistence, access-policy enforcement, and audit.
 - Hospital/source-of-truth synchronization.
 
 ## Wallet-Owned
 
 - Patient-facing display.
 - Patient consent and selective-disclosure UX.
+- Holder `did:key` and private key.
+- VP creation and signing for every sharing event.
+- Standard SHL manifest generation and JWE encryption.
 - Local session handling.
 - Local encrypted/offline cache where platform support exists.
 - Biometric gate before sensitive QR display.
@@ -22,15 +25,17 @@
 
 ## VC/VP Signing
 
-The browser wallet must not hold production signing private keys. When Wallet creates a share package, it publishes the VP request to a Share Gateway. The gateway signs the VP as `vp+JWT` with ES256 or EdDSA, persists the artifact, and returns a resolver URL for QR display.
+The Wallet holds only the patient's holder private key and signs every VP with
+that `did:key`. Hospital private keys never enter Web, Mobile, or Share Gateway;
+Portal performs hospital signing in Cosmian KMS. The Share Gateway persists the
+exact holder-signed VP and returns a resolver URL without replacing or
+re-signing it.
 
-Local development can use a backend-shaped share gateway with a process-local
-ES256 key and in-memory artifacts. Railway production must not use that mode:
-it fails startup unless `TRUSTCARE_GATEWAY_SIGNING_KEY_JWK` and `DATABASE_URL`
-are configured. Production exposes stable JWKS at
-`/api/share-gateway/.well-known/jwks.json`, a DID document at
-`/.well-known/did.json`, signs W3C `vp+jwt` artifacts with enveloped nested
-`vc+jwt` credentials, and persists artifacts in Postgres.
+Local development can use an explicit demo Share Gateway with in-memory
+artifacts. It may sign gateway-owned verification evidence only; it must not
+sign a holder VP or hospital VC. Railway production requires durable storage
+and stable service-key configuration for gateway-owned evidence, while
+persisting the exact Wallet/Portal JWT bytes in Postgres.
 
 The production share gateway keeps resolver reads public for cross-device QR
 verification, but restricts browser-origin artifact publishing to the service
@@ -38,11 +43,9 @@ origin and `TRUSTCARE_GATEWAY_ALLOWED_ORIGINS`. It rejects non-JSON publish
 requests, caps JSON body size, returns `410 Gone` for expired artifacts, and
 sets no-store/security headers on API responses.
 
-The VP holder remains the Wallet holder `did:key`; the backend signing
-controller is the Share Gateway `did:web`. Verifiers must validate the gateway
-signature against that controller and evaluate holder/recipient/purpose binding
-as a separate policy check. They must not require the backend signing key to be
-controlled by the holder DID.
+Verifiers resolve the holder `did:key` for VP proof and the live Portal
+hospital `did:web`/JWKS for hospital credentials. A gateway controller is not a
+substitute for either trust domain.
 
 Production mutations require either a trusted browser `Origin` or a configured
 backend bearer token. VP publication preserves existing nested `vc+jwt`

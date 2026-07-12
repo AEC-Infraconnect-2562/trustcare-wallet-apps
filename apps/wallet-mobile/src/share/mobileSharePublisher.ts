@@ -1,4 +1,5 @@
-import { shareGatewayApi, walletApi } from "@trustcare/api-client";
+import * as shareGatewayApi from "@trustcare/api-client/shareGatewayClient";
+import * as walletApi from "@trustcare/api-client/wallet";
 import {
   assertPrimaryVerifierQrPayload,
   canPresentCredential,
@@ -103,6 +104,14 @@ export async function publishMobileSharePackage(input: {
       "ยังไม่มี Holder DID สำหรับลงนาม VP/SHL ให้ verifier ตรวจได้",
     );
   }
+  if (
+    input.mode === "StandardSHL" ||
+    input.mode === "CertifiedSHLManifestPackage"
+  ) {
+    throw new Error(
+      "รอการเชื่อมต่อกุญแจ Holder และเอกสาร Portal บน Mobile ก่อนสร้าง SHL; ระบบจะไม่สร้างเอกสารรับรองทดแทนหรือแสดงว่าโรงพยาบาลรับรองแล้ว",
+    );
+  }
   const result = await walletApi.createSharePackage(input.apiOptions, {
     mode: input.mode,
     context,
@@ -114,15 +123,6 @@ export async function publishMobileSharePackage(input: {
     expiresAt,
     gatewayBaseUrl: gatewayUrl,
     viewerBaseUrl: input.apiOptions.demoOrigin,
-    shlPolicy:
-      input.mode === "StandardSHL" ||
-      input.mode === "CertifiedSHLManifestPackage"
-        ? {
-            passcodeRequired: false,
-            maxAccessCount: 3,
-            accessCodeDelivery: "not_required",
-          }
-        : undefined,
   });
   const publication =
     "presentation" in result

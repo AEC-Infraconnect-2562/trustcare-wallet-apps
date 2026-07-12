@@ -230,7 +230,7 @@ export function shareModePatientDescription(mode: SharePackageMode): string {
   if (mode === "StandardSHL") {
     return "เหมาะกับชุดข้อมูลขนาดใหญ่หรือข้อมูลต่อเนื่อง และยังใช้ร่วมกับระบบที่รองรับ SMART Health Links";
   }
-  return "เหมาะกับการส่งต่อ เคลม หรือข้ามเครือข่ายที่ต้องให้ TrustCare verifier ตรวจ Manifest VP และ Holder VC";
+  return "เหมาะกับการส่งต่อ เคลม หรือข้ามเครือข่ายที่ต้องให้ verifier ตรวจ holder VP และ Manifest Credential ของโรงพยาบาล";
 }
 
 export function modeRequiresShl(mode: SharePackageMode): boolean {

@@ -12,7 +12,7 @@ The design uses five separate layers:
 2. VC/VP is the signed credential and presentation proof layer.
 3. FHIR `DocumentReference`, FHIR document `Bundle`, and clinical resources are evidence or clinical payload layers.
 4. SMART Health Link is the encrypted transport and manifest layer.
-5. TrustCare Manifest VP and Holder VC are TrustCare certification artifacts for SHL packages.
+5. The holder-signed VP is created by Wallet; only the Portal/KMS-signed Manifest Credential is the hospital certification artifact.
 
 QR codes are only transport or resolver pointers. A QR is never the canonical document itself.
 
@@ -49,7 +49,7 @@ The wallet recognizes only these canonical document types:
 | Single signed identity, appointment, consent, medical certificate | Direct VC/VP                                 | OpenID4VP, QR resolver, selective disclosure                    | Standard SHL as primary payload             | Small, high-trust documents should stay directly verifiable.                                                             |
 | Small purpose-bound service package                               | Purpose VP                                   | Multiple VCs, selected claims, expiry, recipient binding        | Raw `ServiceBundleEnvelope` QR              | OPD and pharmacy default to VP unless payload becomes large.                                                             |
 | Large multi-resource clinical package                             | Standard SHL                                 | FHIR Bundle, DocumentReference, files, time-series records      | Green TrustCare badge without certification | Compatible with external SMART Health Links tools.                                                                       |
-| TrustCare-certified large package                                 | SHL + Manifest VP                            | Standard SHL plus optional `trustcare.manifestVpUrl` and hashes | Non-TrustCare issuer without Maker/Checker  | Requires Manifest Credential, Manifest VP, Holder Authorization Credential, file hashes, and access policy verification. |
+| TrustCare-certified large package                                 | Hospital-certified SHL                       | Holder-attested Standard SHL plus verified hospital Manifest Credential | Non-TrustCare issuer without Maker/Checker  | Requires original holder VP, Manifest Credential, source/file hashes, purpose, audience, expiry and status verification. |
 | External hospital or user file upload                             | FHIR DocumentReference or PDF/Image evidence | Patient upload, FHIR JSON, scanned PDF                          | Direct trusted VC until signed              | Store as unverified evidence until trusted issuer signs.                                                                 |
 | Issuer-to-wallet import                                           | OID4VCI Offer                                | TrustCare Portal, hospital issuer, external issuer              | Patient-created file upload                 | Wallet verifies issuer DID/JWKS, proof, status, and expiry before use.                                                   |
 | HIS/LIS/RIS/EMR clinical pull                                     | FHIR DocumentReference or Bundle             | Connected FHIR endpoint, consent scope                          | VC trust until issuer signs or maps         | Use `record time` for clinical timeline and `package time` for export history.                                           |
@@ -62,7 +62,7 @@ Allowed bundle outputs:
 
 - `PurposeVP`: one VP containing selected VC references or embedded VCs.
 - `StandardSHL`: SHL manifest with standard `files[].location` or `files[].embedded`.
-- `CertifiedSHLManifestPackage`: Standard SHL plus Manifest VP and Holder VC.
+- `CertifiedSHLManifestPackage`: holder-attested Standard SHL plus a verified Portal/KMS-signed Manifest Credential.
 - `FHIR Bundle`: clinical evidence bundle for import or review, not a green verifier proof by itself.
 
 Forbidden bundle outputs:
@@ -76,7 +76,7 @@ Forbidden bundle outputs:
 
 1. TrustCare Portal sync returns signed VC/VP or OID4VCI offers. Wallet verifies proof, issuer trust, status, and holder binding before using them for readiness.
 2. FHIR/HIS/LIS/RIS import returns DocumentReference, FHIR Bundle, or clinical resources. Wallet stores them as evidence. They become trusted readiness documents only after issuer signing or TrustCare Portal certification.
-3. Standard SHL import is parsed and transport-validated. It remains `standard` or `pending TrustCare binding` until TrustCare Maker/Checker creates Manifest VP and Holder VC.
+3. Standard SHL import is parsed and transport-validated. It remains `holder_attested` or pending until Portal Maker/Checker returns a hospital-signed Manifest Credential and Wallet verifies it.
 4. Patient upload stores a DocumentReference with unverified status. It can support review, but it cannot satisfy signed VC readiness.
 5. External wallet import can bring VP, OID4VCI offer, or SHL. Wallet verifies according to the object type, not by display label.
 
@@ -91,7 +91,7 @@ Forbidden bundle outputs:
 4. Wallet enables only controls compatible with the chosen package:
    - VC/VP: selective disclosure, expiry, recipient binding, biometric confirmation.
    - Standard SHL: passcode policy, expiry, access count, manifest files.
-   - Certified SHL: all Standard SHL controls plus TrustCare Manifest VP and Holder VC certification.
+   - Certified SHL: all Standard SHL controls plus original holder VP and verified hospital Manifest Credential.
    - FHIR import: endpoint, scope, consent.
    - Patient upload: file picker and evidence review.
 5. Wallet creates exactly one resolver-backed QR payload.
@@ -137,8 +137,8 @@ Every imported object must show a visible trust badge:
 
 - `ยังไม่ยืนยัน`: patient upload or unsigned FHIR evidence.
 - `ตรวจ transport ได้`: Standard SHL parsed and manifest fetched.
-- `รอ TrustCare binding`: SHL exists but no certified Manifest VP.
-- `TrustCare-certified`: Manifest VP, Manifest Credential, Holder VC, hashes, access policy, and status checks pass.
+- `รอการรับรองจากโรงพยาบาล`: SHL exists but no verified hospital Manifest Credential.
+- `โรงพยาบาลรับรองแล้ว`: holder VP, Manifest Credential, hashes, access policy, issuer and status checks pass.
 - `ตรวจลายเซ็นแล้ว`: signed VC/VP with trusted issuer and valid status.
 
 ## Timeline Rule
@@ -154,7 +154,7 @@ Clinical timeline sorts by `recordTime`. Activity history sorts by `packageTime`
 
 - Prepare checks readiness only and routes users to Share or request/import flow.
 - Share generates exactly one package and QR.
-- Store lists persisted VCs, VPs, SHLs, Manifest VPs, Holder VCs, OID4VCI offers, OID4VP requests, sync receipts, and DocumentReferences.
+- Store lists persisted VCs, holder VPs, SHLs, hospital Manifest Credentials, OID4VCI offers, OID4VP requests, sync receipts, and DocumentReferences.
 - Missing-document requests must not expose technical format choices. When no
   safe route exists, show the reason and a patient action instead of changing
   format silently. Advanced import tooling may show disabled formats with a

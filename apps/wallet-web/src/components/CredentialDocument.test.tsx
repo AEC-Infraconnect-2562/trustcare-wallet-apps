@@ -122,7 +122,9 @@ describe("shared credential document", () => {
     const html = renderToStaticMarkup(<CredentialDocument card={card} />);
 
     expect(html).toContain("บริษัทประกันสุขภาพสากล เดโม จำกัด");
-    expect(html).toContain("did:web:trustcare.network:payer:global-care-demo");
+    expect(html).toContain(
+      "did:web:wallet-demo.invalid:issuer:payer:global-care",
+    );
     expect(html).not.toContain("โรงพยาบาลทรัสต์แคร์ เซ็นทรัล");
   });
 

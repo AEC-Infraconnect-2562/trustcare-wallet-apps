@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   applyWalletExchangeAckReceipt,
-  createWalletExchangeState,
   enqueueWalletExchangeRetry,
   generateHolderIdentity,
   prepareWalletExchangeSyncCommit,
@@ -189,7 +188,7 @@ describe("IndexedDbWalletExchangePersistence", () => {
       document({
         id: "legacy-document",
         ownerDid: holderDid,
-        issuer: "did:web:trustcare.network:hospital:tcc",
+        issuer: "did:web:untrusted-issuer.example:hospital:tcc",
       }),
     );
     const persistence = repository(storage);
@@ -204,12 +203,12 @@ describe("IndexedDbWalletExchangePersistence", () => {
         document({
           id: "legacy-partition-document",
           ownerDid: holderDid,
-          issuer: "did:web:trustcare.network:hospital:tcc",
+          issuer: "did:web:untrusted-issuer.example:hospital:tcc",
         }),
       ],
     };
     await expect(persistence.persistRetryOutboxState(forged)).rejects.toThrow(
-      "live Portal hospital did:web",
+      "live Portal trust registry",
     );
   });
 
@@ -367,11 +366,13 @@ async function testSha256(value: string): Promise<`sha256:${string}`> {
 }
 
 function repository(storage: IndexedDbWalletExchangeStorage) {
-  return new IndexedDbWalletExchangePersistence({
+  const persistence = new IndexedDbWalletExchangePersistence({
     portalOrigin,
     holderDid,
     storage,
   });
+  persistence.configureTrustedIssuers([issuerDid]);
+  return persistence;
 }
 
 function syncPage(): WalletExchangePreparedSyncPage {
@@ -427,7 +428,7 @@ function signedUpsert(): WalletExchangePreparedUpsertChange {
     renderer: {
       authority: "trustcare_wallet",
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      referenceCommit: "41175474e8c0214587a7c8dca1209b49bd2f43c8",
+      referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
       renderVersion: "2.0",
     },
   };

@@ -11,7 +11,6 @@ import {
 import { exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
 import { describe, expect, it } from "vitest";
 import {
-  portalHospitalDid,
   type ResolvedPortalHospitalIssuer,
 } from "./portalIssuerResolver";
 import { prepareWalletExchangeCredential } from "./walletExchangeCredential";
@@ -73,7 +72,7 @@ describe("Wallet Exchange credential normalization", () => {
   });
 
   it("quarantines a legacy Wallet issuer DID instead of retaining it as fallback", async () => {
-    const legacyIssuerDid = "did:web:trustcare.network:hospital:tcc";
+    const legacyIssuerDid = "did:web:untrusted-issuer.example:hospital:tcc";
     const fixture = await signedPortalCredential({
       syncIssuerDid: legacyIssuerDid,
       proofIssuer: legacyIssuerDid,
@@ -81,12 +80,9 @@ describe("Wallet Exchange credential normalization", () => {
 
     const prepared = await prepare(fixture);
 
-    expect(prepared.issuerEvidence).toMatchObject({
-      expectedIssuerDid: fixture.issuer.issuerDid,
-      credentialIssuerDid: legacyIssuerDid,
-    });
+    expect(prepared.issuerEvidence).toBeUndefined();
+    expect(prepared.document).toBeUndefined();
     expect(reduce(prepared).plan.quarantine.put[0]).toMatchObject({
-      reason: "issuer_conflict",
       issuerDid: legacyIssuerDid,
     });
   });
@@ -235,7 +231,7 @@ async function signedPortalCredential(input?: {
   signedCredentialType?: string;
   omitProof?: boolean;
 }): Promise<PortalCredentialFixture> {
-  const issuerDid = portalHospitalDid(portalOrigin, "TCC");
+  const issuerDid = "did:web:portal.example:hospital:tcc";
   const { privateKey, publicKey } = await generateKeyPair("ES256", {
     extractable: true,
   });

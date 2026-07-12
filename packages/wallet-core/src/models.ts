@@ -151,9 +151,8 @@ export type ShlPackage = {
   webViewerUrl?: string | null;
   manifestCredentialId?: string | null;
   presentationId?: string | null;
-  manifestCredential?: Record<string, unknown> | null;
-  holderAuthorizationCredential?: Record<string, unknown> | null;
-  manifestVp?: Record<string, unknown> | null;
+  manifestCredentialJwt?: string | null;
+  holderPresentationJwt?: string | null;
   manifestVpUrl?: string | null;
   manifestVpHash?: string | null;
   passcodeRequired?: boolean;
@@ -177,6 +176,20 @@ export type ShlPackage = {
     networkHospitalDid?: string;
     consentReceiptId?: string;
     policyVersion?: string;
+  };
+  trustVerification?: {
+    verified: boolean;
+    checkedAt: string;
+    proof: boolean;
+    issuer: boolean;
+    status: boolean;
+    expiry: boolean;
+    subject: boolean;
+    manifestHash: boolean;
+    fileHashes: boolean;
+    purpose: boolean;
+    audience: boolean;
+    policy: boolean;
   };
 };
 
@@ -363,9 +376,12 @@ export type CheckinQrResponse = {
   storageProvider?: "s3" | "static" | "local" | string;
   manifestEndpointMethod?: "POST" | "GET" | "BOTH" | string;
   trustLayerStatus?:
-    "standard_shl" | "pending_manifest_vp" | "certified_manifest_vp" | string;
+    | "standard_shl"
+    | "holder_attested"
+    | "pending_hospital_certification"
+    | "hospital_certified"
+    | string;
   manifest?: Record<string, unknown>;
-  portalRequest?: Record<string, unknown>;
   warnings?: string[];
 };
 
@@ -405,7 +421,6 @@ export type WalletStoredObjectType =
   | "shl"
   | "shl_manifest"
   | "manifest_vp"
-  | "holder_vc"
   | "sync_receipt"
   | "document_reference"
   | "oid4vci_offer"

@@ -69,7 +69,6 @@ export function CredentialDocument({
   if (paper.formFactor.kind === "iso_id_1") {
     return (
       <CredentialIdentityCard
-        card={card}
         paper={paper}
         photos={photoCandidates}
         photoRequired={photoRequired}
@@ -124,7 +123,6 @@ export function CredentialDocument({
 }
 
 function CredentialIdentityCard({
-  card,
   paper,
   photos,
   photoRequired,
@@ -134,7 +132,6 @@ function CredentialIdentityCard({
   variant,
   documentType,
 }: {
-  card: WalletCard;
   paper: CredentialPaperModel;
   photos: PhotoCandidate[];
   photoRequired: boolean;

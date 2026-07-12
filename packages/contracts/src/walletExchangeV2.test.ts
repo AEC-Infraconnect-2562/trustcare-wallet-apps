@@ -74,7 +74,7 @@ function discoveryFixture() {
     },
     renderer: {
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      referenceCommit: "41175474e8c0214587a7c8dca1209b49bd2f43c8",
+      referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
       modelPackage: "@trustcare/wallet-core",
       webPackage: "@trustcare/ui-web",
       rule: "Portal must consume the Wallet renderer package if hospital-side rendering is required.",
@@ -140,7 +140,7 @@ function syncedCredentialFixture() {
     renderer: {
       authority: "trustcare_wallet",
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      referenceCommit: "41175474e8c0214587a7c8dca1209b49bd2f43c8",
+      referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
       renderVersion: "trustcare-render-v1",
     },
   };

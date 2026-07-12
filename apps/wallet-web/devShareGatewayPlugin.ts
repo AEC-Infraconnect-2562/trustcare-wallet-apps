@@ -358,13 +358,8 @@ function matchArtifactRoute(
   const routes: Array<[RegExp, string, "json" | "jwt"]> = [
     [/^\/presentations\/([^/]+)\.json$/, "vp", "json"],
     [/^\/presentations\/([^/]+)\.jwt$/, "vp", "jwt"],
-    [/^\/manifest-vps\/([^/]+)\.json$/, "manifest_vp", "json"],
-    [/^\/manifest-credentials\/([^/]+)\.json$/, "manifest_credential", "json"],
-    [
-      /^\/holder-authorizations\/([^/]+)\.json$/,
-      "holder_authorization",
-      "json",
-    ],
+    [/^\/manifest-vps\/([^/]+)\.jwt$/, "manifest_vp", "jwt"],
+    [/^\/manifest-credentials\/([^/]+)\.jwt$/, "manifest_credential", "jwt"],
   ];
   for (const [pattern, kind, extension] of routes) {
     const match = pattern.exec(pathname);
@@ -380,11 +375,9 @@ function publicArtifactPath(kind: string, artifactId: string): string {
     case "vp":
       return `/api/share-gateway/presentations/${encoded}.jwt`;
     case "manifest_vp":
-      return `/api/share-gateway/manifest-vps/${encoded}.json`;
+      return `/api/share-gateway/manifest-vps/${encoded}.jwt`;
     case "manifest_credential":
-      return `/api/share-gateway/manifest-credentials/${encoded}.json`;
-    case "holder_authorization":
-      return `/api/share-gateway/holder-authorizations/${encoded}.json`;
+      return `/api/share-gateway/manifest-credentials/${encoded}.jwt`;
     case "standard_shl_manifest":
     case "certified_shl_manifest":
       return `/api/share-gateway/manifests/${encoded}.json`;

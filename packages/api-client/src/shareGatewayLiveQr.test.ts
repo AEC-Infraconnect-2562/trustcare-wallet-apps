@@ -104,7 +104,7 @@ runLiveGatewayTest("live share gateway QR resolution", () => {
     expect(certifiedFetch.ok).toBe(true);
     expect(certifiedFetch.fileCount).toBe(cards.length);
     expect((certifiedFetch.manifest?.trustcare as any)?.trustLayerStatus).toBe(
-      "certified_manifest_vp",
+      "pending_hospital_certification",
     );
     const certifiedVerification = await verifyQr(
       { url: "https://trustcare.example.test/trpc" },
@@ -144,7 +144,7 @@ async function publishShlManifest(
   await publishArtifact({
     artifactId: publicationId,
     kind:
-      shl.trustLayerStatus === "certified_manifest_vp"
+      shl.trustLayerStatus === "hospital_certified"
         ? "certified_shl_manifest"
         : "standard_shl_manifest",
     contentType: "application/json",

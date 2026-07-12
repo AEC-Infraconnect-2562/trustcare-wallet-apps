@@ -1,71 +1,47 @@
-﻿import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactElement,
-} from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity,
   AlertTriangle,
   ArrowLeft,
   BadgeCheck,
-  Bell,
   Building2,
   CalendarDays,
   Camera,
   CheckCircle2,
   ChevronRight,
-  Clock,
   Cloud,
   Copy,
-  Database,
   Download,
   Eye,
   Fingerprint,
   FileJson,
   FileText,
   FilePlus2,
-  Filter,
   Globe2,
-  History,
-  Home,
   IdCard,
-  ImageOff,
-  Inbox,
   KeyRound,
-  Layers3,
   Link2,
   ListChecks,
   LockKeyhole,
-  LogOut,
   Network,
-  Pin,
   Pill,
   Printer,
   QrCode,
   RefreshCw,
-  Search,
   Send,
-  Settings,
   Shield,
   ShieldCheck,
-  Share2,
-  Smartphone,
   Upload,
   UserCheck,
   Wallet,
 } from "lucide-react";
-import { shareGatewayApi } from "@trustcare/api-client";
+import * as shareGatewayApi from "@trustcare/api-client/shareGatewayClient";
+import type { WalletExchangeWorkflow } from "@trustcare/api-client/walletExchangeWorkflow";
 import {
   Badge,
   Button,
   CredentialDocument,
   PresentationCoverDocument,
   Surface,
-  WalletCardView,
-  useLoadedPhotoCandidate,
 } from "@trustcare/ui-web";
 import {
   assessLocalReadiness,
@@ -78,33 +54,22 @@ import {
   cardsSelectedByReadiness,
   createAutomaticDocumentRequestDraft,
   createDocumentRequestDraft,
-  createPresentationQrPayload,
   createShareDraftFromPrepare,
+  createSharingEventArtifactId,
   createSharePolicy,
   createShlViewerUrl,
   credentialCompactSummaryRows,
-  credentialPresentationPolicy,
   credentialRenderModelFromCard,
   credentialStatusLabel,
   credentialStatusTone,
-  credentialTypeForDocument,
-  documentRequestFormatLabel,
-  documentRequestReturnChannelLabel,
-  documentRequestSourceLabel,
   exportWalletObject,
   exportWalletObjects,
   buildPortalInteroperabilityFixtures,
-  getDemoUser,
-  getDemoWalletCards,
   getValueAtPath,
-  initialsFromName,
-  normalizePhotoUrl,
-  normalizePhotoUrlCandidates,
   parseShlLink,
   walletDocumentRecordV2FromCard,
   walletDocumentTrustPresentation,
   walletCardForCredentialRendering,
-  photoCandidatesForCard,
   readinessContextLabels,
   readinessContextValues,
   recommendPolicyForDraft,
@@ -121,7 +86,6 @@ import {
   type DocumentRequestFormat,
   type DocumentRequestReturnChannel,
   type DocumentRequestSource,
-  type PresentationHistoryItem,
   type PayerLifecycleResult,
   type ReadinessContext,
   type ReadinessRequirement,
@@ -135,8 +99,8 @@ import {
   type WalletDemoUser,
   type WalletExportResult,
   type WalletImportJob,
-  type WalletImportResult,
-  type WalletPresentationResponse,
+  type WalletDocumentRecordV2,
+  type HolderSigningIdentity,
   type WalletStoredObject,
   type VerifierResult,
 } from "@trustcare/wallet-core";
@@ -149,9 +113,12 @@ import { PurposePickerCard } from "../components/prepare/PurposePickerCard";
 import { ReadinessSummaryCard } from "../components/prepare/ReadinessSummaryCard";
 import { SharePacketComposer } from "../components/share/SharePacketComposer";
 import { TrustChecklist } from "../components/trust/TrustChecklist";
-import { defaultPublicShareGatewayUrl, env } from "../env";
-import { useWebAuthn } from "../hooks/useWebAuthn";
 import { toQrDataUrl } from "../utils/qrCode";
+import {
+  currentAppBaseUrl,
+  currentAppShareRootUrl,
+  currentShareGatewayBaseUrl,
+} from "../utils/runtimeUrls";
 import {
   credentialRequestDocumentLabel,
   credentialRequestNextActionLabel,
@@ -159,10 +126,8 @@ import {
   type WalletCredentialRequestViewModel,
 } from "../walletExchangeCredentialRequest";
 import {
-  categoryLabels,
   criticalCardTypes,
   defaultShlPolicyForContext,
-  documentTabBreadcrumbLabels,
   maskShlPasscode,
   normalizeShlPasscode,
   protocolForTransport,
@@ -174,21 +139,38 @@ import {
   shareTrustStatusLabel,
   shlPasscodeReady,
   shlPolicyExpiry,
-  viewBreadcrumbLabels,
-  vpDisclosureFields,
   type DocumentFlowMode,
-  type DocumentsTab,
   type PackageProtocol,
   type ScanOutcome,
   type ScanPayloadDescriptor,
   type ServiceReadinessSummary,
   type SharePublicationState,
-  type ShareTransport,
   type ShlAccessPolicyState,
   type StoreFilter,
   type TimeAnchor,
   type View,
 } from "./appViewModel";
+import { categoryLabel, contextLabel, statusLabel } from "./appViewLabels";
+import { CredentialSubjectAvatar } from "./identityPresentation";
+
+export { NavButton } from "../components/shell/AppNavigation";
+export {
+  categoryLabel,
+  contextLabel,
+  statusLabel,
+  transportLabel,
+} from "./appViewLabels";
+export {
+  UserAvatarImage,
+  avatarUrlCandidatesForUser,
+  resolveAvatarUrl,
+  shortDid,
+} from "./identityPresentation";
+export {
+  currentAppBaseUrl,
+  currentAppShareRootUrl,
+  currentShareGatewayBaseUrl,
+} from "../utils/runtimeUrls";
 
 const shareDisclosureIntentOptions: Array<{
   value: ShareDisclosureIntent;
@@ -221,186 +203,9 @@ export function DialogLoadingFallback() {
   );
 }
 
-export function LoginView({
-  users,
-  pendingScan,
-  selectedUserId,
-  onSelect,
-  onLogin,
-  onOpenScanner,
-}: {
-  users: WalletDemoUser[];
-  pendingScan: boolean;
-  selectedUserId: string;
-  onSelect: (userId: string) => void;
-  onLogin: (userId: string) => void;
-  onOpenScanner: () => void;
-}) {
-  const selectedUser = getDemoUser(selectedUserId);
-  const loginCardsByUser = useMemo(
-    () =>
-      new Map(
-        users.map((user) => [
-          user.id,
-          getDemoWalletCards(user.id).filter(
-            (card) => card.ownerUserId === user.id,
-          ),
-        ]),
-      ),
-    [users],
-  );
-  return (
-    <main className="login-shell">
-      <section className="login-card">
-        <div className="brand-block">
-          <div className="brand-mark">TC</div>
-          <div className="brand-copy">
-            <strong>TrustCare Wallet</strong>
-            <small>เอกสารสุขภาพส่วนตัวที่ตรวจสอบได้</small>
-          </div>
-        </div>
-        <div className="login-copy">
-          <span className="eyebrow">เข้าสู่ระบบทดสอบช่วงพัฒนา</span>
-          <h1>เลือกผู้ใช้ทดสอบ</h1>
-          <p>
-            ช่วงพัฒนายังไม่ต้องใส่ password แต่ Wallet จะแยก scope เอกสาร
-            ประวัติ VP, SHL และ Store ตามผู้ใช้ที่ login จริง
-          </p>
-          {pendingScan && (
-            <Badge tone="blue">
-              <QrCode size={14} /> มี QR รอประมวลผลหลัง login
-            </Badge>
-          )}
-          <button
-            type="button"
-            className="login-scan-button"
-            onClick={onOpenScanner}
-          >
-            <Camera size={18} />
-            สแกน QR Code
-          </button>
-        </div>
-        <div className="login-user-grid">
-          {users.map((user) => (
-            <button
-              key={user.id}
-              type="button"
-              className={
-                selectedUserId === user.id
-                  ? "login-user-card active"
-                  : "login-user-card"
-              }
-              onClick={() => onSelect(user.id)}
-            >
-              <UserAvatarImage
-                user={user}
-                cards={loginCardsByUser.get(user.id) ?? []}
-              />
-              <span>
-                <strong>{user.nameTh}</strong>
-                <small>
-                  {user.role === "staff" ? "เจ้าหน้าที่" : "ผู้ป่วย"} ·{" "}
-                  {user.sourceLabel}
-                </small>
-                <em>{user.id}</em>
-              </span>
-            </button>
-          ))}
-        </div>
-        <Surface className="login-scope-preview">
-          <UserCheck size={20} />
-          <div>
-            <strong>{selectedUser.nameTh}</strong>
-            <p>
-              {selectedUser.sourceLabel} · {selectedUser.hospitalNameTh}
-            </p>
-          </div>
-          <Badge
-            tone={
-              selectedUser.source === "trustcare_portal" ? "blue" : "neutral"
-            }
-          >
-            {selectedUser.role === "staff"
-              ? "ขอบเขตเจ้าหน้าที่"
-              : "ขอบเขตผู้ป่วย"}
-          </Badge>
-        </Surface>
-        <Button onClick={() => onLogin(selectedUserId)}>
-          <ShieldCheck size={18} /> เข้าสู่ระบบด้วยผู้ใช้นี้
-        </Button>
-      </section>
-    </main>
-  );
-}
-
-export function NavButton({
-  active,
-  icon,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  icon: ReactElement;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={active ? "nav-button active" : "nav-button"}
-      onClick={onClick}
-      aria-current={active ? "page" : undefined}
-      aria-label={label}
-      title={label}
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
-  );
-}
-
-export function UserScopePanel({
-  activeUser,
-  cards = [],
-  onLogout,
-}: {
-  activeUser: WalletDemoUser;
-  cards?: WalletCard[];
-  onLogout: () => void;
-}) {
-  return (
-    <section className="user-scope-panel">
-      <div className="user-scope-card">
-        <UserAvatarImage user={activeUser} cards={cards} />
-        <div>
-          <strong>{activeUser.nameTh}</strong>
-          <small>{activeUser.sourceLabel}</small>
-        </div>
-      </div>
-      <div className="user-session-summary">
-        <span>เข้าสู่ระบบแล้ว</span>
-        <strong>
-          {activeUser.role === "staff" ? "ขอบเขตเจ้าหน้าที่" : "ขอบเขตผู้ป่วย"}
-        </strong>
-        <small>{activeUser.id}</small>
-      </div>
-      <p>
-        {activeUser.avatarSource === "trustcare_portal"
-          ? "รูปภาพจาก TrustCare Portal เดิม"
-          : "รูปภาพเสมือนจริงที่สร้างไว้สำหรับ seed ของ Wallet นี้"}
-      </p>
-      <Button className="secondary" onClick={onLogout}>
-        <LogOut size={16} /> ออกจากระบบ
-      </Button>
-    </section>
-  );
-}
-
 export function HomeView({
   cards,
   user,
-  readiness,
-  history,
   offlineOnline,
   onOpenCard,
   onView,
@@ -413,8 +218,6 @@ export function HomeView({
 }: {
   cards: WalletCard[];
   user: WalletDemoUser;
-  readiness: any;
-  history: PresentationHistoryItem[];
   offlineOnline: boolean;
   onOpenCard: (card: WalletCard) => void;
   onView: (view: View) => void;
@@ -765,310 +568,6 @@ function appointmentStartFromCard(card: WalletCard): string | null {
   return null;
 }
 
-export function DocumentsHubView({
-  tab,
-  onTab,
-  cards,
-  counts,
-  user,
-  fixtures,
-  livePortalSync,
-  developerMode,
-  canSyncPortal,
-  portalSyncBusy,
-  objects,
-  allObjects,
-  filter,
-  scanHistory,
-  history,
-  onOpenCard,
-  onOpenScanner,
-  onSyncPortal,
-  onImportPayload,
-  onAcceptCredentialOffer,
-  onCopyFixture,
-  onFilter,
-  onExport,
-}: {
-  tab: DocumentsTab;
-  onTab: (tab: DocumentsTab) => void;
-  cards: WalletCard[];
-  counts: Record<string, number>;
-  user: WalletDemoUser;
-  fixtures: ReturnType<typeof buildPortalInteroperabilityFixtures>;
-  livePortalSync: boolean;
-  developerMode: boolean;
-  canSyncPortal: boolean;
-  portalSyncBusy: boolean;
-  objects: WalletStoredObject[];
-  allObjects: WalletStoredObject[];
-  filter: StoreFilter;
-  scanHistory: ScanOutcome[];
-  history: PresentationHistoryItem[];
-  onOpenCard: (card: WalletCard) => void;
-  onOpenScanner: () => void;
-  onSyncPortal: () => void;
-  onImportPayload: (value: string) => void;
-  onAcceptCredentialOffer: (value: string) => void;
-  onCopyFixture: (label: string, value: string) => void;
-  onFilter: (filter: StoreFilter) => void;
-  onExport: (result: WalletExportResult) => void;
-}) {
-  return (
-    <div className="view-stack documents-hub">
-      <Surface className="document-hub-tabs">
-        <div>
-          <span className="eyebrow">ศูนย์เอกสารใน Wallet</span>
-          <h2>เอกสาร รับเข้า คลัง และประวัติ</h2>
-          <p>
-            รวมงานที่เกี่ยวกับเอกสารไว้ในหน้าเดียว ลดเมนูซ้ำบนมือถือ และยังแยก
-            scope ตามผู้ใช้ที่ login อยู่
-          </p>
-        </div>
-        <div className="segmented document-tabs">
-          <button
-            type="button"
-            className={tab === "cards" ? "active" : ""}
-            onClick={() => onTab("cards")}
-          >
-            <FileText size={16} /> เอกสาร
-          </button>
-          <button
-            type="button"
-            className={tab === "receive" ? "active" : ""}
-            onClick={() => onTab("receive")}
-          >
-            <Inbox size={16} /> รับ
-          </button>
-          <button
-            type="button"
-            className={tab === "store" ? "active" : ""}
-            onClick={() => onTab("store")}
-          >
-            <Database size={16} /> คลัง
-          </button>
-          <button
-            type="button"
-            className={tab === "history" ? "active" : ""}
-            onClick={() => onTab("history")}
-          >
-            <History size={16} /> ประวัติ
-          </button>
-        </div>
-      </Surface>
-      {tab === "cards" && (
-        <DocumentsView
-          cards={cards}
-          counts={counts}
-          user={user}
-          onOpenCard={onOpenCard}
-        />
-      )}
-      {tab === "receive" && (
-        <ReceiveView
-          user={user}
-          fixtures={fixtures}
-          livePortalSync={livePortalSync}
-          developerMode={developerMode}
-          canSyncPortal={canSyncPortal}
-          portalSyncBusy={portalSyncBusy}
-          onOpenScanner={onOpenScanner}
-          onSyncPortal={onSyncPortal}
-          onImportPayload={onImportPayload}
-          onAcceptCredentialOffer={onAcceptCredentialOffer}
-          onCopyFixture={onCopyFixture}
-        />
-      )}
-      {tab === "store" && (
-        <StoreView
-          user={user}
-          objects={objects}
-          allObjects={allObjects}
-          filter={filter}
-          onFilter={onFilter}
-          onImport={onImportPayload}
-          onExport={onExport}
-        />
-      )}
-      {tab === "history" && (
-        <HistoryView history={history} scanHistory={scanHistory} />
-      )}
-    </div>
-  );
-}
-
-export function DocumentsView({
-  cards,
-  counts,
-  user,
-  onOpenCard,
-}: {
-  cards: WalletCard[];
-  counts: Record<string, number>;
-  user: WalletDemoUser;
-  onOpenCard: (card: WalletCard) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("all");
-  const [status, setStatus] = useState<"all" | "active" | "expired" | "pinned">(
-    "all",
-  );
-  const categories = useMemo(
-    () => ["all", ...Object.keys(counts).filter(Boolean)],
-    [counts],
-  );
-  const pinnedCards = useMemo(
-    () =>
-      cards
-        .filter((card) => card.pinned || criticalCardTypes.has(card.cardType))
-        .slice(0, 6),
-    [cards],
-  );
-  const filteredCards = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return cards.filter((card) => {
-      if (category !== "all" && card.documentCategory !== category)
-        return false;
-      if (status === "active" && !canPresentCredential(card)) return false;
-      if (status === "expired" && card.credentialStatus !== "expired")
-        return false;
-      if (
-        status === "pinned" &&
-        !(card.pinned || criticalCardTypes.has(card.cardType))
-      )
-        return false;
-      if (!needle) return true;
-      return [
-        card.displayName,
-        card.displayNameEn,
-        card.cardType,
-        card.credentialType,
-        card.issuerHospitalName,
-        String(card.credentialId),
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(needle));
-    });
-  }, [cards, category, query, status]);
-  const activeFilteredCount = useMemo(
-    () =>
-      filteredCards.reduce(
-        (total, card) => total + (card.credentialStatus === "active" ? 1 : 0),
-        0,
-      ),
-    [filteredCards],
-  );
-
-  return (
-    <div className="view-stack">
-      <Surface className="documents-command">
-        <div>
-          <span className="eyebrow">กระเป๋าเอกสารสุขภาพที่ตรวจสอบได้</span>
-          <h2>{user.nameEn}</h2>
-          <p>
-            ค้นหาด้วยประเภทเอกสาร โรงพยาบาล Credential ID สถานะ หรือแหล่งที่มา
-            เอกสารสำคัญจะถูกปักหมุดไว้สำหรับการเข้ารับบริการ
-          </p>
-        </div>
-        <div className="trust-chip-row">
-          <Badge tone="green">
-            <ShieldCheck size={14} /> เชื่อมกับ TrustCare Portal
-          </Badge>
-          <Badge tone="blue">
-            <LockKeyhole size={14} /> พร้อมยืนยันตัวตน
-          </Badge>
-          <Badge tone="neutral">{cards.length} เอกสาร</Badge>
-        </div>
-      </Surface>
-
-      <Surface className="document-controls">
-        <label className="search-box">
-          <Search size={18} />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="ค้นหาเอกสาร ผู้ออกเอกสาร หรือ Credential ID..."
-          />
-        </label>
-        <label className="filter-box">
-          <Filter size={18} />
-          <select
-            value={status}
-            onChange={(event) =>
-              setStatus(
-                event.target.value as "all" | "active" | "expired" | "pinned",
-              )
-            }
-          >
-            <option value="all">ทุกสถานะ</option>
-            <option value="active">ใช้งานได้</option>
-            <option value="expired">หมดอายุ</option>
-            <option value="pinned">ปักหมุด / สำคัญ</option>
-          </select>
-        </label>
-      </Surface>
-
-      <section className="category-rail" aria-label="Document categories">
-        {categories.map((item) => (
-          <button
-            key={item}
-            type="button"
-            className={category === item ? "active" : ""}
-            onClick={() => setCategory(item)}
-          >
-            <span>{item === "all" ? "ทั้งหมด" : categoryLabel(item)}</span>
-            <strong>
-              {item === "all" ? cards.length : (counts[item] ?? 0)}
-            </strong>
-          </button>
-        ))}
-      </section>
-
-      <section className="critical-strip compact">
-        <div className="section-title-row">
-          <h2>เอกสารสำคัญ</h2>
-          <Badge tone="green">{pinnedCards.length}</Badge>
-        </div>
-        <div className="critical-card-row compact">
-          {pinnedCards.map((card) => (
-            <button
-              key={card.id}
-              type="button"
-              className="critical-card"
-              onClick={() => onOpenCard(card)}
-            >
-              <Pin size={16} />
-              <strong>{card.displayNameEn ?? card.displayName}</strong>
-              <small>{card.issuerHospitalName ?? card.scopeLabel}</small>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="credential-section">
-        <div className="section-title-row">
-          <div>
-            <h2>เอกสาร</h2>
-            <p>
-              พบ {filteredCards.length} รายการในขอบเขตของ {user.id}
-            </p>
-          </div>
-          <Badge tone="blue">{activeFilteredCount} ใช้งานได้</Badge>
-        </div>
-        <div className="cards-grid wallet-grid">
-          {filteredCards.map((card) => (
-            <WalletCardView
-              key={card.id}
-              card={card}
-              onClick={() => onOpenCard(card)}
-            />
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
 export function ReceiveView({
   user,
   fixtures,
@@ -1245,214 +744,6 @@ export function ReceiveView({
   );
 }
 
-export function WalletView({
-  cards,
-  counts,
-  user,
-  fixtures,
-  onImportFixture,
-  onCopyFixture,
-  onOpenCard,
-}: {
-  cards: WalletCard[];
-  counts: Record<string, number>;
-  user: WalletDemoUser;
-  fixtures: ReturnType<typeof buildPortalInteroperabilityFixtures>;
-  onImportFixture: (value: string) => void;
-  onCopyFixture: (label: string, value: string) => void;
-  onOpenCard: (card: WalletCard) => void;
-}) {
-  const readyCount = cards.filter(
-    (card) => card.credentialStatus === "active",
-  ).length;
-  const interopRows = [
-    {
-      icon: <Cloud size={18} />,
-      label: "TrustCare Portal",
-      value:
-        user.source === "trustcare_portal" ? "นำเข้าแล้ว" : "ทดสอบเชื่อมโยง",
-      detail: user.sourceLabel,
-    },
-    {
-      icon: <Layers3 size={18} />,
-      label: "Contract Hub",
-      value: "พร้อม",
-      detail: "mapping สำหรับเตรียมบริการ",
-    },
-    {
-      icon: <KeyRound size={18} />,
-      label: "OID4VCI / OID4VP",
-      value: "เปิดใช้งาน",
-      detail: "รับ offer และสร้าง VP request",
-    },
-    {
-      icon: <BadgeCheck size={18} />,
-      label: "คลัง SHL / VC-VP",
-      value: "พร้อมใช้",
-      detail: "portable objects",
-    },
-  ];
-
-  return (
-    <div className="view-stack">
-      <section className="partner-overview">
-        <div className="partner-copy">
-          <span className="eyebrow">TrustCare Wallet ส่วนตัว</span>
-          <h2>{user.nameEn}</h2>
-          <p>
-            {user.sourceLabel} · {user.hospitalName}
-          </p>
-          <div className="scope-grid" aria-label="Active wallet scope">
-            <span>
-              <small>ผู้ใช้</small>
-              <strong>{user.id}</strong>
-            </span>
-            <span>
-              <small>Holder DID</small>
-              <strong>{shortDid(user.holderDid)}</strong>
-            </span>
-            <span>
-              <small>รหัสผู้ป่วย</small>
-              <strong>{user.patientId}</strong>
-            </span>
-          </div>
-          <div className="chip-row">
-            <span>
-              {user.source === "trustcare_portal"
-                ? "นำเข้าจาก Portal"
-                : "สร้างใน Wallet"}
-            </span>
-            <span>{user.hospitalCode}</span>
-            <span>Contract Hub</span>
-            <span>OID4VCI</span>
-            <span>OID4VP</span>
-            <span>SHL</span>
-          </div>
-        </div>
-        <div className="interop-panel">
-          {interopRows.map((row) => (
-            <div className="interop-row" key={row.label}>
-              <span className="interop-icon">{row.icon}</span>
-              <span>
-                <strong>{row.label}</strong>
-                <small>{row.detail}</small>
-              </span>
-              <b>{row.value}</b>
-            </div>
-          ))}
-        </div>
-      </section>
-      <Surface className="fixture-panel">
-        <div className="section-title-row">
-          <div>
-            <h2>Payload สำหรับทดสอบเชื่อมต่อ</h2>
-            <p>
-              {user.id} · สร้าง OID4VCI, OID4VP และ SHL จาก scope
-              ผู้ใช้ที่กำลังใช้งาน
-            </p>
-          </div>
-          <Badge tone={user.source === "trustcare_portal" ? "blue" : "neutral"}>
-            {user.sourceLabel}
-          </Badge>
-        </div>
-        <div className="fixture-grid">
-          <button
-            type="button"
-            onClick={() => onImportFixture(fixtures.credentialOfferUrl)}
-          >
-            <KeyRound size={18} />
-            <span>
-              <strong>Import OID4VCI</strong>
-              <small>offer {fixtures.counts.cards} เอกสาร</small>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onImportFixture(fixtures.presentationRequestUrl)}
-          >
-            <QrCode size={18} />
-            <span>
-              <strong>Import OID4VP</strong>
-              <small>request ตรงกับเอกสารที่ใช้งานได้</small>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              onCopyFixture("OID4VP request", fixtures.presentationRequestUrl)
-            }
-          >
-            <Copy size={18} />
-            <span>
-              <strong>คัดลอก VP Request</strong>
-              <small>วางใน scanner/import</small>
-            </span>
-          </button>
-          <button
-            type="button"
-            disabled={!fixtures.shlQrPayload}
-            onClick={() =>
-              fixtures.shlQrPayload &&
-              onCopyFixture("SHL payload", fixtures.shlQrPayload)
-            }
-          >
-            <Network size={18} />
-            <span>
-              <strong>คัดลอก SHL</strong>
-              <small>
-                {fixtures.shlQrPayload ? "พร้อมใช้งาน" : "ไม่มีสำหรับ staff"}
-              </small>
-            </span>
-          </button>
-        </div>
-      </Surface>
-      <div className="metric-grid compact">
-        <Surface>
-          <Wallet size={20} />
-          <strong>{cards.length}</strong>
-          <span>เอกสารทั้งหมด</span>
-        </Surface>
-        <Surface>
-          <Shield size={20} />
-          <strong>{readyCount}</strong>
-          <span>พร้อมสร้าง VP</span>
-        </Surface>
-        <Surface>
-          <CheckCircle2 size={20} />
-          <strong>{counts.identity_and_access ?? 0}</strong>
-          <span>ตัวตนและสิทธิ์</span>
-        </Surface>
-        <Surface>
-          <RefreshCw size={20} />
-          <strong>{counts.sharing_and_sync ?? 0}</strong>
-          <span>SHL / Sync</span>
-        </Surface>
-      </div>
-      <section className="credential-section">
-        <div className="section-title-row">
-          <div>
-            <h2>เอกสาร</h2>
-            <p>
-              เลือกเอกสารเพื่อสร้าง QR ตามวัตถุประสงค์
-              ระบบจะเลือกวิธีส่งที่เหมาะสมให้โดยอัตโนมัติ
-            </p>
-          </div>
-          <Badge tone="blue">{readyCount} พร้อมใช้</Badge>
-        </div>
-        <div className="cards-grid wallet-grid">
-          {cards.map((card) => (
-            <WalletCardView
-              key={card.id}
-              card={card}
-              onClick={() => onOpenCard(card)}
-            />
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
 export function ShareView({
   cards,
   user,
@@ -1462,10 +753,14 @@ export function ShareView({
   verifierResult,
   scanOutcome,
   biometricEnabled,
+  exchangeDocuments,
+  holderIdentity,
+  walletExchangeWorkflow,
   onConfirmBiometric,
   onOpenScanner,
   onVerifyText,
   onExport,
+  onPersistShare,
 }: {
   cards: WalletCard[];
   user: WalletDemoUser;
@@ -1475,10 +770,14 @@ export function ShareView({
   verifierResult: VerifierResult | null;
   scanOutcome: ScanOutcome | null;
   biometricEnabled: boolean;
+  exchangeDocuments: WalletDocumentRecordV2[];
+  holderIdentity?: HolderSigningIdentity;
+  walletExchangeWorkflow: WalletExchangeWorkflow | null;
   onConfirmBiometric: () => Promise<boolean>;
   onOpenScanner: () => void;
   onVerifyText: (value: string) => void;
   onExport: (result: WalletExportResult) => void;
+  onPersistShare: (object: WalletStoredObject) => void;
 }) {
   const [disclosureIntent, setDisclosureIntent] =
     useState<ShareDisclosureIntent>("minimum_necessary");
@@ -1764,6 +1063,161 @@ export function ShareView({
       });
       return;
     }
+    if (protocolRequiresShl(packageProtocol)) {
+      try {
+        if (
+          !shareGatewayBaseUrl ||
+          !holderIdentity ||
+          !walletExchangeWorkflow
+        ) {
+          throw new Error(
+            "ยังสร้าง SHL ที่ผู้ป่วยลงนามไม่ได้ กรุณาเชื่อมต่อ Wallet Exchange และ Share Gateway ก่อน",
+          );
+        }
+        const selectedCredentialIds = new Set(
+          selectedCards.map((card) => String(card.credentialId)),
+        );
+        const documents = exchangeDocuments.filter((document) =>
+          selectedCredentialIds.has(String(document.credential.credentialId)),
+        );
+        if (!documents.length || documents.length !== selectedCards.length) {
+          throw new Error(
+            "SHL ที่ผู้ป่วยลงนามใช้ได้เฉพาะเอกสาร Portal ที่ตรวจ proof, issuer, status, expiry และ policy ผ่านแล้ว",
+          );
+        }
+        const consentRef = selectedCards.find(
+          (card) => card.cardType === "consent_receipt",
+        )?.credentialId;
+        if (!consentRef) {
+          throw new Error(
+            "ยังไม่มีใบยืนยันความยินยอมสำหรับผูกกับ SHL sharing event นี้",
+          );
+        }
+        const hospitalCode = user.hospitalCode.trim().toUpperCase();
+        if (!(["TCC", "TCP", "TCM"] as const).includes(hospitalCode as never)) {
+          throw new Error(
+            "โรงพยาบาลปลายทางยังไม่อยู่ใน Portal Trust Registry สำหรับขอรับรอง SHL",
+          );
+        }
+        const prepared = await walletExchangeWorkflow.prepareHolderAttestedShl({
+          publicationId: createSharingEventArtifactId("shl"),
+          documents,
+          purpose: readinessContextLabels[purpose].th,
+          recipient,
+          context: purpose,
+          consentRef: String(consentRef),
+          targetHospitalCode: hospitalCode,
+          expiresAt,
+          passcodeRequired: shlPolicy.passcodeRequired,
+          maxAccessCount: shlPolicy.maxAccessCount,
+        });
+        const published = await shareGatewayApi.publishHolderAttestedShl({
+          gatewayBaseUrl: shareGatewayBaseUrl,
+          viewerBaseUrl: currentAppBaseUrl(),
+          prepared,
+          userId: user.id,
+          holderDid: holderIdentity.did,
+          purpose,
+          purposeLabel: readinessContextLabels[purpose].th,
+          recipient,
+        });
+        const certificationAttempt =
+          packageProtocol === "hybrid"
+            ? await walletExchangeWorkflow.requestHospitalShlCertification(
+                prepared,
+              )
+            : null;
+        const certifiedPublication =
+          certificationAttempt?.status === "submitted" &&
+          certificationAttempt.response.status === "approved"
+            ? await walletExchangeWorkflow.finalizeHospitalCertifiedShl({
+                prepared,
+                response: certificationAttempt.response,
+              })
+            : null;
+        const publishedCertification = certifiedPublication
+          ? await shareGatewayApi.publishHospitalCertifiedShl({
+              gatewayBaseUrl: shareGatewayBaseUrl,
+              publication: certifiedPublication,
+              userId: user.id,
+              holderDid: holderIdentity.did,
+              purpose,
+              purposeLabel: readinessContextLabels[purpose].th,
+              recipient,
+            })
+          : null;
+        const exportPayload = JSON.stringify(
+          {
+            type: publishedCertification
+              ? "HospitalCertifiedSHL"
+              : "HolderAttestedSHL",
+            trustMode: publishedCertification?.trustMode ?? published.trustMode,
+            shlPackageId: published.shlPackageId,
+            manifestUrl:
+              publishedCertification?.manifestUrl ?? published.manifestUrl,
+            canonicalShlUrl: published.canonicalShlUrl,
+            holderPresentationId: prepared.holderPresentationId,
+            manifestHash: prepared.manifestHash,
+            fileHashes: prepared.expectedManifestCredentialBinding.fileHashes,
+            certificationStatus:
+              certificationAttempt?.status === "submitted"
+                ? certificationAttempt.response.status
+                : (certificationAttempt?.status ?? "not_requested"),
+            manifestCredentialId:
+              certifiedPublication?.objectLinks.manifestCredentialId,
+          },
+          null,
+          2,
+        );
+        setSharePayload(published.qrPayload);
+        setShareExportPayload(exportPayload);
+        setShareQrDataUrl(
+          await toQrDataUrl(published.qrPayload, { margin: 1, width: 240 }),
+        );
+        setSharePublication({
+          state: "published",
+          message: publishedCertification
+            ? "โรงพยาบาลรับรองแล้ว · ตรวจลายเซ็น สถานะ hashes ผู้ถือ และนโยบายครบ"
+            : packageProtocol === "hybrid"
+              ? "สร้าง SHL ที่ผู้ป่วยลงนามแล้ว · รอการรับรองจากโรงพยาบาล"
+              : "สร้าง Standard SHL ที่ผู้ป่วยลงนามแล้ว",
+          warnings: [
+            ...published.warnings,
+            ...(publishedCertification?.warnings ?? []),
+          ],
+          artifactUrl:
+            publishedCertification?.manifestUrl ?? published.manifestUrl,
+        });
+        onPersistShare({
+          id: `shl:${published.shlPackageId}:${createdAt}`,
+          type: "shl",
+          title: publishedCertification
+            ? "SHL ที่โรงพยาบาลรับรองแล้ว"
+            : "SHL ที่ผู้ป่วยยืนยันการแชร์",
+          subtitle: readinessContextLabels[purpose].th,
+          status: publishedCertification ? "verified" : "active",
+          protocol: "shl",
+          createdAt,
+          expiresAt,
+          source: user.id,
+          payload: JSON.parse(exportPayload),
+        });
+        return;
+      } catch (error) {
+        setSharePayload("");
+        setShareExportPayload("");
+        setShareQrDataUrl("");
+        setSharePublication({
+          state: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "สร้าง holder-attested SHL ไม่สำเร็จ",
+          warnings: [],
+        });
+        return;
+      }
+    }
     const result = buildSharePackage({
       mode: sharePackageMode,
       context: purpose,
@@ -1840,6 +1294,18 @@ export function ShareView({
           warnings: publication.warnings,
           artifactUrl: publication.publicUrl,
         });
+        onPersistShare({
+          id: `vp:${result.presentation.presentationId}`,
+          type: "vp",
+          title: "VP ที่ผู้ป่วยสร้างเพื่อการแชร์",
+          subtitle: readinessContextLabels[purpose].th,
+          status: "active",
+          protocol: "trustcare",
+          createdAt,
+          expiresAt,
+          source: user.id,
+          payload: result,
+        });
         return;
       }
 
@@ -1873,6 +1339,18 @@ export function ShareView({
           result.shl.viewerUrl ??
           result.shl.webViewerUrl,
       });
+      onPersistShare({
+        id: `shl:${String(result.shl.gatewayPublicationId ?? result.shl.shlId)}:${createdAt}`,
+        type: "shl",
+        title: "Standard SHL",
+        subtitle: readinessContextLabels[purpose].th,
+        status: "active",
+        protocol: "shl",
+        createdAt,
+        expiresAt,
+        source: user.id,
+        payload: result,
+      });
     } catch (error) {
       setSharePayload("");
       setShareExportPayload(exportPayload);
@@ -1888,14 +1366,17 @@ export function ShareView({
     }
   }, [
     biometricEnabled,
+    exchangeDocuments,
     expiryMinutes,
     mode,
     onConfirmBiometric,
+    onPersistShare,
     packageProtocol,
     purpose,
     purposeReadiness,
     recipient,
     selectedCards,
+    holderIdentity,
     sharePolicy,
     sharePackageMode,
     shareProfile,
@@ -1903,6 +1384,7 @@ export function ShareView({
     shlPolicy,
     timeAnchor,
     user,
+    walletExchangeWorkflow,
   ]);
 
   const createRequest = useCallback(async () => {
@@ -2933,8 +2415,8 @@ export function DocumentFlowControls({
         <div className="document-flow-control-panel">
           <strong>TrustCare Certification</strong>
           <p>
-            ต้องมี Manifest VP/VC, Holder VC และ issuer attestation ที่ verifier
-            ตรวจสอบได้ก่อน SHL จึงจะกลายเป็น Certified SHL+Manifest VP
+            ต้องมี holder VP, Manifest Credential และ issuer attestation ที่
+            verifier ตรวจสอบได้ก่อน SHL จึงจะกลายเป็น Certified SHL+Manifest VP
           </p>
         </div>
       )}
@@ -3502,7 +2984,7 @@ export function StoreView({
         <div>
           <h2>คลัง VC/VP/SHL</h2>
           <p>
-            เก็บ VC, VP, SHL, Manifest VP, Holder VC, sync receipts, OID4VCI
+            เก็บ VC, holder VP, SHL, Manifest Credential, sync receipts, OID4VCI
             offers และ OID4VP requests ใน wallet เดียว
           </p>
         </div>
@@ -3832,7 +3314,7 @@ export function ShlManifestViewer({
             <h3>
               {trustProfile.kind === "trustcare-pending"
                 ? "รอการยืนยัน TrustCare Manifest"
-                : "SHL มาตรฐานที่ไม่มี Manifest VP/VC"}
+                : "SHL มาตรฐานที่ผู้ถือกุญแจแชร์ได้โดยไม่อ้างการรับรองจากโรงพยาบาล"}
             </h3>
             <p>{trustProfile.description}</p>
           </div>
@@ -4576,7 +4058,7 @@ export function ScanResponseDialog({
               </h3>
               <p>
                 {descriptor?.payloadKind === "shl"
-                  ? "Wallet เก็บ canonical SHL เดิมไว้เพื่อ compatibility และผูก TrustCare Manifest VP/VC สำหรับให้ verifier ตรวจผู้ถือเอกสาร แหล่งที่มา และความครบถ้วนของ manifest."
+                  ? "Wallet เก็บ canonical SHL เดิมไว้และผูก holder VP; หากขอการรับรองจะเพิ่มเฉพาะ Manifest Credential ที่ Portal ลงนามและ Wallet ตรวจผ่าน."
                   : "Payload ถูกบันทึกตาม protocol ที่ตรวจพบ และต้องตรวจสอบความน่าเชื่อถือก่อนนำไปใช้ต่อ."}
               </p>
             </div>
@@ -4654,136 +4136,6 @@ export function ScanResponseDialog({
   );
 }
 
-export function HistoryView({
-  history,
-  scanHistory,
-}: {
-  history: PresentationHistoryItem[];
-  scanHistory: ScanOutcome[];
-}) {
-  return (
-    <div className="history-list large">
-      {scanHistory.map((item) => (
-        <Surface className="history-row scan-history-row" key={item.id}>
-          <QrCode size={22} />
-          <span>
-            <strong>
-              {item.verifier.protocol ?? item.importResult.format}
-            </strong>
-            <small>
-              {new Date(item.scannedAt).toLocaleString("th-TH")} · บริบท:{" "}
-              {contextLabel(item.context)}
-            </small>
-          </span>
-          <Badge tone={item.verifier.verified ? "green" : "yellow"}>
-            {item.verifier.verified ? "สแกนผ่าน" : "ตรวจเพิ่ม"}
-          </Badge>
-        </Surface>
-      ))}
-      {history.map((item) => (
-        <Surface className="history-row" key={item.id}>
-          <History size={22} />
-          <span>
-            <strong>{item.verifierName}</strong>
-            <small>
-              {item.presentedAt
-                ? new Date(item.presentedAt).toLocaleString("th-TH")
-                : item.purpose}
-            </small>
-          </span>
-          <Badge
-            tone={item.verificationResult === "valid" ? "green" : "neutral"}
-          >
-            {statusLabel(item.verificationResult ?? "recorded")}
-          </Badge>
-        </Surface>
-      ))}
-    </div>
-  );
-}
-
-export function SettingsView({
-  webAuthn,
-  theme,
-  setTheme,
-  developerMode,
-  setDeveloperMode,
-  user,
-}: {
-  webAuthn: ReturnType<typeof useWebAuthn>;
-  theme: "light" | "dark";
-  setTheme: (theme: "light" | "dark") => void;
-  developerMode: boolean;
-  setDeveloperMode: (enabled: boolean) => void;
-  user: WalletDemoUser;
-}) {
-  return (
-    <div className="settings-grid">
-      <Surface>
-        <Smartphone size={28} />
-        <h3>พร้อมใช้งานบนมือถือ</h3>
-        <p>
-          รองรับ SecureStore, SQLite, LocalAuthentication, Camera QR, SHL
-          และการนำเข้า-ส่งออก VC/VP ใน Expo app
-        </p>
-      </Surface>
-      <Surface>
-        <Shield size={28} />
-        <h3>ยืนยันตัวตนด้วย Biometric</h3>
-        <p>
-          {webAuthn.isRegistered
-            ? "เปิดการยืนยันก่อนแสดง QR แล้ว"
-            : "ยังไม่ได้ตั้งค่า biometric gate"}
-        </p>
-        <Button
-          onClick={() =>
-            webAuthn.isRegistered
-              ? webAuthn.unregister()
-              : void webAuthn.register(String(user.patientId), user.nameTh)
-          }
-        >
-          {webAuthn.isRegistered ? "ปิด Biometric" : "ตั้งค่า Biometric"}
-        </Button>
-      </Surface>
-      <Surface>
-        <Globe2 size={28} />
-        <h3>ธีม</h3>
-        <Button onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
-          {theme === "light" ? "โหมดมืด" : "โหมดสว่าง"}
-        </Button>
-      </Surface>
-      <Surface>
-        <KeyRound size={28} />
-        <h3>โหมดนักพัฒนา</h3>
-        <p>
-          แสดง payload และเครื่องมือทดสอบ protocol ในหน้ารับเอกสาร
-          โดยไม่ปนกับประสบการณ์ใช้งานปกติของ Wallet
-        </p>
-        <Button
-          className={developerMode ? "green" : "secondary"}
-          onClick={() => setDeveloperMode(!developerMode)}
-        >
-          {developerMode ? "เปิดโหมดนักพัฒนา" : "ปิดโหมดนักพัฒนา"}
-        </Button>
-      </Surface>
-    </div>
-  );
-}
-
-export function categoryLabel(category?: string): string {
-  if (!category) return "-";
-  return categoryLabels[category]?.th ?? category;
-}
-
-export function transportLabel(transport: ShareTransport): string {
-  const labels = {
-    vp_qr: "VP QR",
-    shl_recommended: "SHL/VP Bundle",
-    shl_manifest: "SHL พร้อม TrustCare Manifest",
-  };
-  return labels[transport];
-}
-
 export function getCardRecordTimestamp(card: WalletCard): string {
   const data = card.credentialData ?? {};
   const candidates = [
@@ -4856,43 +4208,6 @@ function homeCardTrust(card: WalletCard): {
   return { label: presentation.labelTh, tone: presentation.tone };
 }
 
-export function contextLabel(context: ScanOutcome["context"]): string {
-  if (context in readinessContextLabels) {
-    return readinessContextLabels[context as ReadinessContext].th;
-  }
-  const labels: Record<string, string> = {
-    home: "หน้าแรก",
-    documents: "เอกสาร",
-    receive: "รับเอกสาร",
-    share: "แชร์/ตรวจสอบ",
-    prepare: "เตรียมเข้ารับบริการ",
-    store: "คลังพกพา",
-    history: "ประวัติ",
-    settings: "ตั้งค่า",
-    qr_scan: "สแกน QR",
-  };
-  return labels[String(context)] ?? String(context);
-}
-
-export function statusLabel(status?: string | null): string {
-  const labels: Record<string, string> = {
-    active: "ใช้งานได้",
-    verified: "ตรวจสอบแล้ว",
-    valid: "ถูกต้อง",
-    pending: "รอดำเนินการ",
-    expired: "หมดอายุ",
-    revoked: "ถูกเพิกถอน",
-    invalid: "ไม่ถูกต้อง",
-    suspended: "ระงับชั่วคราว",
-    superseded: "มีเอกสารใหม่แทนแล้ว",
-    ready: "พร้อม",
-    partial: "บางส่วน",
-    imported: "นำเข้าแล้ว",
-    recorded: "บันทึกแล้ว",
-  };
-  return labels[String(status ?? "")] ?? String(status ?? "-");
-}
-
 function credentialRequestTone(
   status?: string | null,
 ): "green" | "yellow" | "blue" | "red" {
@@ -4943,8 +4258,9 @@ export function trustcareBindingLabel(
     NonNullable<ScanPayloadDescriptor["trustcareBinding"]>,
     string
   > = {
-    pending_manifest_vp: "รอ TrustCare Manifest",
-    certified_manifest_vp: "TrustCare Manifest VP",
+    hospital_certified: "โรงพยาบาลรับรองแล้ว",
+    pending_hospital_certification: "รอการรับรองจากโรงพยาบาล",
+    holder_attested: "ผู้ป่วยยืนยันการแชร์",
     standard_only: "SHL มาตรฐาน",
   };
   return binding ? labels[binding] : "-";
@@ -4980,7 +4296,7 @@ export function describeScannablePayload(value: string): ScanPayloadDescriptor {
       label: shl.label,
       passcodeRequired: shl.passcodeRequired,
       expiresAt: shl.expiresAt,
-      trustcareBinding: "pending_manifest_vp",
+      trustcareBinding: "pending_hospital_certification",
     };
   }
   let transport: ScanPayloadDescriptor["transport"] = "raw_payload";
@@ -5241,23 +4557,77 @@ export function initials(value: string): string {
 }
 
 export function getShlTrustProfile(shl: ShlPackageDetail | null | undefined): {
-  kind: "trustcare-certified" | "trustcare-pending" | "standard-shl";
+  kind:
+    | "trustcare-certified"
+    | "trustcare-pending"
+    | "holder-attested"
+    | "standard-shl";
   label: string;
   tone: "green" | "yellow" | "blue" | "neutral";
   description: string;
 } {
-  const hasManifestBinding = Boolean(
+  const hasCertificationMetadata = Boolean(
     shl?.manifestCredentialId &&
     shl?.presentationId &&
     shl?.documentBundle?.documents?.length,
   );
-  if (hasManifestBinding) {
+  const hasManifestBinding = Boolean(
+    hasCertificationMetadata &&
+    shl?.manifestCredentialJwt &&
+    shl?.holderPresentationJwt,
+  );
+  const verification = shl?.trustVerification;
+  const fullyVerified = Boolean(
+    hasManifestBinding &&
+    verification?.verified &&
+    verification.proof &&
+    verification.issuer &&
+    verification.status &&
+    verification.expiry &&
+    verification.subject &&
+    verification.manifestHash &&
+    verification.fileHashes &&
+    verification.purpose &&
+    verification.audience &&
+    verification.policy,
+  );
+  if (fullyVerified) {
+    return {
+      kind: "trustcare-certified",
+      label: "โรงพยาบาลรับรองแล้ว",
+      tone: "green",
+      description:
+        "ตรวจลายเซ็น ผู้ออก สถานะ อายุ เอกสาร ผู้ถือ วัตถุประสงค์ ผู้รับ และ hash binding ครบแล้ว",
+    };
+  }
+  if (hasCertificationMetadata) {
     return {
       kind: "trustcare-pending",
-      label: "รอ TrustCare Manifest",
+      label: "รอการรับรองจากโรงพยาบาล",
       tone: "yellow",
       description:
-        "พบ Manifest VP/VC แต่ยังต้องตรวจลายเซ็น ผู้ออก สถานะ ผู้ถือเอกสาร และนโยบายให้ครบก่อนใช้เป็น TrustCare verified package",
+        "ยังตรวจลายเซ็น ผู้ออก สถานะ ผู้ถือเอกสาร hash และนโยบายไม่ครบ จึงยังไม่เป็นเอกสารที่โรงพยาบาลรับรอง",
+    };
+  }
+  if (
+    shl?.trustcareCertification?.status === "pending_maker_checker" ||
+    shl?.trustcareCertification?.status === "rejected"
+  ) {
+    return {
+      kind: "trustcare-pending",
+      label: "รอการรับรองจากโรงพยาบาล",
+      tone: "yellow",
+      description:
+        "ยังไม่มี Manifest Credential ที่ลงนามและตรวจสอบผ่าน จึงใช้ได้เฉพาะ SHL ที่ผู้ป่วยยืนยันเท่านั้น",
+    };
+  }
+  if (shl?.holderPresentationJwt) {
+    return {
+      kind: "holder-attested",
+      label: "ผู้ป่วยยืนยันการแชร์",
+      tone: "blue",
+      description:
+        "เป็น Standard SHL ที่ผูก manifest, file hashes, ผู้รับ วัตถุประสงค์ ความยินยอม และอายุไว้ใน VP ที่ผู้ถือกุญแจลงนาม",
     };
   }
   return {
@@ -5265,7 +4635,7 @@ export function getShlTrustProfile(shl: ShlPackageDetail | null | undefined): {
     label: "Standard SHL",
     tone: "blue",
     description:
-      "SHL มาตรฐานจากภายนอก อ่านและแชร์ต่อได้โดยไม่ต้องมี Manifest VP/VC",
+      "SHL มาตรฐานจากภายนอกอ่านและแชร์ต่อได้โดยไม่อ้างว่าโรงพยาบาลรับรอง",
   };
 }
 
@@ -5343,33 +4713,6 @@ export function clearScanPayloadFromLocation() {
   );
 }
 
-export function currentShareGatewayBaseUrl(): string | null {
-  const configured = env.shareGatewayUrl;
-  if (configured) return configured.replace(/\/$/, "");
-  if (typeof window === "undefined") {
-    return defaultPublicShareGatewayUrl.replace(/\/$/, "");
-  }
-  const { hostname, origin } = window.location;
-  if (hostname === "127.0.0.1" || hostname === "localhost") {
-    return `${window.location.origin}/api/share-gateway`;
-  }
-  if (hostname.endsWith("github.io")) {
-    return defaultPublicShareGatewayUrl.replace(/\/$/, "");
-  }
-  return `${origin}/api/share-gateway`;
-}
-
-export function currentAppBaseUrl(): string {
-  return currentAppShareRootUrl().replace(/\/$/, "");
-}
-
-export function currentAppShareRootUrl(): string {
-  if (typeof window === "undefined") return "https://trustcare.example.com/";
-  return new URL(import.meta.env.BASE_URL || "/", window.location.origin)
-    .toString()
-    .replace(/#.*$/, "");
-}
-
 export function toneForObject(
   object: WalletStoredObject,
 ): "neutral" | "green" | "yellow" | "red" | "blue" {
@@ -5429,133 +4772,4 @@ export function friendlyPortalSyncError(error: unknown): string {
     ].join(" · ");
   }
   return message;
-}
-
-export function UserAvatarImage({
-  user,
-  cards = [],
-}: {
-  user: WalletDemoUser;
-  cards?: WalletCard[];
-}) {
-  const candidates = useMemo(
-    () => avatarUrlCandidatesForUser(user, cards),
-    [cards, user],
-  );
-  const photoCandidates = useMemo(
-    () =>
-      candidates.map((url, index) => ({
-        label: `user.avatar:${index + 1}`,
-        url,
-      })),
-    [candidates],
-  );
-  const { candidate, imageSrc, isLoaded, markFailed, markLoaded } =
-    useLoadedPhotoCandidate(photoCandidates);
-  const initials = initialsFromName(user.nameEn || user.nameTh);
-
-  return (
-    <span className="user-avatar-image" aria-label={user.nameEn || user.nameTh}>
-      <span className="user-avatar-fallback" aria-hidden="true">
-        {initials}
-      </span>
-      {candidate && imageSrc && (
-        <img
-          className={isLoaded ? "loaded" : ""}
-          src={imageSrc}
-          alt=""
-          onLoad={markLoaded}
-          onError={markFailed}
-        />
-      )}
-    </span>
-  );
-}
-
-function CredentialSubjectAvatar({ card }: { card: WalletCard }) {
-  const candidates = useMemo(() => photoCandidatesForCard(card), [card]);
-  const { candidate, imageSrc, isLoaded, markFailed, markLoaded } =
-    useLoadedPhotoCandidate(candidates);
-
-  return (
-    <span
-      className="user-avatar-image credential-subject-avatar"
-      aria-label={
-        candidate && imageSrc
-          ? "รูปผู้ถือเอกสารจาก credential เดียวกัน"
-          : "ไม่พบรูปผู้ถือเอกสารใน credential ต้นฉบับ"
-      }
-    >
-      <ImageOff aria-hidden="true" />
-      {candidate && imageSrc ? (
-        <img
-          className={isLoaded ? "loaded" : ""}
-          src={imageSrc}
-          alt=""
-          onLoad={markLoaded}
-          onError={markFailed}
-        />
-      ) : null}
-    </span>
-  );
-}
-
-export function avatarUrlCandidatesForUser(
-  user: WalletDemoUser,
-  cards: WalletCard[] = [],
-): string[] {
-  const candidates: string[] = [];
-  const add = (url: string | null | undefined) => {
-    if (!url) return;
-    const resolved = resolveAvatarCandidateUrl(url);
-    if (isUnstableBrowserAvatarUrl(resolved)) return;
-    if (resolved && !candidates.includes(resolved)) candidates.push(resolved);
-  };
-
-  for (const card of cards) {
-    if (card.ownerUserId && card.ownerUserId !== user.id) continue;
-    for (const candidate of photoCandidatesForCard(card)) {
-      add(candidate.url);
-    }
-  }
-  for (const candidate of normalizePhotoUrlCandidates(user.avatarUrl)) {
-    add(candidate);
-  }
-  return candidates;
-}
-
-function isUnstableBrowserAvatarUrl(url: string): boolean {
-  try {
-    return new URL(url).hostname.endsWith(".manus.space");
-  } catch {
-    return false;
-  }
-}
-
-function resolveAvatarCandidateUrl(url: string): string {
-  const trimmed = url.trim();
-  if (
-    /^https?:\/\//i.test(trimmed) ||
-    trimmed.startsWith("data:") ||
-    trimmed.startsWith("/assets/")
-  )
-    return trimmed;
-  return resolveAvatarUrl(trimmed);
-}
-
-export function resolveAvatarUrl(url: string): string {
-  const normalized = normalizePhotoUrl(url);
-  if (
-    /^https?:\/\//i.test(normalized) ||
-    normalized.startsWith("data:") ||
-    normalized.startsWith("/")
-  )
-    return normalized;
-  const base = import.meta.env.BASE_URL || "/";
-  return `${base.replace(/\/$/, "")}/${normalized.replace(/^\//, "")}`;
-}
-
-export function shortDid(did: string): string {
-  if (did.length <= 22) return did;
-  return `${did.slice(0, 12)}...${did.slice(-6)}`;
 }

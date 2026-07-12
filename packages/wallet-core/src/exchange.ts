@@ -194,8 +194,7 @@ export function exportWalletObject(
   if (
     (object.type === "vc" ||
       object.type === "shl_manifest" ||
-      object.type === "sync_receipt" ||
-      object.type === "holder_vc") &&
+      object.type === "sync_receipt") &&
     looksLikeWalletCard(object.payload)
   )
     return exportWalletCard(object.payload);
@@ -497,12 +496,7 @@ function formatForStoredObject(type: WalletStoredObjectType) {
   if (type === "shl") return "shl-json";
   if (type === "vp" || type === "service_packet" || type === "manifest_vp")
     return "trustcare-vp-json";
-  if (
-    type === "vc" ||
-    type === "shl_manifest" ||
-    type === "sync_receipt" ||
-    type === "holder_vc"
-  )
+  if (type === "vc" || type === "shl_manifest" || type === "sync_receipt")
     return "trustcare-vc-json";
   if (type === "oid4vci_offer") return "oid4vci-offer";
   if (type === "oid4vp_request") return "oid4vp-request";

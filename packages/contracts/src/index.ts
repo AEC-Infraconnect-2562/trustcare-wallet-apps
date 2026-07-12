@@ -17,7 +17,6 @@ export type ShareGatewayArtifactKind =
   | "certified_shl_manifest"
   | "manifest_vp"
   | "manifest_credential"
-  | "holder_authorization"
   | "shl_file";
 
 export type ShareGatewayAccessPolicyContract = {
@@ -125,7 +124,6 @@ export function assertShareGatewayPublicationRequest(
       "certified_shl_manifest",
       "manifest_vp",
       "manifest_credential",
-      "holder_authorization",
       "shl_file",
     ],
     issues,
@@ -172,7 +170,6 @@ export function assertShareGatewayPublicationResponse(
       "certified_shl_manifest",
       "manifest_vp",
       "manifest_credential",
-      "holder_authorization",
       "shl_file",
     ],
     issues,

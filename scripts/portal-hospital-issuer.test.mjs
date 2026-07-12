@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  portalHospitalDid,
   resolvePortalHospitalVerificationContext,
 } from "./portal-hospital-issuer.mjs";
 
 const portalOrigin =
   "https://trustcare-hospital-network-production.up.railway.app";
-const issuerDid = portalHospitalDid(portalOrigin, "TCC");
+const issuerDid = "did:web:issuer-authority.example:tcc";
 const kid = `${issuerDid}#active-key`;
 const publicJwk = {
   kty: "EC",
@@ -54,20 +53,29 @@ test("resolves only the live Portal hospital DID and active JWKS key", async () 
   ]);
 });
 
-test("rejects a Wallet-owned or retired hospital DID without fetching", async () => {
+test("rejects a controller not returned by Portal discovery", async () => {
   let calls = 0;
   const result = await resolvePortalHospitalVerificationContext({
     portalBaseUrl: portalOrigin,
-    controller: "did:web:wallet.example:hospital:tcc",
-    kid: "did:web:wallet.example:hospital:tcc#key-1",
-    fetchImpl: async () => {
+    controller: "did:web:unregistered-issuer.example:hospital:tcc",
+    kid: "did:web:unregistered-issuer.example:hospital:tcc#key-1",
+    fetchImpl: async (url) => {
       calls += 1;
-      throw new Error("must not fetch");
+      return jsonResponse(
+        String(url).endsWith("did.json")
+          ? {
+              id: issuerDid,
+              verificationMethod: [],
+              assertionMethod: [],
+              trustcare: { hospitalCode: "TCC", syntheticTestData: false },
+            }
+          : { issuer: issuerDid, hospitalCode: "TCC", keys: [] },
+      );
     },
   });
 
   assert.equal(result, null);
-  assert.equal(calls, 0);
+  assert.equal(calls, 6);
 });
 
 test("fails closed when Portal reports synthetic issuer data", async () => {
@@ -94,7 +102,7 @@ test("fails closed when Portal reports synthetic issuer data", async () => {
               },
         ),
     }),
-    /does not match its origin/,
+    /does not match its trust registry entry/,
   );
 });
 

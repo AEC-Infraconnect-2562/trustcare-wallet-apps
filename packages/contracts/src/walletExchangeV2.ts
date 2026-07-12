@@ -7,8 +7,9 @@ export const WALLET_EXCHANGE_V2_CONTRACT_VERSION =
   "2026.07.wallet-exchange.v2" as const;
 export const PORTAL_WALLET_V2_CONTRACT_VERSION =
   "2026.07.portal-wallet.v2" as const;
+/** Inspected Wallet baseline for provenance only; never a compatibility gate. */
 export const WALLET_RENDERER_REFERENCE_COMMIT =
-  "41175474e8c0214587a7c8dca1209b49bd2f43c8" as const;
+  "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f" as const;
 
 export const WALLET_EXCHANGE_V2_SCOPES = [
   "credentials:read",
@@ -56,6 +57,7 @@ export type WalletExchangeDiscovery = {
     publicContracts: string;
     shareGateway: string;
     issuerJwks: string;
+    shlCertifications?: string;
   };
   protocols: {
     credentialLifecycle: string;
@@ -73,7 +75,7 @@ export type WalletExchangeDiscovery = {
   };
   renderer: {
     repository: "AEC-Infraconnect-2562/trustcare-wallet-apps";
-    referenceCommit: typeof WALLET_RENDERER_REFERENCE_COMMIT;
+    referenceCommit: string;
     modelPackage: "@trustcare/wallet-core";
     webPackage: "@trustcare/ui-web";
     rule: string;
@@ -171,7 +173,7 @@ export type WalletSyncedCredential = {
   renderer: {
     authority: "trustcare_wallet";
     repository: "AEC-Infraconnect-2562/trustcare-wallet-apps";
-    referenceCommit: typeof WALLET_RENDERER_REFERENCE_COMMIT;
+    referenceCommit: string;
     renderVersion: string;
   };
 };
@@ -662,9 +664,14 @@ function validateDiscoveryEndpoints(value: unknown, issues: TrustCareValidationI
   const path = "$.endpoints";
   const object = nestedObject(value, path, issues);
   if (!object) return;
-  const keys = ["credentialSync", "credentialSyncAck", "credentialRequests", "documentSubmissions", "publicContracts", "shareGateway", "issuerJwks"];
-  exactKeys(object, keys, path, issues);
-  keys.forEach((key) => absoluteUrlString(object, key, path, issues));
+  const requiredKeys = ["credentialSync", "credentialSyncAck", "credentialRequests", "documentSubmissions", "publicContracts", "shareGateway", "issuerJwks"];
+  exactKeys(object, [...requiredKeys, "shlCertifications"], path, issues);
+  requiredKeys.forEach((key) =>
+    absoluteUrlString(object, key, path, issues),
+  );
+  if (object.shlCertifications !== undefined) {
+    absoluteUrlString(object, "shlCertifications", path, issues);
+  }
   if (typeof object.issuerJwks === "string") {
     try {
       if (new URL(object.issuerJwks).pathname !== "/.well-known/jwks.json") {
@@ -696,6 +703,7 @@ function validateDiscoveryOriginCoherence(
     endpoints?.publicContracts,
     endpoints?.shareGateway,
     endpoints?.issuerJwks,
+    endpoints?.shlCertifications,
   ].filter((value): value is string => typeof value === "string");
   const origins = new Set<string>();
   for (const value of urls) {
@@ -744,7 +752,7 @@ function validateDiscoveryRenderer(value: unknown, issues: TrustCareValidationIs
   if (!object) return;
   exactKeys(object, ["repository", "referenceCommit", "modelPackage", "webPackage", "rule"], path, issues);
   literalString(object, "repository", "AEC-Infraconnect-2562/trustcare-wallet-apps", path, issues);
-  literalString(object, "referenceCommit", WALLET_RENDERER_REFERENCE_COMMIT, path, issues);
+  gitCommitString(object, "referenceCommit", path, issues);
   literalString(object, "modelPackage", "@trustcare/wallet-core", path, issues);
   literalString(object, "webPackage", "@trustcare/ui-web", path, issues);
   nonEmptyString(object, "rule", path, issues, 1, 500);
@@ -818,7 +826,7 @@ function validateSyncedCredential(value: unknown, path: string, issues: TrustCar
     exactKeys(renderer, ["authority", "repository", "referenceCommit", "renderVersion"], `${path}.renderer`, issues);
     literalString(renderer, "authority", "trustcare_wallet", `${path}.renderer`, issues);
     literalString(renderer, "repository", "AEC-Infraconnect-2562/trustcare-wallet-apps", `${path}.renderer`, issues);
-    literalString(renderer, "referenceCommit", WALLET_RENDERER_REFERENCE_COMMIT, `${path}.renderer`, issues);
+    gitCommitString(renderer, "referenceCommit", `${path}.renderer`, issues);
     nonEmptyString(renderer, "renderVersion", `${path}.renderer`, issues, 1, 100);
   }
   if (object.deliveryState === "signed" && object.proof === null) issue(issues, `${path}.proof`, "is required when deliveryState is signed");
@@ -1032,6 +1040,10 @@ function regexString(object: Record<string, unknown>, key: string, pattern: RegE
 
 function sha256String(object: Record<string, unknown>, key: string, path: string, issues: TrustCareValidationIssue[]) {
   regexString(object, key, /^sha256:[a-f0-9]{64}$/, path, issues, "must be a lowercase sha256: digest");
+}
+
+function gitCommitString(object: Record<string, unknown>, key: string, path: string, issues: TrustCareValidationIssue[]) {
+  regexString(object, key, /^[a-f0-9]{40}$/, path, issues, "must be a lowercase 40-character Git commit for provenance");
 }
 
 function compactJwtString(object: Record<string, unknown>, key: string, path: string, issues: TrustCareValidationIssue[], min: number, max: number) {

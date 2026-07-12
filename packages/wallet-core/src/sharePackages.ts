@@ -90,15 +90,13 @@ export function buildSharePackage(
       ownerUserId:
         selectedCards.find((card) => card.ownerUserId != null)?.ownerUserId ??
         undefined,
-      patientId:
-        selectedCards.find((card) => card.patientId != null)?.patientId ??
-        undefined,
       receiver: input.recipient,
       purpose,
       origin: input.origin,
       gatewayBaseUrl: input.gatewayBaseUrl,
       viewerBaseUrl: input.viewerBaseUrl,
-      includeTrustCareManifestVp: input.mode === "CertifiedSHLManifestPackage",
+      requestHospitalCertification:
+        input.mode === "CertifiedSHLManifestPackage",
       policy: {
         expiresAt,
         passcodeRequired: input.shlPolicy?.passcodeRequired,
@@ -117,8 +115,6 @@ export function buildSharePackage(
         qrPayload: publication.qrPayload,
         manifestUrl: publication.manifestUrl,
         trustLayerStatus: publication.trustLayerStatus,
-        manifestVpUrl: publication.manifest.trustcare.manifestVpUrl,
-        manifestVpHash: publication.manifest.trustcare.manifestVpHash,
       },
     };
   }

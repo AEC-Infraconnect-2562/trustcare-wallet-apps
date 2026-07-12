@@ -63,7 +63,7 @@ export function recommendSharePacket(
     mode = "StandardSHL";
     if (wantsCertified) {
       warnings.push(
-        "ใช้ SHL มาตรฐานได้ แต่ยังไม่ขึ้นสถานะ TrustCare-certified จนกว่าจะมี Manifest VP และ Holder VC",
+        "ใช้ SHL ที่ผู้ป่วยยืนยันได้ทันที แต่ยังไม่ขึ้นสถานะโรงพยาบาลรับรองจนกว่า Manifest Credential จะตรวจผ่าน",
       );
     }
   } else {

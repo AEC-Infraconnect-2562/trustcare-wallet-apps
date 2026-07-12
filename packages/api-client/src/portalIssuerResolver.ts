@@ -61,7 +61,6 @@ export async function resolvePortalHospitalIssuer(input: {
   const portalOrigin = normalizePortalOrigin(input.portalBaseUrl);
   const hospitalCode = normalizeHospitalCode(input.hospitalCode);
   const code = hospitalCode.toLowerCase();
-  const issuerDid = portalHospitalDid(portalOrigin, hospitalCode);
   const didUrl = `${portalOrigin}/hospital/${code}/did.json`;
   const jwksUrl = `${portalOrigin}/hospital/${code}/did/jwks.json`;
   const fetcher = input.fetchImpl ?? fetch;
@@ -79,9 +78,9 @@ export async function resolvePortalHospitalIssuer(input: {
     jwksResponse,
     `Portal JWKS ${hospitalCode}`,
   );
+  const issuerDid = requireDiscoveredIssuerDid(didDocument.id);
 
   if (
-    didDocument.id !== issuerDid ||
     didDocument.trustcare?.hospitalCode !== hospitalCode ||
     didDocument.trustcare?.syntheticTestData === true ||
     jwks.issuer !== issuerDid ||
@@ -157,6 +156,7 @@ export async function verifyPortalHospitalCredentialJwt(input: {
   issuer: ResolvedPortalHospitalIssuer;
   expectedHolderDid?: string;
   expectedCredentialData?: Record<string, unknown>;
+  profile?: "portal_credential" | "shl_manifest_credential";
   now?: Date;
 }): Promise<PortalCredentialJwtVerification> {
   const errors: string[] = [];
@@ -168,6 +168,8 @@ export async function verifyPortalHospitalCredentialJwt(input: {
       typeof protectedHeader.alg === "string" ? protectedHeader.alg : "";
     const typ =
       typeof protectedHeader.typ === "string" ? protectedHeader.typ : "";
+    const cty =
+      typeof protectedHeader.cty === "string" ? protectedHeader.cty : "";
     const jwk = input.issuer.jwks.keys.find(
       (candidate) => candidate.kid === kid,
     );
@@ -179,7 +181,8 @@ export async function verifyPortalHospitalCredentialJwt(input: {
       !kid.startsWith(`${input.issuer.issuerDid}#`) ||
       alg !== "ES256" ||
       jwk.alg !== "ES256" ||
-      typ.toLowerCase() !== "vc+jwt"
+      typ.toLowerCase() !== "vc+jwt" ||
+      (input.profile === "shl_manifest_credential" && cty !== "vc")
     ) {
       throw issuerError(
         "Credential kid is not governed by the Portal hospital DID.",
@@ -192,11 +195,21 @@ export async function verifyPortalHospitalCredentialJwt(input: {
       algorithms: ["ES256"],
     });
     const payload = verified.payload as Record<string, unknown>;
+    if (
+      input.profile === "shl_manifest_credential" &&
+      Object.prototype.hasOwnProperty.call(payload, "vc")
+    ) {
+      throw issuerError(
+        "Manifest Credential must use W3C VC 2.0 direct claims without a vc wrapper.",
+      );
+    }
     const credential = credentialPayload(payload);
-    const declaredDigest = stringValue(payload.trustcare_claim_digest);
-    const actualDigest = await sha256Canonical(credential);
-    if (!declaredDigest || declaredDigest !== actualDigest) {
-      errors.push("credential_claim_digest_mismatch");
+    if (input.profile !== "shl_manifest_credential") {
+      const declaredDigest = stringValue(payload.trustcare_claim_digest);
+      const actualDigest = await sha256Canonical(credential);
+      if (!declaredDigest || declaredDigest !== actualDigest) {
+        errors.push("credential_claim_digest_mismatch");
+      }
     }
     if (
       input.expectedCredentialData &&
@@ -235,15 +248,6 @@ export async function verifyPortalHospitalCredentialJwt(input: {
   }
 }
 
-export function portalHospitalDid(
-  portalBaseUrl: string,
-  hospitalCode: TrustCarePortalHospitalCode,
-): string {
-  const origin = new URL(normalizePortalOrigin(portalBaseUrl));
-  const methodHost = origin.host.replace(/:/g, "%3A");
-  return `did:web:${methodHost}:hospital:${hospitalCode.toLowerCase()}`;
-}
-
 function normalizeHospitalCode(value: string): TrustCarePortalHospitalCode {
   const normalized = value.trim().toUpperCase();
   if (
@@ -254,6 +258,15 @@ function normalizeHospitalCode(value: string): TrustCarePortalHospitalCode {
     throw issuerError(`Unsupported TrustCare hospital code: ${value}`);
   }
   return normalized as TrustCarePortalHospitalCode;
+}
+
+function requireDiscoveredIssuerDid(value: string): string {
+  if (typeof value !== "string" || !value.startsWith("did:web:")) {
+    throw issuerError(
+      "Portal hospital issuer DID is missing or invalid.",
+    );
+  }
+  return value;
 }
 
 async function strictJson<T>(response: Response, label: string): Promise<T> {

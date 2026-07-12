@@ -34,8 +34,6 @@ describe("premium patient Home", () => {
       <HomeView
         cards={cards}
         user={user}
-        readiness={{ readiness: { score: 100, criticalReady: true } }}
-        history={[]}
         offlineOnline
         onOpenCard={vi.fn()}
         onView={vi.fn()}
@@ -88,8 +86,6 @@ describe("premium patient Home", () => {
           { ...appointment, expiresAt: "2030-07-15T16:59:59.000Z" },
         ]}
         user={user}
-        readiness={{ readiness: { score: 100, criticalReady: true } }}
-        history={[]}
         offlineOnline
         onOpenCard={vi.fn()}
         onView={vi.fn()}

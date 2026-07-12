@@ -44,11 +44,17 @@ vi.mock("react", async (importOriginal) => {
   };
 });
 
-vi.mock("@trustcare/api-client", () => ({
+vi.mock("@trustcare/api-client/walletContractLoader", () => ({
   normalizePortalOrigin: (value: string) => new URL(value).origin,
+}));
+
+vi.mock("@trustcare/api-client/walletExchangeV2", () => ({
   WalletExchangeProblemError: class WalletExchangeProblemError extends Error {
     correlationId?: string;
   },
+}));
+
+vi.mock("@trustcare/api-client/walletExchangeWorkflow", () => ({
   WalletExchangeWorkflow: class WalletExchangeWorkflow {
     constructor(options: Record<string, unknown>) {
       harness.workflowOptions.push(options);

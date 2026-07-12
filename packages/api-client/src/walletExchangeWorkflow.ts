@@ -1,9 +1,14 @@
 import {
   applyWalletExchangeAckReceipt,
   createHolderSignedDirectVp,
+  finalizeCertifiedShl,
   normalizeDocumentType,
+  prepareHolderAttestedShl,
   prepareWalletExchangeSyncCommit,
   type HolderSigningIdentity,
+  type CertifiedShlPublication,
+  type PreparedHolderAttestedShl,
+  type PrepareHolderAttestedShlInput as CorePrepareHolderAttestedShlInput,
   type RuntimeEnvironment,
   type WalletExchangePartition,
   type WalletExchangeState,
@@ -19,9 +24,16 @@ import type {
   WalletSubmission,
   WalletSubmissionRequest,
 } from "@trustcare/contracts";
-import { decodeProtectedHeader, importJWK, jwtVerify } from "jose";
+import {
+  decodeJwt,
+  decodeProtectedHeader,
+  importJWK,
+  jwtVerify,
+  type JWTPayload,
+} from "jose";
 import {
   resolveAllPortalHospitalIssuers,
+  verifyPortalHospitalCredentialJwt,
   type ResolvedPortalHospitalIssuer,
 } from "./portalIssuerResolver";
 import {
@@ -35,6 +47,24 @@ import {
   type WalletExchangeV2Client,
 } from "./walletExchangeV2";
 import { TrustCareApiError } from "./errors";
+import type { ShlCertificationResponse } from "./shlCertification";
+
+export type PrepareHolderAttestedShlInput = Omit<
+  CorePrepareHolderAttestedShlInput,
+  | "identity"
+  | "portalOrigin"
+  | "manifestUrl"
+  | "fileBaseUrl"
+  | "trustedIssuerDids"
+  | "audience"
+>;
+
+export type ShlCertificationAttempt =
+  | { status: "submitted"; response: ShlCertificationResponse }
+  | {
+      status: "portal_unavailable";
+      patientMessage: "รอการรับรองจากโรงพยาบาล";
+    };
 
 export type WalletExchangeCredentialRequestLink = {
   clientRequestId: string;
@@ -78,6 +108,7 @@ export type WalletExchangePendingSubmissionDraft = {
 
 export interface WalletExchangePersistencePort {
   readonly partition: WalletExchangePartition;
+  configureTrustedIssuers(issuerDids: readonly string[]): void;
   loadOrCreateState(): Promise<WalletExchangeState>;
   commitSyncReduction(reduction: WalletExchangeSyncReduction): Promise<void>;
   persistAcknowledgedState(state: WalletExchangeState): Promise<void>;
@@ -169,13 +200,164 @@ export class WalletExchangeWorkflow {
     }
   }
 
+  async issuerDidForHospital(
+    hospitalCode: WalletExchangeHospitalCode,
+  ): Promise<string> {
+    const issuer = (await this.issuers()).find(
+      (candidate) => candidate.hospitalCode === hospitalCode,
+    );
+    if (!issuer) {
+      throw new TrustCareApiError(
+        `Portal trust registry has no active issuer for ${hospitalCode}.`,
+        { code: "portal_issuer_not_found" },
+      );
+    }
+    return issuer.issuerDid;
+  }
+
+  async prepareHolderAttestedShl(
+    input: PrepareHolderAttestedShlInput,
+  ): Promise<PreparedHolderAttestedShl> {
+    const [contracts, issuers] = await Promise.all([
+      this.contracts(),
+      this.issuers(),
+    ]);
+    const shareGateway = contracts.discovery.endpoints.shareGateway.replace(
+      /\/$/,
+      "",
+    );
+    const encodedPackageId = encodeURIComponent(input.publicationId);
+    return prepareHolderAttestedShl({
+      ...input,
+      identity: this.options.identity,
+      portalOrigin: contracts.portalOrigin,
+      manifestUrl: `${shareGateway}/manifests/${encodedPackageId}.json`,
+      fileBaseUrl: `${shareGateway}/files/`,
+      trustedIssuerDids: issuers.map((issuer) => issuer.issuerDid),
+      audience: contracts.discovery.endpoints.documentSubmissions,
+    });
+  }
+
+  async requestHospitalShlCertification(
+    prepared: PreparedHolderAttestedShl,
+  ): Promise<ShlCertificationAttempt> {
+    const contracts = await this.contracts();
+    if (!contracts.discovery.endpoints.shlCertifications) {
+      return {
+        status: "portal_unavailable",
+        patientMessage: "รอการรับรองจากโรงพยาบาล",
+      };
+    }
+    const response = await (
+      await this.client()
+    ).requestShlCertification(
+      prepared.certificationRequest,
+      prepared.certificationRequest.requestId,
+    );
+    return { status: "submitted", response };
+  }
+
+  async refreshHospitalShlCertification(
+    certificationRequestId: string,
+  ): Promise<ShlCertificationAttempt> {
+    const contracts = await this.contracts();
+    if (!contracts.discovery.endpoints.shlCertifications) {
+      return {
+        status: "portal_unavailable",
+        patientMessage: "รอการรับรองจากโรงพยาบาล",
+      };
+    }
+    const response = await (
+      await this.client()
+    ).getShlCertificationStatus(certificationRequestId);
+    return { status: "submitted", response };
+  }
+
+  async finalizeHospitalCertifiedShl(input: {
+    prepared: PreparedHolderAttestedShl;
+    response: ShlCertificationResponse;
+  }): Promise<CertifiedShlPublication> {
+    if (
+      input.response.status !== "approved" ||
+      input.response.manifestCredentialContentType !== "application/vc+jwt" ||
+      !input.response.manifestCredentialJwt
+    ) {
+      throw new TrustCareApiError(
+        "รอการรับรองจากโรงพยาบาล",
+        { code: "shl_certification_pending" },
+      );
+    }
+    if (
+      input.response.requestId !== input.prepared.certificationRequest.requestId ||
+      input.response.shlPackageId !== input.prepared.manifest.publicationId
+    ) {
+      throw new TrustCareApiError(
+        "Portal SHL certification response does not match the holder request.",
+        { code: "shl_certification_binding_invalid" },
+      );
+    }
+    const decoded = decodeJwt(input.response.manifestCredentialJwt);
+    const issuer = (await this.issuers()).find(
+      (candidate) => candidate.issuerDid === decoded.iss,
+    );
+    if (!issuer) {
+      throw new TrustCareApiError(
+        "Manifest Credential issuer is not in the live Portal trust registry.",
+        { code: "shl_certification_issuer_invalid" },
+      );
+    }
+    const now = this.options.now?.() ?? new Date();
+    return finalizeCertifiedShl({
+      identity: this.options.identity,
+      prepared: input.prepared,
+      manifestCredentialJwt: input.response.manifestCredentialJwt,
+      now,
+      verifyManifestCredential: async (jwt) => {
+        const verification = await verifyPortalHospitalCredentialJwt({
+          jwt,
+          issuer,
+          expectedHolderDid: this.options.identity.did,
+          profile: "shl_manifest_credential",
+          now,
+        });
+        if (
+          !verification.verified ||
+          verification.status !== "active" ||
+          !verification.kid ||
+          !verification.alg ||
+          !verification.payload
+        ) {
+          return {
+            verified: false,
+            reason:
+              verification.errors.join(", ") ||
+              "Portal Manifest Credential verification failed",
+          };
+        }
+        return {
+          verified: true,
+          issuerDid: issuer.issuerDid,
+          verificationMethod: verification.kid,
+          algorithm: verification.alg,
+          verifiedAt: now.toISOString(),
+          issuerStatus: "active",
+          credentialStatus: "active",
+          claims: verification.payload as JWTPayload,
+        };
+      },
+    });
+  }
+
   async synchronize(limit = 100): Promise<WalletExchangeSyncResult> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
       throw new TrustCareApiError("Wallet Exchange sync limit must be 1-200.", {
         code: "wallet_sync_limit_invalid",
       });
     }
-    const client = await this.client();
+    const [client, issuers] = await Promise.all([
+      this.client(),
+      this.issuers(),
+    ]);
     let state = await this.options.persistence.loadOrCreateState();
     let pendingAckRecovered = false;
     if (state.pendingAck) {
@@ -183,7 +365,6 @@ export class WalletExchangeWorkflow {
       pendingAckRecovered = true;
     }
 
-    const issuers = await this.issuers();
     const issuerByDid = new Map(
       issuers.map((issuer) => [issuer.issuerDid, issuer] as const),
     );
@@ -615,7 +796,11 @@ export class WalletExchangeWorkflow {
       portalBaseUrl: this.options.portalBaseUrl,
       fetchImpl: this.options.fetchImpl,
     });
-    return this.issuersPromise;
+    const issuers = await this.issuersPromise;
+    this.options.persistence.configureTrustedIssuers(
+      issuers.map((issuer) => issuer.issuerDid),
+    );
+    return issuers;
   }
 
   private async acknowledgePendingState(

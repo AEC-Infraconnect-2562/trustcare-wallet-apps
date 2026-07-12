@@ -1,8 +1,7 @@
 import {
-  portalHospitalDid,
-  type TrustCarePortalHospitalCode,
   type WalletExchangeWorkflow,
-} from "@trustcare/api-client";
+} from "@trustcare/api-client/walletExchangeWorkflow";
+import type { TrustCarePortalHospitalCode } from "@trustcare/api-client/portalIssuerResolver";
 import type { WalletDocumentRecordV2 } from "@trustcare/wallet-core";
 
 export type PortalHospitalCode = TrustCarePortalHospitalCode;
@@ -20,7 +19,9 @@ type DirectPresentationInput = Parameters<
 
 type SubmissionWorkflow = Pick<
   WalletExchangeWorkflow,
-  "submitDirectPresentation" | "refreshSubmission"
+  | "issuerDidForHospital"
+  | "submitDirectPresentation"
+  | "refreshSubmission"
 >;
 
 type WalletExchangeFlowPrefix = "wallet-submission" | "wallet-consent";
@@ -40,10 +41,12 @@ export function secureWalletExchangeFlowId(
 }
 
 export async function submitWalletExchangeRecord(input: {
-  workflow: Pick<SubmissionWorkflow, "submitDirectPresentation">;
+  workflow: Pick<
+    SubmissionWorkflow,
+    "issuerDidForHospital" | "submitDirectPresentation"
+  >;
   record: WalletDocumentRecordV2;
   targetHospitalCode: PortalHospitalCode;
-  portalBaseUrl: string;
   context: DirectPresentationInput["context"];
   purpose: string;
   reload: () => Promise<void>;
@@ -51,6 +54,9 @@ export async function submitWalletExchangeRecord(input: {
 }): Promise<RecordExchangeSubmissionResult> {
   let response;
   try {
+    const recipient = await input.workflow.issuerDidForHospital(
+      input.targetHospitalCode,
+    );
     response = await input.workflow.submitDirectPresentation({
       clientSubmissionId: secureWalletExchangeFlowId(
         "wallet-submission",
@@ -62,10 +68,7 @@ export async function submitWalletExchangeRecord(input: {
         "wallet-consent",
         input.randomUUID,
       ),
-      recipient: portalHospitalDid(
-        input.portalBaseUrl,
-        input.targetHospitalCode,
-      ),
+      recipient,
       documentIds: [input.record.id],
     });
   } catch (error) {

@@ -54,12 +54,12 @@ describe("credential lifecycle policy", () => {
       cardType: "claim_package",
       credentialType: "ClaimSubmissionReceiptCredential",
       sourceSystem: "payer_adapter",
-      issuerDid: "did:web:trustcare.network:payer:global-care-demo",
+      issuerDid: "did:web:wallet-demo.invalid:issuer:payer:global-care",
       credentialProof: {
         type: "DataIntegrityProof",
         format: "vc+json",
         source: "payer_adapter_result",
-        kid: "did:web:trustcare.network:payer:global-care-demo#key-1",
+        kid: "did:web:wallet-demo.invalid:issuer:payer:global-care#key-1",
       },
       credentialData: {
         trustcare: { schemaVersion: "payer-claim-v1" },

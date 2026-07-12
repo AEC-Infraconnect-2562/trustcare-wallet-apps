@@ -1,7 +1,7 @@
 import type {
   WalletExchangeCredentialRequestLink,
   WalletExchangeWorkflow,
-} from "@trustcare/api-client";
+} from "@trustcare/api-client/walletExchangeWorkflow";
 import {
   getCanonicalDocumentTypeCopy,
   normalizeDocumentType,

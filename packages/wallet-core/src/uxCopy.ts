@@ -34,7 +34,7 @@ const trustStateCopy: Record<TrustUiState, UxCopy> = {
   transport_verified_only: {
     label: "อ่านได้ แต่ยังไม่รับรองโดย TrustCare",
     description:
-      "รูปแบบการส่งข้อมูลถูกต้อง แต่ยังไม่มี Manifest VP และ Holder VC สำหรับยืนยันในเครือข่าย TrustCare",
+      "รูปแบบการส่งข้อมูลถูกต้องและผู้ถือกุญแจลงนามแล้ว แต่ยังไม่มี Manifest Credential ที่โรงพยาบาลรับรอง",
     tone: "blue",
   },
   pending_review: {
@@ -67,13 +67,13 @@ const trustStateCopy: Record<TrustUiState, UxCopy> = {
   trustcare_certified: {
     label: "TrustCare รับรองแล้ว",
     description:
-      "มี Manifest VP, Holder VC, hash และ policy ที่ตรวจสอบกับ TrustCare ได้",
+      "มี holder VP, Manifest Credential, hash และ policy ที่ตรวจสอบครบแล้ว",
     tone: "green",
   },
   trustcare_pending: {
     label: "รอ TrustCare รับรอง",
     description:
-      "SHL ใช้งานแบบมาตรฐานได้ แต่ยังต้องตรวจ Manifest VP/VC และ Holder binding ก่อนใช้เป็น Certified SHL",
+      "SHL ใช้งานแบบมาตรฐานได้ แต่ต้องตรวจ holder VP และ Manifest Credential ครบก่อนแสดงว่าโรงพยาบาลรับรองแล้ว",
     tone: "yellow",
   },
 };

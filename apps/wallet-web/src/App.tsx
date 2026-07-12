@@ -6,21 +6,14 @@
   useMemo,
   useRef,
   useState,
-  type ReactElement,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  Activity,
   ArrowLeft,
   Bell,
   Camera,
-  Database,
   Download,
   Fingerprint,
-  FileText,
-  History,
-  Home,
-  Inbox,
   KeyRound,
   Languages,
   LogOut,
@@ -29,42 +22,34 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
-  Settings,
-  Share2,
   Sun,
   Wallet,
 } from "lucide-react";
-import {
-  payerApi,
-  shlApi,
-  verifierApi,
-  walletApi,
-} from "@trustcare/api-client";
+import * as payerApi from "@trustcare/api-client/payer";
+import * as shlApi from "@trustcare/api-client/shl";
+import * as verifierApi from "@trustcare/api-client/verifier";
+import * as walletApi from "@trustcare/api-client/wallet";
 import { useLanguage } from "@trustcare/i18n/src/provider.web";
 import {
   buildPortalInteroperabilityFixtures,
-  countCardsByCategory,
   assessLocalReadiness,
-  createDocumentRequestDraft,
   documentRequestFormatLabel,
-  documentRequestReturnChannelLabel,
   documentRequestSourceLabel,
   exportWalletObjects,
   flattenCardsByCategory,
   getDemoUser,
   groupCardsByCategory,
   importWalletExchange,
-  parseShlLink,
   fetchShlManifest,
   mergePayerArtifactCards,
   mergeWalletObjects,
-  normalizePhotoUrl,
   readinessContextLabels,
   walletObjectsFromCards,
   walletObjectsFromHistory,
   walletObjectsFromShl,
   walletCardForDocumentRendering,
-  walletDemoUsers,
+  walletTestLoginUsers,
+  walletTestUserProfile,
   type ContractHubCatalog,
   type DocumentRequestDraft,
   type PresentationHistoryItem,
@@ -76,21 +61,34 @@ import {
   type WalletCardsByCategory,
   type WalletDocumentRequest,
   type WalletDocumentRecordV2,
-  type WalletDemoUser,
   type WalletExportResult,
-  type WalletImportResult,
   type WalletImportJob,
   type WalletStoredObject,
   type VerifierResult,
 } from "@trustcare/wallet-core";
 import { env } from "./env";
 import {
+  baseApiOptions,
+  defaultLoginUserId,
+  legacyWalletSessionKey,
+  preserveDesktopScrollPosition,
+  readWalletSessionUserId,
+  sidebarCollapsedKey,
+  walletRuntimeRelease,
+  walletSessionKey,
+} from "./appRuntime";
+import {
   RecordsV2View,
   type PortalHospitalCode,
 } from "./components/records/RecordsV2View";
 import { RoutePlaceholderView } from "./components/shell/RoutePlaceholderView";
+import {
+  AppPrimaryNavigation,
+  AppSideNavigation,
+} from "./components/shell/AppNavigation";
 import { useOfflineWallet } from "./hooks/useOfflineWallet";
 import { useScanHistory } from "./hooks/useScanHistory";
+import { useSandboxTestSession } from "./hooks/useSandboxTestSession";
 import { useStoredExtras } from "./hooks/useStoredExtras";
 import { useWebAuthn } from "./hooks/useWebAuthn";
 import { useWalletExchange } from "./hooks/useWalletExchange";
@@ -120,22 +118,15 @@ import {
 import {
   DialogLoadingFallback,
   DocumentFlowDialog,
-  HistoryView,
   HomeView,
-  LoginView,
-  NavButton,
   PrepareView,
   PublicVerifierView,
   ReceiveView,
   ScanResponseDialog,
-  SettingsView,
   ShareView,
   StoreView,
-  UserAvatarImage,
-  UserScopePanel,
   clearScanPayloadFromLocation,
   copyText,
-  currentShareGatewayBaseUrl,
   describeScannablePayload,
   downloadExport,
   extractScannablePayload,
@@ -143,8 +134,9 @@ import {
   friendlyWalletRuntimeError,
   isPublicVerifierScanLocation,
   readScanPayloadFromLocation,
-  shortDid,
 } from "./views/AppViews";
+import { LoginView, UserScopePanel } from "./views/IdentityViews";
+import { UserAvatarImage, shortDid } from "./views/identityPresentation";
 import {
   documentTabBreadcrumbLabels,
   emptyPortalInteropFixtures,
@@ -169,50 +161,16 @@ const QrScannerDialog = lazy(() =>
     default: module.QrScannerDialog,
   })),
 );
-const baseApiOptions = {
-  url: env.apiUrl,
-  runtimeEnvironment: env.runtimeEnvironment,
-  demoOrigin:
-    typeof window !== "undefined"
-      ? window.location.origin
-      : "https://trustcare.example.com",
-  shlGatewayUrl: env.shlGatewayUrl,
-  shlViewerUrl: env.shlViewerUrl,
-  shareGatewayUrl:
-    typeof window !== "undefined"
-      ? (currentShareGatewayBaseUrl() ?? undefined)
-      : env.shareGatewayUrl,
-};
-
-const walletSessionKey = `trustcare-wallet-active-user:${env.runtimeEnvironment}:v1`;
-const legacyWalletSessionKey = "trustcare-wallet-active-user";
-const sidebarCollapsedKey = "trustcare-wallet-sidebar-collapsed:v1";
-const defaultLoginUserId = "demo-patient-001";
-const walletRuntimeRelease = "premium-clinical-home-inspector";
-
-function preserveDesktopScrollPosition(): void {
-  if (
-    typeof window === "undefined" ||
-    !window.matchMedia("(min-width: 941px)").matches
-  ) {
-    return;
-  }
-  const left = window.scrollX;
-  const top = window.scrollY;
-  const restore = () => window.scrollTo({ left, top, behavior: "auto" });
-  window.requestAnimationFrame(() => {
-    restore();
-    window.requestAnimationFrame(restore);
-  });
-}
-
-function readWalletSessionUserId() {
-  return readStringStorage(
-    walletSessionKey,
-    env.runtimeEnvironment === "demo" ? [legacyWalletSessionKey] : [],
-  );
-}
-
+const HistoryView = lazy(() =>
+  import("./views/SecondaryViews").then((module) => ({
+    default: module.HistoryView,
+  })),
+);
+const SettingsView = lazy(() =>
+  import("./views/SecondaryViews").then((module) => ({
+    default: module.SettingsView,
+  })),
+);
 export default function App() {
   const { lang, setLang, t } = useLanguage();
   const location = useLocation();
@@ -279,7 +237,7 @@ export default function App() {
   const [portalSyncMessage, setPortalSyncMessage] = useState("");
   const [portalSyncBusy, setPortalSyncBusy] = useState(false);
   const [storeFilter, setStoreFilter] = useState<StoreFilter>("all");
-  const offlineWallet = useOfflineWallet(env.demoMode);
+  const offlineWallet = useOfflineWallet(env.demoMode, selectedUserId);
   const webAuthn = useWebAuthn();
   const { scanHistory, setScanHistoryByUser } =
     useScanHistory<ScanOutcome>(selectedUserId);
@@ -292,6 +250,10 @@ export default function App() {
 
   const activeUser = useMemo(
     () => getDemoUser(selectedUserId),
+    [selectedUserId],
+  );
+  const activeTestProfile = useMemo(
+    () => walletTestUserProfile(selectedUserId),
     [selectedUserId],
   );
   const walletExchange = useWalletExchange({
@@ -567,7 +529,6 @@ export default function App() {
         workflow,
         record,
         targetHospitalCode,
-        portalBaseUrl: env.portalBaseUrl,
         context: readinessContext,
         purpose: readinessPurposeTh[readinessContext],
         reload: walletExchange.reload,
@@ -642,10 +603,6 @@ export default function App() {
     );
   }, [activeUser.patientId, allCards, readinessContext]);
 
-  const counts = useMemo(
-    () => countCardsByCategory(groupCardsByCategory(allCards)),
-    [allCards],
-  );
   const serviceReadinessSummaries = useMemo<ServiceReadinessSummary[]>(
     () =>
       readinessContexts.map((context) => {
@@ -706,6 +663,47 @@ export default function App() {
       ),
     [allCards, history, scanHistoryObjects, shlPackages, storedExtras],
   );
+  const sandboxSessionSnapshot = useMemo(
+    () => ({
+      route: routeMatch.route.id,
+      documentCount: allCards.length,
+      storedObjectCount: storedObjects.length,
+      presentationCount: history.length,
+      shlCount: shlPackages.length,
+      credentialRequestCount: documentRequests.length,
+      pendingSubmissionCount: walletExchange.pendingSubmissions.length,
+      walletExchangeState: walletExchange.initializing
+        ? ("initializing" as const)
+        : walletExchange.syncing
+          ? ("syncing" as const)
+          : walletExchange.error
+            ? ("error" as const)
+            : walletExchange.workflow
+              ? ("ready" as const)
+              : ("not_started" as const),
+      lastError: walletExchange.error || undefined,
+    }),
+    [
+      allCards.length,
+      documentRequests.length,
+      history.length,
+      routeMatch.route.id,
+      shlPackages.length,
+      storedObjects.length,
+      walletExchange.error,
+      walletExchange.initializing,
+      walletExchange.pendingSubmissions.length,
+      walletExchange.syncing,
+      walletExchange.workflow,
+    ],
+  );
+  const sandboxTestSession = useSandboxTestSession({
+    enabled: env.runtimeEnvironment === "demo",
+    authenticated: isAuthenticated,
+    userId: selectedUserId,
+    profile: activeTestProfile,
+    snapshot: sandboxSessionSnapshot,
+  });
 
   const filteredObjects = useMemo(() => {
     if (storeFilter === "all") return storedObjects;
@@ -1238,6 +1236,10 @@ export default function App() {
     (userId: string) => {
       writeStringStorage(walletSessionKey, userId);
       setSelectedUserId(userId);
+      const testProfile = walletTestUserProfile(userId);
+      if (testProfile?.useCases[0]) {
+        setReadinessContext(testProfile.useCases[0]);
+      }
       setIsAuthenticated(true);
       navigateTo(pendingScanPayload ? "share" : "home", { replace: true });
     },
@@ -1336,7 +1338,7 @@ export default function App() {
           </div>
         )}
         <LoginView
-          users={walletDemoUsers}
+          users={walletTestLoginUsers}
           pendingScan={Boolean(pendingScanPayload)}
           selectedUserId={selectedUserId}
           onSelect={setSelectedUserId}
@@ -1380,40 +1382,11 @@ export default function App() {
           </div>
         </div>
         <nav className="primary-tabs" aria-label="TrustCare Wallet">
-          <NavButton
-            active={routeMatch.route.id === "home"}
-            icon={<Home />}
-            label="หน้าแรก"
-            onClick={() => navigateTo("home")}
-          />
-          <NavButton
-            active={
-              routeView === "documents" ||
-              routeView === "receive" ||
-              routeView === "store" ||
-              routeView === "history"
-            }
-            icon={<FileText />}
-            label="เอกสาร"
-            onClick={() => openDocumentsHub("cards")}
-          />
-          <NavButton
-            active={routeView === "share"}
-            icon={<Share2 />}
-            label="แชร์"
-            onClick={() => navigateTo("share")}
-          />
-          <NavButton
-            active={routeView === "prepare"}
-            icon={<Activity />}
-            label="เตรียมบริการ"
-            onClick={() => navigateTo("prepare")}
-          />
-          <NavButton
-            active={routeView === "settings"}
-            icon={<Settings />}
-            label="ตั้งค่า"
-            onClick={() => navigateTo("settings")}
+          <AppPrimaryNavigation
+            routeId={routeMatch.route.id}
+            routeView={view}
+            onNavigate={navigateTo}
+            onOpenDocuments={() => openDocumentsHub("cards")}
           />
         </nav>
       </header>
@@ -1430,53 +1403,10 @@ export default function App() {
           </div>
         </div>
         <nav>
-          <NavButton
-            active={routeMatch.route.id === "home"}
-            icon={<Home />}
-            label="หน้าแรก"
-            onClick={() => navigateTo("home")}
-          />
-          <NavButton
-            active={routeView === "documents"}
-            icon={<FileText />}
-            label="เอกสาร"
-            onClick={() => navigateTo("documents")}
-          />
-          <NavButton
-            active={routeView === "receive"}
-            icon={<Inbox />}
-            label="รับเอกสาร"
-            onClick={() => navigateTo("receive")}
-          />
-          <NavButton
-            active={routeView === "share"}
-            icon={<Share2 />}
-            label="แชร์"
-            onClick={() => navigateTo("share")}
-          />
-          <NavButton
-            active={routeView === "prepare"}
-            icon={<Activity />}
-            label="เตรียมบริการ"
-            onClick={() => navigateTo("prepare")}
-          />
-          <NavButton
-            active={routeView === "store"}
-            icon={<Database />}
-            label="คลังข้อมูล"
-            onClick={() => navigateTo("store")}
-          />
-          <NavButton
-            active={routeView === "history"}
-            icon={<History />}
-            label="ประวัติ"
-            onClick={() => navigateTo("history")}
-          />
-          <NavButton
-            active={routeView === "settings"}
-            icon={<Settings />}
-            label="ตั้งค่า"
-            onClick={() => navigateTo("settings")}
+          <AppSideNavigation
+            routeId={routeMatch.route.id}
+            routeView={view}
+            onNavigate={navigateTo}
           />
         </nav>
         <button
@@ -1661,8 +1591,6 @@ export default function App() {
           <HomeView
             cards={allCards}
             user={activeUser}
-            readiness={readiness}
-            history={history}
             offlineOnline={offlineWallet.isOnline}
             onOpenCard={openRecord}
             onView={navigateTo}
@@ -1739,12 +1667,16 @@ export default function App() {
             verifierResult={verifierResult}
             scanOutcome={scanOutcome}
             biometricEnabled={webAuthn.isRegistered}
+            exchangeDocuments={walletExchange.documents}
+            holderIdentity={walletExchange.identity}
+            walletExchangeWorkflow={walletExchange.workflow}
             onConfirmBiometric={async () =>
               webAuthn.isRegistered ? webAuthn.authenticate() : true
             }
             onOpenScanner={() => setScannerOpen(true)}
             onVerifyText={(value) => void verifyScan(value)}
             onExport={exportResult}
+            onPersistShare={addStoredObject}
           />
         )}
         {routeView === "prepare" && (
@@ -1790,17 +1722,24 @@ export default function App() {
           />
         )}
         {routeView === "history" && (
-          <HistoryView history={history} scanHistory={scanHistory} />
+          <Suspense fallback={<DialogLoadingFallback />}>
+            <HistoryView history={history} scanHistory={scanHistory} />
+          </Suspense>
         )}
         {routeView === "settings" && (
-          <SettingsView
-            webAuthn={webAuthn}
-            theme={theme}
-            setTheme={setTheme}
-            developerMode={developerMode}
-            setDeveloperMode={setDeveloperMode}
-            user={activeUser}
-          />
+          <Suspense fallback={<DialogLoadingFallback />}>
+            <SettingsView
+              webAuthn={webAuthn}
+              theme={theme}
+              setTheme={setTheme}
+              developerMode={developerMode}
+              setDeveloperMode={setDeveloperMode}
+              user={activeUser}
+              testProfile={activeTestProfile}
+              testSession={sandboxTestSession.activeSession}
+              testSessions={sandboxTestSession.sessions}
+            />
+          </Suspense>
         )}
       </section>
 
@@ -1841,42 +1780,12 @@ export default function App() {
       )}
 
       <nav className="bottom-nav">
-        <NavButton
-          active={routeMatch.route.id === "home"}
-          icon={<Home />}
-          label="หน้าแรก"
-          onClick={() => navigateTo("home")}
-        />
-        <NavButton
-          active={
-            routeView === "documents" ||
-            routeView === "receive" ||
-            routeView === "store" ||
-            routeView === "history"
-          }
-          icon={<FileText />}
-          label="เอกสาร"
-          onClick={() => {
-            openDocumentsHub("cards");
-          }}
-        />
-        <NavButton
-          active={routeView === "share"}
-          icon={<Share2 />}
-          label="แชร์"
-          onClick={() => navigateTo("share")}
-        />
-        <NavButton
-          active={routeView === "prepare"}
-          icon={<Activity />}
-          label="เตรียม"
-          onClick={() => navigateTo("prepare")}
-        />
-        <NavButton
-          active={routeView === "settings"}
-          icon={<Settings />}
-          label="ตั้งค่า"
-          onClick={() => navigateTo("settings")}
+        <AppPrimaryNavigation
+          compact
+          routeId={routeMatch.route.id}
+          routeView={view}
+          onNavigate={navigateTo}
+          onOpenDocuments={() => openDocumentsHub("cards")}
         />
       </nav>
 

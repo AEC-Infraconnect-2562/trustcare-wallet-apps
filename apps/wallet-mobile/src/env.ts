@@ -3,7 +3,7 @@ import {
   runtimeEnvironmentDescriptor,
   runtimeAllowsSyntheticData,
 } from "@trustcare/wallet-core";
-import { resolvePortalBaseUrl } from "@trustcare/api-client";
+import { resolvePortalBaseUrl } from "@trustcare/api-client/portalBaseUrl";
 
 export const runtimeEnvironment = resolveRuntimeEnvironment({
   runtimeEnvironment: process.env.EXPO_PUBLIC_TRUSTCARE_RUNTIME_ENV,

@@ -7,7 +7,6 @@ import {
   isTrustArtifactDocumentType,
   normalizeDocumentType,
   walletDocumentRecordFromCard,
-  type CanonicalDocumentType,
   type WalletDocumentRecord,
 } from "./canonicalDocuments";
 import { hashJson } from "./demoResolvers";
@@ -231,37 +230,6 @@ export const PORTABLE_PRESENTATION_ENVELOPE_SCHEMA = {
   },
 } as const;
 
-const TECHNICAL_FIELD_NAMES = new Set([
-  "@context",
-  "context",
-  "type",
-  "issuer",
-  "holder",
-  "proof",
-  "credentialsubject",
-  "evidence",
-  "termsOfUse".toLowerCase(),
-  "credentialstatus",
-  "credentialStatus".toLowerCase(),
-  "renderdata",
-  "humandocument",
-  "documentreference",
-  "fhir",
-  "qr",
-  "watermark",
-  "demo",
-  "debug",
-  "metadata",
-  "credentialid",
-  "holderdid",
-  "issuerdid",
-  "owneruserid",
-  "patientavatarurl",
-  "portalverification",
-  "credentialproof",
-  "credentialjwt",
-]);
-
 export function presentationEnvelopeFromWalletCard(
   card: WalletCard,
 ): PortablePresentationEnvelope {
@@ -467,7 +435,6 @@ export function presentationEnvelopeFromShl(
   const trustStatus = classifyPortableTrustStatus(publication);
   const documents = publication.manifest.documentBundle.documents ?? [];
   const hashes = [
-    publication.manifest.trustcare.manifestVpHash,
     ...publication.manifest.files
       .map((file) => stringOrUndefined(portalRecord(file).hash))
       .filter((value): value is string => Boolean(value)),
@@ -490,28 +457,13 @@ export function presentationEnvelopeFromShl(
     envelopeId: stableEnvelopeId("shl", publication.gatewayPublicationId),
     envelopeVersion: "2026.07.v1",
     kind: "shl",
-    mode:
-      publication.trustLayerStatus === "certified_manifest_vp"
-        ? "CertifiedSHLManifestPackage"
-        : "StandardSHL",
+    mode: "StandardSHL",
     sourceArtifactType: "TrustCareShlGatewayPublication",
     sourceObjectClass: "link_manifest",
-    subject: {
-      id: stringOrUndefined(publication.portalRequest.patientId),
-      identifiers: publication.portalRequest.patientId
-        ? [
-            {
-              system: "trustcare.patient",
-              value: String(publication.portalRequest.patientId),
-            },
-          ]
-        : [],
-    },
+    subject: { identifiers: [] },
     issuer: {
       name: "TrustCare SHL Gateway",
-      did: stringOrUndefined(
-        publication.manifest.trustcare.manifestCredential?.issuer,
-      ),
+      did: undefined,
     },
     recipient: { name: publication.manifest.receiver },
     display: {
@@ -575,20 +527,12 @@ export function presentationEnvelopeFromShl(
           publication.manifestUrl,
         ),
         checklistItem(
-          "manifest_vp",
-          "TrustCare Manifest VP",
-          publication.trustLayerStatus === "certified_manifest_vp" &&
-            Boolean(publication.manifest.trustcare.manifestVp),
-          publication.manifest.trustcare.manifestVpUrl,
-        ),
-        checklistItem(
-          "holder_authorization",
-          "Holder authorization credential",
-          publication.trustLayerStatus !== "certified_manifest_vp" ||
-            Boolean(
-              publication.manifest.trustcare.holderAuthorizationCredential,
-            ),
-          publication.manifest.trustcare.holderAuthorizationCredentialId,
+          "hospital_certification",
+          "Hospital Manifest Credential",
+          false,
+          publication.trustLayerStatus === "pending_hospital_certification"
+            ? "pending"
+            : "not_requested",
         ),
       ],
       warnings: publication.warnings,
@@ -787,11 +731,7 @@ export function classifyPortableTrustStatus(
   }
   if (isShlPublication(input)) {
     const shl = input;
-    if (shl.trustLayerStatus === "pending_manifest_vp")
-      return "trustcare_pending";
-    // A gateway publication is the artifact under review, not independent
-    // evidence. Manifest object presence and hashes alone never certify it.
-    if (shl.trustLayerStatus === "certified_manifest_vp")
+    if (shl.trustLayerStatus === "pending_hospital_certification")
       return "trustcare_pending";
     return "transport_valid";
   }
@@ -823,132 +763,6 @@ export function selectableDisclosureFieldsFromEnvelope(
     )
     .flatMap((section) => section.fields)
     .filter((field) => isCredentialDisclosurePath(field.path ?? field.label));
-}
-
-function buildCardSections(input: {
-  record: WalletDocumentRecord;
-  subject: PortalRenderRecord;
-  renderData: PortalRenderRecord;
-  patient: PortalRenderRecord;
-  document: PortalRenderRecord;
-  documentType: CanonicalDocumentType;
-}): PortablePresentationSection[] {
-  const { record, subject, renderData, patient, document, documentType } =
-    input;
-  const identityFields = [
-    field(
-      "ชื่อ-นามสกุล",
-      displayString(patient.fullNameTh, patient.nameTh, subject.name),
-      "patient.name",
-      true,
-    ),
-    field(
-      "Name",
-      displayString(patient.fullNameEn, patient.nameEn),
-      "patient.nameEn",
-      true,
-    ),
-    field("HN", portalValue(patient, "hn"), "patient.hn", false),
-    field(
-      "CarePass ID",
-      portalValue(patient, "carepassId"),
-      "patient.carepassId",
-      false,
-    ),
-  ].filter(isFieldWithValue);
-  const bodyFields = buildDisclosureFields(renderData, documentType);
-  const documentFields = [
-    field("ประเภทเอกสาร", record.documentType, "document.type", true),
-    field("วันที่ออก", record.issuedAt, "document.issuedAt", false),
-    field("หมดอายุ", record.expiresAt, "document.expiresAt", false),
-    field("สถานะ", record.status, "document.status", false),
-    field("Credential ID", record.credentialId, "credential.id", false),
-  ].filter(isFieldWithValue);
-
-  return [
-    {
-      key: "subject",
-      title: "ผู้ถือเอกสาร",
-      kind: "identity",
-      fields: identityFields,
-    },
-    {
-      key: "document",
-      title: "รายละเอียดเอกสาร",
-      kind: sectionKindForType(documentType),
-      fields: bodyFields.length ? bodyFields : documentFields,
-    },
-    {
-      key: "metadata",
-      title: "หลักฐานและ Metadata",
-      kind: "technical",
-      fields: documentFields,
-    },
-  ];
-}
-
-function buildDisclosureFields(
-  renderData: PortalRenderRecord,
-  documentType: CanonicalDocumentType,
-): PortablePresentationField[] {
-  const candidates = [
-    renderData.coverage,
-    renderData.claim,
-    renderData.referral,
-    renderData.medications,
-    renderData.medication,
-    renderData.allergies,
-    renderData.allergy,
-    renderData.diagnosis,
-    renderData.lab,
-    renderData.result,
-    renderData.appointment,
-    renderData.package,
-    renderData.quotation,
-    renderData.document,
-  ];
-  const fields: PortablePresentationField[] = [];
-  for (const candidate of candidates) {
-    appendRecordFields(fields, candidate, documentType);
-  }
-  return fields.slice(0, 20);
-}
-
-function appendRecordFields(
-  fields: PortablePresentationField[],
-  value: unknown,
-  documentType: CanonicalDocumentType,
-  pathPrefix: string = documentType,
-): void {
-  if (Array.isArray(value)) {
-    value
-      .slice(0, 8)
-      .forEach((item, index) =>
-        appendRecordFields(
-          fields,
-          item,
-          documentType,
-          `${pathPrefix}.${index}`,
-        ),
-      );
-    return;
-  }
-  const record = portalRecord(value);
-  if (!Object.keys(record).length) return;
-  for (const [key, rawValue] of Object.entries(record)) {
-    const path = `${pathPrefix}.${key}`;
-    if (!isSelectableDisclosurePath(path)) continue;
-    if (isSimpleValue(rawValue)) {
-      fields.push(
-        field(
-          titleCaseLabel(key),
-          rawValue,
-          path,
-          defaultDisclosureFor(documentType, key),
-        ),
-      );
-    }
-  }
 }
 
 function buildCredentialChecklist(
@@ -1278,54 +1092,6 @@ function coerceTrustStatus(value: string): PortableTrustStatus {
   return "proof_missing";
 }
 
-function isSelectableDisclosurePath(path: string): boolean {
-  const parts = path
-    .toLowerCase()
-    .split(/[^a-z0-9]+/g)
-    .filter(Boolean);
-  return !parts.some((part) => TECHNICAL_FIELD_NAMES.has(part));
-}
-
-function defaultDisclosureFor(
-  documentType: CanonicalDocumentType,
-  key: string,
-): boolean {
-  if (documentType === "allergy_alert")
-    return ["allergen", "reaction", "severity"].includes(key);
-  if (documentType === "patient_identity")
-    return ["fullNameTh", "fullNameEn", "hn"].includes(key);
-  return ["summary", "status", "diagnosis", "medication", "coverage"].includes(
-    key,
-  );
-}
-
-function sectionKindForType(
-  documentType: CanonicalDocumentType,
-): PortablePresentationSection["kind"] {
-  if (
-    documentType === "claim_package" ||
-    documentType === "claim_receipt" ||
-    documentType === "insurance_eligibility" ||
-    documentType === "quotation" ||
-    documentType === "guarantee_letter"
-  )
-    return "financial";
-  if (documentType === "patient_identity" || documentType === "staff_identity")
-    return "identity";
-  if (isTrustArtifactDocumentType(documentType)) return "trust";
-  if (
-    documentType === "patient_summary" ||
-    documentType === "allergy_alert" ||
-    documentType === "medication_summary" ||
-    documentType === "prescription" ||
-    documentType === "pharmacy_dispense" ||
-    documentType === "lab_result" ||
-    documentType === "diagnostic_report"
-  )
-    return "clinical";
-  return "document";
-}
-
 function buildSummary(
   card: WalletCard,
   renderData: PortalRenderRecord,
@@ -1336,23 +1102,6 @@ function buildSummary(
     portalRecord(renderData.document).summary,
     card.scopeLabel,
     record.source.system,
-  );
-}
-
-function field(
-  label: string,
-  value: unknown,
-  path: string,
-  discloseByDefault: boolean,
-): PortablePresentationField {
-  return { label, value, path, discloseByDefault };
-}
-
-function isFieldWithValue(
-  value: PortablePresentationField,
-): value is PortablePresentationField {
-  return (
-    value.value !== undefined && value.value !== null && value.value !== ""
   );
 }
 
@@ -1403,15 +1152,6 @@ function isShlPublication(
   );
 }
 
-function isSimpleValue(value: unknown): boolean {
-  return (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    value === null
-  );
-}
-
 function firstRecord(...values: unknown[]): PortalRenderRecord {
   return (
     values.map(portalRecord).find((item) => Object.keys(item).length) ?? {}
@@ -1433,14 +1173,6 @@ function stringOrUndefined(value: unknown): string | undefined {
 
 function displayString(...values: unknown[]): string | undefined {
   return values.map(stringOrUndefined).find(Boolean);
-}
-
-function titleCaseLabel(key: string): string {
-  return key
-    .replace(/([A-Z])/g, " $1")
-    .replace(/[_-]+/g, " ")
-    .replace(/^./, (char) => char.toUpperCase())
-    .trim();
 }
 
 function stableEnvelopeId(prefix: string, value: unknown): string {
