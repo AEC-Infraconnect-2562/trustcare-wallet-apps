@@ -115,8 +115,12 @@ import { PurposePickerCard } from "../components/prepare/PurposePickerCard";
 import { ReadinessSummaryCard } from "../components/prepare/ReadinessSummaryCard";
 import { SharePacketComposer } from "../components/share/SharePacketComposer";
 import { TrustChecklist } from "../components/trust/TrustChecklist";
-import { defaultPublicShareGatewayUrl, env } from "../env";
 import { toQrDataUrl } from "../utils/qrCode";
+import {
+  currentAppBaseUrl,
+  currentAppShareRootUrl,
+  currentShareGatewayBaseUrl,
+} from "../utils/runtimeUrls";
 import {
   credentialRequestDocumentLabel,
   credentialRequestNextActionLabel,
@@ -170,6 +174,11 @@ export {
   resolveAvatarUrl,
   shortDid,
 } from "./identityPresentation";
+export {
+  currentAppBaseUrl,
+  currentAppShareRootUrl,
+  currentShareGatewayBaseUrl,
+} from "../utils/runtimeUrls";
 
 const shareDisclosureIntentOptions: Array<{
   value: ShareDisclosureIntent;
@@ -4464,33 +4473,6 @@ export function clearScanPayloadFromLocation() {
     "",
     `${url.pathname}${url.search}${url.hash}`,
   );
-}
-
-export function currentShareGatewayBaseUrl(): string | null {
-  const configured = env.shareGatewayUrl;
-  if (configured) return configured.replace(/\/$/, "");
-  if (typeof window === "undefined") {
-    return defaultPublicShareGatewayUrl.replace(/\/$/, "");
-  }
-  const { hostname, origin } = window.location;
-  if (hostname === "127.0.0.1" || hostname === "localhost") {
-    return `${window.location.origin}/api/share-gateway`;
-  }
-  if (hostname.endsWith("github.io")) {
-    return defaultPublicShareGatewayUrl.replace(/\/$/, "");
-  }
-  return `${origin}/api/share-gateway`;
-}
-
-export function currentAppBaseUrl(): string {
-  return currentAppShareRootUrl().replace(/\/$/, "");
-}
-
-export function currentAppShareRootUrl(): string {
-  if (typeof window === "undefined") return "https://trustcare.example.com/";
-  return new URL(import.meta.env.BASE_URL || "/", window.location.origin)
-    .toString()
-    .replace(/#.*$/, "");
 }
 
 export function toneForObject(

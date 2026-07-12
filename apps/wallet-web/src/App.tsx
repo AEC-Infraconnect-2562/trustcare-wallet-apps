@@ -69,6 +69,16 @@ import {
 } from "@trustcare/wallet-core";
 import { env } from "./env";
 import {
+  baseApiOptions,
+  defaultLoginUserId,
+  legacyWalletSessionKey,
+  preserveDesktopScrollPosition,
+  readWalletSessionUserId,
+  sidebarCollapsedKey,
+  walletRuntimeRelease,
+  walletSessionKey,
+} from "./appRuntime";
+import {
   RecordsV2View,
   type PortalHospitalCode,
 } from "./components/records/RecordsV2View";
@@ -117,7 +127,6 @@ import {
   StoreView,
   clearScanPayloadFromLocation,
   copyText,
-  currentShareGatewayBaseUrl,
   describeScannablePayload,
   downloadExport,
   extractScannablePayload,
@@ -165,50 +174,6 @@ const SettingsView = lazy(() =>
     default: module.SettingsView,
   })),
 );
-const baseApiOptions = {
-  url: env.apiUrl,
-  runtimeEnvironment: env.runtimeEnvironment,
-  demoOrigin:
-    typeof window !== "undefined"
-      ? window.location.origin
-      : "https://trustcare.example.com",
-  shlGatewayUrl: env.shlGatewayUrl,
-  shlViewerUrl: env.shlViewerUrl,
-  shareGatewayUrl:
-    typeof window !== "undefined"
-      ? (currentShareGatewayBaseUrl() ?? undefined)
-      : env.shareGatewayUrl,
-};
-
-const walletSessionKey = `trustcare-wallet-active-user:${env.runtimeEnvironment}:v1`;
-const legacyWalletSessionKey = "trustcare-wallet-active-user";
-const sidebarCollapsedKey = "trustcare-wallet-sidebar-collapsed:v1";
-const defaultLoginUserId = "demo-patient-001";
-const walletRuntimeRelease = "premium-clinical-home-inspector";
-
-function preserveDesktopScrollPosition(): void {
-  if (
-    typeof window === "undefined" ||
-    !window.matchMedia("(min-width: 941px)").matches
-  ) {
-    return;
-  }
-  const left = window.scrollX;
-  const top = window.scrollY;
-  const restore = () => window.scrollTo({ left, top, behavior: "auto" });
-  window.requestAnimationFrame(() => {
-    restore();
-    window.requestAnimationFrame(restore);
-  });
-}
-
-function readWalletSessionUserId() {
-  return readStringStorage(
-    walletSessionKey,
-    env.runtimeEnvironment === "demo" ? [legacyWalletSessionKey] : [],
-  );
-}
-
 export default function App() {
   const { lang, setLang, t } = useLanguage();
   const location = useLocation();
