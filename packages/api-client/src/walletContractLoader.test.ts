@@ -21,6 +21,22 @@ describe("Wallet Exchange live contract loader", () => {
       cache: "no-store",
     });
   });
+
+  it("accepts a compression-generated weak ETag only when its digest is exact", async () => {
+    const original = await integrityResponse({ version: "compressed" });
+    const response = new Response(await original.clone().text(), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        etag: `W/${original.headers.get("etag")!}`,
+        "content-digest": original.headers.get("content-digest")!,
+      },
+    });
+
+    await expect(
+      fetchVerifiedContractResource(async () => response.clone(), `${origin}/contract`),
+    ).resolves.toMatchObject({ etag: expect.stringMatching(/^W\/"sha256-/) });
+  });
   it("accepts integrity-bound sandbox contracts with Wallet authority", async () => {
     const fixture = await contractFixture();
     const result = await loadWalletExchangeContracts({
