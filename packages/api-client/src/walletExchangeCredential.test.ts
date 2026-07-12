@@ -341,7 +341,8 @@ async function signedPortalCredential(input?: {
       renderer: {
         authority: "trustcare_wallet",
         repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-        referenceCommit: WALLET_RENDERER_REFERENCE_COMMIT,
+        inspectedBaselineCommit: WALLET_RENDERER_REFERENCE_COMMIT,
+        compatibilityGate: "contract_and_schema_version",
         renderVersion: "2.0",
       },
     },

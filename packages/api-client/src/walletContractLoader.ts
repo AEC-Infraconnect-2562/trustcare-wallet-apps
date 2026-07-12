@@ -43,7 +43,8 @@ export type PortalRenderContract = Record<string, unknown> & {
   renderVersion: string;
   authority: string;
   implementationRepository: string;
-  referenceCommit: string;
+  inspectedBaselineCommit: string;
+  compatibilityGate: "contract_and_schema_version";
   modelPackage: string;
   webPackage: string;
   portalUsage: string;
@@ -364,7 +365,8 @@ function assertRenderContractCompatibility(
     contract.portalUsage !== "shared_wallet_renderer_only" ||
     contract.primaryPath !== "credentialSubject.humanDocument.renderData" ||
     contract.legacyWriteAllowed !== false ||
-    !/^[a-f0-9]{40}$/.test(contract.referenceCommit)
+    contract.compatibilityGate !== "contract_and_schema_version" ||
+    !/^[a-f0-9]{40}$/.test(contract.inspectedBaselineCommit)
   ) {
     incompatible("Portal renderer contract is incompatible.");
   }

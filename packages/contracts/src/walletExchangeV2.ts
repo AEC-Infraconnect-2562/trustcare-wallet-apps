@@ -75,7 +75,8 @@ export type WalletExchangeDiscovery = {
   };
   renderer: {
     repository: "AEC-Infraconnect-2562/trustcare-wallet-apps";
-    referenceCommit: string;
+    inspectedBaselineCommit: string;
+    compatibilityGate: "contract_and_schema_version";
     modelPackage: "@trustcare/wallet-core";
     webPackage: "@trustcare/ui-web";
     rule: string;
@@ -173,7 +174,8 @@ export type WalletSyncedCredential = {
   renderer: {
     authority: "trustcare_wallet";
     repository: "AEC-Infraconnect-2562/trustcare-wallet-apps";
-    referenceCommit: string;
+    inspectedBaselineCommit: string;
+    compatibilityGate: "contract_and_schema_version";
     renderVersion: string;
   };
 };
@@ -750,9 +752,10 @@ function validateDiscoveryRenderer(value: unknown, issues: TrustCareValidationIs
   const path = "$.renderer";
   const object = nestedObject(value, path, issues);
   if (!object) return;
-  exactKeys(object, ["repository", "referenceCommit", "modelPackage", "webPackage", "rule"], path, issues);
+  exactKeys(object, ["repository", "inspectedBaselineCommit", "compatibilityGate", "modelPackage", "webPackage", "rule"], path, issues);
   literalString(object, "repository", "AEC-Infraconnect-2562/trustcare-wallet-apps", path, issues);
-  gitCommitString(object, "referenceCommit", path, issues);
+  gitCommitString(object, "inspectedBaselineCommit", path, issues);
+  literalString(object, "compatibilityGate", "contract_and_schema_version", path, issues);
   literalString(object, "modelPackage", "@trustcare/wallet-core", path, issues);
   literalString(object, "webPackage", "@trustcare/ui-web", path, issues);
   nonEmptyString(object, "rule", path, issues, 1, 500);
@@ -823,10 +826,11 @@ function validateSyncedCredential(value: unknown, path: string, issues: TrustCar
   enumString(object, "deliveryState", ["signed", "unsigned_metadata"], path, issues);
   const renderer = nestedObject(object.renderer, `${path}.renderer`, issues);
   if (renderer) {
-    exactKeys(renderer, ["authority", "repository", "referenceCommit", "renderVersion"], `${path}.renderer`, issues);
+    exactKeys(renderer, ["authority", "repository", "inspectedBaselineCommit", "compatibilityGate", "renderVersion"], `${path}.renderer`, issues);
     literalString(renderer, "authority", "trustcare_wallet", `${path}.renderer`, issues);
     literalString(renderer, "repository", "AEC-Infraconnect-2562/trustcare-wallet-apps", `${path}.renderer`, issues);
-    gitCommitString(renderer, "referenceCommit", `${path}.renderer`, issues);
+    gitCommitString(renderer, "inspectedBaselineCommit", `${path}.renderer`, issues);
+    literalString(renderer, "compatibilityGate", "contract_and_schema_version", `${path}.renderer`, issues);
     nonEmptyString(renderer, "renderVersion", `${path}.renderer`, issues, 1, 100);
   }
   if (object.deliveryState === "signed" && object.proof === null) issue(issues, `${path}.proof`, "is required when deliveryState is signed");

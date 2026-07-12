@@ -334,7 +334,8 @@ function signedUpsert(): WalletExchangePreparedUpsertChange {
     renderer: {
       authority: "trustcare_wallet",
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
+      inspectedBaselineCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
+      compatibilityGate: "contract_and_schema_version",
       renderVersion: "2.0",
     },
   };
