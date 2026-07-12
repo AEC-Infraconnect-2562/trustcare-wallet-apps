@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  fetchVerifiedContractResource,
   loadWalletExchangeContracts,
   PORTAL_WALLET_V2_CONTRACT_VERSION,
   TRUSTCARE_RENDER_VERSION,
@@ -9,6 +10,17 @@ import {
 const origin = "https://portal.example";
 
 describe("Wallet Exchange live contract loader", () => {
+  it("bypasses intermediary caches before validating contract integrity", async () => {
+    const response = await integrityResponse({ version: "test" });
+    const fetchImpl = vi.fn(async () => response.clone()) as unknown as typeof fetch;
+
+    await fetchVerifiedContractResource(fetchImpl, `${origin}/contract`);
+
+    expect(fetchImpl).toHaveBeenCalledWith(`${origin}/contract`, {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    });
+  });
   it("accepts integrity-bound sandbox contracts with Wallet authority", async () => {
     const fixture = await contractFixture();
     const result = await loadWalletExchangeContracts({
