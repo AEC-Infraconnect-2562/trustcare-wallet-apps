@@ -10,7 +10,7 @@ run. Create a separate Railway project/service for this repository.
 
 - Repository: `AEC-Infraconnect-2562/trustcare-wallet-apps`
 - Branch: `main`
-- Build command: `VITE_TRUSTCARE_RUNTIME_ENV=sandbox pnpm build:web`
+- Build command: `VITE_TRUSTCARE_RUNTIME_ENV=sandbox VITE_TRUSTCARE_SANDBOX_TEST_LOGIN_ENABLED=true pnpm build:web`
 - Start command: `node scripts/serve-wallet-web.mjs`
 - Public URL: Railway-generated domain at the service root
 - Share Gateway: `/api/share-gateway`

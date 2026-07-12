@@ -4,6 +4,7 @@ import {
   assertRuntimeServiceEndpoints,
   parseOptionalBooleanFlag,
   resolveRuntimeEnvironment,
+  runtimeAllowsLocalTestLogin,
   runtimeEnvironmentDescriptor,
   RuntimeEnvironmentConfigurationError,
 } from "./runtimeEnvironment";
@@ -53,6 +54,33 @@ describe("runtime environment", () => {
     expect(() => assertRuntimeAllowsSyntheticData("production")).toThrow(
       /disabled/,
     );
+  });
+
+  it("allows local test login only in demo or explicitly enabled sandbox", () => {
+    expect(
+      runtimeAllowsLocalTestLogin({ environment: "demo" }),
+    ).toBe(true);
+    expect(
+      runtimeAllowsLocalTestLogin({ environment: "sandbox" }),
+    ).toBe(false);
+    expect(
+      runtimeAllowsLocalTestLogin({
+        environment: "sandbox",
+        sandboxTestLoginEnabled: true,
+      }),
+    ).toBe(true);
+    expect(
+      runtimeAllowsLocalTestLogin({
+        environment: "pilot",
+        sandboxTestLoginEnabled: true,
+      }),
+    ).toBe(false);
+    expect(
+      runtimeAllowsLocalTestLogin({
+        environment: "production",
+        sandboxTestLoginEnabled: true,
+      }),
+    ).toBe(false);
   });
 
   it("requires valid HTTPS service endpoints for pilot and production", () => {

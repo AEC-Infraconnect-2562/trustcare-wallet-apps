@@ -2,14 +2,18 @@
 
 ## Boundary
 
-The harness exists only when `VITE_TRUSTCARE_RUNTIME_ENV=demo`. It is a
-patient-Wallet test surface, not an IAM console. Portal owns users, hospital
-roles, Maker/Checker assignments, issuer DID binding, and authorization.
+The harness exists in `demo`, or in `sandbox` only when
+`VITE_TRUSTCARE_SANDBOX_TEST_LOGIN_ENABLED=true`. It is a patient-Wallet test
+surface, not an IAM console. Portal owns users, hospital roles, Maker/Checker
+assignments, issuer DID binding, and authorization. The sandbox flag does not
+enable synthetic credential data.
 
-Production never falls back to these fixtures. Wallet Exchange V2 continues to
-use a locally generated holder `did:key`, DPoP, opaque cursors, and holder-only
-partitions. The local `portalFixtureOpenId` is display/test mapping metadata; it
-must never be sent as `patientId` or trusted as Portal identity.
+Pilot and production never fall back to these fixtures, even if the sandbox
+flag is set. Wallet Exchange V2 continues to use holder-owned `did:key`, DPoP,
+opaque cursors, and holder-only partitions. In sandbox, allowlisted test users
+use deterministic holder keys that match Portal fixture bindings. The local
+`portalFixtureOpenId` is display/test mapping metadata; it must never be sent as
+`patientId` or trusted as Portal identity.
 
 ## One-click patient profiles
 
@@ -57,7 +61,7 @@ tokens, DPoP material and holder private keys. Access tokens remain memory-only.
 ## Portal prerequisites for live E2E
 
 For a profile to complete live Wallet Exchange E2E, Portal sandbox must bind
-the holder DID created on that browser/device to the corresponding test patient
+the corresponding allowlisted deterministic test holder DID to that fixture
 through its own administrative workflow. Wallet neither submits nor guesses a
 Portal patient identifier. Portal also owns:
 

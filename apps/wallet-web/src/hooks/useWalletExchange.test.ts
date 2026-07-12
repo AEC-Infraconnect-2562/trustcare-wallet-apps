@@ -188,6 +188,29 @@ describe("useWalletExchange lifecycle", () => {
     ).toBeLessThan(harness.saveHolderIdentity.mock.invocationCallOrder[0]!);
   });
 
+  it("uses the Portal-bound holder identity only when sandbox test identity is enabled", async () => {
+    const sandboxIdentity = {
+      ...identity,
+      did: "did:key:zDnaePortalBoundSandboxHolder",
+      kid: "did:key:zDnaePortalBoundSandboxHolder#zDnaePortalBoundSandboxHolder",
+    };
+    harness.sandboxHolderIdentityForUser.mockResolvedValue(sandboxIdentity);
+
+    renderHook({
+      ...options("demo-patient-004"),
+      sandboxTestIdentityEnabled: true,
+    });
+    harness.effects[0]?.();
+    await settlePromises();
+
+    expect(harness.sandboxHolderIdentityForUser).toHaveBeenCalledWith({
+      userId: "demo-patient-004",
+      sandboxRuntime: true,
+    });
+    expect(harness.generateHolderIdentity).not.toHaveBeenCalled();
+    expect(harness.saveHolderIdentity).toHaveBeenCalledWith(sandboxIdentity);
+  });
+
   it("does not generate a DID when durable locator storage is unavailable", async () => {
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,

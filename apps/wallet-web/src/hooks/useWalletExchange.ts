@@ -50,6 +50,7 @@ export type UseWalletExchangeOptions = {
   enabled?: boolean;
   portalBaseUrl: string;
   appId: string;
+  sandboxTestIdentityEnabled?: boolean;
   runtimeEnvironment: RuntimeEnvironment;
   walletVersion: string;
   localUserKey: string;
@@ -259,7 +260,10 @@ async function initializeRuntimeOnce(
   const locatedDid = readHolderLocator(locatorKey);
   const sandboxIdentity = await sandboxHolderIdentityForUser({
     userId: options.localUserKey,
-    sandboxRuntime: runtimeAllowsSyntheticData(options.runtimeEnvironment),
+    sandboxRuntime:
+      runtimeAllowsSyntheticData(options.runtimeEnvironment) ||
+      (options.runtimeEnvironment === "sandbox" &&
+        options.sandboxTestIdentityEnabled === true),
   });
   if (sandboxIdentity && locatedDid !== sandboxIdentity.did) {
     const persistence = new IndexedDbWalletExchangePersistence({
