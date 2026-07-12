@@ -1086,7 +1086,8 @@ function rendererMetadata() {
   return {
     authority: "trustcare_wallet" as const,
     repository: "AEC-Infraconnect-2562/trustcare-wallet-apps" as const,
-    referenceCommit: WALLET_RENDERER_REFERENCE_COMMIT,
+    inspectedBaselineCommit: WALLET_RENDERER_REFERENCE_COMMIT,
+    compatibilityGate: "contract_and_schema_version" as const,
     renderVersion: TRUSTCARE_RENDER_VERSION,
   };
 }
@@ -1168,7 +1169,8 @@ async function contractResponses(): Promise<Map<string, Response>> {
     },
     renderer: {
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      referenceCommit: WALLET_RENDERER_REFERENCE_COMMIT,
+      inspectedBaselineCommit: WALLET_RENDERER_REFERENCE_COMMIT,
+      compatibilityGate: "contract_and_schema_version",
       modelPackage: "@trustcare/wallet-core",
       webPackage: "@trustcare/ui-web",
       rule: "Render human documents from credentialSubject.humanDocument.renderData.",
@@ -1214,7 +1216,8 @@ async function contractResponses(): Promise<Map<string, Response>> {
     renderVersion: TRUSTCARE_RENDER_VERSION,
     authority: "wallet",
     implementationRepository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-    referenceCommit: WALLET_RENDERER_REFERENCE_COMMIT,
+    inspectedBaselineCommit: WALLET_RENDERER_REFERENCE_COMMIT,
+    compatibilityGate: "contract_and_schema_version",
     modelPackage: "@trustcare/wallet-core",
     webPackage: "@trustcare/ui-web",
     portalUsage: "shared_wallet_renderer_only",

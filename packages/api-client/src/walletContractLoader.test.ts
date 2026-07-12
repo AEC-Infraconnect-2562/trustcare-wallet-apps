@@ -29,7 +29,7 @@ describe("Wallet Exchange live contract loader", () => {
     expect(result.renderContract.payload.primaryPath).toBe(
       "credentialSubject.humanDocument.renderData",
     );
-    expect(result.renderContract.payload.referenceCommit).toBe(
+    expect(result.renderContract.payload.inspectedBaselineCommit).toBe(
       "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
     );
   });
@@ -44,7 +44,8 @@ describe("Wallet Exchange live contract loader", () => {
       url,
       await integrityResponse({
         ...payload,
-        referenceCommit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        inspectedBaselineCommit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        compatibilityGate: "contract_and_schema_version",
       }),
     );
 
@@ -57,7 +58,8 @@ describe("Wallet Exchange live contract loader", () => {
     ).resolves.toMatchObject({
       renderContract: {
         payload: {
-          referenceCommit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          inspectedBaselineCommit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          compatibilityGate: "contract_and_schema_version",
         },
       },
     });
@@ -190,7 +192,8 @@ async function contractFixture(
     },
     renderer: {
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
+      inspectedBaselineCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
+      compatibilityGate: "contract_and_schema_version",
       modelPackage: "@trustcare/wallet-core",
       webPackage: "@trustcare/ui-web",
       rule: "Render human documents from credentialSubject.humanDocument.renderData.",
@@ -239,7 +242,8 @@ async function contractFixture(
     renderVersion: TRUSTCARE_RENDER_VERSION,
     authority: "wallet",
     implementationRepository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-    referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
+    inspectedBaselineCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
+    compatibilityGate: "contract_and_schema_version",
     modelPackage: "@trustcare/wallet-core",
     webPackage: "@trustcare/ui-web",
     portalUsage: "shared_wallet_renderer_only",

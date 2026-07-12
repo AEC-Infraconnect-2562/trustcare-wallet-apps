@@ -26,3 +26,11 @@ export function currentAppShareRootUrl(): string {
     .toString()
     .replace(/#.*$/, "");
 }
+
+export function publicPresentationArtifactUrl(
+  portalBaseUrl: string,
+  artifactId: string,
+): string {
+  const portal = portalBaseUrl.replace(/\/$/, "");
+  return `${portal}/api/share-gateway/presentations/${encodeURIComponent(artifactId)}.jwt`;
+}

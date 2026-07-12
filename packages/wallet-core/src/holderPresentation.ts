@@ -20,6 +20,7 @@ export type HolderSignedDirectVpInput = {
   context: WalletExchangeServiceContext;
   purpose: string;
   consentRef: string;
+  presentationId?: string;
   /** Issuer-signed compact VC JWTs. Their exact bytes and order are retained. */
   credentialJwts: readonly string[];
   now?: Date;
@@ -106,7 +107,9 @@ export async function createHolderSignedDirectVp(
     aud: audience,
     iat: issuedAt,
     exp: expirationTime,
-    jti: `urn:uuid:${freshUuid()}`,
+    jti: input.presentationId
+      ? requireText(input.presentationId, "VP presentation ID", 255)
+      : `urn:uuid:${freshUuid()}`,
     vp: {
       type: ["VerifiablePresentation"],
       holder: input.identity.did,

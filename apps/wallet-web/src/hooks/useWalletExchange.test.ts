@@ -8,6 +8,7 @@ const harness = vi.hoisted(() => ({
   persistenceOptions: [] as Array<Record<string, unknown>>,
   workflowOptions: [] as Array<Record<string, unknown>>,
   generateHolderIdentity: vi.fn(),
+  sandboxHolderIdentityForUser: vi.fn(),
   loadHolderIdentity: vi.fn(),
   saveHolderIdentity: vi.fn(),
   loadOrCreateState: vi.fn(),
@@ -72,6 +73,8 @@ vi.mock("@trustcare/api-client/walletExchangeWorkflow", () => ({
 
 vi.mock("@trustcare/wallet-core", () => ({
   generateHolderIdentity: harness.generateHolderIdentity,
+  runtimeAllowsSyntheticData: (value: string) => value === "demo" || value === "sandbox",
+  sandboxHolderIdentityForUser: harness.sandboxHolderIdentityForUser,
 }));
 
 vi.mock("../repositories", () => ({
@@ -126,6 +129,7 @@ describe("useWalletExchange lifecycle", () => {
     harness.persistenceOptions = [];
     harness.workflowOptions = [];
     harness.generateHolderIdentity.mockReset();
+    harness.sandboxHolderIdentityForUser.mockReset();
     harness.loadHolderIdentity.mockReset();
     harness.saveHolderIdentity.mockReset();
     harness.loadOrCreateState.mockReset();
@@ -133,6 +137,7 @@ describe("useWalletExchange lifecycle", () => {
     harness.synchronize.mockReset();
     harness.recoverPendingDirectSubmissions.mockReset();
     harness.generateHolderIdentity.mockResolvedValue(identity);
+    harness.sandboxHolderIdentityForUser.mockResolvedValue(undefined);
     harness.saveHolderIdentity.mockResolvedValue(undefined);
     harness.loadOrCreateState.mockResolvedValue({ documents: [] });
     harness.listCredentialRequestLinks.mockResolvedValue([]);

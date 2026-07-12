@@ -56,6 +56,7 @@ import {
   createDocumentRequestDraft,
   createShareDraftFromPrepare,
   createSharingEventArtifactId,
+  createHolderSignedDirectVp,
   createSharePolicy,
   createShlViewerUrl,
   credentialCompactSummaryRows,
@@ -1163,6 +1164,10 @@ export function ShareView({
               certificationAttempt?.status === "submitted"
                 ? certificationAttempt.response.status
                 : (certificationAttempt?.status ?? "not_requested"),
+            certificationRequestId:
+              certificationAttempt?.status === "submitted"
+                ? certificationAttempt.response.certificationRequestId
+                : undefined,
             manifestCredentialId:
               certifiedPublication?.objectLinks.manifestCredentialId,
           },
@@ -1223,7 +1228,7 @@ export function ShareView({
       context: purpose,
       cards: selectedCards,
       selectedCardIds: selectedCards.map((card) => card.id),
-      holderDid: user.holderDid,
+      holderDid: holderIdentity?.did ?? user.holderDid,
       recipient,
       purpose: readinessContextLabels[purpose].th,
       selectedFields: sharePolicy.selectedFields,
@@ -1268,11 +1273,37 @@ export function ShareView({
         if (!shareGatewayBaseUrl) {
           throw new Error("ยังไม่ได้ตั้งค่า Share Gateway สำหรับ publish VP");
         }
+        if (!holderIdentity) {
+          throw new Error("ไม่พบ holder key ที่ตรงกับผู้ป่วยสำหรับลงนาม VP");
+        }
+        const credentialJwts = selectedCards.map(
+          (card) => card.credentialProof?.jwt ?? card.credentialJwt,
+        );
+        if (credentialJwts.some((jwt) => !jwt)) {
+          throw new Error("เอกสารที่เลือกต้องมีลายเซ็น issuer ครบทุกฉบับก่อนสร้าง VP");
+        }
+        const consentRef =
+          selectedCards.find((card) => card.cardType === "consent_receipt")
+            ?.credentialId ??
+          `urn:trustcare:consent:share-event:${result.presentation.presentationId}`;
+        const holderPresentation = await createHolderSignedDirectVp({
+          identity: holderIdentity,
+          holderDid: holderIdentity.did,
+          presentationId: result.presentation.presentationId,
+          audience: "https://trustcare.network/verifier",
+          recipient,
+          context: purpose,
+          purpose: readinessContextLabels[purpose].th,
+          consentRef: String(consentRef),
+          credentialJwts: credentialJwts as string[],
+          expiresAt,
+        });
         const publication = await shareGatewayApi.publishVpSharePackage({
           gatewayBaseUrl: shareGatewayBaseUrl,
           result,
+          holderPresentationJwt: holderPresentation.vpJwt,
           userId: user.id,
-          holderDid: user.holderDid,
+          holderDid: holderIdentity.did,
           purpose,
           purposeLabel: readinessContextLabels[purpose].th,
           recipient,

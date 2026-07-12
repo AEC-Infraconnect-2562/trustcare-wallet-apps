@@ -10,6 +10,7 @@ import {
   createShareGatewayClient,
   issuePayerCredentialWithShareGateway,
   publishCertifiedShlTrustArtifacts,
+  publishHospitalCertifiedShl,
   publishHolderAttestedShl,
   publishShareArtifact,
   publishVpSharePackage,
@@ -63,6 +64,7 @@ describe("shareGatewayClient", () => {
       gatewayBaseUrl,
       fetchImpl: fetchImpl as typeof fetch,
       result: packageResult,
+      holderPresentationJwt: "eyJhbGciOiJFZERTQSIsInR5cCI6InZwK2p3dCIsImtpZCI6ImRpZDprZXk6dGVzdCN0ZXN0In0.eyJpc3MiOiJkaWQ6a2V5OnRlc3QifQ.c2lnbmF0dXJl",
       userId: "demo-patient-complete-001",
       holderDid: "did:key:holder",
       purpose: "opd_visit",
@@ -74,11 +76,11 @@ describe("shareGatewayClient", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]?.url).toBe(`${gatewayBaseUrl}/artifacts`);
     expect(requests[0]?.body).toEqual(
-      requestBodyForShareGateway({
+      JSON.parse(JSON.stringify(requestBodyForShareGateway({
         artifactId: packageResult.presentation.presentationId,
         kind: "vp",
-        contentType: "application/vp+json",
-        payload: packageResult.payload,
+        contentType: "application/vp+jwt",
+        payload: "eyJhbGciOiJFZERTQSIsInR5cCI6InZwK2p3dCIsImtpZCI6ImRpZDprZXk6dGVzdCN0ZXN0In0.eyJpc3MiOiJkaWQ6a2V5OnRlc3QifQ.c2lnbmF0dXJl",
         ownerUserId: "demo-patient-complete-001",
         holderDid: "did:key:holder",
         context: "opd_visit",
@@ -86,10 +88,11 @@ describe("shareGatewayClient", () => {
         recipient: "Verifier",
         expiresAt: "2026-07-08T09:00:00.000Z",
         trustcare: {
-          signingStatus: "pending_backend_signature",
-          expectedProof: ["ES256", "EdDSA", "DataIntegrityProof"],
+          signingStatus: "wallet_holder_signed",
+          expectedProof: ["ES256", "EdDSA"],
+          portalResignAllowed: false,
         },
-      }),
+      }))),
     );
   });
 
@@ -289,6 +292,53 @@ describe("shareGatewayClient", () => {
     });
 
     expect(kinds).toEqual(["manifest_vp", "manifest_credential"]);
+  });
+
+  it("publishes only signed certification artifacts and never self-asserts a certified manifest", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const standardManifestUrl = `${gatewayBaseUrl}/manifests/shl-certified-1.json`;
+    const publication = {
+      trustMode: "hospital_certified",
+      manifest: {
+        publicationId: "shl-certified-1",
+        holderDid: "did:key:holder",
+        manifestUrl: standardManifestUrl,
+        expiresAt: "2026-07-13T09:00:00.000Z",
+        accessPolicy: { passcodeRequired: true, maxAccessCount: 3 },
+      },
+      holderPresentationJwt: "eyJoIjp0cnVlfQ.eyJ2cCI6e319.c2ln",
+      manifestCredentialJwt: "eyJoIjp0cnVlfQ.eyJ2YyI6e319.c2ln",
+      objectLinks: { manifestCredentialId: "urn:vc:manifest:1" },
+    } as never;
+
+    const result = await publishHospitalCertifiedShl({
+      gatewayBaseUrl,
+      publication,
+      userId: "demo",
+      holderDid: "did:key:holder",
+      purpose: "referral",
+      recipient: "Verifier",
+      fetchImpl: (async (_url: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? "{}"));
+        bodies.push(body);
+        return jsonResponse({
+          ok: true,
+          mode: "portal_backend",
+          artifactId: String(body.artifactId),
+          kind: body.kind,
+          publicUrl: `${gatewayBaseUrl}/${String(body.kind)}/${String(body.artifactId)}`,
+          warnings: [],
+          errors: [],
+        });
+      }) as typeof fetch,
+    });
+
+    expect(bodies.map((body) => body.kind)).toEqual([
+      "manifest_vp",
+      "manifest_credential",
+    ]);
+    expect(result.manifestUrl).toBe(standardManifestUrl);
+    expect(JSON.stringify(bodies)).not.toContain("certified_shl_manifest");
   });
 
   it("publishes holder-attested SHL files, holder VP, and manifest without a fake hospital credential", async () => {

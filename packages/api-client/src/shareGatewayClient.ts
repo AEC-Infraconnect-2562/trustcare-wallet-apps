@@ -5,7 +5,6 @@ import {
   createShlViewerUrl,
   normalizeShareGatewayBaseUrl,
   readinessContextLabels,
-  shareGatewayArtifactUrl,
   type BuiltSharePackage,
   type CertifiedShlPublication,
   type PreparedHolderAttestedShl,
@@ -42,6 +41,7 @@ export type ShareGatewayClientOptions = {
 
 export type PublishVpSharePackageInput = {
   result: Extract<BuiltSharePackage, { presentation: unknown }>;
+  holderPresentationJwt: string;
   userId: string | number;
   holderDid: string;
   purpose: ReadinessContext;
@@ -134,8 +134,8 @@ export async function publishVpSharePackage(
     request: {
       artifactId: input.result.presentation.presentationId,
       kind: "vp",
-      contentType: "application/vp+json",
-      payload: input.result.payload,
+      contentType: "application/vp+jwt",
+      payload: input.holderPresentationJwt,
       ownerUserId: input.userId,
       holderDid: input.holderDid,
       context: input.purpose,
@@ -143,8 +143,9 @@ export async function publishVpSharePackage(
       recipient: input.recipient,
       expiresAt: input.expiresAt,
       trustcare: {
-        signingStatus: "pending_backend_signature",
-        expectedProof: ["ES256", "EdDSA", "DataIntegrityProof"],
+        signingStatus: "wallet_holder_signed",
+        expectedProof: ["ES256", "EdDSA"],
+        portalResignAllowed: false,
       },
     },
   });
@@ -446,67 +447,13 @@ export async function publishHospitalCertifiedShl(input: {
     recipient: input.recipient,
     expiresAt: input.publication.manifest.expiresAt,
   });
-  const certifiedArtifactId = `${input.publication.manifest.publicationId}:certified:${input.publication.objectLinks.manifestCredentialId}`;
-  const manifest = await publishShareArtifact({
-    gatewayBaseUrl: input.gatewayBaseUrl,
-    fetchImpl: input.fetchImpl,
-    request: {
-      artifactId: certifiedArtifactId,
-      kind: "certified_shl_manifest",
-      contentType: "application/json",
-      payload: {
-        resourceType: "TrustCareShlManifest",
-        manifestVersion: 2,
-        ...input.publication.manifest,
-        files: input.publication.manifest.documents.map((document) => ({
-          id: document.id,
-          contentType: "application/jose",
-          location: document.location,
-          hash: document.jweSha256,
-          plaintextHash: document.plaintextSha256,
-        })),
-        trustcare: {
-          trustLayerStatus: "hospital_certified",
-          makerCheckerStatus: "approved",
-          manifestHash: input.publication.manifestHash,
-          manifestCredentialId:
-            input.publication.objectLinks.manifestCredentialId,
-          holderPresentationId: input.publication.holderPresentationId,
-          objectLinks: input.publication.objectLinks,
-        },
-      },
-      ownerUserId: input.userId,
-      holderDid: input.holderDid,
-      context: input.purpose,
-      purpose: purposeLabel(input.purpose, input.purposeLabel),
-      recipient: input.recipient,
-      expiresAt: input.publication.manifest.expiresAt,
-      accessPolicy: {
-        expiresAt: input.publication.manifest.expiresAt,
-        passcodeRequired:
-          input.publication.manifest.accessPolicy.passcodeRequired,
-        maxAccessCount:
-          input.publication.manifest.accessPolicy.maxAccessCount,
-      },
-      trustcare: {
-        trustLayerStatus: "hospital_certified",
-        manifestHash: input.publication.manifestHash,
-        manifestCredentialId:
-          input.publication.objectLinks.manifestCredentialId,
-        holderPresentationId: input.publication.holderPresentationId,
-      },
-    },
-  });
   return {
     trustMode: "hospital_certified",
     shlPackageId: input.publication.manifest.publicationId,
-    manifestUrl:
-      manifest.publicUrl ??
-      shareGatewayArtifactUrl(
-        input.gatewayBaseUrl,
-        "certified_shl_manifest",
-        certifiedArtifactId,
-      ),
+    // The immutable Standard SHL manifest remains Wallet-owned transport.
+    // Hospital certification is the separately signed Manifest VC below; a
+    // browser caller must never publish a self-asserted certified manifest.
+    manifestUrl: input.publication.manifest.manifestUrl,
     holderPresentationUrl: support.find(
       (artifact) => artifact.kind === "manifest_vp",
     )?.publicUrl,
@@ -515,7 +462,6 @@ export async function publishHospitalCertifiedShl(input: {
     )?.publicUrl,
     warnings: [
       ...support.flatMap((artifact) => artifact.warnings ?? []),
-      ...(manifest.warnings ?? []),
     ],
   };
 }

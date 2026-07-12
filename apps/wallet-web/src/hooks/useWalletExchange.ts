@@ -10,6 +10,8 @@ import {
 } from "@trustcare/api-client/walletExchangeWorkflow";
 import {
   generateHolderIdentity,
+  runtimeAllowsSyntheticData,
+  sandboxHolderIdentityForUser,
   type HolderSigningIdentity,
   type RuntimeEnvironment,
   type WalletDocumentRecordV2,
@@ -255,6 +257,29 @@ async function initializeRuntimeOnce(
   locatorKey: string,
 ): Promise<WalletExchangeRuntime> {
   const locatedDid = readHolderLocator(locatorKey);
+  const sandboxIdentity = await sandboxHolderIdentityForUser({
+    userId: options.localUserKey,
+    sandboxRuntime: runtimeAllowsSyntheticData(options.runtimeEnvironment),
+  });
+  if (sandboxIdentity && locatedDid !== sandboxIdentity.did) {
+    const persistence = new IndexedDbWalletExchangePersistence({
+      portalOrigin: options.portalBaseUrl,
+      holderDid: sandboxIdentity.did,
+    });
+    writeHolderLocator(locatorKey, sandboxIdentity.did);
+    await persistence.saveHolderIdentity(sandboxIdentity);
+    return {
+      partitionKey: locatorKey,
+      holderDid: sandboxIdentity.did,
+      identity: sandboxIdentity,
+      persistence,
+      workflow: new WalletExchangeWorkflow({
+        ...options,
+        identity: sandboxIdentity,
+        persistence,
+      }),
+    };
+  }
   if (locatedDid) {
     const persistence = new IndexedDbWalletExchangePersistence({
       portalOrigin: options.portalBaseUrl,
