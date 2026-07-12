@@ -109,15 +109,12 @@ import {
   DialogLoadingFallback,
   DocumentFlowDialog,
   HomeView,
-  LoginView,
   PrepareView,
   PublicVerifierView,
   ReceiveView,
   ScanResponseDialog,
   ShareView,
   StoreView,
-  UserAvatarImage,
-  UserScopePanel,
   clearScanPayloadFromLocation,
   copyText,
   currentShareGatewayBaseUrl,
@@ -128,8 +125,12 @@ import {
   friendlyWalletRuntimeError,
   isPublicVerifierScanLocation,
   readScanPayloadFromLocation,
-  shortDid,
 } from "./views/AppViews";
+import { LoginView, UserScopePanel } from "./views/IdentityViews";
+import {
+  UserAvatarImage,
+  shortDid,
+} from "./views/identityPresentation";
 import {
   documentTabBreadcrumbLabels,
   emptyPortalInteropFixtures,

@@ -24,12 +24,10 @@ import {
   FilePlus2,
   Globe2,
   IdCard,
-  ImageOff,
   KeyRound,
   Link2,
   ListChecks,
   LockKeyhole,
-  LogOut,
   Network,
   Pill,
   Printer,
@@ -49,7 +47,6 @@ import {
   CredentialDocument,
   PresentationCoverDocument,
   Surface,
-  useLoadedPhotoCandidate,
 } from "@trustcare/ui-web";
 import {
   assessLocalReadiness,
@@ -72,17 +69,11 @@ import {
   exportWalletObject,
   exportWalletObjects,
   buildPortalInteroperabilityFixtures,
-  getDemoUser,
-  getDemoWalletCards,
   getValueAtPath,
-  initialsFromName,
-  normalizePhotoUrl,
-  normalizePhotoUrlCandidates,
   parseShlLink,
   walletDocumentRecordV2FromCard,
   walletDocumentTrustPresentation,
   walletCardForCredentialRendering,
-  photoCandidatesForCard,
   readinessContextLabels,
   readinessContextValues,
   recommendPolicyForDraft,
@@ -162,6 +153,9 @@ import {
   contextLabel,
   statusLabel,
 } from "./appViewLabels";
+import {
+  CredentialSubjectAvatar,
+} from "./identityPresentation";
 
 export { NavButton } from "../components/shell/AppNavigation";
 export {
@@ -170,6 +164,12 @@ export {
   statusLabel,
   transportLabel,
 } from "./appViewLabels";
+export {
+  UserAvatarImage,
+  avatarUrlCandidatesForUser,
+  resolveAvatarUrl,
+  shortDid,
+} from "./identityPresentation";
 
 const shareDisclosureIntentOptions: Array<{
   value: ShareDisclosureIntent;
@@ -199,155 +199,6 @@ export function DialogLoadingFallback() {
     <div className="modal-backdrop" role="status" aria-live="polite">
       <div className="dialog-loading">กำลังเปิดหน้าต่าง...</div>
     </div>
-  );
-}
-
-export function LoginView({
-  users,
-  pendingScan,
-  selectedUserId,
-  onSelect,
-  onLogin,
-  onOpenScanner,
-}: {
-  users: WalletDemoUser[];
-  pendingScan: boolean;
-  selectedUserId: string;
-  onSelect: (userId: string) => void;
-  onLogin: (userId: string) => void;
-  onOpenScanner: () => void;
-}) {
-  const selectedUser = getDemoUser(selectedUserId);
-  const loginCardsByUser = useMemo(
-    () =>
-      new Map(
-        users.map((user) => [
-          user.id,
-          getDemoWalletCards(user.id).filter(
-            (card) => card.ownerUserId === user.id,
-          ),
-        ]),
-      ),
-    [users],
-  );
-  return (
-    <main className="login-shell">
-      <section className="login-card">
-        <div className="brand-block">
-          <div className="brand-mark">TC</div>
-          <div className="brand-copy">
-            <strong>TrustCare Wallet</strong>
-            <small>เอกสารสุขภาพส่วนตัวที่ตรวจสอบได้</small>
-          </div>
-        </div>
-        <div className="login-copy">
-          <span className="eyebrow">เข้าสู่ระบบทดสอบช่วงพัฒนา</span>
-          <h1>เลือกผู้ใช้ทดสอบ</h1>
-          <p>
-            ช่วงพัฒนายังไม่ต้องใส่ password แต่ Wallet จะแยก scope เอกสาร
-            ประวัติ VP, SHL และ Store ตามผู้ใช้ที่ login จริง
-          </p>
-          {pendingScan && (
-            <Badge tone="blue">
-              <QrCode size={14} /> มี QR รอประมวลผลหลัง login
-            </Badge>
-          )}
-          <button
-            type="button"
-            className="login-scan-button"
-            onClick={onOpenScanner}
-          >
-            <Camera size={18} />
-            สแกน QR Code
-          </button>
-        </div>
-        <div className="login-user-grid">
-          {users.map((user) => (
-            <button
-              key={user.id}
-              type="button"
-              className={
-                selectedUserId === user.id
-                  ? "login-user-card active"
-                  : "login-user-card"
-              }
-              onClick={() => onSelect(user.id)}
-            >
-              <UserAvatarImage
-                user={user}
-                cards={loginCardsByUser.get(user.id) ?? []}
-              />
-              <span>
-                <strong>{user.nameTh}</strong>
-                <small>
-                  {user.role === "staff" ? "เจ้าหน้าที่" : "ผู้ป่วย"} ·{" "}
-                  {user.sourceLabel}
-                </small>
-                <em>{user.id}</em>
-              </span>
-            </button>
-          ))}
-        </div>
-        <Surface className="login-scope-preview">
-          <UserCheck size={20} />
-          <div>
-            <strong>{selectedUser.nameTh}</strong>
-            <p>
-              {selectedUser.sourceLabel} · {selectedUser.hospitalNameTh}
-            </p>
-          </div>
-          <Badge
-            tone={
-              selectedUser.source === "trustcare_portal" ? "blue" : "neutral"
-            }
-          >
-            {selectedUser.role === "staff"
-              ? "ขอบเขตเจ้าหน้าที่"
-              : "ขอบเขตผู้ป่วย"}
-          </Badge>
-        </Surface>
-        <Button onClick={() => onLogin(selectedUserId)}>
-          <ShieldCheck size={18} /> เข้าสู่ระบบด้วยผู้ใช้นี้
-        </Button>
-      </section>
-    </main>
-  );
-}
-
-export function UserScopePanel({
-  activeUser,
-  cards = [],
-  onLogout,
-}: {
-  activeUser: WalletDemoUser;
-  cards?: WalletCard[];
-  onLogout: () => void;
-}) {
-  return (
-    <section className="user-scope-panel">
-      <div className="user-scope-card">
-        <UserAvatarImage user={activeUser} cards={cards} />
-        <div>
-          <strong>{activeUser.nameTh}</strong>
-          <small>{activeUser.sourceLabel}</small>
-        </div>
-      </div>
-      <div className="user-session-summary">
-        <span>เข้าสู่ระบบแล้ว</span>
-        <strong>
-          {activeUser.role === "staff" ? "ขอบเขตเจ้าหน้าที่" : "ขอบเขตผู้ป่วย"}
-        </strong>
-        <small>{activeUser.id}</small>
-      </div>
-      <p>
-        {activeUser.avatarSource === "trustcare_portal"
-          ? "รูปภาพจาก TrustCare Portal เดิม"
-          : "รูปภาพเสมือนจริงที่สร้างไว้สำหรับ seed ของ Wallet นี้"}
-      </p>
-      <Button className="secondary" onClick={onLogout}>
-        <LogOut size={16} /> ออกจากระบบ
-      </Button>
-    </section>
   );
 }
 
@@ -4701,133 +4552,4 @@ export function friendlyPortalSyncError(error: unknown): string {
     ].join(" · ");
   }
   return message;
-}
-
-export function UserAvatarImage({
-  user,
-  cards = [],
-}: {
-  user: WalletDemoUser;
-  cards?: WalletCard[];
-}) {
-  const candidates = useMemo(
-    () => avatarUrlCandidatesForUser(user, cards),
-    [cards, user],
-  );
-  const photoCandidates = useMemo(
-    () =>
-      candidates.map((url, index) => ({
-        label: `user.avatar:${index + 1}`,
-        url,
-      })),
-    [candidates],
-  );
-  const { candidate, imageSrc, isLoaded, markFailed, markLoaded } =
-    useLoadedPhotoCandidate(photoCandidates);
-  const initials = initialsFromName(user.nameEn || user.nameTh);
-
-  return (
-    <span className="user-avatar-image" aria-label={user.nameEn || user.nameTh}>
-      <span className="user-avatar-fallback" aria-hidden="true">
-        {initials}
-      </span>
-      {candidate && imageSrc && (
-        <img
-          className={isLoaded ? "loaded" : ""}
-          src={imageSrc}
-          alt=""
-          onLoad={markLoaded}
-          onError={markFailed}
-        />
-      )}
-    </span>
-  );
-}
-
-function CredentialSubjectAvatar({ card }: { card: WalletCard }) {
-  const candidates = useMemo(() => photoCandidatesForCard(card), [card]);
-  const { candidate, imageSrc, isLoaded, markFailed, markLoaded } =
-    useLoadedPhotoCandidate(candidates);
-
-  return (
-    <span
-      className="user-avatar-image credential-subject-avatar"
-      aria-label={
-        candidate && imageSrc
-          ? "รูปผู้ถือเอกสารจาก credential เดียวกัน"
-          : "ไม่พบรูปผู้ถือเอกสารใน credential ต้นฉบับ"
-      }
-    >
-      <ImageOff aria-hidden="true" />
-      {candidate && imageSrc ? (
-        <img
-          className={isLoaded ? "loaded" : ""}
-          src={imageSrc}
-          alt=""
-          onLoad={markLoaded}
-          onError={markFailed}
-        />
-      ) : null}
-    </span>
-  );
-}
-
-export function avatarUrlCandidatesForUser(
-  user: WalletDemoUser,
-  cards: WalletCard[] = [],
-): string[] {
-  const candidates: string[] = [];
-  const add = (url: string | null | undefined) => {
-    if (!url) return;
-    const resolved = resolveAvatarCandidateUrl(url);
-    if (isUnstableBrowserAvatarUrl(resolved)) return;
-    if (resolved && !candidates.includes(resolved)) candidates.push(resolved);
-  };
-
-  for (const card of cards) {
-    if (card.ownerUserId && card.ownerUserId !== user.id) continue;
-    for (const candidate of photoCandidatesForCard(card)) {
-      add(candidate.url);
-    }
-  }
-  for (const candidate of normalizePhotoUrlCandidates(user.avatarUrl)) {
-    add(candidate);
-  }
-  return candidates;
-}
-
-function isUnstableBrowserAvatarUrl(url: string): boolean {
-  try {
-    return new URL(url).hostname.endsWith(".manus.space");
-  } catch {
-    return false;
-  }
-}
-
-function resolveAvatarCandidateUrl(url: string): string {
-  const trimmed = url.trim();
-  if (
-    /^https?:\/\//i.test(trimmed) ||
-    trimmed.startsWith("data:") ||
-    trimmed.startsWith("/assets/")
-  )
-    return trimmed;
-  return resolveAvatarUrl(trimmed);
-}
-
-export function resolveAvatarUrl(url: string): string {
-  const normalized = normalizePhotoUrl(url);
-  if (
-    /^https?:\/\//i.test(normalized) ||
-    normalized.startsWith("data:") ||
-    normalized.startsWith("/")
-  )
-    return normalized;
-  const base = import.meta.env.BASE_URL || "/";
-  return `${base.replace(/\/$/, "")}/${normalized.replace(/^\//, "")}`;
-}
-
-export function shortDid(did: string): string {
-  if (did.length <= 22) return did;
-  return `${did.slice(0, 12)}...${did.slice(-6)}`;
 }
