@@ -4,6 +4,7 @@ import {
 } from "@trustcare/contracts";
 import {
   CompactEncrypt,
+  base64url,
   compactDecrypt,
   decodeJwt,
   decodeProtectedHeader,
@@ -783,6 +784,7 @@ async function assertHolderPresentationIntegrity(
   identity: HolderSigningIdentity,
   now: Date,
 ): Promise<void> {
+  assertCanonicalCompactJws(prepared.holderPresentationJwt);
   const publicKey = await importJWK(identity.publicJwk, identity.jwsAlgorithm);
   let verified;
   try {
@@ -846,6 +848,27 @@ async function assertHolderPresentationIntegrity(
       "Holder-attested SHL VP does not match the manifest, files, purpose, recipient, consent, or source credentials.",
     );
   }
+}
+
+function assertCanonicalCompactJws(value: string): void {
+  try {
+    const segments = value.split(".");
+    if (
+      segments.length === 3 &&
+      segments.every(
+        (segment) =>
+          Boolean(segment) &&
+          base64url.encode(base64url.decode(segment)) === segment,
+      )
+    ) {
+      return;
+    }
+  } catch {
+    // Normalize malformed and non-canonical compact JWS failures below.
+  }
+  throw new Error(
+    "Holder-attested SHL VP signature or registered claims are invalid.",
+  );
 }
 
 function assertManifestCredentialEvidence(input: {

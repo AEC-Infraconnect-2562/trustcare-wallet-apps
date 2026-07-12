@@ -421,7 +421,6 @@ export type WalletStoredObjectType =
   | "shl"
   | "shl_manifest"
   | "manifest_vp"
-  | "holder_vc"
   | "sync_receipt"
   | "document_reference"
   | "oid4vci_offer"
