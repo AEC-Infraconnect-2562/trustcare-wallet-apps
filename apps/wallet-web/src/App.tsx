@@ -67,6 +67,7 @@ import {
   type VerifierResult,
 } from "@trustcare/wallet-core";
 import { env } from "./env";
+import { publicPresentationArtifactUrl } from "./utils/runtimeUrls";
 import {
   baseApiOptions,
   defaultLoginUserId,
@@ -341,6 +342,13 @@ export default function App() {
       setReadinessContext(serviceProfileId as ReadinessContext);
     }
   }, [routeMatch.params.serviceProfileId]);
+  useEffect(() => {
+    const artifactId = routeMatch.params.artifactId;
+    if (routeMatch.route.id !== "verify" || !artifactId) return;
+    setPendingScanPayload(
+      publicPresentationArtifactUrl(env.portalBaseUrl, artifactId),
+    );
+  }, [routeMatch.params.artifactId, routeMatch.route.id]);
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
