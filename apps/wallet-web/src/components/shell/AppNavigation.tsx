@@ -1,0 +1,150 @@
+import type { ReactElement } from "react";
+import {
+  Activity,
+  Database,
+  FileText,
+  History,
+  Home,
+  Inbox,
+  Settings,
+  Share2,
+} from "lucide-react";
+import type { View } from "../../views/appViewModel";
+
+type NavigationProps = {
+  routeId: string;
+  routeView: View;
+  onNavigate: (view: View) => void;
+  onOpenDocuments: () => void;
+};
+
+export function NavButton({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: ReactElement;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={active ? "nav-button active" : "nav-button"}
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      aria-label={label}
+      title={label}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+export function AppPrimaryNavigation({
+  routeId,
+  routeView,
+  onNavigate,
+  onOpenDocuments,
+  compact = false,
+}: NavigationProps & { compact?: boolean }) {
+  const documentsActive = ["documents", "receive", "store", "history"].includes(
+    routeView,
+  );
+  return (
+    <>
+      <NavButton
+        active={routeId === "home"}
+        icon={<Home />}
+        label="หน้าแรก"
+        onClick={() => onNavigate("home")}
+      />
+      <NavButton
+        active={documentsActive}
+        icon={<FileText />}
+        label="เอกสาร"
+        onClick={onOpenDocuments}
+      />
+      <NavButton
+        active={routeView === "share"}
+        icon={<Share2 />}
+        label="แชร์"
+        onClick={() => onNavigate("share")}
+      />
+      <NavButton
+        active={routeView === "prepare"}
+        icon={<Activity />}
+        label={compact ? "เตรียม" : "เตรียมบริการ"}
+        onClick={() => onNavigate("prepare")}
+      />
+      <NavButton
+        active={routeView === "settings"}
+        icon={<Settings />}
+        label="ตั้งค่า"
+        onClick={() => onNavigate("settings")}
+      />
+    </>
+  );
+}
+
+export function AppSideNavigation({
+  routeId,
+  routeView,
+  onNavigate,
+}: Omit<NavigationProps, "onOpenDocuments">) {
+  return (
+    <>
+      <NavButton
+        active={routeId === "home"}
+        icon={<Home />}
+        label="หน้าแรก"
+        onClick={() => onNavigate("home")}
+      />
+      <NavButton
+        active={routeView === "documents"}
+        icon={<FileText />}
+        label="เอกสาร"
+        onClick={() => onNavigate("documents")}
+      />
+      <NavButton
+        active={routeView === "receive"}
+        icon={<Inbox />}
+        label="รับเอกสาร"
+        onClick={() => onNavigate("receive")}
+      />
+      <NavButton
+        active={routeView === "share"}
+        icon={<Share2 />}
+        label="แชร์"
+        onClick={() => onNavigate("share")}
+      />
+      <NavButton
+        active={routeView === "prepare"}
+        icon={<Activity />}
+        label="เตรียมบริการ"
+        onClick={() => onNavigate("prepare")}
+      />
+      <NavButton
+        active={routeView === "store"}
+        icon={<Database />}
+        label="คลังข้อมูล"
+        onClick={() => onNavigate("store")}
+      />
+      <NavButton
+        active={routeView === "history"}
+        icon={<History />}
+        label="ประวัติ"
+        onClick={() => onNavigate("history")}
+      />
+      <NavButton
+        active={routeView === "settings"}
+        icon={<Settings />}
+        label="ตั้งค่า"
+        onClick={() => onNavigate("settings")}
+      />
+    </>
+  );
+}

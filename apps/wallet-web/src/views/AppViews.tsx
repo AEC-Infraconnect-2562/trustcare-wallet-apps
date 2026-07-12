@@ -4,7 +4,6 @@
   useMemo,
   useRef,
   useState,
-  type ReactElement,
 } from "react";
 import {
   AlertTriangle,
@@ -17,36 +16,28 @@ import {
   ChevronRight,
   Cloud,
   Copy,
-  Database,
   Download,
   Eye,
   Fingerprint,
   FileJson,
   FileText,
   FilePlus2,
-  Filter,
   Globe2,
-  History,
   IdCard,
   ImageOff,
-  Inbox,
   KeyRound,
-  Layers3,
   Link2,
   ListChecks,
   LockKeyhole,
   LogOut,
   Network,
-  Pin,
   Pill,
   Printer,
   QrCode,
   RefreshCw,
-  Search,
   Send,
   Shield,
   ShieldCheck,
-  Smartphone,
   Upload,
   UserCheck,
   Wallet,
@@ -58,7 +49,6 @@ import {
   CredentialDocument,
   PresentationCoverDocument,
   Surface,
-  WalletCardView,
   useLoadedPhotoCandidate,
 } from "@trustcare/ui-web";
 import {
@@ -109,7 +99,6 @@ import {
   type DocumentRequestFormat,
   type DocumentRequestReturnChannel,
   type DocumentRequestSource,
-  type PresentationHistoryItem,
   type PayerLifecycleResult,
   type ReadinessContext,
   type ReadinessRequirement,
@@ -136,7 +125,6 @@ import { ReadinessSummaryCard } from "../components/prepare/ReadinessSummaryCard
 import { SharePacketComposer } from "../components/share/SharePacketComposer";
 import { TrustChecklist } from "../components/trust/TrustChecklist";
 import { defaultPublicShareGatewayUrl, env } from "../env";
-import { useWebAuthn } from "../hooks/useWebAuthn";
 import { toQrDataUrl } from "../utils/qrCode";
 import {
   credentialRequestDocumentLabel,
@@ -145,7 +133,6 @@ import {
   type WalletCredentialRequestViewModel,
 } from "../walletExchangeCredentialRequest";
 import {
-  categoryLabels,
   criticalCardTypes,
   defaultShlPolicyForContext,
   maskShlPasscode,
@@ -160,18 +147,29 @@ import {
   shlPasscodeReady,
   shlPolicyExpiry,
   type DocumentFlowMode,
-  type DocumentsTab,
   type PackageProtocol,
   type ScanOutcome,
   type ScanPayloadDescriptor,
   type ServiceReadinessSummary,
   type SharePublicationState,
-  type ShareTransport,
   type ShlAccessPolicyState,
   type StoreFilter,
   type TimeAnchor,
   type View,
 } from "./appViewModel";
+import {
+  categoryLabel,
+  contextLabel,
+  statusLabel,
+} from "./appViewLabels";
+
+export { NavButton } from "../components/shell/AppNavigation";
+export {
+  categoryLabel,
+  contextLabel,
+  statusLabel,
+  transportLabel,
+} from "./appViewLabels";
 
 const shareDisclosureIntentOptions: Array<{
   value: ShareDisclosureIntent;
@@ -313,32 +311,6 @@ export function LoginView({
         </Button>
       </section>
     </main>
-  );
-}
-
-export function NavButton({
-  active,
-  icon,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  icon: ReactElement;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={active ? "nav-button active" : "nav-button"}
-      onClick={onClick}
-      aria-current={active ? "page" : undefined}
-      aria-label={label}
-      title={label}
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
   );
 }
 
@@ -744,310 +716,6 @@ function appointmentStartFromCard(card: WalletCard): string | null {
   return null;
 }
 
-export function DocumentsHubView({
-  tab,
-  onTab,
-  cards,
-  counts,
-  user,
-  fixtures,
-  livePortalSync,
-  developerMode,
-  canSyncPortal,
-  portalSyncBusy,
-  objects,
-  allObjects,
-  filter,
-  scanHistory,
-  history,
-  onOpenCard,
-  onOpenScanner,
-  onSyncPortal,
-  onImportPayload,
-  onAcceptCredentialOffer,
-  onCopyFixture,
-  onFilter,
-  onExport,
-}: {
-  tab: DocumentsTab;
-  onTab: (tab: DocumentsTab) => void;
-  cards: WalletCard[];
-  counts: Record<string, number>;
-  user: WalletDemoUser;
-  fixtures: ReturnType<typeof buildPortalInteroperabilityFixtures>;
-  livePortalSync: boolean;
-  developerMode: boolean;
-  canSyncPortal: boolean;
-  portalSyncBusy: boolean;
-  objects: WalletStoredObject[];
-  allObjects: WalletStoredObject[];
-  filter: StoreFilter;
-  scanHistory: ScanOutcome[];
-  history: PresentationHistoryItem[];
-  onOpenCard: (card: WalletCard) => void;
-  onOpenScanner: () => void;
-  onSyncPortal: () => void;
-  onImportPayload: (value: string) => void;
-  onAcceptCredentialOffer: (value: string) => void;
-  onCopyFixture: (label: string, value: string) => void;
-  onFilter: (filter: StoreFilter) => void;
-  onExport: (result: WalletExportResult) => void;
-}) {
-  return (
-    <div className="view-stack documents-hub">
-      <Surface className="document-hub-tabs">
-        <div>
-          <span className="eyebrow">ศูนย์เอกสารใน Wallet</span>
-          <h2>เอกสาร รับเข้า คลัง และประวัติ</h2>
-          <p>
-            รวมงานที่เกี่ยวกับเอกสารไว้ในหน้าเดียว ลดเมนูซ้ำบนมือถือ และยังแยก
-            scope ตามผู้ใช้ที่ login อยู่
-          </p>
-        </div>
-        <div className="segmented document-tabs">
-          <button
-            type="button"
-            className={tab === "cards" ? "active" : ""}
-            onClick={() => onTab("cards")}
-          >
-            <FileText size={16} /> เอกสาร
-          </button>
-          <button
-            type="button"
-            className={tab === "receive" ? "active" : ""}
-            onClick={() => onTab("receive")}
-          >
-            <Inbox size={16} /> รับ
-          </button>
-          <button
-            type="button"
-            className={tab === "store" ? "active" : ""}
-            onClick={() => onTab("store")}
-          >
-            <Database size={16} /> คลัง
-          </button>
-          <button
-            type="button"
-            className={tab === "history" ? "active" : ""}
-            onClick={() => onTab("history")}
-          >
-            <History size={16} /> ประวัติ
-          </button>
-        </div>
-      </Surface>
-      {tab === "cards" && (
-        <DocumentsView
-          cards={cards}
-          counts={counts}
-          user={user}
-          onOpenCard={onOpenCard}
-        />
-      )}
-      {tab === "receive" && (
-        <ReceiveView
-          user={user}
-          fixtures={fixtures}
-          livePortalSync={livePortalSync}
-          developerMode={developerMode}
-          canSyncPortal={canSyncPortal}
-          portalSyncBusy={portalSyncBusy}
-          onOpenScanner={onOpenScanner}
-          onSyncPortal={onSyncPortal}
-          onImportPayload={onImportPayload}
-          onAcceptCredentialOffer={onAcceptCredentialOffer}
-          onCopyFixture={onCopyFixture}
-        />
-      )}
-      {tab === "store" && (
-        <StoreView
-          user={user}
-          objects={objects}
-          allObjects={allObjects}
-          filter={filter}
-          onFilter={onFilter}
-          onImport={onImportPayload}
-          onExport={onExport}
-        />
-      )}
-      {tab === "history" && (
-        <HistoryView history={history} scanHistory={scanHistory} />
-      )}
-    </div>
-  );
-}
-
-export function DocumentsView({
-  cards,
-  counts,
-  user,
-  onOpenCard,
-}: {
-  cards: WalletCard[];
-  counts: Record<string, number>;
-  user: WalletDemoUser;
-  onOpenCard: (card: WalletCard) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("all");
-  const [status, setStatus] = useState<"all" | "active" | "expired" | "pinned">(
-    "all",
-  );
-  const categories = useMemo(
-    () => ["all", ...Object.keys(counts).filter(Boolean)],
-    [counts],
-  );
-  const pinnedCards = useMemo(
-    () =>
-      cards
-        .filter((card) => card.pinned || criticalCardTypes.has(card.cardType))
-        .slice(0, 6),
-    [cards],
-  );
-  const filteredCards = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return cards.filter((card) => {
-      if (category !== "all" && card.documentCategory !== category)
-        return false;
-      if (status === "active" && !canPresentCredential(card)) return false;
-      if (status === "expired" && card.credentialStatus !== "expired")
-        return false;
-      if (
-        status === "pinned" &&
-        !(card.pinned || criticalCardTypes.has(card.cardType))
-      )
-        return false;
-      if (!needle) return true;
-      return [
-        card.displayName,
-        card.displayNameEn,
-        card.cardType,
-        card.credentialType,
-        card.issuerHospitalName,
-        String(card.credentialId),
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(needle));
-    });
-  }, [cards, category, query, status]);
-  const activeFilteredCount = useMemo(
-    () =>
-      filteredCards.reduce(
-        (total, card) => total + (card.credentialStatus === "active" ? 1 : 0),
-        0,
-      ),
-    [filteredCards],
-  );
-
-  return (
-    <div className="view-stack">
-      <Surface className="documents-command">
-        <div>
-          <span className="eyebrow">กระเป๋าเอกสารสุขภาพที่ตรวจสอบได้</span>
-          <h2>{user.nameEn}</h2>
-          <p>
-            ค้นหาด้วยประเภทเอกสาร โรงพยาบาล Credential ID สถานะ หรือแหล่งที่มา
-            เอกสารสำคัญจะถูกปักหมุดไว้สำหรับการเข้ารับบริการ
-          </p>
-        </div>
-        <div className="trust-chip-row">
-          <Badge tone="green">
-            <ShieldCheck size={14} /> เชื่อมกับ TrustCare Portal
-          </Badge>
-          <Badge tone="blue">
-            <LockKeyhole size={14} /> พร้อมยืนยันตัวตน
-          </Badge>
-          <Badge tone="neutral">{cards.length} เอกสาร</Badge>
-        </div>
-      </Surface>
-
-      <Surface className="document-controls">
-        <label className="search-box">
-          <Search size={18} />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="ค้นหาเอกสาร ผู้ออกเอกสาร หรือ Credential ID..."
-          />
-        </label>
-        <label className="filter-box">
-          <Filter size={18} />
-          <select
-            value={status}
-            onChange={(event) =>
-              setStatus(
-                event.target.value as "all" | "active" | "expired" | "pinned",
-              )
-            }
-          >
-            <option value="all">ทุกสถานะ</option>
-            <option value="active">ใช้งานได้</option>
-            <option value="expired">หมดอายุ</option>
-            <option value="pinned">ปักหมุด / สำคัญ</option>
-          </select>
-        </label>
-      </Surface>
-
-      <section className="category-rail" aria-label="Document categories">
-        {categories.map((item) => (
-          <button
-            key={item}
-            type="button"
-            className={category === item ? "active" : ""}
-            onClick={() => setCategory(item)}
-          >
-            <span>{item === "all" ? "ทั้งหมด" : categoryLabel(item)}</span>
-            <strong>
-              {item === "all" ? cards.length : (counts[item] ?? 0)}
-            </strong>
-          </button>
-        ))}
-      </section>
-
-      <section className="critical-strip compact">
-        <div className="section-title-row">
-          <h2>เอกสารสำคัญ</h2>
-          <Badge tone="green">{pinnedCards.length}</Badge>
-        </div>
-        <div className="critical-card-row compact">
-          {pinnedCards.map((card) => (
-            <button
-              key={card.id}
-              type="button"
-              className="critical-card"
-              onClick={() => onOpenCard(card)}
-            >
-              <Pin size={16} />
-              <strong>{card.displayNameEn ?? card.displayName}</strong>
-              <small>{card.issuerHospitalName ?? card.scopeLabel}</small>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="credential-section">
-        <div className="section-title-row">
-          <div>
-            <h2>เอกสาร</h2>
-            <p>
-              พบ {filteredCards.length} รายการในขอบเขตของ {user.id}
-            </p>
-          </div>
-          <Badge tone="blue">{activeFilteredCount} ใช้งานได้</Badge>
-        </div>
-        <div className="cards-grid wallet-grid">
-          {filteredCards.map((card) => (
-            <WalletCardView
-              key={card.id}
-              card={card}
-              onClick={() => onOpenCard(card)}
-            />
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
 export function ReceiveView({
   user,
   fixtures,
@@ -1220,214 +888,6 @@ export function ReceiveView({
           </div>
         </Surface>
       )}
-    </div>
-  );
-}
-
-export function WalletView({
-  cards,
-  counts,
-  user,
-  fixtures,
-  onImportFixture,
-  onCopyFixture,
-  onOpenCard,
-}: {
-  cards: WalletCard[];
-  counts: Record<string, number>;
-  user: WalletDemoUser;
-  fixtures: ReturnType<typeof buildPortalInteroperabilityFixtures>;
-  onImportFixture: (value: string) => void;
-  onCopyFixture: (label: string, value: string) => void;
-  onOpenCard: (card: WalletCard) => void;
-}) {
-  const readyCount = cards.filter(
-    (card) => card.credentialStatus === "active",
-  ).length;
-  const interopRows = [
-    {
-      icon: <Cloud size={18} />,
-      label: "TrustCare Portal",
-      value:
-        user.source === "trustcare_portal" ? "นำเข้าแล้ว" : "ทดสอบเชื่อมโยง",
-      detail: user.sourceLabel,
-    },
-    {
-      icon: <Layers3 size={18} />,
-      label: "Contract Hub",
-      value: "พร้อม",
-      detail: "mapping สำหรับเตรียมบริการ",
-    },
-    {
-      icon: <KeyRound size={18} />,
-      label: "OID4VCI / OID4VP",
-      value: "เปิดใช้งาน",
-      detail: "รับ offer และสร้าง VP request",
-    },
-    {
-      icon: <BadgeCheck size={18} />,
-      label: "คลัง SHL / VC-VP",
-      value: "พร้อมใช้",
-      detail: "portable objects",
-    },
-  ];
-
-  return (
-    <div className="view-stack">
-      <section className="partner-overview">
-        <div className="partner-copy">
-          <span className="eyebrow">TrustCare Wallet ส่วนตัว</span>
-          <h2>{user.nameEn}</h2>
-          <p>
-            {user.sourceLabel} · {user.hospitalName}
-          </p>
-          <div className="scope-grid" aria-label="Active wallet scope">
-            <span>
-              <small>ผู้ใช้</small>
-              <strong>{user.id}</strong>
-            </span>
-            <span>
-              <small>Holder DID</small>
-              <strong>{shortDid(user.holderDid)}</strong>
-            </span>
-            <span>
-              <small>รหัสผู้ป่วย</small>
-              <strong>{user.patientId}</strong>
-            </span>
-          </div>
-          <div className="chip-row">
-            <span>
-              {user.source === "trustcare_portal"
-                ? "นำเข้าจาก Portal"
-                : "สร้างใน Wallet"}
-            </span>
-            <span>{user.hospitalCode}</span>
-            <span>Contract Hub</span>
-            <span>OID4VCI</span>
-            <span>OID4VP</span>
-            <span>SHL</span>
-          </div>
-        </div>
-        <div className="interop-panel">
-          {interopRows.map((row) => (
-            <div className="interop-row" key={row.label}>
-              <span className="interop-icon">{row.icon}</span>
-              <span>
-                <strong>{row.label}</strong>
-                <small>{row.detail}</small>
-              </span>
-              <b>{row.value}</b>
-            </div>
-          ))}
-        </div>
-      </section>
-      <Surface className="fixture-panel">
-        <div className="section-title-row">
-          <div>
-            <h2>Payload สำหรับทดสอบเชื่อมต่อ</h2>
-            <p>
-              {user.id} · สร้าง OID4VCI, OID4VP และ SHL จาก scope
-              ผู้ใช้ที่กำลังใช้งาน
-            </p>
-          </div>
-          <Badge tone={user.source === "trustcare_portal" ? "blue" : "neutral"}>
-            {user.sourceLabel}
-          </Badge>
-        </div>
-        <div className="fixture-grid">
-          <button
-            type="button"
-            onClick={() => onImportFixture(fixtures.credentialOfferUrl)}
-          >
-            <KeyRound size={18} />
-            <span>
-              <strong>Import OID4VCI</strong>
-              <small>offer {fixtures.counts.cards} เอกสาร</small>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onImportFixture(fixtures.presentationRequestUrl)}
-          >
-            <QrCode size={18} />
-            <span>
-              <strong>Import OID4VP</strong>
-              <small>request ตรงกับเอกสารที่ใช้งานได้</small>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              onCopyFixture("OID4VP request", fixtures.presentationRequestUrl)
-            }
-          >
-            <Copy size={18} />
-            <span>
-              <strong>คัดลอก VP Request</strong>
-              <small>วางใน scanner/import</small>
-            </span>
-          </button>
-          <button
-            type="button"
-            disabled={!fixtures.shlQrPayload}
-            onClick={() =>
-              fixtures.shlQrPayload &&
-              onCopyFixture("SHL payload", fixtures.shlQrPayload)
-            }
-          >
-            <Network size={18} />
-            <span>
-              <strong>คัดลอก SHL</strong>
-              <small>
-                {fixtures.shlQrPayload ? "พร้อมใช้งาน" : "ไม่มีสำหรับ staff"}
-              </small>
-            </span>
-          </button>
-        </div>
-      </Surface>
-      <div className="metric-grid compact">
-        <Surface>
-          <Wallet size={20} />
-          <strong>{cards.length}</strong>
-          <span>เอกสารทั้งหมด</span>
-        </Surface>
-        <Surface>
-          <Shield size={20} />
-          <strong>{readyCount}</strong>
-          <span>พร้อมสร้าง VP</span>
-        </Surface>
-        <Surface>
-          <CheckCircle2 size={20} />
-          <strong>{counts.identity_and_access ?? 0}</strong>
-          <span>ตัวตนและสิทธิ์</span>
-        </Surface>
-        <Surface>
-          <RefreshCw size={20} />
-          <strong>{counts.sharing_and_sync ?? 0}</strong>
-          <span>SHL / Sync</span>
-        </Surface>
-      </div>
-      <section className="credential-section">
-        <div className="section-title-row">
-          <div>
-            <h2>เอกสาร</h2>
-            <p>
-              เลือกเอกสารเพื่อสร้าง QR ตามวัตถุประสงค์
-              ระบบจะเลือกวิธีส่งที่เหมาะสมให้โดยอัตโนมัติ
-            </p>
-          </div>
-          <Badge tone="blue">{readyCount} พร้อมใช้</Badge>
-        </div>
-        <div className="cards-grid wallet-grid">
-          {cards.map((card) => (
-            <WalletCardView
-              key={card.id}
-              card={card}
-              onClick={() => onOpenCard(card)}
-            />
-          ))}
-        </div>
-      </section>
     </div>
   );
 }
@@ -4633,136 +4093,6 @@ export function ScanResponseDialog({
   );
 }
 
-export function HistoryView({
-  history,
-  scanHistory,
-}: {
-  history: PresentationHistoryItem[];
-  scanHistory: ScanOutcome[];
-}) {
-  return (
-    <div className="history-list large">
-      {scanHistory.map((item) => (
-        <Surface className="history-row scan-history-row" key={item.id}>
-          <QrCode size={22} />
-          <span>
-            <strong>
-              {item.verifier.protocol ?? item.importResult.format}
-            </strong>
-            <small>
-              {new Date(item.scannedAt).toLocaleString("th-TH")} · บริบท:{" "}
-              {contextLabel(item.context)}
-            </small>
-          </span>
-          <Badge tone={item.verifier.verified ? "green" : "yellow"}>
-            {item.verifier.verified ? "สแกนผ่าน" : "ตรวจเพิ่ม"}
-          </Badge>
-        </Surface>
-      ))}
-      {history.map((item) => (
-        <Surface className="history-row" key={item.id}>
-          <History size={22} />
-          <span>
-            <strong>{item.verifierName}</strong>
-            <small>
-              {item.presentedAt
-                ? new Date(item.presentedAt).toLocaleString("th-TH")
-                : item.purpose}
-            </small>
-          </span>
-          <Badge
-            tone={item.verificationResult === "valid" ? "green" : "neutral"}
-          >
-            {statusLabel(item.verificationResult ?? "recorded")}
-          </Badge>
-        </Surface>
-      ))}
-    </div>
-  );
-}
-
-export function SettingsView({
-  webAuthn,
-  theme,
-  setTheme,
-  developerMode,
-  setDeveloperMode,
-  user,
-}: {
-  webAuthn: ReturnType<typeof useWebAuthn>;
-  theme: "light" | "dark";
-  setTheme: (theme: "light" | "dark") => void;
-  developerMode: boolean;
-  setDeveloperMode: (enabled: boolean) => void;
-  user: WalletDemoUser;
-}) {
-  return (
-    <div className="settings-grid">
-      <Surface>
-        <Smartphone size={28} />
-        <h3>พร้อมใช้งานบนมือถือ</h3>
-        <p>
-          รองรับ SecureStore, SQLite, LocalAuthentication, Camera QR, SHL
-          และการนำเข้า-ส่งออก VC/VP ใน Expo app
-        </p>
-      </Surface>
-      <Surface>
-        <Shield size={28} />
-        <h3>ยืนยันตัวตนด้วย Biometric</h3>
-        <p>
-          {webAuthn.isRegistered
-            ? "เปิดการยืนยันก่อนแสดง QR แล้ว"
-            : "ยังไม่ได้ตั้งค่า biometric gate"}
-        </p>
-        <Button
-          onClick={() =>
-            webAuthn.isRegistered
-              ? webAuthn.unregister()
-              : void webAuthn.register(String(user.patientId), user.nameTh)
-          }
-        >
-          {webAuthn.isRegistered ? "ปิด Biometric" : "ตั้งค่า Biometric"}
-        </Button>
-      </Surface>
-      <Surface>
-        <Globe2 size={28} />
-        <h3>ธีม</h3>
-        <Button onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
-          {theme === "light" ? "โหมดมืด" : "โหมดสว่าง"}
-        </Button>
-      </Surface>
-      <Surface>
-        <KeyRound size={28} />
-        <h3>โหมดนักพัฒนา</h3>
-        <p>
-          แสดง payload และเครื่องมือทดสอบ protocol ในหน้ารับเอกสาร
-          โดยไม่ปนกับประสบการณ์ใช้งานปกติของ Wallet
-        </p>
-        <Button
-          className={developerMode ? "green" : "secondary"}
-          onClick={() => setDeveloperMode(!developerMode)}
-        >
-          {developerMode ? "เปิดโหมดนักพัฒนา" : "ปิดโหมดนักพัฒนา"}
-        </Button>
-      </Surface>
-    </div>
-  );
-}
-
-export function categoryLabel(category?: string): string {
-  if (!category) return "-";
-  return categoryLabels[category]?.th ?? category;
-}
-
-export function transportLabel(transport: ShareTransport): string {
-  const labels = {
-    vp_qr: "VP QR",
-    shl_recommended: "SHL/VP Bundle",
-    shl_manifest: "SHL พร้อม TrustCare Manifest",
-  };
-  return labels[transport];
-}
-
 export function getCardRecordTimestamp(card: WalletCard): string {
   const data = card.credentialData ?? {};
   const candidates = [
@@ -4833,43 +4163,6 @@ function homeCardTrust(card: WalletCard): {
     walletDocumentRecordV2FromCard(card),
   );
   return { label: presentation.labelTh, tone: presentation.tone };
-}
-
-export function contextLabel(context: ScanOutcome["context"]): string {
-  if (context in readinessContextLabels) {
-    return readinessContextLabels[context as ReadinessContext].th;
-  }
-  const labels: Record<string, string> = {
-    home: "หน้าแรก",
-    documents: "เอกสาร",
-    receive: "รับเอกสาร",
-    share: "แชร์/ตรวจสอบ",
-    prepare: "เตรียมเข้ารับบริการ",
-    store: "คลังพกพา",
-    history: "ประวัติ",
-    settings: "ตั้งค่า",
-    qr_scan: "สแกน QR",
-  };
-  return labels[String(context)] ?? String(context);
-}
-
-export function statusLabel(status?: string | null): string {
-  const labels: Record<string, string> = {
-    active: "ใช้งานได้",
-    verified: "ตรวจสอบแล้ว",
-    valid: "ถูกต้อง",
-    pending: "รอดำเนินการ",
-    expired: "หมดอายุ",
-    revoked: "ถูกเพิกถอน",
-    invalid: "ไม่ถูกต้อง",
-    suspended: "ระงับชั่วคราว",
-    superseded: "มีเอกสารใหม่แทนแล้ว",
-    ready: "พร้อม",
-    partial: "บางส่วน",
-    imported: "นำเข้าแล้ว",
-    recorded: "บันทึกแล้ว",
-  };
-  return labels[String(status ?? "")] ?? String(status ?? "-");
 }
 
 function credentialRequestTone(

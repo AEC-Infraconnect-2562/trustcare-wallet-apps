@@ -9,17 +9,11 @@
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  Activity,
   ArrowLeft,
   Bell,
   Camera,
-  Database,
   Download,
   Fingerprint,
-  FileText,
-  History,
-  Home,
-  Inbox,
   KeyRound,
   Languages,
   LogOut,
@@ -28,8 +22,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
-  Settings,
-  Share2,
   Sun,
   Wallet,
 } from "lucide-react";
@@ -81,6 +73,10 @@ import {
   type PortalHospitalCode,
 } from "./components/records/RecordsV2View";
 import { RoutePlaceholderView } from "./components/shell/RoutePlaceholderView";
+import {
+  AppPrimaryNavigation,
+  AppSideNavigation,
+} from "./components/shell/AppNavigation";
 import { useOfflineWallet } from "./hooks/useOfflineWallet";
 import { useScanHistory } from "./hooks/useScanHistory";
 import { useStoredExtras } from "./hooks/useStoredExtras";
@@ -112,15 +108,12 @@ import {
 import {
   DialogLoadingFallback,
   DocumentFlowDialog,
-  HistoryView,
   HomeView,
   LoginView,
-  NavButton,
   PrepareView,
   PublicVerifierView,
   ReceiveView,
   ScanResponseDialog,
-  SettingsView,
   ShareView,
   StoreView,
   UserAvatarImage,
@@ -159,6 +152,16 @@ const CredentialDetailDialog = lazy(() =>
 const QrScannerDialog = lazy(() =>
   import("./components/QrScannerDialog").then((module) => ({
     default: module.QrScannerDialog,
+  })),
+);
+const HistoryView = lazy(() =>
+  import("./views/SecondaryViews").then((module) => ({
+    default: module.HistoryView,
+  })),
+);
+const SettingsView = lazy(() =>
+  import("./views/SecondaryViews").then((module) => ({
+    default: module.SettingsView,
   })),
 );
 const baseApiOptions = {
@@ -1367,40 +1370,11 @@ export default function App() {
           </div>
         </div>
         <nav className="primary-tabs" aria-label="TrustCare Wallet">
-          <NavButton
-            active={routeMatch.route.id === "home"}
-            icon={<Home />}
-            label="หน้าแรก"
-            onClick={() => navigateTo("home")}
-          />
-          <NavButton
-            active={
-              routeView === "documents" ||
-              routeView === "receive" ||
-              routeView === "store" ||
-              routeView === "history"
-            }
-            icon={<FileText />}
-            label="เอกสาร"
-            onClick={() => openDocumentsHub("cards")}
-          />
-          <NavButton
-            active={routeView === "share"}
-            icon={<Share2 />}
-            label="แชร์"
-            onClick={() => navigateTo("share")}
-          />
-          <NavButton
-            active={routeView === "prepare"}
-            icon={<Activity />}
-            label="เตรียมบริการ"
-            onClick={() => navigateTo("prepare")}
-          />
-          <NavButton
-            active={routeView === "settings"}
-            icon={<Settings />}
-            label="ตั้งค่า"
-            onClick={() => navigateTo("settings")}
+          <AppPrimaryNavigation
+            routeId={routeMatch.route.id}
+            routeView={view}
+            onNavigate={navigateTo}
+            onOpenDocuments={() => openDocumentsHub("cards")}
           />
         </nav>
       </header>
@@ -1417,53 +1391,10 @@ export default function App() {
           </div>
         </div>
         <nav>
-          <NavButton
-            active={routeMatch.route.id === "home"}
-            icon={<Home />}
-            label="หน้าแรก"
-            onClick={() => navigateTo("home")}
-          />
-          <NavButton
-            active={routeView === "documents"}
-            icon={<FileText />}
-            label="เอกสาร"
-            onClick={() => navigateTo("documents")}
-          />
-          <NavButton
-            active={routeView === "receive"}
-            icon={<Inbox />}
-            label="รับเอกสาร"
-            onClick={() => navigateTo("receive")}
-          />
-          <NavButton
-            active={routeView === "share"}
-            icon={<Share2 />}
-            label="แชร์"
-            onClick={() => navigateTo("share")}
-          />
-          <NavButton
-            active={routeView === "prepare"}
-            icon={<Activity />}
-            label="เตรียมบริการ"
-            onClick={() => navigateTo("prepare")}
-          />
-          <NavButton
-            active={routeView === "store"}
-            icon={<Database />}
-            label="คลังข้อมูล"
-            onClick={() => navigateTo("store")}
-          />
-          <NavButton
-            active={routeView === "history"}
-            icon={<History />}
-            label="ประวัติ"
-            onClick={() => navigateTo("history")}
-          />
-          <NavButton
-            active={routeView === "settings"}
-            icon={<Settings />}
-            label="ตั้งค่า"
-            onClick={() => navigateTo("settings")}
+          <AppSideNavigation
+            routeId={routeMatch.route.id}
+            routeView={view}
+            onNavigate={navigateTo}
           />
         </nav>
         <button
@@ -1775,17 +1706,21 @@ export default function App() {
           />
         )}
         {routeView === "history" && (
-          <HistoryView history={history} scanHistory={scanHistory} />
+          <Suspense fallback={<DialogLoadingFallback />}>
+            <HistoryView history={history} scanHistory={scanHistory} />
+          </Suspense>
         )}
         {routeView === "settings" && (
-          <SettingsView
-            webAuthn={webAuthn}
-            theme={theme}
-            setTheme={setTheme}
-            developerMode={developerMode}
-            setDeveloperMode={setDeveloperMode}
-            user={activeUser}
-          />
+          <Suspense fallback={<DialogLoadingFallback />}>
+            <SettingsView
+              webAuthn={webAuthn}
+              theme={theme}
+              setTheme={setTheme}
+              developerMode={developerMode}
+              setDeveloperMode={setDeveloperMode}
+              user={activeUser}
+            />
+          </Suspense>
         )}
       </section>
 
@@ -1826,42 +1761,12 @@ export default function App() {
       )}
 
       <nav className="bottom-nav">
-        <NavButton
-          active={routeMatch.route.id === "home"}
-          icon={<Home />}
-          label="หน้าแรก"
-          onClick={() => navigateTo("home")}
-        />
-        <NavButton
-          active={
-            routeView === "documents" ||
-            routeView === "receive" ||
-            routeView === "store" ||
-            routeView === "history"
-          }
-          icon={<FileText />}
-          label="เอกสาร"
-          onClick={() => {
-            openDocumentsHub("cards");
-          }}
-        />
-        <NavButton
-          active={routeView === "share"}
-          icon={<Share2 />}
-          label="แชร์"
-          onClick={() => navigateTo("share")}
-        />
-        <NavButton
-          active={routeView === "prepare"}
-          icon={<Activity />}
-          label="เตรียม"
-          onClick={() => navigateTo("prepare")}
-        />
-        <NavButton
-          active={routeView === "settings"}
-          icon={<Settings />}
-          label="ตั้งค่า"
-          onClick={() => navigateTo("settings")}
+        <AppPrimaryNavigation
+          compact
+          routeId={routeMatch.route.id}
+          routeView={view}
+          onNavigate={navigateTo}
+          onOpenDocuments={() => openDocumentsHub("cards")}
         />
       </nav>
 
