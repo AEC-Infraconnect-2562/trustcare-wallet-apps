@@ -264,6 +264,7 @@ export default function App() {
       !(pendingScanPayload && isPublicVerifierScanLocation()),
     portalBaseUrl: env.portalBaseUrl,
     appId: env.walletExchangeAppId,
+    sandboxTestIdentityEnabled: env.testLoginEnabled,
     runtimeEnvironment: env.runtimeEnvironment,
     walletVersion: "0.1.0",
     localUserKey: selectedUserId,
@@ -706,7 +707,7 @@ export default function App() {
     ],
   );
   const sandboxTestSession = useSandboxTestSession({
-    enabled: env.runtimeEnvironment === "demo",
+    enabled: env.testLoginEnabled,
     authenticated: isAuthenticated,
     userId: selectedUserId,
     profile: activeTestProfile,
@@ -1321,7 +1322,7 @@ export default function App() {
     );
   }
 
-  if (!isAuthenticated && env.runtimeEnvironment !== "demo") {
+  if (!isAuthenticated && !env.testLoginEnabled) {
     return (
       <main className="runtime-auth-boundary">
         <section role="alert">

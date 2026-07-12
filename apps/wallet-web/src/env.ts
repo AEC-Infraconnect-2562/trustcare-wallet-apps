@@ -1,5 +1,6 @@
 import {
   resolveRuntimeEnvironment,
+  runtimeAllowsLocalTestLogin,
   runtimeEnvironmentDescriptor,
   runtimeAllowsSyntheticData,
 } from "@trustcare/wallet-core";
@@ -25,6 +26,9 @@ export const portalBaseUrl = resolvePortalBaseUrl({
   runtimeEnvironment,
 });
 
+const sandboxTestLoginEnabled =
+  import.meta.env.VITE_TRUSTCARE_SANDBOX_TEST_LOGIN_ENABLED === "true";
+
 export const env = {
   apiUrl:
     import.meta.env.VITE_TRUSTCARE_API_URL ??
@@ -39,5 +43,9 @@ export const env = {
   runtimeEnvironment,
   environmentBanner,
   demoMode: runtimeAllowsSyntheticData(runtimeEnvironment),
+  testLoginEnabled: runtimeAllowsLocalTestLogin({
+    environment: runtimeEnvironment,
+    sandboxTestLoginEnabled,
+  }),
   offlineCache: import.meta.env.VITE_TRUSTCARE_ENABLE_OFFLINE_CACHE !== "false",
 };

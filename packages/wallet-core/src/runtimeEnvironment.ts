@@ -156,6 +156,16 @@ export function runtimeAllowsSyntheticData(
   return descriptors[environment].allowsSyntheticData;
 }
 
+export function runtimeAllowsLocalTestLogin(input: {
+  environment: RuntimeEnvironment;
+  sandboxTestLoginEnabled?: boolean;
+}): boolean {
+  if (input.environment === "demo") return true;
+  return (
+    input.environment === "sandbox" && input.sandboxTestLoginEnabled === true
+  );
+}
+
 export function assertRuntimeAllowsSyntheticData(
   environment: RuntimeEnvironment,
 ): void {
