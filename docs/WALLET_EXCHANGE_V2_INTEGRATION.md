@@ -86,6 +86,10 @@ Wallet server/BFF.
 Access tokens remain in memory. Holder keys, request links, submission links,
 documents, cursors, and retry state are partitioned by Portal origin and holder
 DID. Browser persistence rejects extractable private keys and private JWK data.
+When an authenticated local sandbox test user reloads the Web app, Wallet calls
+the Portal test-login endpoint again to obtain a new short-lived test token; it
+does not restore or persist the previous bearer token. Non-sandbox deployments
+must use the configured OIDC authorization/refresh flow instead.
 
 ## Issuer cutover and migration
 

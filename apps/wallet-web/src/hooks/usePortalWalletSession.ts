@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   WalletProvisioningProblemError,
   createWalletProvisioningClient,
@@ -22,6 +22,11 @@ export type PortalWalletSessionState =
 export function usePortalWalletSession(input: {
   portalBaseUrl: string;
   appId: string;
+  /**
+   * An already-selected sandbox identity that may obtain a fresh short-lived
+   * test token after reload. The token itself remains memory-only.
+   */
+  sandboxUsername?: string;
 }) {
   const client = useMemo(
     () =>
@@ -37,6 +42,7 @@ export function usePortalWalletSession(input: {
   const [accessToken, setAccessToken] = useState<string>();
   const [state, setState] = useState<PortalWalletSessionState>("loading");
   const [error, setError] = useState("");
+  const sandboxRestoreAttempt = useRef("");
 
   useEffect(() => {
     let active = true;
@@ -75,6 +81,38 @@ export function usePortalWalletSession(input: {
     };
   }, [client, input.appId]);
 
+  useEffect(() => {
+    const username = input.sandboxUsername?.trim();
+    const endpoint = configuration?.endpoints.sandboxTestLogin;
+    if (!username || !endpoint || state !== "sandbox_login_available") {
+      return;
+    }
+    const attemptKey = `${endpoint}:${username}`;
+    if (sandboxRestoreAttempt.current === attemptKey) return;
+    sandboxRestoreAttempt.current = attemptKey;
+    let active = true;
+    setState("loading");
+    setError("");
+    void client
+      .sandboxTestLogin(username)
+      .then((token) => {
+        if (!active) return;
+        if (!token.testOnly || token.username !== username) {
+          throw new Error("Portal test login ไม่ตรงกับผู้ใช้ที่เลือก");
+        }
+        setAccessToken(token.accessToken);
+        setState("authenticated");
+      })
+      .catch((reason: unknown) => {
+        if (!active) return;
+        setState("error");
+        setError(connectionErrorMessage(reason));
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, configuration, input.sandboxUsername, state]);
+
   const loginSandboxIdentity = useCallback(
     async (username: string) => {
       setError("");
@@ -95,6 +133,7 @@ export function usePortalWalletSession(input: {
   );
 
   const logout = useCallback(() => {
+    sandboxRestoreAttempt.current = "";
     setAccessToken(undefined);
     setState(
       configuration?.endpoints.sandboxTestLogin
