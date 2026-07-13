@@ -93,6 +93,7 @@ import { useSandboxTestSession } from "./hooks/useSandboxTestSession";
 import { useStoredExtras } from "./hooks/useStoredExtras";
 import { useWebAuthn } from "./hooks/useWebAuthn";
 import { useWalletExchange } from "./hooks/useWalletExchange";
+import { usePortalWalletSession } from "./hooks/usePortalWalletSession";
 import {
   credentialRequestStatusLabel,
   createMissingCredentialRequestInput,
@@ -237,6 +238,7 @@ export default function App() {
   const [lastImportMessage, setLastImportMessage] = useState("");
   const [portalSyncMessage, setPortalSyncMessage] = useState("");
   const [portalSyncBusy, setPortalSyncBusy] = useState(false);
+  const [portalLoginMessage, setPortalLoginMessage] = useState("");
   const [storeFilter, setStoreFilter] = useState<StoreFilter>("all");
   const offlineWallet = useOfflineWallet(env.demoMode, selectedUserId);
   const webAuthn = useWebAuthn();
@@ -257,6 +259,26 @@ export default function App() {
     () => walletTestUserProfile(selectedUserId),
     [selectedUserId],
   );
+  const portalWalletSession = usePortalWalletSession({
+    portalBaseUrl: env.portalBaseUrl,
+    appId: env.walletExchangeAppId,
+  });
+  useEffect(() => {
+    if (
+      !isAuthenticated ||
+      env.testLoginEnabled ||
+      portalWalletSession.state === "loading" ||
+      portalWalletSession.accessToken
+    ) {
+      return;
+    }
+    removeStorageValue(walletSessionKey);
+    setIsAuthenticated(false);
+  }, [
+    isAuthenticated,
+    portalWalletSession.accessToken,
+    portalWalletSession.state,
+  ]);
   const walletExchange = useWalletExchange({
     enabled:
       isAuthenticated &&
@@ -264,10 +286,10 @@ export default function App() {
       !(pendingScanPayload && isPublicVerifierScanLocation()),
     portalBaseUrl: env.portalBaseUrl,
     appId: env.walletExchangeAppId,
-    sandboxTestIdentityEnabled: env.testLoginEnabled,
     runtimeEnvironment: env.runtimeEnvironment,
     walletVersion: "0.1.0",
     localUserKey: selectedUserId,
+    portalAccessToken: portalWalletSession.accessToken,
   });
   const apiOptions = useMemo(
     () => ({
@@ -1242,7 +1264,24 @@ export default function App() {
   }, [pendingScanPayload, routeMatch.route.id, verifyPublicScan]);
 
   const loginAs = useCallback(
-    (userId: string) => {
+    async (userId: string) => {
+      setPortalLoginMessage("");
+      if (
+        portalWalletSession.configuration?.endpoints.sandboxTestLogin &&
+        portalWalletSession.state !== "authenticated"
+      ) {
+        try {
+          await portalWalletSession.loginSandboxIdentity(userId);
+        } catch (error) {
+          setPortalLoginMessage(friendlyPortalSyncError(error));
+          return;
+        }
+      } else if (!env.testLoginEnabled && !portalWalletSession.accessToken) {
+        setPortalLoginMessage(
+          "Portal ยังไม่เปิด Wallet OIDC หรือ sandbox test login สำหรับระบบนี้",
+        );
+        return;
+      }
       writeStringStorage(walletSessionKey, userId);
       setSelectedUserId(userId);
       const testProfile = walletTestUserProfile(userId);
@@ -1252,7 +1291,7 @@ export default function App() {
       setIsAuthenticated(true);
       navigateTo(pendingScanPayload ? "share" : "home", { replace: true });
     },
-    [navigateTo, pendingScanPayload],
+    [navigateTo, pendingScanPayload, portalWalletSession],
   );
 
   const logout = useCallback(() => {
@@ -1261,13 +1300,14 @@ export default function App() {
       env.runtimeEnvironment === "demo" ? [legacyWalletSessionKey] : [],
     );
     setIsAuthenticated(false);
+    portalWalletSession.logout();
     navigateTo("home", { replace: true });
     setSelectedCard(null);
     setDetailOpen(false);
     setVerifierResult(null);
     setScanOutcome(null);
     setScanResponseOpen(false);
-  }, [navigateTo]);
+  }, [navigateTo, portalWalletSession]);
 
   const title = routeMatch.route.title;
   const placeholderRouteId = isPlaceholderRouteId(routeMatch.route.id)
@@ -1322,16 +1362,31 @@ export default function App() {
     );
   }
 
-  if (!isAuthenticated && !env.testLoginEnabled) {
+  const portalSandboxLoginAvailable = Boolean(
+    portalWalletSession.configuration?.endpoints.sandboxTestLogin,
+  );
+
+  if (
+    !isAuthenticated &&
+    !env.testLoginEnabled &&
+    !portalSandboxLoginAvailable
+  ) {
     return (
       <main className="runtime-auth-boundary">
         <section role="alert">
           <span className="eyebrow">{env.environmentBanner.labelTh}</span>
-          <h1>ยังไม่ได้เชื่อมต่อระบบยืนยันตัวตน</h1>
+          <h1>
+            {portalWalletSession.state === "loading"
+              ? "กำลังตรวจระบบยืนยันตัวตน"
+              : "Portal ยังไม่พร้อมให้ Wallet เชื่อมต่อ"}
+          </h1>
           <p>
-            Wallet จะไม่เปิดข้อมูลสาธิตแทนข้อมูลจริง กรุณาตั้งค่าระบบเข้าสู่ระบบ
-            และการเชื่อมต่อ TrustCare Portal สำหรับระบบนี้
+            {portalWalletSession.error ||
+              "Wallet จะไม่เปิดข้อมูลสาธิตแทนข้อมูลจริง ขณะนี้ Portal ยังไม่ได้ประกาศ Wallet OIDC issuer หรือ sandbox test login"}
           </p>
+          <small>
+            ตรวจจาก {env.portalBaseUrl}/api/wallet/provisioning/configuration
+          </small>
         </section>
       </main>
     );
@@ -1351,8 +1406,9 @@ export default function App() {
           pendingScan={Boolean(pendingScanPayload)}
           selectedUserId={selectedUserId}
           onSelect={setSelectedUserId}
-          onLogin={loginAs}
+          onLogin={(userId) => void loginAs(userId)}
           onOpenScanner={() => setScannerOpen(true)}
+          error={portalLoginMessage || portalWalletSession.error}
         />
         <Suspense fallback={<DialogLoadingFallback />}>
           {scannerOpen && (
@@ -1560,6 +1616,31 @@ export default function App() {
               {portalSyncBusy ? "กำลัง Sync" : "Sync Portal"}
             </button>
           )}
+          {walletExchange.connection.status === "holder_binding_required" && (
+            <button
+              type="button"
+              className="portal-sync-button"
+              onClick={() => {
+                setPortalSyncMessage(
+                  "กำลังยืนยันความยินยอมและผูก holder DID กับ Portal...",
+                );
+                void walletExchange
+                  .completeHolderBinding()
+                  .then(() => {
+                    setPortalSyncMessage(
+                      "ผูก holder DID สำเร็จ พร้อม Sync เอกสารจาก Portal",
+                    );
+                  })
+                  .catch((error) => {
+                    setPortalSyncMessage(
+                      `ผูก holder DID ไม่สำเร็จ: ${friendlyPortalSyncError(error)}`,
+                    );
+                  });
+              }}
+            >
+              <Fingerprint size={18} /> ยืนยันผูกกับ Portal
+            </button>
+          )}
           <button
             type="button"
             className="status-export"
@@ -1589,6 +1670,16 @@ export default function App() {
         {portalSyncMessage && (
           <div className="toast-line portal-sync-line">{portalSyncMessage}</div>
         )}
+        {walletExchange.connection.status !== "ready" &&
+          walletExchange.connection.status !== "loading" &&
+          !portalSyncMessage && (
+            <div
+              className="toast-line portal-sync-line"
+              role={walletExchange.connection.status === "error" ? "alert" : "status"}
+            >
+              {walletExchange.connection.message}
+            </div>
+          )}
 
         {placeholderRouteId && (
           <RoutePlaceholderView

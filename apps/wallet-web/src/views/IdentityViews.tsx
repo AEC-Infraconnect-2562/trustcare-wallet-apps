@@ -18,6 +18,7 @@ export function LoginView({
   onSelect,
   onLogin,
   onOpenScanner,
+  error,
 }: {
   users: WalletDemoUser[];
   pendingScan: boolean;
@@ -25,6 +26,7 @@ export function LoginView({
   onSelect: (userId: string) => void;
   onLogin: (userId: string) => void;
   onOpenScanner: () => void;
+  error?: string;
 }) {
   const selectedUser = getDemoUser(selectedUserId);
   const loginCardsByUser = useMemo(
@@ -61,6 +63,11 @@ export function LoginView({
               <QrCode size={14} /> มี QR รอประมวลผลหลัง login
             </Badge>
           )}
+          {error && (
+            <p className="login-error" role="alert">
+              {error}
+            </p>
+          )}
           <button
             type="button"
             className="login-scan-button"
@@ -82,7 +89,7 @@ export function LoginView({
               }
               onClick={() => {
                 onSelect(user.id);
-                onLogin(user.id);
+                void onLogin(user.id);
               }}
             >
               <UserAvatarImage
@@ -125,7 +132,7 @@ export function LoginView({
               : "ขอบเขตผู้ป่วย"}
           </Badge>
         </Surface>
-        <Button onClick={() => onLogin(selectedUserId)}>
+        <Button onClick={() => void onLogin(selectedUserId)}>
           <ShieldCheck size={18} /> เข้าสู่ระบบด้วยผู้ใช้นี้
         </Button>
       </section>

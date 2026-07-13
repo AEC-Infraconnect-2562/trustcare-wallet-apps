@@ -329,6 +329,17 @@
   line-height: 1.55;
 }
 
+.login-copy .login-error {
+  max-width: 680px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fff7f7;
+  color: #991b1b;
+  font-weight: 700;
+}
+
 .login-scan-button {
   min-height: 44px;
   border: 1px solid color-mix(in srgb, var(--primary) 50%, var(--border));
@@ -2711,6 +2722,13 @@ button:disabled {
   margin: 0;
   color: #526174;
   line-height: 1.7;
+}
+
+.runtime-auth-boundary small {
+  display: block;
+  margin-top: 0.8rem;
+  color: #64748b;
+  overflow-wrap: anywhere;
 }
 
 .environment-banner {
