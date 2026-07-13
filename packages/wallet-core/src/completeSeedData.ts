@@ -5,8 +5,8 @@ import type {
   WalletCardsByCategory,
 } from "./models";
 import {
-  NON_AUTHORITATIVE_DEMO_ISSUER_DIDS,
-  NON_AUTHORITATIVE_DEMO_PAYER_ISSUER_DIDS,
+  SANDBOX_ISSUER_DIDS,
+  SANDBOX_PAYER_ISSUER_DIDS,
   trustCarePortalPersonImages,
 } from "./demoSeedAssets";
 import { createTrustCareShlGatewayPublication } from "./shlGateway";
@@ -467,7 +467,7 @@ const hospital = {
   code: "TCC",
   nameTh: "โรงพยาบาลทรัสต์แคร์ เซ็นทรัล",
   nameEn: "TrustCare Central Hospital",
-  issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+  issuerDid: SANDBOX_ISSUER_DIDS.tcc,
   role: "healthcare_provider",
   licenseNo: "HOS-TCC-2566-001",
   address: "188 TrustCare Tower, Bangkok 10120",
@@ -478,7 +478,7 @@ const partnerHospital = {
   code: "TCP",
   nameTh: "โรงพยาบาลทรัสต์แคร์ ภูเก็ต อินเตอร์เนชันแนล",
   nameEn: "TrustCare Phuket International Hospital",
-  issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcp,
+  issuerDid: SANDBOX_ISSUER_DIDS.tcp,
   role: "healthcare_provider",
   licenseNo: "HOS-TCP-2566-014",
   address: "88/8 Thepkrasattri Road, Phuket 83110",
@@ -498,7 +498,7 @@ const payerIssuer = {
   code: "GCI",
   nameTh: payer.nameTh,
   nameEn: payer.nameEn,
-  issuerDid: NON_AUTHORITATIVE_DEMO_PAYER_ISSUER_DIDS.globalCare,
+  issuerDid: SANDBOX_PAYER_ISSUER_DIDS.globalCare,
   role: "payer",
   licenseNo: "INS-DEMO-2568-009",
   address: "1 Insurance Demo Plaza, Bangkok 10330",
@@ -1329,6 +1329,7 @@ function createCompleteWalletShlPackages(): ShlPackageDetail[] {
     cards: shlCards,
     receiver: "TrustCare Phuket International Hospital",
     purpose: "opd_visit",
+    gatewayBaseUrl: "https://sandbox-share-gateway.invalid/api/shl",
     origin: "https://aec-infraconnect-2562.github.io/trustcare-wallet-apps",
     requestHospitalCertification: true,
     policy: {
@@ -1459,7 +1460,7 @@ function makePatientCard(
     // This complete fixture is intentionally issuer-explicit so the demo can
     // exercise the normal issuer-signing path without weakening Portal VC
     // proof enforcement for real portal-synced credentials.
-    sourceSystem: "trustcare_demo_issuer",
+    sourceSystem: "trustcare_sandbox_fixture",
     scopeLabel: "Complete hospital-grade seed",
     issuedAt,
     expiresAt: input.expiresAt,
@@ -1498,7 +1499,7 @@ function makeStaffCard(
     patientAvatarUrl: completeStaff.avatarUrl,
     ownerUserId: completeStaff.ownerUserId,
     patientId: completeStaff.staffId,
-    sourceSystem: "trustcare_demo_issuer",
+    sourceSystem: "trustcare_sandbox_fixture",
     scopeLabel: "Complete staff seed",
     issuedAt,
     expiresAt: input.expiresAt,
@@ -1551,7 +1552,7 @@ function buildCredentialData(input: {
       id: holderDid,
       ...input.subject,
       documentReference,
-      humanDocument,
+      data: { humanDocument },
     },
     credentialStatus: {
       id: `${input.credentialId}#status`,

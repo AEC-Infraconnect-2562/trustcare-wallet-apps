@@ -9,7 +9,7 @@ import type {
   PreAuthDecision,
 } from "../types";
 import type { PayerAdapter } from "./base";
-import { NON_AUTHORITATIVE_DEMO_PAYER_ISSUER_DIDS } from "../../demoSeedAssets";
+import { SANDBOX_PAYER_ISSUER_DIDS } from "../../demoSeedAssets";
 
 const demoNow = "2026-07-10T08:00:00.000Z";
 const demoValidUntil = "2026-12-31T23:59:59.000Z";
@@ -25,7 +25,7 @@ export const mockPayerProfiles: PayerProfile[] = [
     supportedTransports: ["mock_demo", "nhso_eclaim_portal"],
     endpointConfigured: false,
     demo: true,
-    trustedIssuerDid: NON_AUTHORITATIVE_DEMO_PAYER_ISSUER_DIDS.nhso,
+    trustedIssuerDid: SANDBOX_PAYER_ISSUER_DIDS.nhso,
     notes: [
       "Demo adapter only. Production NHSO integration requires an official contract.",
     ],
@@ -40,7 +40,7 @@ export const mockPayerProfiles: PayerProfile[] = [
     supportedTransports: ["mock_demo", "payer_rest_json"],
     endpointConfigured: false,
     demo: true,
-    trustedIssuerDid: NON_AUTHORITATIVE_DEMO_PAYER_ISSUER_DIDS.globalCare,
+    trustedIssuerDid: SANDBOX_PAYER_ISSUER_DIDS.globalCare,
   },
   {
     payerId: "international_tpa_mock",
@@ -52,7 +52,7 @@ export const mockPayerProfiles: PayerProfile[] = [
     supportedTransports: ["mock_demo", "payer_fhir_rest"],
     endpointConfigured: false,
     demo: true,
-    trustedIssuerDid: NON_AUTHORITATIVE_DEMO_PAYER_ISSUER_DIDS.internationalTpa,
+    trustedIssuerDid: SANDBOX_PAYER_ISSUER_DIDS.internationalTpa,
   },
   {
     payerId: "self_pay_mock",

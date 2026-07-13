@@ -1,5 +1,4 @@
 import type { ShlPackage, WalletExportResult } from "./models";
-import { resolveDemoShlManifestFromUrl } from "./demoResolvers";
 import type { TrustCareTone } from "./statusTone";
 
 export type ParsedShlLink = {
@@ -197,9 +196,18 @@ export function createShlViewerUrl(
   return `${base}#${shlUrl}`;
 }
 
-export function createDemoShlKey(seed: string): string {
-  const source = `${seed}-trustcare-demo-shl-content-key-000000000000000000`;
-  const bytes = new TextEncoder().encode(source.slice(0, 32).padEnd(32, "0"));
+/**
+ * Create the content-encryption key for a new SHL publication.
+ * The key is holder-generated and must never be deterministic or derived from
+ * a publication id.  A missing Web Crypto implementation is a hard failure.
+ */
+export function createShlContentKey(): string {
+  const cryptoApi = globalThis.crypto;
+  if (!cryptoApi?.getRandomValues) {
+    throw new Error("Web Crypto is required to create an SHL content key.");
+  }
+  const bytes = new Uint8Array(32);
+  cryptoApi.getRandomValues(bytes);
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary)
@@ -283,21 +291,6 @@ export async function fetchShlManifest(
         "SHL นี้ต้องใช้ passcode โดย passcode ไม่ได้ฝังอยู่ใน QR และต้องส่งให้ผู้รับผ่านช่องทางแยก.",
       ],
     };
-  }
-
-  const demoManifest = resolveDemoShlManifestFromUrl(shl.url);
-  if (demoManifest) {
-    return finalizeShlManifestResult({
-      ok: true,
-      shl,
-      manifest: demoManifest,
-      requestMethod: shl.passcodeRequired ? "POST" : "GET",
-      options,
-      warnings: [
-        "อ่าน SHL manifest จาก static demo resolver; production ต้อง enforce passcode, expiry และ access count ที่ backend.",
-      ],
-      errors: [],
-    });
   }
 
   const fetcher = options.fetcher ?? fetch;

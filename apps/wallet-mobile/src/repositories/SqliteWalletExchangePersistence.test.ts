@@ -284,7 +284,7 @@ async function testSha256(value: string): Promise<`sha256:${string}`> {
 function syncPage(): WalletExchangePreparedSyncPage {
   return {
     schema: "trustcare.wallet.sync.v2",
-    contractVersion: "2026.07.wallet-exchange.v2",
+    contractVersion: "2026.07.wallet-exchange.v2.1.strict-w3c",
     syncId: "sync-mobile-1",
     mode: "initial",
     nextCursor: "opaque-mobile-cursor-0001",
@@ -319,7 +319,6 @@ function signedUpsert(): WalletExchangePreparedUpsertChange {
       kid: `${issuerDid}#active-key`,
       issuer: issuerDid,
     },
-    selectiveDisclosure: null,
     issuerDid,
     issuerHospitalName: "TrustCare Central Hospital",
     holderDid,
@@ -334,8 +333,9 @@ function signedUpsert(): WalletExchangePreparedUpsertChange {
     renderer: {
       authority: "trustcare_wallet",
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      inspectedBaselineCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
-      compatibilityGate: "contract_and_schema_version",
+      referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
+      referenceCommitRole: "provenance_only",
+      compatibilityGate: "contract_profile_and_schema",
       renderVersion: "2.0",
     },
   };

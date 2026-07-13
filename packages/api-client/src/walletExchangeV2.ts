@@ -338,13 +338,7 @@ export class WalletExchangeV2Client {
     idempotencyKey: string,
   ): Promise<ShlCertificationResponse> {
     const endpoint =
-      this.options.contracts.discovery.endpoints.shlCertifications;
-    if (!endpoint) {
-      throw new TrustCareApiError(
-        "Portal has not published the SHL certification endpoint in Wallet Exchange discovery.",
-        { code: "shl_certification_unavailable" },
-      );
-    }
+      this.options.contracts.discovery.endpoints.shlCertificationRequests;
     const request = assertShlCertificationRequest(input);
     return this.protectedJson(
       {
@@ -362,13 +356,7 @@ export class WalletExchangeV2Client {
     certificationRequestId: string,
   ): Promise<ShlCertificationResponse> {
     const endpoint =
-      this.options.contracts.discovery.endpoints.shlCertifications;
-    if (!endpoint) {
-      throw new TrustCareApiError(
-        "Portal has not published the SHL certification endpoint in Wallet Exchange discovery.",
-        { code: "shl_certification_unavailable" },
-      );
-    }
+      this.options.contracts.discovery.endpoints.shlCertificationRequests;
     return this.protectedJson(
       {
         method: "GET",

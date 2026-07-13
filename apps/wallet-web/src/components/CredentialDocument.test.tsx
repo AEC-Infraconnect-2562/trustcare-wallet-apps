@@ -123,7 +123,7 @@ describe("shared credential document", () => {
 
     expect(html).toContain("บริษัทประกันสุขภาพสากล เดโม จำกัด");
     expect(html).toContain(
-      "did:web:wallet-demo.invalid:issuer:payer:global-care",
+      "did:web:sandbox.invalid:issuer:payer:global-care",
     );
     expect(html).not.toContain("โรงพยาบาลทรัสต์แคร์ เซ็นทรัล");
   });

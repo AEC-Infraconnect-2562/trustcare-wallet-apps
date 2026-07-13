@@ -35,7 +35,9 @@ export type HolderSignedDirectVpPayload = {
   exp: number;
   jti: string;
   vp: {
-    type: ["VerifiablePresentation"];
+    "@context": ["https://www.w3.org/ns/credentials/v2", string];
+    id: string;
+    type: ["VerifiablePresentation", "TrustcarePatientPresentation"];
     holder: string;
     purpose: string;
     trustcare: {
@@ -43,6 +45,8 @@ export type HolderSignedDirectVpPayload = {
       consentRef: string;
       recipient: string;
       audience: string;
+      issuedAt: string;
+      expiresAt: string;
     };
     verifiableCredential: string[];
   };
@@ -101,17 +105,25 @@ export async function createHolderSignedDirectVp(
     return credentialJwt;
   });
 
+  const presentationId = input.presentationId
+    ? requireText(input.presentationId, "VP presentation ID", 255)
+    : `urn:uuid:${freshUuid()}`;
+  const issuedAtIso = new Date(issuedAt * 1_000).toISOString();
+  const expiresAtIso = new Date(expirationTime * 1_000).toISOString();
   const payload: HolderSignedDirectVpPayload = {
     iss: input.identity.did,
     sub: input.identity.did,
     aud: audience,
     iat: issuedAt,
     exp: expirationTime,
-    jti: input.presentationId
-      ? requireText(input.presentationId, "VP presentation ID", 255)
-      : `urn:uuid:${freshUuid()}`,
+    jti: presentationId,
     vp: {
-      type: ["VerifiablePresentation"],
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        `${new URL(audience).origin}/contexts/trustcare-credentials-v1.jsonld`,
+      ],
+      id: presentationId,
+      type: ["VerifiablePresentation", "TrustcarePatientPresentation"],
       holder: input.identity.did,
       purpose,
       trustcare: {
@@ -119,9 +131,10 @@ export async function createHolderSignedDirectVp(
         consentRef,
         recipient,
         audience,
+        issuedAt: issuedAtIso,
+        expiresAt: expiresAtIso,
       },
-      // Deliberately copy without parsing/re-encoding. The issuer signature is
-      // over these exact bytes and the Wallet must not replace it.
+      // Retain each issuer-signed VC byte-for-byte inside the VP claim.
       verifiableCredential: credentialJwts,
     },
   };
@@ -189,8 +202,14 @@ function assertIssuerSignedCredentialJwt(
     throw new Error(`${label} has no issuer claim.`);
   }
 
-  const credential = recordValue(payload.vc) ?? payload;
-  const credentialSubject = recordValue(credential.credentialSubject);
+  if (
+    header.typ !== "vc+jwt" ||
+    header.cty !== "vc" ||
+    Object.prototype.hasOwnProperty.call(payload, "vc")
+  ) {
+    throw new Error(`${label} is not a direct W3C VC-JWT payload.`);
+  }
+  const credentialSubject = recordValue(payload.credentialSubject);
   if (credentialSubject?.id !== holderDid) {
     throw new Error(
       `${label} credentialSubject.id does not match the holder did:key.`,

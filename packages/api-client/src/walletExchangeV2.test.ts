@@ -286,7 +286,7 @@ describe("Wallet Exchange v2 client", () => {
 
     const protectedRequest = harness.protectedRequests[0]!;
     expect(protectedRequest.url).toBe(
-      `${PORTAL_ORIGIN}/api/wallet/v2/shl-certifications`,
+      `${PORTAL_ORIGIN}/api/wallet/v2/shl-certification-requests`,
     );
     expect(protectedRequest.headers.get("idempotency-key")).toBe(
       "idempotency-shl-001",
@@ -295,7 +295,7 @@ describe("Wallet Exchange v2 client", () => {
     const proof = await verifyDpop(protectedRequest, harness.identity);
     expect(proof.claims).toMatchObject({
       htm: "POST",
-      htu: `${PORTAL_ORIGIN}/api/wallet/v2/shl-certifications`,
+      htu: `${PORTAL_ORIGIN}/api/wallet/v2/shl-certification-requests`,
       ath: await calculateDpopAccessTokenHash("wxt_access_token_1"),
     });
   });
@@ -788,7 +788,8 @@ function contractSet(): WalletExchangeContractSet {
       credentialSyncAck: `${PORTAL_ORIGIN}/api/wallet/v2/credentials/sync/ack`,
       credentialRequests: `${PORTAL_ORIGIN}/api/wallet/v2/credential-requests`,
       documentSubmissions: `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,
-      shlCertifications: `${PORTAL_ORIGIN}/api/wallet/v2/shl-certifications`,
+      shlAssociations: `${PORTAL_ORIGIN}/api/wallet/v2/shl-associations/{shlId}`,
+      shlCertificationRequests: `${PORTAL_ORIGIN}/api/wallet/v2/shl-certification-requests`,
       publicContracts: `${PORTAL_ORIGIN}/api/public/wallet-contracts/manifest`,
       shareGateway: `${PORTAL_ORIGIN}/api/share-gateway`,
       issuerJwks: `${PORTAL_ORIGIN}/.well-known/jwks.json`,
@@ -796,6 +797,7 @@ function contractSet(): WalletExchangeContractSet {
     protocols: {
       credentialLifecycle: "Wallet Exchange lifecycle v2",
       presentation: "W3C Verifiable Presentation",
+      certifiedShl: "Portal KMS manifest VC and holder VP association",
       documentMetadata: "FHIR DocumentReference",
       errors: "RFC 9457 problem details" as const,
     },
@@ -809,8 +811,10 @@ function contractSet(): WalletExchangeContractSet {
     },
     renderer: {
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps" as const,
-      inspectedBaselineCommit: WALLET_RENDERER_REFERENCE_COMMIT,
-      compatibilityGate: "contract_and_schema_version" as const,
+      referenceCommit: WALLET_RENDERER_REFERENCE_COMMIT,
+      referenceCommitRole: "provenance_only" as const,
+      compatibilityGate: "contract_profile_and_schema" as const,
+      renderVersion: "trustcare-render-contract-v2",
       modelPackage: "@trustcare/wallet-core" as const,
       webPackage: "@trustcare/ui-web" as const,
       rule: "Render from credentialSubject.humanDocument.renderData.",
@@ -836,7 +840,7 @@ function contractSet(): WalletExchangeContractSet {
       rendererAuthority: { authority: "wallet" },
     },
     manifest: resource({
-      version: "2026.07.portal-wallet.v2",
+      version: "2026.07.portal-wallet.v4",
       status: "active",
       minimumWalletVersion: "0.1.0",
       compatibilityRules: [],
@@ -848,12 +852,13 @@ function contractSet(): WalletExchangeContractSet {
       },
     }),
     renderContract: resource({
-      version: "2026.07.portal-wallet.v2",
-      renderVersion: "trustcare-render-v1",
+      version: "2026.07.portal-wallet.v4",
+      renderVersion: "trustcare-render-contract-v2",
       authority: "wallet",
       implementationRepository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      inspectedBaselineCommit: WALLET_RENDERER_REFERENCE_COMMIT,
-      compatibilityGate: "contract_and_schema_version",
+      referenceCommit: WALLET_RENDERER_REFERENCE_COMMIT,
+      referenceCommitRole: "provenance_only",
+      compatibilityGate: "contract_profile_and_schema",
       modelPackage: "@trustcare/wallet-core",
       webPackage: "@trustcare/ui-web",
       portalUsage: "shared_wallet_renderer_only",
@@ -861,8 +866,8 @@ function contractSet(): WalletExchangeContractSet {
       legacyWriteAllowed: false,
     }),
     schema: resource({
-      $id: "urn:trustcare:schema:2026.07.portal-wallet.v2",
-      contractVersion: "2026.07.portal-wallet.v2",
+      $id: "urn:trustcare:schema:2026.07.portal-wallet.v4",
+      contractVersion: "2026.07.portal-wallet.v4",
       schema: {
         $schema: "https://json-schema.org/draft/2020-12/schema",
       },

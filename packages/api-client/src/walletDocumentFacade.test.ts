@@ -6,6 +6,7 @@ describe("wallet API document facade", () => {
     url: "https://wallet.example/trpc",
     demoMode: true,
     demoOrigin: "https://wallet.example",
+    shlGatewayUrl: "https://sandbox-share-gateway.invalid/api/shl",
     userId: "demo-patient-complete-001",
   } satisfies walletApi.WalletApiOptions;
 
@@ -77,17 +78,10 @@ describe("wallet API document facade", () => {
     });
     expect(certifiedShl.mode).toBe("CertifiedSHLManifestPackage");
     if ("shl" in certifiedShl) {
-      const resolved = await walletApi.resolveSharePackage(options, {
-        qrPayload: certifiedShl.shl.qrPayload,
-      });
-      expect(resolved.shl?.ok).toBe(true);
-      expect(resolved.shl?.fileCount).toBeGreaterThan(0);
-
-      const imported = await walletApi.importFromShl(options, {
-        payload: certifiedShl.shl.qrPayload,
-      });
-      expect(imported.trust?.status).toBe("trustcare_pending");
-      expect(imported.trust?.verified).toBe(false);
+      expect(certifiedShl.shl.gatewayMode).toBe("portal_backend");
+      expect(certifiedShl.shl.gatewayBaseUrl).toBe(
+        "https://sandbox-share-gateway.invalid/api/shl",
+      );
     }
   });
 
@@ -110,10 +104,10 @@ describe("wallet API document facade", () => {
     });
     const cards = Object.values(cardsByCategory).flat();
     const johnDemoCard = cards.find(
-      (card) => card.issuerDid === "did:web:wallet-demo.invalid:issuer:tcp",
+      (card) => card.issuerDid === "did:web:sandbox.invalid:issuer:tcp",
     );
 
-    expect(johnDemoCard?.sourceSystem).toBe("trustcare_demo_issuer");
+    expect(johnDemoCard?.sourceSystem).toBe("trustcare_sandbox_fixture");
     expect(johnDemoCard?.issuerDid).not.toContain(
       "trustcare-hospital-network-production.up.railway.app",
     );

@@ -205,7 +205,7 @@ function walletDocumentFromSyncedCredential(input: {
     },
     credential: {
       credentialType: credential.credentialType,
-      format: credential.selectiveDisclosure ? "vc+sd-jwt" : "vc+jwt",
+      format: "vc+jwt",
       credentialId: credential.credentialId,
       jwt: proofJwt,
       proof: credential.proof,
@@ -241,12 +241,7 @@ function walletDocumentFromSyncedCredential(input: {
         },
       ],
     },
-    privacy: {
-      defaultDisclosure: "ask",
-      selectivelyDisclosableFields: credential.selectiveDisclosure
-        ? Object.keys(credential.selectiveDisclosure.disclosureMap)
-        : [],
-    },
+    privacy: { defaultDisclosure: "ask", selectivelyDisclosableFields: [] },
     local: { pinned: false, availableOffline: true, cachedAt: input.checkedAt },
   };
 }
@@ -279,7 +274,8 @@ function signedDocumentTitle(
   fallback: string,
 ): { th: string; en?: string } {
   const subject = objectRecord(credentialData.credentialSubject);
-  const humanDocument = objectRecord(subject.humanDocument);
+  const data = objectRecord(subject.data);
+  const humanDocument = objectRecord(data.humanDocument);
   const renderData = objectRecord(humanDocument.renderData);
   const document = objectRecord(renderData.document);
   return {

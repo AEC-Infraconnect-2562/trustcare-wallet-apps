@@ -17,7 +17,7 @@ import {
 } from "./demoResolvers";
 import { createTrustCareShlGatewayPublication } from "./shlGateway";
 import {
-  NON_AUTHORITATIVE_DEMO_ISSUER_DIDS,
+  SANDBOX_ISSUER_DIDS,
   TRUSTCARE_PORTAL_ASSET_ORIGIN,
   trustCarePortalPersonImages,
 } from "./demoSeedAssets";
@@ -94,7 +94,7 @@ export type WalletDemoUser = {
 };
 
 export {
-  NON_AUTHORITATIVE_DEMO_ISSUER_DIDS,
+  SANDBOX_ISSUER_DIDS,
   TRUSTCARE_PORTAL_ASSET_ORIGIN,
   trustCarePortalPersonImages,
 } from "./demoSeedAssets";
@@ -126,7 +126,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-TH-2026-000001",
     hn: "HN-TCC-00100001",
     holderDid: "did:key:z6MkhSomchaiPortalWallet001",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.demoPatient001,
     avatarSource: "trustcare_portal",
     persona:
@@ -157,7 +157,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-TH-2026-000002",
     hn: "HN-TCC-00100002",
     holderDid: "did:key:z6MkhMaleePortalWallet002",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.demoPatient002,
     avatarSource: "trustcare_portal",
     persona:
@@ -189,7 +189,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-INT-2026-000003",
     hn: "HN-TCP-00100003",
     holderDid: "did:key:z6MkhJohnPortalWallet003",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcp,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcp,
     avatarUrl: trustCarePortalPersonImages.demoPatient003,
     avatarSource: "trustcare_portal",
     persona:
@@ -220,7 +220,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-INT-2026-000004",
     hn: "HN-TCM-00100004",
     holderDid: "did:key:z6MkhHarukaWalletTest004",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcm,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcm,
     avatarUrl: "",
     avatarSource: "trustcare_portal",
     persona:
@@ -252,7 +252,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-TH-2026-000005",
     hn: "HN-TCC-00100005",
     holderDid: "did:key:z6MkhWichaiWalletTest005",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcc,
     avatarUrl: "",
     avatarSource: "trustcare_portal",
     persona:
@@ -284,7 +284,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-TH-2026-000006",
     hn: "HN-TCC-00100006",
     holderDid: "did:key:z6MkhPorntipWalletTest006",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcc,
     avatarUrl: "",
     avatarSource: "trustcare_portal",
     persona:
@@ -316,7 +316,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-TH-2026-000007",
     hn: "HN-TCP-00100007",
     holderDid: "did:key:z6MkhApichatWalletTest007",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcp,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcp,
     avatarUrl: "",
     avatarSource: "trustcare_portal",
     persona:
@@ -348,7 +348,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-INT-2026-000008",
     hn: "HN-TCP-00100008",
     holderDid: "did:key:z6MkhDavidChenWalletTest008",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcp,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcp,
     avatarUrl: "",
     avatarSource: "trustcare_portal",
     persona:
@@ -380,7 +380,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-TH-2026-000009",
     hn: "HN-TCC-00100009",
     holderDid: "did:key:z6MkhSudaWalletTest009",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcc,
     avatarUrl: "",
     avatarSource: "trustcare_portal",
     persona:
@@ -412,7 +412,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "STAFF-TCC-000408",
     hn: "STAFF-TCC-000408",
     holderDid: "did:key:z6MkhWipaPortalStaff004",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.demoHospadmin001,
     avatarSource: "trustcare_portal",
     persona:
@@ -443,7 +443,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-SYNC-EMPTY-001",
     hn: "HN-SYNC-EMPTY-001",
     holderDid: "did:key:z6MkhTrustCareEmptyPatientSync001",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.patientFemale,
     avatarSource: "trustcare_portal",
     persona:
@@ -474,7 +474,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "STAFF-SYNC-EMPTY-001",
     hn: "STAFF-SYNC-EMPTY-001",
     holderDid: "did:key:z6MkhTrustCareEmptyStaffSync001",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.nurseFemale,
     avatarSource: "trustcare_portal",
     persona:
@@ -506,7 +506,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "CP-TH-2026-COMPLETE-001",
     hn: "HN-TCC-670001",
     holderDid: "did:key:z6MkhTrustCareCompletePatient001",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.demoPatient001,
     avatarSource: "trustcare_portal",
     persona:
@@ -547,7 +547,7 @@ export const walletDemoUsers: WalletDemoUser[] = [
     carepassId: "STAFF-TCC-MD-14527",
     hn: "STAFF-TCC-MD-14527",
     holderDid: "did:key:z6MkhTrustCareStaffDoctor001",
-    issuerDid: NON_AUTHORITATIVE_DEMO_ISSUER_DIDS.tcc,
+    issuerDid: SANDBOX_ISSUER_DIDS.tcc,
     avatarUrl: trustCarePortalPersonImages.doctorFemale,
     avatarSource: "trustcare_portal",
     persona:
@@ -747,6 +747,7 @@ export function getDemoShlPackages(
       user.source === "trustcare_portal"
         ? "HealthPass Partner Verifier"
         : "TrustCare Portal",
+    gatewayBaseUrl: "https://sandbox-share-gateway.invalid/api/shl",
     purpose: user.tags.includes("medical_tourist")
       ? "medical_tourist_intake"
       : "patient_summary",
@@ -859,7 +860,7 @@ export function buildPortalInteroperabilityFixtures(
     client_id:
       user.source === "trustcare_portal"
         ? "did:web:partner-wallet.example:verifier"
-        : "did:web:wallet-demo.invalid:verifier:trustcare-portal",
+        : "did:web:sandbox.invalid:verifier:trustcare-portal",
     redirect_uri: `${origin}/verifier/callback`,
     nonce,
     state,
@@ -1605,7 +1606,7 @@ function baseCard(
     patientId: user.patientId,
     sourceSystem:
       user.source === "trustcare_portal"
-        ? "trustcare_demo_issuer"
+        ? "trustcare_sandbox_fixture"
         : user.source,
     scopeLabel: user.sourceLabel,
     credentialData: {
@@ -1629,12 +1630,13 @@ function baseCard(
         source: {
           system:
             user.source === "trustcare_portal"
-              ? "trustcare_demo_issuer"
+              ? "trustcare_sandbox_fixture"
               : user.source,
           label: user.sourceLabel,
           userId: user.id,
         },
-        humanDocument: {
+        data: {
+          humanDocument: {
           rendererVersion: "trustcare-wallet-document-renderer-2026.07",
           layout: demoLayoutForDocument(input.cardType),
           sourceSystem: user.sourceLabel,
@@ -1664,6 +1666,7 @@ function baseCard(
               qrLabel: "VP",
             },
             issuer: { did: user.issuerDid },
+          },
           },
         },
       },

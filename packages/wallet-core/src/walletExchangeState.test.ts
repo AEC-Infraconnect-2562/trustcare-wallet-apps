@@ -170,7 +170,7 @@ describe("Wallet Exchange V2 state", () => {
       {
         eventId: "wce_order_2",
         outcome: "rejected",
-        reasonCode: "unsigned_metadata",
+        reasonCode: "document_missing",
       },
     ]);
     expect(delta.plan.events.put).toHaveLength(1);
@@ -196,7 +196,7 @@ describe("Wallet Exchange V2 state", () => {
     expect(reduced.state.quarantine).toEqual([
       expect.objectContaining({
         eventId: "wce_unsigned_1",
-        reason: "unsigned_metadata",
+        reason: "document_missing",
         holderDid,
       }),
     ]);
@@ -204,7 +204,7 @@ describe("Wallet Exchange V2 state", () => {
       {
         eventId: "wce_unsigned_1",
         outcome: "rejected",
-        reasonCode: "unsigned_metadata",
+        reasonCode: "document_missing",
       },
     ]);
   });
@@ -613,7 +613,6 @@ function signedUpsert(input: {
       kid: `${issuerDid}#active-key`,
       issuer: issuerDid,
     },
-    selectiveDisclosure: null,
     issuerDid,
     issuerHospitalName: "TrustCare Central Hospital",
     holderDid,
@@ -628,8 +627,9 @@ function signedUpsert(input: {
     renderer: {
       authority: "trustcare_wallet",
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      inspectedBaselineCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
-      compatibilityGate: "contract_and_schema_version",
+      referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
+      referenceCommitRole: "provenance_only",
+      compatibilityGate: "contract_profile_and_schema",
       renderVersion: "2.0",
     },
   };
@@ -674,7 +674,6 @@ function unsignedUpsert(input: {
       credentialStatus: "active",
       credentialData: null,
       proof: null,
-      selectiveDisclosure: null,
       issuerDid: null,
       issuerHospitalName: null,
       holderDid,
@@ -685,12 +684,13 @@ function unsignedUpsert(input: {
       issuedAt: "2026-07-11T09:00:00.000Z",
       expiresAt: null,
       updatedAt: "2026-07-11T09:01:00.000Z",
-      deliveryState: "unsigned_metadata",
+      deliveryState: "signed",
       renderer: {
         authority: "trustcare_wallet",
         repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-        inspectedBaselineCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
-        compatibilityGate: "contract_and_schema_version",
+        referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
+        referenceCommitRole: "provenance_only",
+        compatibilityGate: "contract_profile_and_schema",
         renderVersion: "2.0",
       },
     },
@@ -798,7 +798,7 @@ function page(
 ): WalletExchangePreparedSyncPage {
   return {
     schema: "trustcare.wallet.sync.v2",
-    contractVersion: "2026.07.wallet-exchange.v2",
+    contractVersion: "2026.07.wallet-exchange.v2.1.strict-w3c",
     mode: "initial",
     nextCursor: cursor("1"),
     hasMore: false,

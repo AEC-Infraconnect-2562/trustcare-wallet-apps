@@ -55,11 +55,15 @@ function discoveryFixture() {
       publicContracts: `${PORTAL}/api/public/wallet-contracts`,
       shareGateway: `${PORTAL}/api/share-gateway`,
       issuerJwks: `${PORTAL}/.well-known/jwks.json`,
+      shlAssociations: `${PORTAL}/api/wallet/v2/shl-associations`,
+      shlCertificationRequests: `${PORTAL}/api/wallet/v2/shl-certification-requests`,
     },
     protocols: {
       credentialLifecycle: "TrustCare durable cursor sync v2",
       presentation:
         "Wallet-created VP JWT or Certified SHL/Manifest VP reference",
+      certifiedShl:
+        "Portal KMS Manifest VC plus Wallet holder authorization and manifest VP",
       documentMetadata:
         "FHIR R4 DocumentReference; IHE MHD ITI-65 compatible intake mapping",
       errors: "RFC 9457 problem details",
@@ -74,8 +78,10 @@ function discoveryFixture() {
     },
     renderer: {
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      inspectedBaselineCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
-      compatibilityGate: "contract_and_schema_version",
+      referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
+      referenceCommitRole: "provenance_only",
+      compatibilityGate: "contract_profile_and_schema",
+      renderVersion: "trustcare-render-v2",
       modelPackage: "@trustcare/wallet-core",
       webPackage: "@trustcare/ui-web",
       rule: "Portal must consume the Wallet renderer package if hospital-side rendering is required.",
@@ -125,7 +131,6 @@ function syncedCredentialFixture() {
       issuer:
         "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
     },
-    selectiveDisclosure: null,
     issuerDid:
       "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
     issuerHospitalName: "TrustCare Central Hospital",
@@ -141,8 +146,9 @@ function syncedCredentialFixture() {
     renderer: {
       authority: "trustcare_wallet",
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      inspectedBaselineCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
-      compatibilityGate: "contract_and_schema_version",
+      referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
+      referenceCommitRole: "provenance_only",
+      compatibilityGate: "contract_profile_and_schema",
       renderVersion: "trustcare-render-v1",
     },
   };
@@ -151,9 +157,9 @@ function syncedCredentialFixture() {
 describe("Wallet Exchange V2 live contracts", () => {
   it("pins both live contract versions", () => {
     expect(WALLET_EXCHANGE_V2_CONTRACT_VERSION).toBe(
-      "2026.07.wallet-exchange.v2",
+      "2026.07.wallet-exchange.v2.1.strict-w3c",
     );
-    expect(PORTAL_WALLET_V2_CONTRACT_VERSION).toBe("2026.07.portal-wallet.v2");
+    expect(PORTAL_WALLET_V2_CONTRACT_VERSION).toBe("2026.07.portal-wallet.v4");
   });
 
   it("validates discovery and rejects incompatible or expanded responses", () => {

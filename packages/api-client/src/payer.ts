@@ -1,38 +1,41 @@
-import {
-  buildClaimEvidencePackage,
-  createMockPayerRegistry,
-  discoverMockCoverage,
-  executePayerLifecycle as executeCorePayerLifecycle,
-  getDemoWalletCards,
-  listMockPayerProfiles,
-  walletDemoUsers,
-  type AdditionalEvidenceReceipt,
-  type AdditionalEvidenceSubmission,
-  type ClaimEvidencePackage,
-  type ClaimEvidencePackageBuildInput,
-  type ClaimStatus,
-  type ClaimStatusRequest,
-  type ClaimSubmission,
-  type ClaimSubmissionReceipt,
-  type CoverageDiscoveryInput,
-  type CoverageDiscoveryResult,
-  type EligibilityDecision,
-  type EligibilityRequest,
-  type GuaranteeLetterDecision,
-  type GuaranteeLetterRequest,
-  type PayerAdapter,
-  type PayerLifecycleInput,
-  type PayerLifecycleResult,
-  type PayerProfile,
-  type PaymentReconciliationRequest,
-  type PaymentReconciliationResult,
-  type PreAuthDecision,
-  type PreAuthRequest,
+import type {
+  AdditionalEvidenceReceipt,
+  AdditionalEvidenceSubmission,
+  ClaimEvidencePackage,
+  ClaimEvidencePackageBuildInput,
+  ClaimStatus,
+  ClaimStatusRequest,
+  ClaimSubmission,
+  ClaimSubmissionReceipt,
+  CoverageDiscoveryInput,
+  CoverageDiscoveryResult,
+  EligibilityDecision,
+  EligibilityRequest,
+  GuaranteeLetterDecision,
+  GuaranteeLetterRequest,
+  PayerAdapter,
+  PayerLifecycleInput,
+  PayerLifecycleResult,
+  PayerProfile,
+  PaymentReconciliationRequest,
+  PaymentReconciliationResult,
+  PreAuthDecision,
+  PreAuthRequest,
 } from "@trustcare/wallet-core";
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
 import { issuePayerCredentialWithShareGateway } from "./shareGatewayClient";
 import { usesDemoRuntime } from "./runtime";
+
+let demoPayerRuntimePromise:
+  | Promise<typeof import("./demoPayerRuntime")>
+  | undefined;
+
+async function loadDemoPayerRuntime(): Promise<
+  typeof import("./demoPayerRuntime")
+> {
+  return (demoPayerRuntimePromise ??= import("./demoPayerRuntime"));
+}
 
 export type PayerApiOptions = TrustCareClientOptions & {
   userId?: string | number;
@@ -56,12 +59,11 @@ export type WalletPayerLifecycleInput = Omit<
   requireSignedArtifacts?: boolean;
 };
 
-const demoPayerRegistry = createMockPayerRegistry();
-
 export async function listPayers(
   options: PayerApiOptions,
 ): Promise<PayerProfile[]> {
-  if (usesDemoRuntime(options)) return listMockPayerProfiles();
+  if (usesDemoRuntime(options))
+    return (await loadDemoPayerRuntime()).listMockPayerProfiles();
   return callTrpcProcedure<PayerProfile[]>(options, "payer.listPayers", {});
 }
 
@@ -70,7 +72,7 @@ export async function discoverCoverage(
   input: CoverageDiscoveryInput,
 ): Promise<CoverageDiscoveryResult> {
   if (usesDemoRuntime(options)) {
-    return discoverMockCoverage(input);
+    return (await loadDemoPayerRuntime()).discoverMockCoverage(input);
   }
   return callTrpcProcedure<CoverageDiscoveryResult>(
     options,
@@ -84,7 +86,7 @@ export async function verifyEligibility(
   input: EligibilityRequest,
 ): Promise<EligibilityDecision> {
   if (usesDemoRuntime(options)) {
-    return demoAdapter(input.payerId).verifyEligibility(input);
+    return (await demoAdapter(input.payerId)).verifyEligibility(input);
   }
   return callTrpcProcedure<EligibilityDecision>(
     options,
@@ -98,7 +100,7 @@ export async function requestPreAuth(
   input: PreAuthRequest,
 ): Promise<PreAuthDecision> {
   if (usesDemoRuntime(options)) {
-    return demoAdapter(input.payerId).requestPreAuth(input);
+    return (await demoAdapter(input.payerId)).requestPreAuth(input);
   }
   return callTrpcProcedure<PreAuthDecision>(
     options,
@@ -113,11 +115,12 @@ export async function createClaimEvidencePackage(
 ): Promise<ClaimEvidencePackage> {
   if (usesDemoRuntime(options)) {
     const patientId = input.patientId ?? options.userId ?? "demo-patient-001";
-    const user = requireDemoUser(patientId);
-    return buildClaimEvidencePackage({
+    const demo = await loadDemoPayerRuntime();
+    const user = requireDemoUser(patientId, demo);
+    return demo.buildClaimEvidencePackage({
       ...input,
       patientId: String(user.id),
-      cards: getDemoWalletCards(user.id),
+      cards: demo.getDemoWalletCards(user.id),
     });
   }
   return callTrpcProcedure<ClaimEvidencePackage>(
@@ -144,15 +147,16 @@ export async function runPayerLifecycle(
     );
   }
 
-  const user = requireDemoUser(input.patientId ?? options.userId);
+  const demo = await loadDemoPayerRuntime();
+  const user = requireDemoUser(input.patientId ?? options.userId, demo);
   const payerId = payerIdForContext(input.context);
-  const adapter = demoAdapter(payerId);
-  const result = await executeCorePayerLifecycle(adapter, {
+  const adapter = await demoAdapter(payerId);
+  const result = await demo.executePayerLifecycle(adapter, {
     ...input,
     patientId: user.id,
     ownerUserId: user.id,
     holderDid: user.holderDid,
-    cards: input.cards ?? getDemoWalletCards(user.id),
+    cards: input.cards ?? demo.getDemoWalletCards(user.id),
   });
 
   const requireSignedArtifacts = input.requireSignedArtifacts ?? false;
@@ -196,7 +200,7 @@ export async function submitClaimPackage(
   input: ClaimSubmission,
 ): Promise<ClaimSubmissionReceipt> {
   if (usesDemoRuntime(options)) {
-    return demoAdapter(input.payerId).submitClaimPackage(input);
+    return (await demoAdapter(input.payerId)).submitClaimPackage(input);
   }
   return callTrpcProcedure<ClaimSubmissionReceipt>(
     options,
@@ -210,7 +214,7 @@ export async function getClaimStatus(
   input: ClaimStatusRequest,
 ): Promise<ClaimStatus> {
   if (usesDemoRuntime(options)) {
-    return demoAdapter(input.payerId).getClaimStatus(input);
+    return (await demoAdapter(input.payerId)).getClaimStatus(input);
   }
   return callTrpcProcedure<ClaimStatus>(options, "payer.getClaimStatus", input);
 }
@@ -220,7 +224,7 @@ export async function requestGuaranteeLetter(
   input: GuaranteeLetterRequest,
 ): Promise<GuaranteeLetterDecision> {
   if (usesDemoRuntime(options)) {
-    return demoAdapter(input.payerId).requestGuaranteeLetter(input);
+    return (await demoAdapter(input.payerId)).requestGuaranteeLetter(input);
   }
   return callTrpcProcedure<GuaranteeLetterDecision>(
     options,
@@ -234,7 +238,7 @@ export async function submitAdditionalEvidence(
   input: AdditionalEvidenceSubmission,
 ): Promise<AdditionalEvidenceReceipt> {
   if (usesDemoRuntime(options)) {
-    const adapter = demoAdapter(input.payerId);
+    const adapter = await demoAdapter(input.payerId);
     if (!adapter.submitAdditionalEvidence) {
       throw new Error("Payer adapter does not support additional evidence");
     }
@@ -252,7 +256,7 @@ export async function reconcilePayment(
   input: PaymentReconciliationRequest,
 ): Promise<PaymentReconciliationResult> {
   if (usesDemoRuntime(options)) {
-    const adapter = demoAdapter(input.payerId);
+    const adapter = await demoAdapter(input.payerId);
     if (!adapter.reconcilePayment) {
       throw new Error("Payer adapter does not support payment reconciliation");
     }
@@ -265,19 +269,24 @@ export async function reconcilePayment(
   );
 }
 
-function demoAdapter(payerId: string): PayerAdapter {
-  const adapter = demoPayerRegistry.getAdapter(payerId);
+async function demoAdapter(payerId: string): Promise<PayerAdapter> {
+  const adapter = (await loadDemoPayerRuntime()).demoPayerRegistry.getAdapter(
+    payerId,
+  );
   if (!adapter) throw new Error(`Unknown payer adapter: ${payerId}`);
   return adapter;
 }
 
-function requireDemoUser(userId: string | number | undefined) {
+function requireDemoUser(
+  userId: string | number | undefined,
+  demo: typeof import("./demoPayerRuntime"),
+) {
   if (userId === undefined || userId === null || String(userId).trim() === "") {
     throw new Error(
       "A known demo wallet user is required for payer orchestration.",
     );
   }
-  const user = walletDemoUsers.find(
+  const user = demo.walletDemoUsers.find(
     (candidate) =>
       String(candidate.id) === String(userId) ||
       String(candidate.patientId) === String(userId),

@@ -369,11 +369,10 @@ export type CheckinQrResponse = {
   readinessScore: number;
   credentialCount: number;
   status: "ready" | "pending_review" | string;
-  gatewayMode?:
-    "portal_backend" | "static_demo_gateway" | "local_preview" | string;
+  gatewayMode?: "portal_backend" | string;
   gatewayPublicationId?: string;
   gatewayBaseUrl?: string;
-  storageProvider?: "s3" | "static" | "local" | string;
+  storageProvider?: "s3" | string;
   manifestEndpointMethod?: "POST" | "GET" | "BOTH" | string;
   trustLayerStatus?:
     | "standard_shl"

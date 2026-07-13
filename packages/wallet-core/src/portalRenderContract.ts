@@ -11,7 +11,8 @@ export type PortalRenderContract = {
 export function extractPortalRenderData(
   subject: PortalRenderRecord,
 ): PortalRenderRecord {
-  const humanDocument = portalRecord(subject.humanDocument);
+  const data = portalRecord(subject.data);
+  const humanDocument = portalRecord(data.humanDocument);
   return portalRecord(humanDocument.renderData ?? humanDocument);
 }
 
@@ -19,7 +20,8 @@ export function normalizePortalRenderSubject(
   rawSubject: PortalRenderRecord,
   credential: PortalRenderRecord = {},
 ): PortalRenderRecord {
-  const humanDocument = portalRecord(rawSubject.humanDocument);
+  const data = portalRecord(rawSubject.data);
+  const humanDocument = portalRecord(data.humanDocument);
   const renderData = extractPortalRenderData(rawSubject);
   const renderPatient = portalRecord(renderData.patient);
   const renderDocument = portalRecord(renderData.document);
@@ -55,6 +57,18 @@ export function normalizePortalRenderSubject(
       ...hospital,
     },
     document,
+    data: {
+      ...data,
+      humanDocument: {
+        ...humanDocument,
+        renderData: {
+          ...renderData,
+          hospital,
+          patient,
+          document,
+        },
+      },
+    },
     humanDocument: {
       ...humanDocument,
       renderData: {

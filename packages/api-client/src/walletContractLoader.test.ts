@@ -55,9 +55,9 @@ describe("Wallet Exchange live contract loader", () => {
     });
     expect(result.manifest.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(result.renderContract.payload.primaryPath).toBe(
-      "credentialSubject.humanDocument.renderData",
+      "credentialSubject.data.humanDocument",
     );
-    expect(result.renderContract.payload.inspectedBaselineCommit).toBe(
+    expect(result.renderContract.payload.referenceCommit).toBe(
       "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
     );
   });
@@ -72,8 +72,9 @@ describe("Wallet Exchange live contract loader", () => {
       url,
       await integrityResponse({
         ...payload,
-        inspectedBaselineCommit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        compatibilityGate: "contract_and_schema_version",
+        referenceCommit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        referenceCommitRole: "provenance_only",
+        compatibilityGate: "contract_profile_and_schema",
       }),
     );
 
@@ -86,8 +87,9 @@ describe("Wallet Exchange live contract loader", () => {
     ).resolves.toMatchObject({
       renderContract: {
         payload: {
-          inspectedBaselineCommit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          compatibilityGate: "contract_and_schema_version",
+          referenceCommit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          referenceCommitRole: "provenance_only",
+          compatibilityGate: "contract_profile_and_schema",
         },
       },
     });
@@ -203,10 +205,13 @@ async function contractFixture(
       publicContracts: `${origin}/api/public/wallet-contracts/manifest`,
       shareGateway: `${origin}/api/share-gateway`,
       issuerJwks: `${origin}/.well-known/jwks.json`,
+      shlAssociations: `${origin}/api/wallet/v2/shl-associations`,
+      shlCertificationRequests: `${origin}/api/wallet/v2/shl-certification-requests`,
     },
     protocols: {
       credentialLifecycle: "Wallet Exchange lifecycle v2",
       presentation: "W3C Verifiable Presentation",
+      certifiedShl: "Portal KMS manifest VC with holder authorization and VP",
       documentMetadata: "FHIR DocumentReference",
       errors: "RFC 9457 problem details",
     },
@@ -220,11 +225,13 @@ async function contractFixture(
     },
     renderer: {
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      inspectedBaselineCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
-      compatibilityGate: "contract_and_schema_version",
+      referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
+      referenceCommitRole: "provenance_only",
+      compatibilityGate: "contract_profile_and_schema",
+      renderVersion: TRUSTCARE_RENDER_VERSION,
       modelPackage: "@trustcare/wallet-core",
       webPackage: "@trustcare/ui-web",
-      rule: "Render human documents from credentialSubject.humanDocument.renderData.",
+      rule: "Render human documents from credentialSubject.data.humanDocument.",
     },
   };
   const health = {
@@ -270,12 +277,13 @@ async function contractFixture(
     renderVersion: TRUSTCARE_RENDER_VERSION,
     authority: "wallet",
     implementationRepository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-    inspectedBaselineCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
-    compatibilityGate: "contract_and_schema_version",
+    referenceCommit: "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f",
+    referenceCommitRole: "provenance_only",
+    compatibilityGate: "contract_profile_and_schema",
     modelPackage: "@trustcare/wallet-core",
     webPackage: "@trustcare/ui-web",
     portalUsage: "shared_wallet_renderer_only",
-    primaryPath: "credentialSubject.humanDocument.renderData",
+    primaryPath: "credentialSubject.data.humanDocument",
     requiredBlocks: ["document"],
     optionalBlocks: [],
     legacyReadCompatibility: [],

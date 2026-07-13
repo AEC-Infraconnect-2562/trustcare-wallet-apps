@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  createDemoShlKey,
+  createShlContentKey,
   createShlLinkPayload,
   decryptShlCompactJwe,
   fetchShlManifest,
@@ -8,7 +8,7 @@ import {
 
 describe("SMART Health Links manifest decryption", () => {
   it("decrypts embedded compact JWE files with the SHL content key", async () => {
-    const key = createDemoShlKey("embedded-file");
+    const key = createShlContentKey();
     const payload = fhirBundle("embedded-file-1");
     const jwe = await encryptCompactJwe(payload, key);
     const manifest = {
@@ -43,7 +43,7 @@ describe("SMART Health Links manifest decryption", () => {
   });
 
   it("fetches and decrypts location-based compact JWE files", async () => {
-    const key = createDemoShlKey("location-file");
+    const key = createShlContentKey();
     const payload = fhirBundle("location-file-1");
     const jwe = await encryptCompactJwe(payload, key);
     const manifest = {
@@ -145,7 +145,7 @@ describe("SMART Health Links manifest decryption", () => {
   it("rejects encrypted embedded files when the SHL key is missing", async () => {
     const jwe = await encryptCompactJwe(
       fhirBundle("missing-key-file"),
-      createDemoShlKey("missing-key-file"),
+      createShlContentKey(),
     );
 
     const result = await fetchShlManifest(
@@ -165,7 +165,7 @@ describe("SMART Health Links manifest decryption", () => {
   });
 
   it("decrypts compact JWE directly for lower-level contract tests", async () => {
-    const key = createDemoShlKey("direct");
+    const key = createShlContentKey();
     const payload = fhirBundle("direct-file");
     const jwe = await encryptCompactJwe(payload, key);
 
