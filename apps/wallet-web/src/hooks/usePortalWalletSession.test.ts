@@ -4,8 +4,6 @@ const harness = vi.hoisted(() => ({
   effects: [] as Array<() => void | (() => void)>,
   stateCursor: 0,
   stateValues: [] as unknown[],
-  refs: [] as Array<{ current: string }>,
-  refCursor: 0,
   reloadConfiguration: vi.fn(),
   listSandboxTestIdentities: vi.fn(),
   sandboxTestLogin: vi.fn(),
@@ -35,11 +33,6 @@ vi.mock("react", async (importOriginal) => {
     },
     useMemo: <Value>(factory: () => Value) => factory(),
     useCallback: <Callback>(callback: Callback) => callback,
-    useRef: (initial: string) => {
-      const index = harness.refCursor++;
-      harness.refs[index] ??= { current: initial };
-      return harness.refs[index];
-    },
   };
 });
 
@@ -61,8 +54,6 @@ describe("usePortalWalletSession sandbox restore", () => {
     harness.effects = [];
     harness.stateCursor = 0;
     harness.stateValues = [];
-    harness.refs = [];
-    harness.refCursor = 0;
     harness.reloadConfiguration.mockReset();
     harness.listSandboxTestIdentities.mockReset();
     harness.sandboxTestLogin.mockReset();
@@ -104,12 +95,26 @@ describe("usePortalWalletSession sandbox restore", () => {
 
     expect(harness.sandboxTestLogin).not.toHaveBeenCalled();
   });
+
+  it("deduplicates the sandbox login request across StrictMode effect replay", async () => {
+    renderHook("demo-patient-001");
+    harness.effects[0]?.();
+    await settlePromises();
+
+    renderHook("demo-patient-001");
+    const restoreEffect = harness.effects[1]!;
+    const cleanup = restoreEffect();
+    cleanup?.();
+    restoreEffect();
+    await settlePromises();
+
+    expect(harness.sandboxTestLogin).toHaveBeenCalledOnce();
+  });
 });
 
 function renderHook(sandboxUsername: string | undefined) {
   harness.effects = [];
   harness.stateCursor = 0;
-  harness.refCursor = 0;
   return usePortalWalletSession({
     portalBaseUrl:
       "https://trustcare-hospital-network-production.up.railway.app",
