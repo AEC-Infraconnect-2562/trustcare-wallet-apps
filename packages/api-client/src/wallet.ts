@@ -1,50 +1,35 @@
-import {
-  buildContractHubCatalog,
-  buildPrepareWorkbench,
-  buildServiceBundleEnvelope,
-  canPresentCredential,
-  createDemoPresentation,
-  createTrustCareShlGatewayPublication,
-  getDemoHistory,
-  getDemoUser,
-  getDemoWalletCards,
-  groupCardsByCategory,
-  simulateImportForService,
-  type ReadinessContext,
-  type ReadinessResult,
-  type CheckinQrResponse,
-  type ContractHubCatalog,
-  type PresentationHistoryItem,
-  type ServiceBundleEnvelope,
-  type ServicePacketResponse,
-  type WalletDocumentRequest,
-  type WalletImportJob,
-  type WalletCardsByCategory,
-  type WalletPresentationRequest,
-  type WalletPresentationResponse,
-  assessLocalReadiness,
-  buildSharePackage,
-  classifyQrPayload,
-  fetchShlManifest,
-  buildPortalInteroperabilityFixtures,
-  recordFromMhdDocumentReference,
-  validateDocumentReference,
-  verifyShlManifestTrust,
-  walletDocumentRecordFromCard,
-  issueDemoOid4vciCredential,
-  parseOid4vcCredentialOffer,
-  type BuiltSharePackage,
-  type CanonicalDocumentCategory,
-  type CanonicalDocumentType,
-  type DemoOid4vciIssuedCredential,
-  type FhirDocumentReferenceLike,
-  type SharePackageBuildInput,
-  type WalletDocumentRecord,
+import type {
+  CanonicalDocumentCategory,
+  CanonicalDocumentType,
+  FhirDocumentReferenceLike,
+  ReadinessContext,
+  ReadinessResult,
+  WalletCardsByCategory,
+  WalletDocumentRecord,
+  WalletDocumentRequest,
+  WalletImportJob,
+  WalletPresentationRequest,
+  WalletPresentationResponse,
+  PresentationHistoryItem,
+  ServiceBundleEnvelope,
+  ServicePacketResponse,
+  CheckinQrResponse,
+  ContractHubCatalog,
+  BuiltSharePackage,
+  SharePackageBuildInput,
 } from "@trustcare/wallet-core";
+import { validateDocumentReference } from "@trustcare/wallet-core/src/mhd";
+import type { DemoWalletCard, DemoWalletRuntime } from "./demoRuntime";
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
 import { verifyQr } from "./verifier";
 import { usesDemoRuntime } from "./runtime";
+
+let demoRuntimePromise: Promise<typeof import("./demoRuntime")> | undefined;
+
+async function loadDemoRuntime(): Promise<typeof import("./demoRuntime")> {
+  return (demoRuntimePromise ??= import("./demoRuntime"));
+}
 
 export type WalletApiOptions = TrustCareClientOptions & {
   demoOrigin?: string;
@@ -62,7 +47,7 @@ export type WalletReadinessResponse = {
 };
 
 export type WalletInteroperabilityFixtures = ReturnType<
-  typeof buildPortalInteroperabilityFixtures
+  DemoWalletRuntime["buildPortalInteroperabilityFixtures"]
 >;
 
 export type WalletDocumentListOptions = {
@@ -94,25 +79,30 @@ export type WalletAcceptCredentialOfferInput = {
   sourceCardId?: number | string;
 };
 
-export type WalletCredentialOfferAcceptance = DemoOid4vciIssuedCredential;
+export type WalletCredentialOfferAcceptance = Awaited<
+  ReturnType<DemoWalletRuntime["issueDemoOid4vciCredential"]>
+>;
 
 export type WalletShlImportResult = {
-  classification: ReturnType<typeof classifyQrPayload>;
-  manifest: Awaited<ReturnType<typeof fetchShlManifest>>;
-  trust?: ReturnType<typeof verifyShlManifestTrust>;
+  classification: ReturnType<DemoWalletRuntime["classifyQrPayload"]>;
+  manifest: Awaited<ReturnType<DemoWalletRuntime["fetchShlManifest"]>>;
+  trust?: ReturnType<DemoWalletRuntime["verifyShlManifestTrust"]>;
   importedAt: string;
 };
 
 export type WalletSharePackageResolution = {
-  classification: ReturnType<typeof classifyQrPayload>;
-  shl: Awaited<ReturnType<typeof fetchShlManifest>> | null;
+  classification: ReturnType<DemoWalletRuntime["classifyQrPayload"]>;
+  shl: Awaited<ReturnType<DemoWalletRuntime["fetchShlManifest"]>> | null;
   resolvedAt: string;
 };
 
 export async function cardsByCategory(
   options: WalletApiOptions,
 ): Promise<WalletCardsByCategory> {
-  if (usesDemoRuntime(options)) return demoCardsByCategory(options);
+  if (usesDemoRuntime(options)) {
+    const demo = await loadDemoRuntime();
+    return demoCardsByCategory(options, demo);
+  }
   return callTrpcProcedure<WalletCardsByCategory>(
     options,
     "wallet.cardsByCategory",
@@ -124,10 +114,11 @@ export async function listDocuments(
   input: WalletDocumentListOptions = {},
 ): Promise<WalletDocumentRecord[]> {
   if (usesDemoRuntime(options)) {
-    const cards = await demoWalletCards(options);
+    const demo = await loadDemoRuntime();
+    const cards = await demoWalletCards(options, demo);
     const documentTypes = input.documentTypes?.map(String);
     return cards
-      .map(walletDocumentRecordFromCard)
+      .map(demo.walletDocumentRecordFromCard)
       .filter((record) =>
         input.category && input.category !== "all"
           ? record.category === input.category
@@ -157,8 +148,9 @@ export async function importFromMhd(
     );
   }
   if (usesDemoRuntime(options)) {
-    const user = getDemoUser(options.userId);
-    return recordFromMhdDocumentReference(input.documentReference, {
+    const demo = await loadDemoRuntime();
+    const user = demo.getDemoUser(options.userId);
+    return demo.recordFromMhdDocumentReference(input.documentReference, {
       id: `mhd:${input.documentReference.id}`,
       ownerUserId: user.id,
       holderDid: user.holderDid,
@@ -183,10 +175,11 @@ export async function importFromShl(
   input: WalletShlImportInput,
 ): Promise<WalletShlImportResult> {
   if (usesDemoRuntime(options)) {
-    const classification = classifyQrPayload(input.payload);
-    const manifest = await fetchShlManifest(input.payload);
+    const demo = await loadDemoRuntime();
+    const classification = demo.classifyQrPayload(input.payload);
+    const manifest = await demo.fetchShlManifest(input.payload);
     const trust = manifest.ok
-      ? verifyShlManifestTrust(manifest.manifest)
+      ? demo.verifyShlManifestTrust(manifest.manifest)
       : undefined;
     return {
       classification,
@@ -207,13 +200,14 @@ export async function createSharePackage(
   input: WalletCreateSharePackageInput,
 ): Promise<BuiltSharePackage> {
   if (usesDemoRuntime(options)) {
-    const cards = await demoWalletCards(options);
+    const demo = await loadDemoRuntime();
+    const cards = await demoWalletCards(options, demo);
     const vpMode = input.mode === "DirectVP" || input.mode === "PurposeVP";
     const defaultShareGatewayUrl =
       options.demoOrigin && vpMode
         ? `${options.demoOrigin.replace(/\/$/, "")}/api/share-gateway`
         : undefined;
-    return buildSharePackage({
+    return demo.buildSharePackage({
       ...input,
       cards,
       origin: input.origin ?? options.demoOrigin,
@@ -238,11 +232,12 @@ export async function resolveSharePackage(
   input: { qrPayload: string },
 ): Promise<WalletSharePackageResolution> {
   if (usesDemoRuntime(options)) {
-    const classification = classifyQrPayload(input.qrPayload);
+    const demo = await loadDemoRuntime();
+    const classification = demo.classifyQrPayload(input.qrPayload);
     const shl =
       classification.kind === "standard_shl" ||
       classification.kind === "certified_shl"
-        ? await fetchShlManifest(input.qrPayload)
+        ? await demo.fetchShlManifest(input.qrPayload)
         : null;
     return {
       classification,
@@ -261,18 +256,19 @@ export async function acceptCredentialOffer(
   options: WalletApiOptions,
   input: WalletAcceptCredentialOfferInput,
 ): Promise<WalletCredentialOfferAcceptance> {
-  const parsed = parseOid4vcCredentialOffer(input.offerPayload);
-  if (!parsed) throw new Error("OID4VCI credential offer ไม่ถูกต้อง");
   if (usesDemoRuntime(options)) {
-    const user = getDemoUser(options.userId);
-    const cards = await demoWalletCards({ ...options, userId: user.id });
+    const demo = await loadDemoRuntime();
+    const parsed = demo.parseOid4vcCredentialOffer(input.offerPayload);
+    if (!parsed) throw new Error("OID4VCI credential offer ไม่ถูกต้อง");
+    const user = demo.getDemoUser(options.userId);
+    const cards = await demoWalletCards({ ...options, userId: user.id }, demo);
     const sourceCard =
       cards.find((card) => String(card.id) === String(input.sourceCardId)) ??
       cards[0];
     if (!sourceCard) {
       throw new Error("Wallet ไม่มี credential ต้นทางสำหรับ demo issuer");
     }
-    return issueDemoOid4vciCredential({
+    return demo.issueDemoOid4vciCredential({
       sourceCard,
       offer: parsed,
       holderDid: user.holderDid,
@@ -307,7 +303,10 @@ export async function superseded(
 export async function history(
   options: WalletApiOptions,
 ): Promise<PresentationHistoryItem[]> {
-  if (usesDemoRuntime(options)) return getDemoHistory(options.userId);
+  if (usesDemoRuntime(options)) {
+    const demo = await loadDemoRuntime();
+    return demo.getDemoHistory(options.userId);
+  }
   return callTrpcProcedure<PresentationHistoryItem[]>(
     options,
     "wallet.history",
@@ -320,19 +319,20 @@ export async function present(
 ): Promise<WalletPresentationResponse> {
   const { cardSnapshot, ...requestInput } = input;
   if (usesDemoRuntime(options)) {
-    const cards = await demoWalletCards(options);
+    const demo = await loadDemoRuntime();
+    const cards = await demoWalletCards(options, demo);
     const card =
       cards.find((item) => item.id === input.cardId) ??
       presentationCardSnapshot(options, cardSnapshot, input.cardId);
     if (!card) throw new Error("Wallet card not found");
-    if (!canPresentCredential(card))
+    if (!demo.canPresentCredential(card))
       throw new Error("This wallet card is not active");
     const signedCredentialPresentation = createSignedCredentialPresentation(
       card,
       input,
     );
     if (signedCredentialPresentation) return signedCredentialPresentation;
-    return createDemoPresentation(
+    return demo.createDemoPresentation(
       card,
       input.selectedFields,
       options.demoOrigin,
@@ -351,11 +351,12 @@ export async function readiness(
   input: { context: ReadinessContext; patientId?: number },
 ): Promise<WalletReadinessResponse> {
   if (usesDemoRuntime(options)) {
-    const user = getDemoUser(options.userId ?? input.patientId);
-    const cards = await demoWalletCards({ ...options, userId: user.id });
+    const demo = await loadDemoRuntime();
+    const user = demo.getDemoUser(options.userId ?? input.patientId);
+    const cards = await demoWalletCards({ ...options, userId: user.id }, demo);
     return {
       patientId: input.patientId ?? user.patientId,
-      readiness: assessLocalReadiness(cards, input.context),
+      readiness: demo.assessLocalReadiness(cards, input.context),
       requests: [],
       previousChecks: [],
     };
@@ -372,10 +373,11 @@ export async function prepareWorkbench(
   input: { context: ReadinessContext; patientId?: number },
 ) {
   if (usesDemoRuntime(options)) {
-    const user = getDemoUser(options.userId ?? input.patientId);
-    return buildPrepareWorkbench(
+    const demo = await loadDemoRuntime();
+    const user = demo.getDemoUser(options.userId ?? input.patientId);
+    return demo.buildPrepareWorkbench(
       input.context,
-      await demoWalletCards({ ...options, userId: user.id }),
+      await demoWalletCards({ ...options, userId: user.id }, demo),
       input.patientId ?? user.patientId,
     );
   }
@@ -383,20 +385,27 @@ export async function prepareWorkbench(
 }
 
 export async function prepareContracts(options: WalletApiOptions) {
-  if (usesDemoRuntime(options)) return buildContractHubCatalog().contracts;
+  if (usesDemoRuntime(options)) {
+    const demo = await loadDemoRuntime();
+    return demo.buildContractHubCatalog().contracts;
+  }
   return callTrpcProcedure(options, "wallet.prepareContracts");
 }
 
 export async function contractHub(
   options: WalletApiOptions,
 ): Promise<ContractHubCatalog> {
-  if (usesDemoRuntime(options)) return buildContractHubCatalog();
+  if (usesDemoRuntime(options)) {
+    const demo = await loadDemoRuntime();
+    return demo.buildContractHubCatalog();
+  }
   return callTrpcProcedure<ContractHubCatalog>(options, "wallet.contractHub");
 }
 
 export async function dataMappingV2(options: WalletApiOptions) {
   if (usesDemoRuntime(options)) {
-    const hub = buildContractHubCatalog();
+    const demo = await loadDemoRuntime();
+    const hub = demo.buildContractHubCatalog();
     return {
       version: hub.version,
       principle:
@@ -439,9 +448,10 @@ export async function buildServiceBundle(
   },
 ): Promise<ServiceBundleEnvelope> {
   if (usesDemoRuntime(options)) {
-    const user = getDemoUser(options.userId ?? input.patientId);
-    const cards = await demoWalletCards({ ...options, userId: user.id });
-    return buildServiceBundleEnvelope({
+    const demo = await loadDemoRuntime();
+    const user = demo.getDemoUser(options.userId ?? input.patientId);
+    const cards = await demoWalletCards({ ...options, userId: user.id }, demo);
+    return demo.buildServiceBundleEnvelope({
       context: input.context,
       cards,
       audience: input.audience,
@@ -468,16 +478,17 @@ export async function deployBundleToWallet(
   },
 ) {
   if (usesDemoRuntime(options)) {
+    const demo = await loadDemoRuntime();
     return {
       deploymentId: `dep_demo_${Date.now().toString(36)}`,
       context: input.context,
-      contractId: buildContractHubCatalog().contracts.find(
+      contractId: demo.buildContractHubCatalog().contracts.find(
         (item) => item.context === input.context,
       )?.contractId,
       targetWalletSelection: {
         mode: input.targetWalletMode ?? "single",
         patientIds: input.targetPatientIds ?? [
-          getDemoUser(options.userId).patientId,
+          demo.getDemoUser(options.userId).patientId,
         ],
         supportsWalkInWallet: true,
         externalWalletHandshake: [
@@ -531,7 +542,7 @@ export async function importForService(
   },
 ): Promise<WalletImportJob> {
   if (usesDemoRuntime(options))
-    return simulateImportForService(
+    return (await loadDemoRuntime()).simulateImportForService(
       input.context,
       input.documentType ?? "patient_summary",
       input.sourceType,
@@ -597,13 +608,14 @@ export async function buildServicePacket(
   },
 ): Promise<ServicePacketResponse> {
   if (usesDemoRuntime(options)) {
-    const user = getDemoUser(options.userId ?? input.patientId);
-    const cards = await demoWalletCards({ ...options, userId: user.id });
-    const readiness = assessLocalReadiness(cards, input.context);
+    const demo = await loadDemoRuntime();
+    const user = demo.getDemoUser(options.userId ?? input.patientId);
+    const cards = await demoWalletCards({ ...options, userId: user.id }, demo);
+    const readiness = demo.assessLocalReadiness(cards, input.context);
     const selectedCardIds = input.selectedCardIds?.length
       ? input.selectedCardIds
       : readiness.selectedCardIds;
-    const packageResult = buildSharePackage({
+    const packageResult = demo.buildSharePackage({
       mode: "PurposeVP",
       context: input.context,
       cards,
@@ -664,18 +676,19 @@ export async function generateCheckinQR(
   },
 ): Promise<CheckinQrResponse> {
   if (usesDemoRuntime(options)) {
-    const user = getDemoUser(options.userId ?? input.patientId);
-    const cards = await demoWalletCards({ ...options, userId: user.id });
+    const demo = await loadDemoRuntime();
+    const user = demo.getDemoUser(options.userId ?? input.patientId);
+    const cards = await demoWalletCards({ ...options, userId: user.id }, demo);
     const selected = input.selectedCardIds?.length
       ? cards.filter((card) => input.selectedCardIds?.includes(card.id))
       : cards;
-    return createTrustCareShlGatewayPublication({
+    return demo.createTrustCareShlGatewayPublication({
       context: input.context,
       ownerUserId: user.id,
       selectedCardIds: input.selectedCardIds,
       cards: selected,
       receiver: input.serviceName ?? "TrustCare service intake",
-      purpose: buildContractHubCatalog().contracts.find(
+      purpose: demo.buildContractHubCatalog().contracts.find(
         (item) => item.context === input.context,
       )?.patientLabel,
       gatewayBaseUrl: options.shlGatewayUrl,
@@ -702,7 +715,8 @@ export async function interoperabilityFixtures(
   options: WalletApiOptions,
 ): Promise<WalletInteroperabilityFixtures> {
   if (usesDemoRuntime(options)) {
-    return buildPortalInteroperabilityFixtures(
+    const demo = await loadDemoRuntime();
+    return demo.buildPortalInteroperabilityFixtures(
       options.userId,
       options.demoOrigin,
     );
@@ -714,12 +728,16 @@ export async function interoperabilityFixtures(
 
 async function demoCardsByCategory(
   options: WalletApiOptions,
+  demo: DemoWalletRuntime,
 ): Promise<WalletCardsByCategory> {
-  return groupCardsByCategory(await demoWalletCards(options));
+  return demo.groupCardsByCategory(await demoWalletCards(options, demo));
 }
 
-async function demoWalletCards(options: WalletApiOptions) {
-  return getDemoWalletCards(options.userId);
+async function demoWalletCards(
+  options: WalletApiOptions,
+  demo: DemoWalletRuntime,
+) {
+  return demo.getDemoWalletCards(options.userId);
 }
 
 function presentationCardSnapshot(
@@ -739,7 +757,7 @@ function presentationCardSnapshot(
 }
 
 function createSignedCredentialPresentation(
-  card: Awaited<ReturnType<typeof demoWalletCards>>[number],
+  card: DemoWalletCard,
   input: WalletPresentationRequest,
 ): WalletPresentationResponse | null {
   const credentialJwt = card.credentialProof?.jwt ?? card.credentialJwt;

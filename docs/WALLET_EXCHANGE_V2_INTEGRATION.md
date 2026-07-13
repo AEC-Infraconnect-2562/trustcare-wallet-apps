@@ -36,6 +36,13 @@ must never reject an otherwise compatible exchange.
 | Delete         | Static Wallet-owned TCC/TCP/TCM DID/JWKS registry and old Portal origin                        | No fallback is retained.                                                                                                               |
 | Delete         | Seed credentials claiming the retired hospital DIDs                                            | Demo-only local credentials use an explicitly non-authoritative demo issuer; live credentials must be reissued by Portal.              |
 
+Synthetic seed cards and payer fixtures are now sandbox-only implementation
+fixtures. They are loaded only through an explicit demo runtime boundary and
+use `did:web:sandbox.invalid` identities; no sandbox fixture is accepted as a
+Portal issuer, and no static SHL manifest or deterministic SHL key is created.
+Sandbox, pilot, and production flows require a Portal-issued credential and a
+Portal Share Gateway URL.
+
 ## Runtime configuration
 
 Set the Portal base URL once per platform:
@@ -158,8 +165,9 @@ The following external state is required before protected live E2E can pass:
 6. Publish a scalable public credential/status policy resolver when available;
    until then Wallet retains cryptographic proof evidence but does not claim a
    fully green verification result.
-7. Publish `endpoints.shlCertifications` in Wallet Exchange discovery and
-   implement DPoP-protected POST/status operations. Approval must return only a
+7. Publish `endpoints.shlCertificationRequests` and
+   `endpoints.shlAssociations` in Wallet Exchange discovery and implement
+   DPoP-protected POST/status operations. Approval must return only a
    W3C VC 2.0 direct-claims Manifest Credential declared as
    `application/vc+jwt`, signed by the selected hospital key in Cosmian KMS.
 8. Provide the Mobile secure holder-key and Wallet Exchange document adapters

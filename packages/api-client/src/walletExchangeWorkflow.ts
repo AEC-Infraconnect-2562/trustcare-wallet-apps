@@ -241,13 +241,7 @@ export class WalletExchangeWorkflow {
   async requestHospitalShlCertification(
     prepared: PreparedHolderAttestedShl,
   ): Promise<ShlCertificationAttempt> {
-    const contracts = await this.contracts();
-    if (!contracts.discovery.endpoints.shlCertifications) {
-      return {
-        status: "portal_unavailable",
-        patientMessage: "รอการรับรองจากโรงพยาบาล",
-      };
-    }
+    await this.contracts();
     const response = await (
       await this.client()
     ).requestShlCertification(
@@ -260,13 +254,7 @@ export class WalletExchangeWorkflow {
   async refreshHospitalShlCertification(
     certificationRequestId: string,
   ): Promise<ShlCertificationAttempt> {
-    const contracts = await this.contracts();
-    if (!contracts.discovery.endpoints.shlCertifications) {
-      return {
-        status: "portal_unavailable",
-        patientMessage: "รอการรับรองจากโรงพยาบาล",
-      };
-    }
+    await this.contracts();
     const response = await (
       await this.client()
     ).getShlCertificationStatus(certificationRequestId);

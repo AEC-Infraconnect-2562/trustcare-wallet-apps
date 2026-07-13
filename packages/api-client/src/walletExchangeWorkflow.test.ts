@@ -188,7 +188,7 @@ describe("WalletExchangeWorkflow", () => {
     expect(result.state.quarantine).toEqual([
       expect.objectContaining({
         credentialId: "credential-unsigned",
-        reason: "unsigned_metadata",
+        reason: "document_missing",
       }),
     ]);
     expect(fake.syncCredentials).toHaveBeenNthCalledWith(1, {
@@ -957,6 +957,8 @@ async function signedCredentialChange(input: {
     "@context": ["https://www.w3.org/ns/credentials/v2"],
     id: `urn:trustcare:credential:${input.credentialId}`,
     type: ["VerifiableCredential", "PatientIdentityCredential"],
+    iss: input.issuer.issuerDid,
+    sub: input.holderDid,
     issuer: { id: input.issuer.issuerDid },
     validFrom: "2026-07-11T11:55:00.000Z",
     validUntil: "2027-07-11T12:00:00.000Z",
@@ -968,8 +970,8 @@ async function signedCredentialChange(input: {
     credentialSubject: {
       id: input.holderDid,
       documentType: "patient_identity",
-      humanDocument: {
-        renderData: {
+      data: {
+        humanDocument: {
           document: {
             titleTh: "บัตรประจำตัวผู้ป่วย",
             titleEn: "PATIENT ID CARD",
@@ -982,10 +984,15 @@ async function signedCredentialChange(input: {
     },
   };
   const jwt = await new SignJWT({
-    vc: credentialData,
+    ...credentialData,
     trustcare_claim_digest: await sha256Canonical(credentialData),
   })
-    .setProtectedHeader({ alg: "ES256", typ: "vc+jwt", kid: input.issuer.kid })
+    .setProtectedHeader({
+      alg: "ES256",
+      typ: "vc+jwt",
+      cty: "vc",
+      kid: input.issuer.kid,
+    })
     .setIssuer(input.issuer.issuerDid)
     .setSubject(input.holderDid)
     .setIssuedAt(Math.floor(now.getTime() / 1000) - 60)
@@ -1019,7 +1026,6 @@ async function signedCredentialChange(input: {
         kid: input.issuer.kid,
         issuer: input.issuer.issuerDid,
       },
-      selectiveDisclosure: null,
       issuerDid: input.issuer.issuerDid,
       issuerHospitalName: "TrustCare Test Hospital",
       holderDid: input.holderDid,
@@ -1065,7 +1071,6 @@ async function unsignedCredentialChange(input: {
       credentialStatus: "active",
       credentialData: null,
       proof: null,
-      selectiveDisclosure: null,
       issuerDid: input.issuer.issuerDid,
       issuerHospitalName: "TrustCare Test Hospital",
       holderDid: input.holderDid,
@@ -1076,7 +1081,7 @@ async function unsignedCredentialChange(input: {
       issuedAt: now.toISOString(),
       expiresAt: null,
       updatedAt: now.toISOString(),
-      deliveryState: "unsigned_metadata",
+      deliveryState: "signed",
       renderer: rendererMetadata(),
     },
   };
@@ -1086,8 +1091,9 @@ function rendererMetadata() {
   return {
     authority: "trustcare_wallet" as const,
     repository: "AEC-Infraconnect-2562/trustcare-wallet-apps" as const,
-    inspectedBaselineCommit: WALLET_RENDERER_REFERENCE_COMMIT,
-    compatibilityGate: "contract_and_schema_version" as const,
+    referenceCommit: WALLET_RENDERER_REFERENCE_COMMIT,
+    referenceCommitRole: "provenance_only" as const,
+    compatibilityGate: "contract_profile_and_schema" as const,
     renderVersion: TRUSTCARE_RENDER_VERSION,
   };
 }
@@ -1149,6 +1155,8 @@ async function contractResponses(): Promise<Map<string, Response>> {
       credentialSyncAck: `${portalOrigin}/api/wallet/v2/credentials/sync/ack`,
       credentialRequests: `${portalOrigin}/api/wallet/v2/credential-requests`,
       documentSubmissions: `${portalOrigin}/api/wallet/v2/submissions`,
+      shlAssociations: `${portalOrigin}/api/wallet/v2/shl-associations/{shlId}`,
+      shlCertificationRequests: `${portalOrigin}/api/wallet/v2/shl-certification-requests`,
       publicContracts: `${portalOrigin}/api/public/wallet-contracts/manifest`,
       shareGateway: `${portalOrigin}/api/share-gateway`,
       issuerJwks: `${portalOrigin}/.well-known/jwks.json`,
@@ -1156,6 +1164,7 @@ async function contractResponses(): Promise<Map<string, Response>> {
     protocols: {
       credentialLifecycle: "Wallet Exchange lifecycle v2",
       presentation: "W3C Verifiable Presentation",
+      certifiedShl: "Portal KMS manifest VC and holder VP association",
       documentMetadata: "FHIR DocumentReference",
       errors: "RFC 9457 problem details",
     },
@@ -1169,8 +1178,10 @@ async function contractResponses(): Promise<Map<string, Response>> {
     },
     renderer: {
       repository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-      inspectedBaselineCommit: WALLET_RENDERER_REFERENCE_COMMIT,
-      compatibilityGate: "contract_and_schema_version",
+      referenceCommit: WALLET_RENDERER_REFERENCE_COMMIT,
+      referenceCommitRole: "provenance_only",
+      compatibilityGate: "contract_profile_and_schema",
+      renderVersion: TRUSTCARE_RENDER_VERSION,
       modelPackage: "@trustcare/wallet-core",
       webPackage: "@trustcare/ui-web",
       rule: "Render human documents from credentialSubject.humanDocument.renderData.",
@@ -1216,12 +1227,13 @@ async function contractResponses(): Promise<Map<string, Response>> {
     renderVersion: TRUSTCARE_RENDER_VERSION,
     authority: "wallet",
     implementationRepository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
-    inspectedBaselineCommit: WALLET_RENDERER_REFERENCE_COMMIT,
-    compatibilityGate: "contract_and_schema_version",
+    referenceCommit: WALLET_RENDERER_REFERENCE_COMMIT,
+    referenceCommitRole: "provenance_only",
+    compatibilityGate: "contract_profile_and_schema",
     modelPackage: "@trustcare/wallet-core",
     webPackage: "@trustcare/ui-web",
     portalUsage: "shared_wallet_renderer_only",
-    primaryPath: "credentialSubject.humanDocument.renderData",
+    primaryPath: "credentialSubject.data.humanDocument",
     requiredBlocks: ["document"],
     optionalBlocks: [],
     legacyReadCompatibility: [],

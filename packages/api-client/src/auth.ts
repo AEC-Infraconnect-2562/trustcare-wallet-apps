@@ -1,4 +1,3 @@
-import { getDemoUser } from "@trustcare/wallet-core";
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
 import { usesDemoRuntime } from "./runtime";
@@ -18,6 +17,7 @@ export async function me(
 ): Promise<TrustCareUser> {
   const runtimeOptions = withLegacyDemoMode(options, demoMode);
   if (usesDemoRuntime(runtimeOptions)) {
+    const { getDemoUser } = await import("./demoRuntime");
     const demoUser = getDemoUser(
       (options as TrustCareClientOptions & { userId?: string | number }).userId,
     );

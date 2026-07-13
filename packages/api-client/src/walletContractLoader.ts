@@ -11,7 +11,7 @@ export {
   PORTAL_WALLET_V2_CONTRACT_VERSION,
   WALLET_EXCHANGE_V2_CONTRACT_VERSION,
 };
-export const TRUSTCARE_RENDER_VERSION = "trustcare-render-v1";
+export const TRUSTCARE_RENDER_VERSION = "trustcare-render-contract-v2";
 export type { WalletExchangeDiscovery } from "@trustcare/contracts";
 
 export type WalletExchangeHealth = {
@@ -43,8 +43,9 @@ export type PortalRenderContract = Record<string, unknown> & {
   renderVersion: string;
   authority: string;
   implementationRepository: string;
-  inspectedBaselineCommit: string;
-  compatibilityGate: "contract_and_schema_version";
+  referenceCommit: string;
+  referenceCommitRole: "provenance_only";
+  compatibilityGate: "contract_profile_and_schema";
   modelPackage: string;
   webPackage: string;
   portalUsage: string;
@@ -364,10 +365,11 @@ function assertRenderContractCompatibility(
     contract.modelPackage !== "@trustcare/wallet-core" ||
     contract.webPackage !== "@trustcare/ui-web" ||
     contract.portalUsage !== "shared_wallet_renderer_only" ||
-    contract.primaryPath !== "credentialSubject.humanDocument.renderData" ||
+    contract.primaryPath !== "credentialSubject.data.humanDocument" ||
     contract.legacyWriteAllowed !== false ||
-    contract.compatibilityGate !== "contract_and_schema_version" ||
-    !/^[a-f0-9]{40}$/.test(contract.inspectedBaselineCommit)
+    contract.compatibilityGate !== "contract_profile_and_schema" ||
+    contract.referenceCommitRole !== "provenance_only" ||
+    !/^[a-f0-9]{40}$/.test(contract.referenceCommit)
   ) {
     incompatible("Portal renderer contract is incompatible.");
   }

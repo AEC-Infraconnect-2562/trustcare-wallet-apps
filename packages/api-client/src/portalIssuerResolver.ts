@@ -303,7 +303,17 @@ function credentialPayload(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   const vc = objectRecord(payload.vc);
-  return Object.keys(vc).length ? vc : payload;
+  if (Object.keys(vc).length) return vc;
+  const {
+    aud: _aud,
+    jti: _jti,
+    iat: _iat,
+    exp: _exp,
+    nbf: _nbf,
+    trustcare_claim_digest: _digest,
+    ...directClaims
+  } = payload;
+  return directClaims;
 }
 
 function credentialLifecycleStatus(

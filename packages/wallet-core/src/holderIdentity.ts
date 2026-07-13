@@ -187,6 +187,7 @@ export function holderJwsProtectedHeader(
       return {
         alg: identity.jwsAlgorithm,
         typ: "vp+jwt",
+        cty: "vp",
         kid: identity.kid,
       };
   }

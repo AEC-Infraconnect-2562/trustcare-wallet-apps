@@ -54,12 +54,12 @@ describe("credential lifecycle policy", () => {
       cardType: "claim_package",
       credentialType: "ClaimSubmissionReceiptCredential",
       sourceSystem: "payer_adapter",
-      issuerDid: "did:web:wallet-demo.invalid:issuer:payer:global-care",
+      issuerDid: "did:web:sandbox.invalid:issuer:payer:global-care",
       credentialProof: {
         type: "DataIntegrityProof",
         format: "vc+json",
         source: "payer_adapter_result",
-        kid: "did:web:wallet-demo.invalid:issuer:payer:global-care#key-1",
+        kid: "did:web:sandbox.invalid:issuer:payer:global-care#key-1",
       },
       credentialData: {
         trustcare: { schemaVersion: "payer-claim-v1" },
@@ -166,8 +166,8 @@ describe("credential lifecycle policy", () => {
     const providerClaim = walletCard({
       cardType: "claim_package",
       credentialType: "ClaimPackageCredential",
-      sourceSystem: "trustcare_demo_issuer",
-      issuerDid: "did:web:wallet-demo.invalid:issuer:tcc",
+      sourceSystem: "trustcare_sandbox_fixture",
+      issuerDid: "did:web:sandbox.invalid:issuer:tcc",
       credentialProof: undefined,
       credentialJwt: undefined,
     });

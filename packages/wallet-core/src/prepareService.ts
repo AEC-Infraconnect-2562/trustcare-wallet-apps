@@ -15,7 +15,7 @@ import type {
   WalletImportJob,
 } from "./models";
 import {
-  createDemoShlKey,
+  createShlContentKey,
   createShlLinkPayload,
   createShlViewerUrl,
 } from "./shl";
@@ -433,7 +433,7 @@ export function createDemoCheckinQr(
     policy.expiresAt ?? new Date(Date.now() + 4 * 60 * 60_000).toISOString();
   const shlUrl = createShlLinkPayload({
     url: manifestUrl,
-    key: createDemoShlKey(shlId),
+    key: createShlContentKey(),
     expiresAt,
     label: `TrustCare ${context} check-in`,
     flag: "L",

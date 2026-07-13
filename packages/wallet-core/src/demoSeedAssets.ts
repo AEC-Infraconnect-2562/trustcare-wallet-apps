@@ -7,16 +7,17 @@ import walletExchangeConfig from "../../../config/wallet-exchange-v2.json";
  * DID namespace. Locally generated demo credentials must never impersonate a
  * hospital issuer whose private keys are owned by Portal/KMS.
  */
-export const NON_AUTHORITATIVE_DEMO_ISSUER_DIDS = {
-  tcc: "did:web:wallet-demo.invalid:issuer:tcc",
-  tcp: "did:web:wallet-demo.invalid:issuer:tcp",
-  tcm: "did:web:wallet-demo.invalid:issuer:tcm",
+/** Synthetic identities are sandbox-only and never represent Portal issuers. */
+export const SANDBOX_ISSUER_DIDS = {
+  tcc: "did:web:sandbox.invalid:issuer:tcc",
+  tcp: "did:web:sandbox.invalid:issuer:tcp",
+  tcm: "did:web:sandbox.invalid:issuer:tcm",
 } as const;
 
-export const NON_AUTHORITATIVE_DEMO_PAYER_ISSUER_DIDS = {
-  nhso: "did:web:wallet-demo.invalid:issuer:payer:nhso",
-  globalCare: "did:web:wallet-demo.invalid:issuer:payer:global-care",
-  internationalTpa: "did:web:wallet-demo.invalid:issuer:payer:international-tpa",
+export const SANDBOX_PAYER_ISSUER_DIDS = {
+  nhso: "did:web:sandbox.invalid:issuer:payer:nhso",
+  globalCare: "did:web:sandbox.invalid:issuer:payer:global-care",
+  internationalTpa: "did:web:sandbox.invalid:issuer:payer:international-tpa",
 } as const;
 
 /** Public sandbox assets only; this is not an authentication or API fallback. */

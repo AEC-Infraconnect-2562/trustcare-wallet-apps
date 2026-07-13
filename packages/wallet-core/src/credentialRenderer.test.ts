@@ -299,7 +299,7 @@ describe("shared credential renderer", () => {
         ...credentialData,
         credentialSubject: {
           ...credentialSubject,
-          humanDocument: {
+          data: { humanDocument: {
             renderData: {
               patient: { fullNameEn: "Canonical Patient" },
               hospital: { nameEn: "Canonical Hospital" },
@@ -314,7 +314,7 @@ describe("shared credential renderer", () => {
                 currency: "THB",
               },
             },
-          },
+          } },
         },
       },
     };
@@ -405,7 +405,7 @@ describe("shared credential renderer", () => {
       (item) => item.cardType === "medical_certificate",
     )!;
     const credentialData = structuredClone(source.credentialData!) as any;
-    credentialData.credentialSubject.humanDocument.layout =
+    credentialData.credentialSubject.data.humanDocument.layout =
       "photo_identity_card";
 
     expect(
@@ -517,7 +517,7 @@ describe("shared credential renderer", () => {
       const paper = credentialRenderModelFromCard(card).paper;
 
       expect(card.issuerDid, cardType).toMatch(
-        /^did:web:wallet-demo\.invalid:issuer:(?:tcc|tcp|tcm)$/,
+        /^did:web:sandbox\.invalid:issuer:(?:tcc|tcp|tcm)$/,
       );
       expect(paper.issuerRole, cardType).toBe("healthcare_provider");
       expect(paper.letterhead.did, cardType).toBe(card.issuerDid);
@@ -530,7 +530,8 @@ describe("shared credential renderer", () => {
     )!;
     const credentialData = structuredClone(source.credentialData!);
     const subject = credentialData.credentialSubject as Record<string, unknown>;
-    const humanDocument = subject.humanDocument as Record<string, unknown>;
+    const humanDocument = (subject.data as Record<string, unknown>)
+      .humanDocument as Record<string, unknown>;
     humanDocument.renderData = {
       hospital: {
         nameTh: "โรงพยาบาลที่ให้บริการ",

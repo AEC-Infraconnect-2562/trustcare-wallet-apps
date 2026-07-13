@@ -4,9 +4,9 @@ import {
 } from "./validation";
 
 export const WALLET_EXCHANGE_V2_CONTRACT_VERSION =
-  "2026.07.wallet-exchange.v2" as const;
+  "2026.07.wallet-exchange.v2.1.strict-w3c" as const;
 export const PORTAL_WALLET_V2_CONTRACT_VERSION =
-  "2026.07.portal-wallet.v2" as const;
+  "2026.07.portal-wallet.v4" as const;
 /** Inspected Wallet baseline for provenance only; never a compatibility gate. */
 export const WALLET_RENDERER_REFERENCE_COMMIT =
   "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f" as const;
@@ -57,11 +57,13 @@ export type WalletExchangeDiscovery = {
     publicContracts: string;
     shareGateway: string;
     issuerJwks: string;
-    shlCertifications?: string;
+    shlAssociations: string;
+    shlCertificationRequests: string;
   };
   protocols: {
     credentialLifecycle: string;
     presentation: string;
+    certifiedShl: string;
     documentMetadata: string;
     errors: "RFC 9457 problem details";
   };
@@ -75,8 +77,10 @@ export type WalletExchangeDiscovery = {
   };
   renderer: {
     repository: "AEC-Infraconnect-2562/trustcare-wallet-apps";
-    inspectedBaselineCommit: string;
-    compatibilityGate: "contract_and_schema_version";
+    referenceCommit: string;
+    referenceCommitRole: "provenance_only";
+    compatibilityGate: "contract_profile_and_schema";
+    renderVersion: string;
     modelPackage: "@trustcare/wallet-core";
     webPackage: "@trustcare/ui-web";
     rule: string;
@@ -144,11 +148,6 @@ export type WalletCredentialProof = {
   issuer: string | null;
 };
 
-export type WalletSelectiveDisclosure = {
-  sdJwtFull: string;
-  disclosureMap: Record<string, unknown>;
-};
-
 export type WalletSyncedCredential = {
   credentialId: string;
   cardType: string;
@@ -159,7 +158,6 @@ export type WalletSyncedCredential = {
   credentialStatus: "active";
   credentialData: Record<string, unknown> | null;
   proof: WalletCredentialProof | null;
-  selectiveDisclosure: WalletSelectiveDisclosure | null;
   issuerDid: string | null;
   issuerHospitalName: string | null;
   holderDid: string;
@@ -170,12 +168,13 @@ export type WalletSyncedCredential = {
   issuedAt: string;
   expiresAt: string | null;
   updatedAt: string;
-  deliveryState: "signed" | "unsigned_metadata";
+  deliveryState: "signed";
   renderer: {
     authority: "trustcare_wallet";
     repository: "AEC-Infraconnect-2562/trustcare-wallet-apps";
-    inspectedBaselineCommit: string;
-    compatibilityGate: "contract_and_schema_version";
+    referenceCommit: string;
+    referenceCommitRole: "provenance_only";
+    compatibilityGate: "contract_profile_and_schema";
     renderVersion: string;
   };
 };
@@ -666,14 +665,11 @@ function validateDiscoveryEndpoints(value: unknown, issues: TrustCareValidationI
   const path = "$.endpoints";
   const object = nestedObject(value, path, issues);
   if (!object) return;
-  const requiredKeys = ["credentialSync", "credentialSyncAck", "credentialRequests", "documentSubmissions", "publicContracts", "shareGateway", "issuerJwks"];
-  exactKeys(object, [...requiredKeys, "shlCertifications"], path, issues);
+  const requiredKeys = ["credentialSync", "credentialSyncAck", "credentialRequests", "documentSubmissions", "shlAssociations", "shlCertificationRequests", "publicContracts", "shareGateway", "issuerJwks"];
+  exactKeys(object, requiredKeys, path, issues);
   requiredKeys.forEach((key) =>
     absoluteUrlString(object, key, path, issues),
   );
-  if (object.shlCertifications !== undefined) {
-    absoluteUrlString(object, "shlCertifications", path, issues);
-  }
   if (typeof object.issuerJwks === "string") {
     try {
       if (new URL(object.issuerJwks).pathname !== "/.well-known/jwks.json") {
@@ -705,7 +701,8 @@ function validateDiscoveryOriginCoherence(
     endpoints?.publicContracts,
     endpoints?.shareGateway,
     endpoints?.issuerJwks,
-    endpoints?.shlCertifications,
+    endpoints?.shlAssociations,
+    endpoints?.shlCertificationRequests,
   ].filter((value): value is string => typeof value === "string");
   const origins = new Set<string>();
   for (const value of urls) {
@@ -728,9 +725,10 @@ function validateDiscoveryProtocols(value: unknown, issues: TrustCareValidationI
   const path = "$.protocols";
   const object = nestedObject(value, path, issues);
   if (!object) return;
-  exactKeys(object, ["credentialLifecycle", "presentation", "documentMetadata", "errors"], path, issues);
+  exactKeys(object, ["credentialLifecycle", "presentation", "certifiedShl", "documentMetadata", "errors"], path, issues);
   nonEmptyString(object, "credentialLifecycle", path, issues, 1, 300);
   nonEmptyString(object, "presentation", path, issues, 1, 300);
+  nonEmptyString(object, "certifiedShl", path, issues, 1, 300);
   nonEmptyString(object, "documentMetadata", path, issues, 1, 300);
   literalString(object, "errors", "RFC 9457 problem details", path, issues);
 }
@@ -752,10 +750,12 @@ function validateDiscoveryRenderer(value: unknown, issues: TrustCareValidationIs
   const path = "$.renderer";
   const object = nestedObject(value, path, issues);
   if (!object) return;
-  exactKeys(object, ["repository", "inspectedBaselineCommit", "compatibilityGate", "modelPackage", "webPackage", "rule"], path, issues);
+  exactKeys(object, ["repository", "referenceCommit", "referenceCommitRole", "compatibilityGate", "renderVersion", "modelPackage", "webPackage", "rule"], path, issues);
   literalString(object, "repository", "AEC-Infraconnect-2562/trustcare-wallet-apps", path, issues);
-  gitCommitString(object, "inspectedBaselineCommit", path, issues);
-  literalString(object, "compatibilityGate", "contract_and_schema_version", path, issues);
+  gitCommitString(object, "referenceCommit", path, issues);
+  literalString(object, "referenceCommitRole", "provenance_only", path, issues);
+  literalString(object, "compatibilityGate", "contract_profile_and_schema", path, issues);
+  nonEmptyString(object, "renderVersion", path, issues, 1, 100);
   literalString(object, "modelPackage", "@trustcare/wallet-core", path, issues);
   literalString(object, "webPackage", "@trustcare/ui-web", path, issues);
   nonEmptyString(object, "rule", path, issues, 1, 500);
@@ -802,7 +802,7 @@ function validateSyncChange(value: unknown, path: string, issues: TrustCareValid
 function validateSyncedCredential(value: unknown, path: string, issues: TrustCareValidationIssue[]) {
   const object = nestedObject(value, path, issues);
   if (!object) return;
-  exactKeys(object, ["credentialId", "cardType", "credentialType", "displayName", "displayNameEn", "documentCategory", "credentialStatus", "credentialData", "proof", "selectiveDisclosure", "issuerDid", "issuerHospitalName", "holderDid", "sourceSystem", "lineageKey", "version", "contentHash", "issuedAt", "expiresAt", "updatedAt", "deliveryState", "renderer"], path, issues);
+  exactKeys(object, ["credentialId", "cardType", "credentialType", "displayName", "displayNameEn", "documentCategory", "credentialStatus", "credentialData", "proof", "issuerDid", "issuerHospitalName", "holderDid", "sourceSystem", "lineageKey", "version", "contentHash", "issuedAt", "expiresAt", "updatedAt", "deliveryState", "renderer"], path, issues);
   nonEmptyString(object, "credentialId", path, issues, 1, 255);
   nonEmptyString(object, "cardType", path, issues, 1, 100);
   nonEmptyString(object, "credentialType", path, issues, 1, 100);
@@ -812,7 +812,6 @@ function validateSyncedCredential(value: unknown, path: string, issues: TrustCar
   literalString(object, "credentialStatus", "active", path, issues);
   nullableObject(object.credentialData, `${path}.credentialData`, issues);
   validateCredentialProof(object.proof, `${path}.proof`, issues);
-  validateSelectiveDisclosure(object.selectiveDisclosure, `${path}.selectiveDisclosure`, issues);
   nullableString(object, "issuerDid", path, issues, 0, 700);
   nullableString(object, "issuerHospitalName", path, issues, 0, 500);
   didKeyString(object, "holderDid", path, issues, 700);
@@ -823,18 +822,18 @@ function validateSyncedCredential(value: unknown, path: string, issues: TrustCar
   isoDateString(object, "issuedAt", path, issues);
   nullableIsoDateString(object, "expiresAt", path, issues);
   isoDateString(object, "updatedAt", path, issues);
-  enumString(object, "deliveryState", ["signed", "unsigned_metadata"], path, issues);
+  literalString(object, "deliveryState", "signed", path, issues);
   const renderer = nestedObject(object.renderer, `${path}.renderer`, issues);
   if (renderer) {
-    exactKeys(renderer, ["authority", "repository", "inspectedBaselineCommit", "compatibilityGate", "renderVersion"], `${path}.renderer`, issues);
+    exactKeys(renderer, ["authority", "repository", "referenceCommit", "referenceCommitRole", "compatibilityGate", "renderVersion"], `${path}.renderer`, issues);
     literalString(renderer, "authority", "trustcare_wallet", `${path}.renderer`, issues);
     literalString(renderer, "repository", "AEC-Infraconnect-2562/trustcare-wallet-apps", `${path}.renderer`, issues);
-    gitCommitString(renderer, "inspectedBaselineCommit", `${path}.renderer`, issues);
-    literalString(renderer, "compatibilityGate", "contract_and_schema_version", `${path}.renderer`, issues);
+    gitCommitString(renderer, "referenceCommit", `${path}.renderer`, issues);
+    literalString(renderer, "referenceCommitRole", "provenance_only", `${path}.renderer`, issues);
+    literalString(renderer, "compatibilityGate", "contract_profile_and_schema", `${path}.renderer`, issues);
     nonEmptyString(renderer, "renderVersion", `${path}.renderer`, issues, 1, 100);
   }
-  if (object.deliveryState === "signed" && object.proof === null) issue(issues, `${path}.proof`, "is required when deliveryState is signed");
-  if (object.deliveryState === "unsigned_metadata" && object.proof !== null) issue(issues, `${path}.proof`, "must be null for unsigned metadata");
+  if (object.proof === null) issue(issues, `${path}.proof`, "is required for a strict signed VC delivery");
 }
 
 function validateCredentialProof(value: unknown, path: string, issues: TrustCareValidationIssue[]) {
@@ -847,15 +846,6 @@ function validateCredentialProof(value: unknown, path: string, issues: TrustCare
   nullableString(object, "alg", path, issues, 0, 100);
   nullableString(object, "kid", path, issues, 0, 1_000);
   nullableString(object, "issuer", path, issues, 0, 700);
-}
-
-function validateSelectiveDisclosure(value: unknown, path: string, issues: TrustCareValidationIssue[]) {
-  if (value === null) return;
-  const object = nestedObject(value, path, issues);
-  if (!object) return;
-  exactKeys(object, ["sdJwtFull", "disclosureMap"], path, issues);
-  nonEmptyString(object, "sdJwtFull", path, issues, 20, 1_500_000);
-  if (!recordOrNull(object.disclosureMap)) issue(issues, `${path}.disclosureMap`, "must be an object");
 }
 
 function validateCredentialRequestItem(value: unknown, path: string, issues: TrustCareValidationIssue[]) {

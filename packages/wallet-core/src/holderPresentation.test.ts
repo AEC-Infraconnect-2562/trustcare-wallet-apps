@@ -41,6 +41,7 @@ describe("createHolderSignedDirectVp", () => {
       expect(verified.protectedHeader).toEqual({
         alg: identity.jwsAlgorithm,
         typ: "vp+jwt",
+        cty: "vp",
         kid: identity.kid,
       });
       expect(payload).toEqual(result.payload);
@@ -48,10 +49,12 @@ describe("createHolderSignedDirectVp", () => {
         iss: identity.did,
         sub: identity.did,
         aud: AUDIENCE,
-        iat: 1_783_764_000,
-        exp: 1_783_764_600,
         vp: {
-          type: ["VerifiablePresentation"],
+          "@context": [
+            "https://www.w3.org/ns/credentials/v2",
+            "https://trustcare-hospital-network-production.up.railway.app/contexts/trustcare-credentials-v1.jsonld",
+          ],
+          type: ["VerifiablePresentation", "TrustcarePatientPresentation"],
           holder: identity.did,
           purpose: "Prepare documents for follow-up treatment",
           trustcare: {
@@ -59,8 +62,9 @@ describe("createHolderSignedDirectVp", () => {
             consentRef: "urn:trustcare:consent:patient:follow-up:2026-07-11",
             recipient: RECIPIENT,
             audience: AUDIENCE,
+            issuedAt: NOW.toISOString(),
+            expiresAt: "2026-07-11T10:10:00.000Z",
           },
-          verifiableCredential: [credentialJwt],
         },
       });
       expect(payload.jti).toMatch(
@@ -70,7 +74,7 @@ describe("createHolderSignedDirectVp", () => {
         mode: "direct_vp",
         vpJwt: result.vpJwt,
       });
-      expect(result.payload.vp.verifiableCredential[0]).toBe(credentialJwt);
+      expect(result.payload.vp.verifiableCredential).toEqual([credentialJwt]);
     },
   );
 
@@ -230,7 +234,7 @@ describe("createHolderSignedDirectVp", () => {
         audience: "http://localhost:3000/verifier",
       }),
     ).resolves.toMatchObject({
-      payload: { aud: "http://localhost:3000/verifier" },
+      payload: { vp: { trustcare: { audience: "http://localhost:3000/verifier" } } },
     });
     await expect(
       createHolderSignedDirectVp({
@@ -249,21 +253,32 @@ async function issuerCredentialJwt(
     "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc";
   const keyPair = await generateKeyPair("ES256");
   return new SignJWT({
+    "@context": [
+      "https://www.w3.org/ns/credentials/v2",
+      "https://trustcare-hospital-network-production.up.railway.app/contexts/trustcare-credentials-v1.jsonld",
+    ],
     ...additions,
-    vc: {
-      type: ["VerifiableCredential", "MedicalCertificateCredential"],
-      issuer: issuerDid,
-      credentialSubject: { id: holderDid },
-    },
+    id: "urn:uuid:credential-test-001",
+    type: ["VerifiableCredential", "MedicalCertificateCredential"],
+    issuer: issuerDid,
+    credentialSubject: { id: holderDid, data: {} },
+    validFrom: NOW.toISOString(),
+    validUntil: "2026-07-11T11:00:00.000Z",
+    credentialStatus: [{
+      id: "https://trustcare-hospital-network-production.up.railway.app/status/1#0",
+      type: "BitstringStatusListEntry",
+      statusPurpose: "revocation",
+      statusListIndex: "0",
+      statusListCredential: "https://trustcare-hospital-network-production.up.railway.app/status/1",
+    }],
   })
+    .setIssuer(issuerDid)
+    .setSubject(holderDid)
     .setProtectedHeader({
       alg: "ES256",
       typ: "vc+jwt",
       kid: `${issuerDid}#vc-signing-test`,
+      cty: "vc",
     })
-    .setIssuer(issuerDid)
-    .setSubject(holderDid)
-    .setIssuedAt(Math.floor(NOW.getTime() / 1_000))
-    .setExpirationTime(Math.floor(NOW.getTime() / 1_000) + 3_600)
     .sign(keyPair.privateKey);
 }

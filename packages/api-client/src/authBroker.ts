@@ -1,4 +1,3 @@
-import { getDemoUser } from "@trustcare/wallet-core";
 import type { TrustCareClientOptions } from "./trpc";
 import { callTrpcProcedure } from "./trpc";
 import { usesDemoRuntime } from "./runtime";
@@ -127,6 +126,7 @@ export async function exchangeCallback(
   input: AuthBrokerExchangeInput,
 ): Promise<AuthBrokerTokenSet> {
   if (usesDemoRuntime(options)) {
+    const { getDemoUser } = await import("./demoRuntime");
     const user = getDemoUser(options.userId);
     return {
       subjectId: user.holderDid,

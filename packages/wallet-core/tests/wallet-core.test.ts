@@ -5,7 +5,7 @@ import {
   buildContractHubCatalog,
   buildPortalInteroperabilityFixtures,
   createDemoCheckinQr,
-  createDemoShlKey,
+  createShlContentKey,
   createShlLinkPayload,
   createShlViewerUrl,
   createTrustCareShlGatewayPublication,
@@ -42,7 +42,6 @@ import {
   parseShlLink,
   parseTrustCareQr,
   fetchShlManifest,
-  verifyShlManifestTrust,
   getDemoShlPackages,
   sortIdentityFirst,
   getDemoUser,
@@ -263,7 +262,7 @@ describe("wallet-core", () => {
     const expiresAt = "2026-07-07T08:00:00.000Z";
     const shl = createShlLinkPayload({
       url: "https://example.org/manifest",
-      key: createDemoShlKey("unit-test"),
+      key: createShlContentKey(),
       label: "Unit test SHL",
       flag: "L",
       passcodeRequired: true,
@@ -549,7 +548,7 @@ describe("wallet-core", () => {
     expect(normalizeDocumentType("opd_readiness_bundle")).toBeNull();
   });
 
-  it("keeps demo SHL seed packages resolvable without placeholder trust proof", async () => {
+  it("rejects static demo SHL seed packages without a Portal gateway", async () => {
     const shlPackages = walletDemoUsers.flatMap((user) =>
       getDemoShlPackages(user.id),
     );
@@ -565,8 +564,8 @@ describe("wallet-core", () => {
       expect(qrPayload, String(shl.id)).toBeTruthy();
       expect(parseShlLink(qrPayload!)?.kind, String(shl.id)).toBe("shl");
       const fetched = await fetchShlManifest(qrPayload!);
-      expect(fetched.ok, String(shl.id)).toBe(true);
-      expect(fetched.fileCount, String(shl.id)).toBeGreaterThan(0);
+      expect(fetched.ok, String(shl.id)).toBe(false);
+      expect(fetched.errors.length, String(shl.id)).toBeGreaterThan(0);
       if (
         (shl as any).manifest?.trustcare?.trustLayerStatus === "standard_shl"
       ) {
@@ -576,7 +575,7 @@ describe("wallet-core", () => {
     }
   });
 
-  it("builds exactly one share package and resolves static demo SHL manifests", async () => {
+  it("builds exactly one share package and requires an explicit Portal SHL gateway", async () => {
     const cards = getDemoWalletCards("demo-patient-complete-001").slice(0, 4);
     const vp = buildSharePackage({
       mode: "PurposeVP",
@@ -606,6 +605,7 @@ describe("wallet-core", () => {
       selectedCardIds: cards.map((card) => card.id),
       recipient: "TrustCare referral verifier",
       origin: "https://wallet.example",
+      gatewayBaseUrl: "https://portal.example/api/shl",
       shlPolicy: { maxAccessCount: 3 },
     });
     expect(shl.mode).toBe("CertifiedSHLManifestPackage");
@@ -615,35 +615,10 @@ describe("wallet-core", () => {
       await expect(QRCode.toDataURL(shl.shl.qrPayload)).resolves.toContain(
         "data:image/png;base64,",
       );
-      const fetched = await fetchShlManifest(shl.shl.qrPayload);
-      expect(fetched.ok).toBe(true);
-      expect(fetched.fileCount).toBe(cards.length);
-      expect((fetched.manifest?.trustcare as any)?.trustLayerStatus).toBe(
-        "pending_hospital_certification",
-      );
-      const trust = verifyShlManifestTrust(fetched.manifest);
-      expect(trust.status).toBe("trustcare_pending");
-      expect(trust.verified).toBe(false);
-      const cryptographicallyVerified = verifyShlManifestTrust(
-        fetched.manifest,
-        new Date(),
-        {
-          manifestCredentialSignatureVerified: true,
-          holderPresentationSignatureVerified: true,
-          issuerTrusted: true,
-          credentialStatusValid: true,
-          subjectBindingVerified: true,
-          manifestHashVerified: true,
-          fileHashesVerified: true,
-          purposeVerified: true,
-          audienceVerified: true,
-          expiryVerified: true,
-          policyVerified: true,
-          verifiedAt: new Date().toISOString(),
-        },
-      );
-      expect(cryptographicallyVerified.status).toBe("trustcare_pending");
-      expect(cryptographicallyVerified.verified).toBe(false);
+      expect(shl.shl.gatewayMode).toBe("portal_backend");
+      expect(shl.shl.gatewayBaseUrl).toBe("https://portal.example/api/shl");
+      expect(shl.shl.manifestUrl).toContain("/manifests/");
+      expect(shl.shl.trustLayerStatus).toBe("pending_hospital_certification");
     }
   });
 

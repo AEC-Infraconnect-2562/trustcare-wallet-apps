@@ -7,16 +7,14 @@ import type {
 } from "./models";
 import { readinessContextLabels } from "./readiness";
 import {
-  createDemoShlKey,
+  createShlContentKey,
   createShlLinkPayload,
   createShlViewerUrl,
   evaluateShlAccessPolicy,
 } from "./shl";
-import { createDemoManifestUrl, hashJson } from "./demoResolvers";
 
-export type TrustCareShlGatewayMode =
-  "portal_backend" | "static_demo_gateway" | "local_preview";
-export type TrustCareShlStorageProvider = "s3" | "static" | "local";
+export type TrustCareShlGatewayMode = "portal_backend";
+export type TrustCareShlStorageProvider = "s3";
 export type TrustCareShlAccessCodeDelivery =
   "separate_channel" | "not_required" | "sms" | "in_person" | "secure_message";
 export type TrustCareShlTrustLayerStatus =
@@ -175,6 +173,21 @@ export function evaluateTrustCareShlGatewayAccess(
 export function createTrustCareShlGatewayPublication(
   input: TrustCareShlGatewayCreateRequest,
 ): TrustCareShlGatewayPublication {
+  if (!input.gatewayBaseUrl?.trim()) {
+    throw new Error(
+      "A Portal Share Gateway URL is required; unsigned or static SHL fallback is disabled.",
+    );
+  }
+  if (input.mode && input.mode !== "portal_backend") {
+    throw new Error(
+      "Only the Portal Share Gateway is supported for SHL publication.",
+    );
+  }
+  if (input.storageProvider && input.storageProvider !== "s3") {
+    throw new Error(
+      "Only the Portal-managed S3 SHL storage provider is supported.",
+    );
+  }
   const createdAt = new Date().toISOString();
   const label = readinessContextLabels[input.context]?.th ?? input.context;
   const purpose = input.purpose ?? label;
@@ -191,26 +204,13 @@ export function createTrustCareShlGatewayPublication(
     );
   }
   const publicationId = buildPublicationId(input, selectedCards);
-  const gatewayMode =
-    input.mode ??
-    (input.gatewayBaseUrl ? "portal_backend" : "static_demo_gateway");
+  const gatewayMode: TrustCareShlGatewayMode = "portal_backend";
   const storageProvider =
     input.storageProvider ??
-    (gatewayMode === "portal_backend"
-      ? "s3"
-      : gatewayMode === "static_demo_gateway"
-        ? "static"
-        : "local");
-  const gatewayBaseUrl = normalizeBaseUrl(
-    input.gatewayBaseUrl ??
-      (input.origin
-        ? `${input.origin.replace(/\/$/, "")}/shl-gateway`
-        : "https://trustcare.example.com/shl-gateway"),
-  );
+    "s3";
+  const gatewayBaseUrl = normalizeBaseUrl(input.gatewayBaseUrl);
   const viewerBaseUrl = normalizeBaseUrl(
-    input.viewerBaseUrl ??
-      input.origin ??
-      "https://trustcare.example.com/wallet",
+    input.viewerBaseUrl ?? input.origin ?? gatewayBaseUrl,
   );
   const expiresAt =
     input.policy?.expiresAt ??
@@ -246,17 +246,10 @@ export function createTrustCareShlGatewayPublication(
     requestHospitalCertification: Boolean(input.requestHospitalCertification),
     serviceBundle: input.serviceBundle ?? null,
   });
-  const manifestUrl =
-    gatewayMode === "static_demo_gateway"
-      ? createDemoManifestUrl(
-          viewerBaseUrl,
-          publicationId,
-          manifest as unknown as Record<string, unknown>,
-        )
-      : initialManifestUrl;
+  const manifestUrl = initialManifestUrl;
   const canonicalShlUrl = createShlLinkPayload({
     url: manifestUrl,
-    key: createDemoShlKey(publicationId),
+    key: createShlContentKey(),
     label: purpose,
     flag: "L",
     passcodeRequired,
@@ -378,32 +371,6 @@ function buildManifestFile(
   index: number,
 ): Record<string, unknown> {
   const fileId = `${input.publicationId}:file:${index + 1}:${card.cardType}`;
-  const embeddedResource = {
-    resourceType: "Bundle",
-    type: "document",
-    id: fileId,
-    timestamp: input.createdAt,
-    entry: [
-      {
-        fullUrl: `urn:trustcare:credential:${card.credentialId}`,
-        resource: {
-          resourceType: "DocumentReference",
-          id: String(card.credentialId),
-          status: "current",
-          type: { text: card.displayName },
-          date: card.issuedAt ?? card.createdAt,
-          content: [
-            {
-              attachment: {
-                contentType: "application/vc+json",
-                title: card.displayName,
-              },
-            },
-          ],
-        },
-      },
-    ],
-  };
   return {
     id: fileId,
     contentType: "application/fhir+json",
@@ -412,11 +379,7 @@ function buildManifestFile(
       cardType: card.cardType,
       fileId,
     }),
-    ...(input.storageProvider === "static"
-      ? { embedded: embeddedResource }
-      : {
-          location: `${input.gatewayBaseUrl}/files/${input.publicationId}/${encodeURIComponent(String(card.id))}.jwe`,
-        }),
+    location: `${input.gatewayBaseUrl}/files/${input.publicationId}/${encodeURIComponent(String(card.id))}.jwe`,
     title: card.displayName,
     documentType: card.cardType,
     credentialId: card.credentialId,
@@ -450,10 +413,7 @@ function buildManifestDocument(
     },
     objectLinks: {
       manifest: input.manifestUrl,
-      shlFile:
-        input.storageProvider === "static"
-          ? undefined
-          : `${input.gatewayBaseUrl}/files/${input.publicationId}/${encodeURIComponent(String(card.id))}.jwe`,
+      shlFile: `${input.gatewayBaseUrl}/files/${input.publicationId}/${encodeURIComponent(String(card.id))}.jwe`,
       fhirDocumentReference: `DocumentReference/${credentialId}`,
       fhirBundle: `Bundle/${input.publicationId}`,
     },
@@ -496,14 +456,10 @@ function buildGatewayWarnings(
   passcodeRequired: boolean,
 ): string[] {
   const warnings: string[] = [];
-  if (mode !== "portal_backend") {
+  void mode;
+  if (passcodeRequired) {
     warnings.push(
-      "Demo gateway นี้สร้าง contract และ payload ให้ทดสอบได้ แต่ production ต้องให้ TrustCare Portal Backend publish manifest/files และ enforce access policy.",
-    );
-  }
-  if (mode === "static_demo_gateway" && passcodeRequired) {
-    warnings.push(
-      "Static demo manifest ไม่สามารถตรวจ passcode/access count ได้จริง ต้องใช้ Portal Backend endpoint แบบ POST ก่อนเปิดใช้กับข้อมูลจริง.",
+      "Passcode ต้องส่งผ่านช่องทางแยก และ Portal Share Gateway เป็นผู้บังคับใช้นโยบายการเข้าถึง.",
     );
   }
   return warnings;
@@ -539,4 +495,8 @@ function stableHash(value: string): string {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16).padStart(8, "0").repeat(8).slice(0, 64);
+}
+
+function hashJson(value: unknown): string {
+  return `sha256:${stableHash(JSON.stringify(value))}`;
 }

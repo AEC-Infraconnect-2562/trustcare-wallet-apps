@@ -6,14 +6,14 @@ import {
 } from "./portalRenderContract";
 
 describe("portal render contract", () => {
-  it("normalizes humanDocument.renderData into the shared renderer subject", () => {
+  it("normalizes data.humanDocument into the shared renderer subject", () => {
     const credential = {
       issuer: { id: "did:web:portal.example:hospital:tcc" },
     };
     const subject = {
       id: "Patient/demo-patient-001",
       document: { id: "legacy-document-id", status: "expired" },
-      humanDocument: {
+      data: { humanDocument: {
         renderVersion: "trustcare-render-v1",
         renderData: {
           hospital: {
@@ -32,7 +32,7 @@ describe("portal render contract", () => {
             status: "active",
           },
         },
-      },
+      } },
     };
 
     const normalized = normalizePortalRenderSubject(subject, credential);
@@ -52,12 +52,12 @@ describe("portal render contract", () => {
     });
   });
 
-  it("uses renderData document payload before legacy subject aliases", () => {
+  it("uses the canonical renderData document payload", () => {
     const subject = {
       quotation: {
         packageName: "legacy package",
       },
-      humanDocument: {
+      data: { humanDocument: {
         renderData: {
           document: {
             status: "active",
@@ -67,7 +67,7 @@ describe("portal render contract", () => {
             estimatedTotal: 450000,
           },
         },
-      },
+      } },
     };
 
     expect(extractPortalRenderData(subject)).toMatchObject({

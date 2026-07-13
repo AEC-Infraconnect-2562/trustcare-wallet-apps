@@ -1,5 +1,6 @@
 import {
   WALLET_EXCHANGE_V2_HOSPITAL_CODES,
+  WALLET_EXCHANGE_V2_CONTRACT_VERSION,
   type WalletExchangeHospitalCode,
   type WalletSyncAck,
   type WalletSyncAckOutcome,
@@ -830,13 +831,6 @@ function validateUpsert(
       detail: "Wallet Exchange must not trust a Portal patientId.",
     };
   }
-  if (credential.deliveryState === "unsigned_metadata") {
-    return {
-      reason: "unsigned_metadata",
-      detail:
-        "Portal delivered metadata without an issuer-signed credential envelope.",
-    };
-  }
   if (!change.document) {
     return {
       reason: "document_missing",
@@ -1072,7 +1066,7 @@ function assertSyncPage(
   if (page.schema !== "trustcare.wallet.sync.v2") {
     throw new Error(`Unsupported Wallet Exchange sync schema: ${page.schema}.`);
   }
-  if (page.contractVersion !== "2026.07.wallet-exchange.v2") {
+  if (page.contractVersion !== WALLET_EXCHANGE_V2_CONTRACT_VERSION) {
     throw new Error(
       `Unsupported Wallet Exchange contract: ${page.contractVersion}.`,
     );
