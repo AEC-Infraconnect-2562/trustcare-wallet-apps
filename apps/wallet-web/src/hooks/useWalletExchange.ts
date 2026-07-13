@@ -2,6 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import {
   WalletExchangeProblemError,
 } from "@trustcare/api-client/walletExchangeV2";
+import {
+  WalletProvisioningProblemError,
+  createWalletProvisioningClient,
+  type WalletProvisioningStatus,
+} from "@trustcare/api-client/walletProvisioning";
 import { normalizePortalOrigin } from "@trustcare/api-client/walletContractLoader";
 import {
   WalletExchangeWorkflow,
@@ -10,8 +15,6 @@ import {
 } from "@trustcare/api-client/walletExchangeWorkflow";
 import {
   generateHolderIdentity,
-  runtimeAllowsSyntheticData,
-  sandboxHolderIdentityForUser,
   type HolderSigningIdentity,
   type RuntimeEnvironment,
   type WalletDocumentRecordV2,
@@ -41,6 +44,23 @@ type WalletExchangePendingSubmissionState = {
   records: WalletExchangePendingSubmissionDraft[];
 };
 
+export type WalletPortalConnectionStatus =
+  | "loading"
+  | "authentication_required"
+  | "portal_configuration_required"
+  | "holder_binding_required"
+  | "application_blocked"
+  | "binding"
+  | "ready"
+  | "error";
+
+type WalletPortalConnectionState = {
+  partitionKey?: string;
+  status: WalletPortalConnectionStatus;
+  provisioning?: WalletProvisioningStatus;
+  message: string;
+};
+
 const pendingRuntimeInitializations = new Map<
   string,
   Promise<WalletExchangeRuntime>
@@ -50,10 +70,11 @@ export type UseWalletExchangeOptions = {
   enabled?: boolean;
   portalBaseUrl: string;
   appId: string;
-  sandboxTestIdentityEnabled?: boolean;
   runtimeEnvironment: RuntimeEnvironment;
   walletVersion: string;
   localUserKey: string;
+  /** Short-lived Wallet OIDC bearer held by the web session in memory only. */
+  portalAccessToken?: string;
 };
 
 export function useWalletExchange(options: UseWalletExchangeOptions) {
@@ -65,6 +86,11 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
   const [initializing, setInitializing] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
+  const [connectionState, setConnectionState] =
+    useState<WalletPortalConnectionState>({
+      status: "loading",
+      message: "กำลังตรวจการเชื่อมต่อ TrustCare Portal",
+    });
   const [pendingSubmissionState, setPendingSubmissionState] =
     useState<WalletExchangePendingSubmissionState>({ records: [] });
   const currentPartitionKey = holderLocatorKey(options);
@@ -87,6 +113,16 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     pendingSubmissionState.partitionKey === currentPartitionKey
       ? pendingSubmissionState.records
       : [];
+  const connection =
+    options.enabled !== false &&
+    connectionState.partitionKey === currentPartitionKey
+      ? connectionState
+      : {
+          status: "loading" as const,
+          message: "กำลังเตรียม holder key และตรวจ Portal provisioning",
+        };
+  const provisioningReady =
+    activeRuntime !== null && connection.status === "ready";
 
   useEffect(() => {
     let active = true;
@@ -96,6 +132,10 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
       setRequestLinkState({ records: [] });
       setPendingSubmissionState({ records: [] });
       setError("");
+      setConnectionState({
+        status: "loading",
+        message: "Wallet Exchange ยังไม่ทำงาน",
+      });
       setInitializing(false);
       setSyncing(false);
       return () => {
@@ -149,9 +189,84 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     options.walletVersion,
   ]);
 
+  useEffect(() => {
+    let active = true;
+    if (options.enabled === false || !activeRuntime) {
+      return () => {
+        active = false;
+      };
+    }
+    const partitionKey = activeRuntime.partitionKey;
+    setConnectionState({
+      partitionKey,
+      status: "loading",
+      message: "กำลังตรวจ Portal application และ holder binding",
+    });
+    const client = createWalletProvisioningClient({
+      portalBaseUrl: options.portalBaseUrl,
+      appId: options.appId,
+      identity: activeRuntime.identity,
+    });
+    void client
+      .reloadConfiguration()
+      .then(async (configuration) => {
+        if (!active) return;
+        if (configuration.appId !== options.appId) {
+          throw new Error(
+            `Portal ประกาศ appId ${configuration.appId} ไม่ตรงกับ Wallet ${options.appId}`,
+          );
+        }
+        if (!options.portalAccessToken) {
+          setConnectionState({
+            partitionKey,
+            status:
+              configuration.oidc.issuer ||
+              configuration.endpoints.sandboxTestLogin
+                ? "authentication_required"
+                : "portal_configuration_required",
+            message:
+              configuration.oidc.issuer ||
+              configuration.endpoints.sandboxTestLogin
+                ? "กรุณาเข้าสู่ระบบ TrustCare Portal เพื่อผูก holder DID"
+                : "Portal ยังไม่ได้เปิด Wallet OIDC หรือ sandbox test login",
+          });
+          return;
+        }
+        await client.getWalletIdentity(options.portalAccessToken);
+        const provisioning = await client.getProvisioningStatus(
+          options.portalAccessToken,
+        );
+        if (!active) return;
+        setConnectionState(
+          connectionStateForProvisioning(partitionKey, provisioning),
+        );
+      })
+      .catch((reason: unknown) => {
+        if (!active) return;
+        setConnectionState({
+          partitionKey,
+          status: "error",
+          message: walletExchangeErrorMessage(reason),
+        });
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    activeRuntime,
+    options.appId,
+    options.enabled,
+    options.portalAccessToken,
+    options.portalBaseUrl,
+  ]);
+
   const synchronize = useCallback(async () => {
-    if (!activeRuntime) {
-      throw new Error(error || "Wallet Exchange holder key is not ready.");
+    if (!activeRuntime || !provisioningReady) {
+      throw new Error(
+        connection.message ||
+          error ||
+          "Wallet Exchange provisioning is not ready.",
+      );
     }
     setSyncing(true);
     setError("");
@@ -169,7 +284,7 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     } finally {
       setSyncing(false);
     }
-  }, [activeRuntime, error]);
+  }, [activeRuntime, connection.message, error, provisioningReady]);
 
   const reload = useCallback(async () => {
     if (!activeRuntime) return;
@@ -193,8 +308,12 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
   }, [activeRuntime]);
 
   const recoverPendingSubmissions = useCallback(async () => {
-    if (!activeRuntime) {
-      throw new Error(error || "Wallet Exchange holder key is not ready.");
+    if (!activeRuntime || !provisioningReady) {
+      throw new Error(
+        connection.message ||
+          error ||
+          "Wallet Exchange provisioning is not ready.",
+      );
     }
     setSyncing(true);
     setError("");
@@ -212,10 +331,51 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     } finally {
       setSyncing(false);
     }
-  }, [activeRuntime, error]);
+  }, [activeRuntime, connection.message, error, provisioningReady]);
+
+  const completeHolderBinding = useCallback(async () => {
+    if (!activeRuntime || !options.portalAccessToken) {
+      throw new Error("กรุณาเข้าสู่ระบบ TrustCare Portal ก่อนผูก holder DID");
+    }
+    setConnectionState({
+      partitionKey: activeRuntime.partitionKey,
+      status: "binding",
+      message: "กำลังลงนามยืนยันการผูก holder DID กับ Portal",
+    });
+    try {
+      const client = createWalletProvisioningClient({
+        portalBaseUrl: options.portalBaseUrl,
+        appId: options.appId,
+        identity: activeRuntime.identity,
+      });
+      const provisioning = await client.bindHolder({
+        oidcAccessToken: options.portalAccessToken,
+        consentRef: `wallet-consent:${crypto.randomUUID()}`,
+      });
+      setConnectionState(
+        connectionStateForProvisioning(
+          activeRuntime.partitionKey,
+          provisioning,
+        ),
+      );
+      return provisioning;
+    } catch (reason) {
+      setConnectionState({
+        partitionKey: activeRuntime.partitionKey,
+        status: "error",
+        message: walletExchangeErrorMessage(reason),
+      });
+      throw reason;
+    }
+  }, [
+    activeRuntime,
+    options.appId,
+    options.portalAccessToken,
+    options.portalBaseUrl,
+  ]);
 
   return {
-    workflow: activeRuntime?.workflow ?? null,
+    workflow: provisioningReady ? activeRuntime.workflow : null,
     holderDid: activeRuntime?.holderDid,
     identity: activeRuntime?.identity,
     documents,
@@ -224,9 +384,42 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     initializing,
     syncing,
     error,
+    connection,
+    completeHolderBinding,
     synchronize,
     recoverPendingSubmissions,
     reload,
+  };
+}
+
+function connectionStateForProvisioning(
+  partitionKey: string,
+  provisioning: WalletProvisioningStatus,
+): WalletPortalConnectionState {
+  if (provisioning.ready) {
+    return {
+      partitionKey,
+      status: "ready",
+      provisioning,
+      message: "เชื่อมต่อ Portal และผูก holder DID แล้ว",
+    };
+  }
+  if (provisioning.nextAction === "complete_holder_binding") {
+    return {
+      partitionKey,
+      status: "holder_binding_required",
+      provisioning,
+      message: "รอยืนยันความยินยอมเพื่อผูก holder DID กับ Portal",
+    };
+  }
+  return {
+    partitionKey,
+    status: "application_blocked",
+    provisioning,
+    message:
+      provisioning.nextAction === "await_application_approval"
+        ? "Wallet application กำลังรอ Portal อนุมัติ"
+        : "Portal ยังไม่พร้อมสำหรับ Wallet application นี้",
   };
 }
 
@@ -258,32 +451,6 @@ async function initializeRuntimeOnce(
   locatorKey: string,
 ): Promise<WalletExchangeRuntime> {
   const locatedDid = readHolderLocator(locatorKey);
-  const sandboxIdentity = await sandboxHolderIdentityForUser({
-    userId: options.localUserKey,
-    sandboxRuntime:
-      runtimeAllowsSyntheticData(options.runtimeEnvironment) ||
-      (options.runtimeEnvironment === "sandbox" &&
-        options.sandboxTestIdentityEnabled === true),
-  });
-  if (sandboxIdentity && locatedDid !== sandboxIdentity.did) {
-    const persistence = new IndexedDbWalletExchangePersistence({
-      portalOrigin: options.portalBaseUrl,
-      holderDid: sandboxIdentity.did,
-    });
-    writeHolderLocator(locatorKey, sandboxIdentity.did);
-    await persistence.saveHolderIdentity(sandboxIdentity);
-    return {
-      partitionKey: locatorKey,
-      holderDid: sandboxIdentity.did,
-      identity: sandboxIdentity,
-      persistence,
-      workflow: new WalletExchangeWorkflow({
-        ...options,
-        identity: sandboxIdentity,
-        persistence,
-      }),
-    };
-  }
   if (locatedDid) {
     const persistence = new IndexedDbWalletExchangePersistence({
       portalOrigin: options.portalBaseUrl,
@@ -384,6 +551,12 @@ function requiredLocatorStorage(): Storage {
 }
 
 function walletExchangeErrorMessage(reason: unknown): string {
+  if (reason instanceof WalletProvisioningProblemError) {
+    const correlation = reason.correlationId
+      ? ` (รหัสอ้างอิง ${reason.correlationId})`
+      : "";
+    return `${reason.message}${correlation}`;
+  }
   if (reason instanceof WalletExchangeProblemError) {
     const correlation = reason.correlationId
       ? ` (รหัสอ้างอิง ${reason.correlationId})`

@@ -8,7 +8,6 @@ const harness = vi.hoisted(() => ({
   persistenceOptions: [] as Array<Record<string, unknown>>,
   workflowOptions: [] as Array<Record<string, unknown>>,
   generateHolderIdentity: vi.fn(),
-  sandboxHolderIdentityForUser: vi.fn(),
   loadHolderIdentity: vi.fn(),
   saveHolderIdentity: vi.fn(),
   loadOrCreateState: vi.fn(),
@@ -16,6 +15,10 @@ const harness = vi.hoisted(() => ({
   listPendingSubmissionDrafts: vi.fn(),
   synchronize: vi.fn(),
   recoverPendingDirectSubmissions: vi.fn(),
+  loadProvisioningConfiguration: vi.fn(),
+  getWalletIdentity: vi.fn(),
+  getProvisioningStatus: vi.fn(),
+  bindHolder: vi.fn(),
 }));
 
 vi.mock("react", async (importOriginal) => {
@@ -55,6 +58,19 @@ vi.mock("@trustcare/api-client/walletExchangeV2", () => ({
   },
 }));
 
+vi.mock("@trustcare/api-client/walletProvisioning", () => ({
+  WalletProvisioningProblemError: class WalletProvisioningProblemError extends Error {
+    correlationId?: string;
+  },
+  createWalletProvisioningClient: () => ({
+    loadConfiguration: harness.loadProvisioningConfiguration,
+    reloadConfiguration: harness.loadProvisioningConfiguration,
+    getWalletIdentity: harness.getWalletIdentity,
+    getProvisioningStatus: harness.getProvisioningStatus,
+    bindHolder: harness.bindHolder,
+  }),
+}));
+
 vi.mock("@trustcare/api-client/walletExchangeWorkflow", () => ({
   WalletExchangeWorkflow: class WalletExchangeWorkflow {
     constructor(options: Record<string, unknown>) {
@@ -73,8 +89,6 @@ vi.mock("@trustcare/api-client/walletExchangeWorkflow", () => ({
 
 vi.mock("@trustcare/wallet-core", () => ({
   generateHolderIdentity: harness.generateHolderIdentity,
-  runtimeAllowsSyntheticData: (value: string) => value === "demo" || value === "sandbox",
-  sandboxHolderIdentityForUser: harness.sandboxHolderIdentityForUser,
 }));
 
 vi.mock("../repositories", () => ({
@@ -129,28 +143,37 @@ describe("useWalletExchange lifecycle", () => {
     harness.persistenceOptions = [];
     harness.workflowOptions = [];
     harness.generateHolderIdentity.mockReset();
-    harness.sandboxHolderIdentityForUser.mockReset();
     harness.loadHolderIdentity.mockReset();
     harness.saveHolderIdentity.mockReset();
     harness.loadOrCreateState.mockReset();
     harness.listPendingSubmissionDrafts.mockReset();
     harness.synchronize.mockReset();
     harness.recoverPendingDirectSubmissions.mockReset();
+    harness.loadProvisioningConfiguration.mockReset();
+    harness.getProvisioningStatus.mockReset();
+    harness.getWalletIdentity.mockReset();
+    harness.bindHolder.mockReset();
     harness.generateHolderIdentity.mockResolvedValue(identity);
-    harness.sandboxHolderIdentityForUser.mockResolvedValue(undefined);
     harness.saveHolderIdentity.mockResolvedValue(undefined);
     harness.loadOrCreateState.mockResolvedValue({ documents: [] });
     harness.listCredentialRequestLinks.mockResolvedValue([]);
     harness.listPendingSubmissionDrafts.mockResolvedValue([]);
     harness.recoverPendingDirectSubmissions.mockResolvedValue([]);
+    harness.loadProvisioningConfiguration.mockResolvedValue({
+      appId: "trustcare-wallet-production",
+      oidc: { issuer: null },
+      endpoints: { sandboxTestLogin: null },
+    });
+    harness.getWalletIdentity.mockResolvedValue({ linked: true });
     installLocalStorage();
   });
 
   it("does not create or load holder key material while disabled", async () => {
     renderHook({ ...options("patient-a"), enabled: false });
 
-    expect(harness.effects).toHaveLength(1);
+    expect(harness.effects).toHaveLength(2);
     harness.effects[0]?.();
+    harness.effects[1]?.();
     await settlePromises();
 
     expect(harness.generateHolderIdentity).not.toHaveBeenCalled();
@@ -188,27 +211,16 @@ describe("useWalletExchange lifecycle", () => {
     ).toBeLessThan(harness.saveHolderIdentity.mock.invocationCallOrder[0]!);
   });
 
-  it("uses the Portal-bound holder identity only when sandbox test identity is enabled", async () => {
-    const sandboxIdentity = {
-      ...identity,
-      did: "did:key:zDnaePortalBoundSandboxHolder",
-      kid: "did:key:zDnaePortalBoundSandboxHolder#zDnaePortalBoundSandboxHolder",
-    };
-    harness.sandboxHolderIdentityForUser.mockResolvedValue(sandboxIdentity);
-
-    renderHook({
-      ...options("demo-patient-004"),
-      sandboxTestIdentityEnabled: true,
-    });
+  it("generates a device holder key even for a sandbox Portal identity", async () => {
+    renderHook(options("demo-patient-004"));
     harness.effects[0]?.();
     await settlePromises();
 
-    expect(harness.sandboxHolderIdentityForUser).toHaveBeenCalledWith({
-      userId: "demo-patient-004",
-      sandboxRuntime: true,
+    expect(harness.generateHolderIdentity).toHaveBeenCalledWith({
+      algorithm: "P-256",
+      extractable: false,
     });
-    expect(harness.generateHolderIdentity).not.toHaveBeenCalled();
-    expect(harness.saveHolderIdentity).toHaveBeenCalledWith(sandboxIdentity);
+    expect(harness.saveHolderIdentity).toHaveBeenCalledWith(identity);
   });
 
   it("does not generate a DID when durable locator storage is unavailable", async () => {
@@ -274,13 +286,54 @@ describe("useWalletExchange lifecycle", () => {
     await settlePromises();
 
     const patientA = renderHook(options("patient-a"));
-    expect(patientA.workflow).not.toBeNull();
+    expect(patientA.workflow).toBeNull();
     expect(patientA.holderDid).toBe(holderDid);
 
     const patientB = renderHook(options("patient-b"));
     expect(patientB.workflow).toBeNull();
     expect(patientB.holderDid).toBeUndefined();
     expect(patientB.documents).toEqual([]);
+  });
+
+  it("exposes the live workflow only after Portal provisioning is ready", async () => {
+    harness.getProvisioningStatus.mockResolvedValue({
+      schema: "trustcare.wallet.provisioning.v1",
+      identityLinked: true,
+      portalSession: false,
+      app: {
+        appId: "trustcare-wallet-production",
+        status: "active",
+        trustLevel: "verified",
+        scopes: ["credentials:read"],
+        oidcClientAllowed: true,
+      },
+      holder: {
+        holderDid,
+        bound: true,
+        proofVerifiedAt: "2026-07-13T10:00:00.000Z",
+      },
+      ready: true,
+      nextAction: "create_exchange_session",
+    });
+    const readyOptions = {
+      ...options("patient-a"),
+      portalAccessToken: "wallet-oidc-access-token",
+    };
+
+    renderHook(readyOptions);
+    harness.effects[0]?.();
+    await settlePromises();
+
+    renderHook(readyOptions);
+    harness.effects[1]?.();
+    await settlePromises();
+
+    const ready = renderHook(readyOptions);
+    expect(ready.workflow).not.toBeNull();
+    expect(ready.connection.status).toBe("ready");
+    expect(harness.getProvisioningStatus).toHaveBeenCalledWith(
+      "wallet-oidc-access-token",
+    );
   });
 });
 
