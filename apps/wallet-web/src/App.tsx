@@ -262,6 +262,7 @@ export default function App() {
   const portalWalletSession = usePortalWalletSession({
     portalBaseUrl: env.portalBaseUrl,
     appId: env.walletExchangeAppId,
+    sandboxUsername: isAuthenticated ? selectedUserId : undefined,
   });
   useEffect(() => {
     if (
