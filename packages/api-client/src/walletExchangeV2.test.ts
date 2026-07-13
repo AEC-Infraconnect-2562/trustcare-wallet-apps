@@ -817,7 +817,7 @@ function contractSet(): WalletExchangeContractSet {
       renderVersion: "trustcare-render-contract-v2",
       modelPackage: "@trustcare/wallet-core" as const,
       webPackage: "@trustcare/ui-web" as const,
-      rule: "Render from credentialSubject.humanDocument.renderData.",
+      rule: "Render from credentialSubject.data.humanDocument.",
     },
   };
   const resource = <T>(payload: T) => ({
@@ -862,7 +862,10 @@ function contractSet(): WalletExchangeContractSet {
       modelPackage: "@trustcare/wallet-core",
       webPackage: "@trustcare/ui-web",
       portalUsage: "shared_wallet_renderer_only",
-      primaryPath: "credentialSubject.humanDocument.renderData",
+      primaryPath: "credentialSubject.data.humanDocument",
+      requiredBlocks: ["document"],
+      optionalBlocks: [],
+      legacyReadCompatibility: [],
       legacyWriteAllowed: false,
     }),
     schema: resource({

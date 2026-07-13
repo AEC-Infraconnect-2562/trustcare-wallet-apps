@@ -92,7 +92,7 @@ production.
    schema, expiry, and policy. Never use the gateway key as fallback for a
    hospital VC.
 6. Render documents through the shared Wallet renderer from
-   `credentialSubject.humanDocument.renderData`.
+   `credentialSubject.data.humanDocument.renderData`.
 
 No UI may display a green verified/trusted state until all required proof,
 issuer, status, expiry, and policy checks have actually passed.

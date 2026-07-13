@@ -152,7 +152,6 @@ export class WalletProvisioningClient {
     }
     const payload = await this.requestJson(endpoint, {
       method: "GET",
-      headers: { "cache-control": "no-cache", pragma: "no-cache" },
     });
     const object = record(payload, "Wallet test identity catalog");
     exactKeys(object, ["schema", "catalogVersion", "identities"]);
@@ -340,7 +339,6 @@ export class WalletProvisioningClient {
     const endpoint = `${this.portalOrigin}/api/wallet/provisioning/configuration`;
     const payload = await this.requestJson(endpoint, {
       method: "GET",
-      headers: { "cache-control": "no-cache", pragma: "no-cache" },
     });
     return assertProvisioningConfiguration(payload, this.portalOrigin);
   }

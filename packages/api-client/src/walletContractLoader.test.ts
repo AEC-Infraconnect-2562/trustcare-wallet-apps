@@ -95,6 +95,119 @@ describe("Wallet Exchange live contract loader", () => {
     });
   });
 
+  it("accepts additive optional schema and render blocks", async () => {
+    const fixture = await contractFixture();
+    const schemaUrl = `${origin}/api/public/wallet-contracts/schema`;
+    const schemaPayload = JSON.parse(
+      await fixture.responses.get(schemaUrl)!.clone().text(),
+    ) as Record<string, any>;
+    schemaPayload.schema.properties.futureOptionalContract = {
+      type: "object",
+    };
+    fixture.responses.set(schemaUrl, await integrityResponse(schemaPayload));
+
+    const renderUrl = `${origin}/api/public/wallet-contracts/render-contract`;
+    const renderPayload = JSON.parse(
+      await fixture.responses.get(renderUrl)!.clone().text(),
+    ) as Record<string, any>;
+    renderPayload.optionalBlocks = [
+      ...renderPayload.optionalBlocks,
+      "future_optional_section",
+    ];
+    fixture.responses.set(renderUrl, await integrityResponse(renderPayload));
+
+    await expect(
+      loadWalletExchangeContracts({
+        portalBaseUrl: origin,
+        runtimeEnvironment: "sandbox",
+        fetchImpl: fixture.fetchImpl,
+      }),
+    ).resolves.toMatchObject({
+      renderContract: {
+        payload: {
+          optionalBlocks: ["future_optional_section"],
+        },
+      },
+    });
+  });
+
+  it("fails closed when schema evolution adds an unsupported required root block", async () => {
+    const fixture = await contractFixture();
+    const url = `${origin}/api/public/wallet-contracts/schema`;
+    const payload = JSON.parse(
+      await fixture.responses.get(url)!.clone().text(),
+    ) as Record<string, any>;
+    payload.schema.properties.futureRequiredContract = { type: "object" };
+    payload.schema.required.push("futureRequiredContract");
+    fixture.responses.set(url, await integrityResponse(payload));
+
+    await expect(
+      loadWalletExchangeContracts({
+        portalBaseUrl: origin,
+        runtimeEnvironment: "sandbox",
+        fetchImpl: fixture.fetchImpl,
+      }),
+    ).rejects.toMatchObject({ code: "wallet_contract_incompatible" });
+  });
+
+  it("fails closed when the render contract adds an unsupported required block", async () => {
+    const fixture = await contractFixture();
+    const url = `${origin}/api/public/wallet-contracts/render-contract`;
+    const payload = JSON.parse(
+      await fixture.responses.get(url)!.clone().text(),
+    ) as Record<string, any>;
+    payload.requiredBlocks.push("future_required_section");
+    fixture.responses.set(url, await integrityResponse(payload));
+
+    await expect(
+      loadWalletExchangeContracts({
+        portalBaseUrl: origin,
+        runtimeEnvironment: "sandbox",
+        fetchImpl: fixture.fetchImpl,
+      }),
+    ).rejects.toMatchObject({ code: "wallet_contract_incompatible" });
+  });
+
+  it("fails closed when compatibility arrays contain non-string entries", async () => {
+    const renderFixture = await contractFixture();
+    const renderUrl = `${origin}/api/public/wallet-contracts/render-contract`;
+    const renderPayload = JSON.parse(
+      await renderFixture.responses.get(renderUrl)!.clone().text(),
+    ) as Record<string, any>;
+    renderPayload.optionalBlocks.push({ name: "not-a-contract-block" });
+    renderFixture.responses.set(
+      renderUrl,
+      await integrityResponse(renderPayload),
+    );
+
+    await expect(
+      loadWalletExchangeContracts({
+        portalBaseUrl: origin,
+        runtimeEnvironment: "sandbox",
+        fetchImpl: renderFixture.fetchImpl,
+      }),
+    ).rejects.toMatchObject({ code: "wallet_contract_incompatible" });
+
+    const schemaFixture = await contractFixture();
+    const schemaUrl = `${origin}/api/public/wallet-contracts/schema`;
+    const schemaPayload = JSON.parse(
+      await schemaFixture.responses.get(schemaUrl)!.clone().text(),
+    ) as Record<string, any>;
+    schemaPayload.schema.required.push(42);
+    schemaFixture.responses.set(
+      schemaUrl,
+      await integrityResponse(schemaPayload),
+    );
+
+    await expect(
+      loadWalletExchangeContracts({
+        portalBaseUrl: origin,
+        runtimeEnvironment: "sandbox",
+        fetchImpl: schemaFixture.fetchImpl,
+      }),
+    ).rejects.toMatchObject({ code: "wallet_contract_incompatible" });
+  });
+
   it("fails closed when the body digest and ETag do not match", async () => {
     const fixture = await contractFixture();
     const original = fixture.responses.get(
@@ -294,6 +407,7 @@ async function contractFixture(
     contractVersion: PORTAL_WALLET_V2_CONTRACT_VERSION,
     schema: {
       $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
       properties: Object.fromEntries(
         [
           "manifest",
@@ -301,9 +415,20 @@ async function contractFixture(
           "serviceProfiles",
           "sharePackages",
           "renderContract",
+          "clinicalDocumentGraph",
           "problemDetails",
         ].map((key) => [key, { type: "object" }]),
       ),
+      required: [
+        "manifest",
+        "documentTypes",
+        "serviceProfiles",
+        "sharePackages",
+        "renderContract",
+        "clinicalDocumentGraph",
+        "problemDetails",
+      ],
+      additionalProperties: false,
     },
   };
   const responses = new Map<string, Response>([

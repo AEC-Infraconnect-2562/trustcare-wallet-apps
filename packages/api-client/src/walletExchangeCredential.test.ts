@@ -40,13 +40,17 @@ describe("Wallet Exchange credential normalization", () => {
     );
     expect(
       objectRecord(
-        objectRecord(fixture.credentialData.credentialSubject).humanDocument,
+        objectRecord(
+          objectRecord(fixture.credentialData.credentialSubject).data,
+        ).humanDocument,
       ).renderData,
     ).toEqual(fixture.renderData);
     expect(
       objectRecord(
         objectRecord(
-          prepared.document?.content.credentialPayload?.credentialSubject,
+          objectRecord(
+            prepared.document?.content.credentialPayload?.credentialSubject,
+          ).data,
         ).humanDocument,
       ).renderData,
     ).toEqual(fixture.renderData);
@@ -85,6 +89,29 @@ describe("Wallet Exchange credential normalization", () => {
     expect(reduce(prepared).plan.quarantine.put[0]).toMatchObject({
       issuerDid: legacyIssuerDid,
     });
+  });
+
+  it("quarantines a signed credential that omits a contract-required render block", async () => {
+    const fixture = await signedPortalCredential({ omitDocument: true });
+
+    const prepared = await prepare(fixture);
+
+    expect(prepared.issuerEvidence?.proofVerified).toBe(true);
+    expect(prepared.document).toBeUndefined();
+    expect(reduce(prepared).plan.quarantine.put[0]).toMatchObject({
+      reason: "document_missing",
+    });
+  });
+
+  it("matches a canonical W3C credential type when documentType is omitted", async () => {
+    const fixture = await signedPortalCredential({
+      omitSignedDocumentType: true,
+    });
+
+    const prepared = await prepare(fixture);
+
+    expect(prepared.issuerEvidence?.proofVerified).toBe(true);
+    expect(prepared.document).toBeDefined();
   });
 
   it("does not normalize a VC whose signed subject is a different holder", async () => {
@@ -137,7 +164,7 @@ describe("Wallet Exchange credential normalization", () => {
       ...fixture.credentialData,
       credentialSubject: {
         ...objectRecord(fixture.credentialData.credentialSubject),
-        humanDocument: { renderData: changedRenderData },
+        data: { humanDocument: { renderData: changedRenderData } },
       },
     };
     fixture.change.credential.credentialData = changedCredentialData;
@@ -230,6 +257,8 @@ async function signedPortalCredential(input?: {
   signedDocumentType?: string;
   signedCredentialType?: string;
   omitProof?: boolean;
+  omitDocument?: boolean;
+  omitSignedDocumentType?: boolean;
 }): Promise<PortalCredentialFixture> {
   const issuerDid = "did:web:portal.example:hospital:tcc";
   const { privateKey, publicKey } = await generateKeyPair("ES256", {
@@ -246,11 +275,15 @@ async function signedPortalCredential(input?: {
   const issuer = resolvedIssuer(issuerDid, kid, jwk);
   const signedHolderDid = input?.signedHolderDid ?? holderDid;
   const renderData = {
-    document: {
-      titleTh: "บัตรประจำตัวผู้ป่วย",
-      titleEn: "PATIENT ID CARD",
-      layout: "photo_identity_card",
-    },
+    ...(input?.omitDocument
+      ? {}
+      : {
+          document: {
+            titleTh: "บัตรประจำตัวผู้ป่วย",
+            titleEn: "PATIENT ID CARD",
+            layout: "photo_identity_card",
+          },
+        }),
     patient: {
       nameTh: "นายสมชาย ใจดี",
       nameEn: "Mr. Somchai Jaidee",
@@ -279,8 +312,13 @@ async function signedPortalCredential(input?: {
     },
     credentialSubject: {
       id: signedHolderDid,
-      documentType: input?.signedDocumentType ?? "patient_identity",
-      humanDocument: { renderData },
+      ...(input?.omitSignedDocumentType
+        ? {}
+        : {
+            documentType:
+              input?.signedDocumentType ?? "patient_identity",
+          }),
+      data: { humanDocument: { renderData } },
     },
   };
   const jwt = await new SignJWT({
@@ -357,6 +395,7 @@ async function prepare(
     change: fixture.change,
     portalBaseUrl: portalOrigin,
     holderDid,
+    requiredRenderBlocks: ["document"],
     resolvedIssuer: fixture.issuer,
     now,
   });

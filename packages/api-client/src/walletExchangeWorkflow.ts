@@ -342,7 +342,8 @@ export class WalletExchangeWorkflow {
         code: "wallet_sync_limit_invalid",
       });
     }
-    const [client, issuers] = await Promise.all([
+    const [contracts, client, issuers] = await Promise.all([
+      this.contracts(),
       this.client(),
       this.issuers(),
     ]);
@@ -393,6 +394,8 @@ export class WalletExchangeWorkflow {
             change,
             portalBaseUrl: this.options.portalBaseUrl,
             holderDid: this.options.identity.did,
+            requiredRenderBlocks:
+              contracts.renderContract.payload.requiredBlocks,
             resolvedIssuer,
             fetchImpl: this.options.fetchImpl,
             now: this.options.now?.(),

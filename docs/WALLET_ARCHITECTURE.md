@@ -111,7 +111,7 @@ Wallet และ Portal ต้อง render เอกสารจาก payload 
 - แสดง trust status เป็น `verified`, `pending`, `transport_valid`, `expired`, `revoked` หรือ `invalid`
 - ใช้ renderer เดียวกันใน Web (`PortablePresentationDocument`) และ Mobile (`CredentialDocumentNative`) เพื่อให้รายละเอียด credential ไม่เพี้ยนระหว่าง platform
 
-เมื่อ Portal ส่ง `credentialSubject.humanDocument.renderData` ตาม
+เมื่อ Portal ส่ง `credentialSubject.data.humanDocument.renderData` ตาม
 `docs/PORTAL_WALLET_RENDER_CONTRACT.md` Wallet ต้องใช้ payload นั้นก่อนเสมอ.
 ถ้าไม่มี block นี้ renderer อ่านได้เฉพาะ claim/evidence ที่อยู่ใน credential
 ฉบับเดียวกันและผ่าน normalization เท่านั้น ห้ามเดาข้อมูล, ยืมรูป/โลโก้จาก

@@ -28,7 +28,7 @@ must never reject an otherwise compatible exchange.
 
 | Classification | Components                                                                                     | Decision                                                                                                                               |
 | -------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Preserve       | `packages/wallet-core/src/credentialRenderer.ts`, `packages/ui-web/src/CredentialDocument.tsx` | Remain the authoritative renderer for `credentialSubject.humanDocument.renderData`.                                                    |
+| Preserve       | `packages/wallet-core/src/credentialRenderer.ts`, `packages/ui-web/src/CredentialDocument.tsx` | Remain the authoritative renderer for `credentialSubject.data.humanDocument`; structured content is read from its `renderData`.        |
 | Preserve       | Wallet document V2, holder identity, presentation envelope, proof and lifecycle policies       | Reused by Web and Mobile; stricter Portal issuer normalization is added around them.                                                   |
 | Refactor       | Web receive/prepare/share flows                                                                | Use one Wallet Exchange workflow and durable persistence adapter; patients choose intent and documents, not VC/SD/ZKP transport terms. |
 | Refactor       | SHL                                                                                            | SHL is encrypted transport. One holder-signed VP binds the package; an optional Portal/KMS-signed Manifest VC upgrades it after verification. |
@@ -109,6 +109,12 @@ The current inspected renderer baseline is
 publishes a release manifest; it is not a compatibility gate. Compatibility is
 decided by the pinned Wallet Exchange, render-contract, and JSON Schema
 versions plus their integrity evidence.
+
+Portal schema evolution must also follow
+`docs/PORTAL_SCHEMA_CHANGE_COMPATIBILITY_POLICY.md`. Optional additive fields
+may be preserved without becoming patient-visible; new required fields, roots,
+or semantic types require a coordinated Wallet release and fail closed until
+supported.
 
 ## Current implementation map
 

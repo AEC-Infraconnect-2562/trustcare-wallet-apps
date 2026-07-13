@@ -18,7 +18,7 @@ export type PortalHospitalDidDocument = {
   verificationMethod: PortalDidVerificationMethod[];
   assertionMethod: string[];
   authentication?: string[];
-  trustcare: {
+  trustcare?: {
     hospitalCode: string;
     name?: string;
     nameEn?: string;
@@ -81,8 +81,9 @@ export async function resolvePortalHospitalIssuer(input: {
   const issuerDid = requireDiscoveredIssuerDid(didDocument.id);
 
   if (
-    didDocument.trustcare?.hospitalCode !== hospitalCode ||
-    didDocument.trustcare?.syntheticTestData === true ||
+    (didDocument.trustcare !== undefined &&
+      (didDocument.trustcare.hospitalCode !== hospitalCode ||
+        didDocument.trustcare.syntheticTestData === true)) ||
     jwks.issuer !== issuerDid ||
     jwks.hospitalCode !== hospitalCode
   ) {

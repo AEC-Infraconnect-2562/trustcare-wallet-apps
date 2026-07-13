@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { decodeJwt } from "jose";
 import {
+  credentialRenderModelFromCard,
   sandboxHolderIdentityForUser,
+  walletCardForDocumentRendering,
   type HolderSigningIdentity,
 } from "@trustcare/wallet-core";
 import { loadWalletExchangeContracts } from "./walletContractLoader";
+import {
+  prepareWalletExchangeCredential,
+  verifyWalletExchangeContentHash,
+} from "./walletExchangeCredential";
 import { WalletExchangeV2Client } from "./walletExchangeV2";
+import {
+  resolveAllPortalHospitalIssuers,
+  verifyPortalHospitalCredentialJwt,
+} from "./portalIssuerResolver";
 import {
   WalletProvisioningClient,
   WalletProvisioningProblemError,
@@ -87,6 +97,23 @@ describe.skipIf(!liveEnabled)("live Portal Wallet binding and sync", () => {
       runtimeEnvironment: "sandbox",
       walletVersion: "0.1.0",
     });
+    let syncResponseMeta:
+      | { status: number; correlationId?: string; requestId?: string }
+      | undefined;
+    const trackingFetch: typeof fetch = async (request, init) => {
+      const response = await fetch(request, init);
+      if (
+        String(request) === contracts.discovery.endpoints.credentialSync
+      ) {
+        syncResponseMeta = {
+          status: response.status,
+          correlationId:
+            response.headers.get("x-correlation-id") ?? undefined,
+          requestId: response.headers.get("x-request-id") ?? undefined,
+        };
+      }
+      return response;
+    };
     const exchange = new WalletExchangeV2Client({
       contracts,
       identity: holder,
@@ -98,6 +125,7 @@ describe.skipIf(!liveEnabled)("live Portal Wallet binding and sync", () => {
         "documents:read",
         "documents:write",
       ],
+      fetchImpl: trackingFetch,
     });
     const session = await exchange.createSession();
     expect(session).toMatchObject({
@@ -112,7 +140,11 @@ describe.skipIf(!liveEnabled)("live Portal Wallet binding and sync", () => {
     expect(page.changes.length).toBeGreaterThan(0);
     console.info(
       `Live Portal sync returned ${page.changes.length} credential changes for ${username}.`,
+      syncResponseMeta,
     );
+    const issuers = await resolveAllPortalHospitalIssuers({ portalBaseUrl });
+    let rendered = 0;
+    const rejectedTypes: string[] = [];
     for (const change of page.changes) {
       if (change.type === "credential.upsert") {
         expect(change.credential).toMatchObject({
@@ -121,7 +153,71 @@ describe.skipIf(!liveEnabled)("live Portal Wallet binding and sync", () => {
           deliveryState: "signed",
           proof: { type: "jwt" },
         });
+        const prepared = await prepareWalletExchangeCredential({
+          change,
+          portalBaseUrl,
+          holderDid: holder.did,
+          requiredRenderBlocks:
+            contracts.renderContract.payload.requiredBlocks,
+          resolvedIssuer: issuers.find(
+            (issuer) => issuer.issuerDid === change.credential.issuerDid,
+          ),
+        });
+        if (!prepared.document) {
+          const subject = record(change.credential.credentialData?.credentialSubject);
+          const data = record(subject.data);
+          const humanDocument = record(data.humanDocument);
+          const renderData = record(humanDocument.renderData);
+          const issuer = issuers.find(
+            (candidate) => candidate.issuerDid === change.credential.issuerDid,
+          );
+          const verification =
+            issuer &&
+            change.credential.proof?.jwt &&
+            change.credential.credentialData
+              ? await verifyPortalHospitalCredentialJwt({
+                  jwt: change.credential.proof.jwt,
+                  issuer,
+                  expectedHolderDid: holder.did,
+                  expectedCredentialData: change.credential.credentialData,
+                })
+              : undefined;
+          console.info("Live credential rejected before rendering", {
+            cardType: change.credential.cardType,
+            credentialType: change.credential.credentialType,
+            signedTypes: Array.isArray(change.credential.credentialData?.type)
+              ? change.credential.credentialData.type
+              : [],
+            signedDocumentType: subject.documentType,
+            verificationErrors: verification?.errors ?? ["issuer_or_proof_missing"],
+            contentHashValid: await verifyWalletExchangeContentHash(change),
+            proofVerified: prepared.issuerEvidence?.proofVerified ?? false,
+            issuerActive: prepared.issuerEvidence?.issuerActive ?? false,
+            hasCanonicalHumanDocument: Object.keys(humanDocument).length > 0,
+            renderBlocks: Object.keys(
+              Object.keys(renderData).length > 0 ? renderData : humanDocument,
+            ).sort(),
+          });
+          rejectedTypes.push(change.credential.cardType);
+          continue;
+        }
+        const card = walletCardForDocumentRendering(prepared.document);
+        const model = credentialRenderModelFromCard(card);
+        expect(model.documentType).toBe(change.credential.cardType);
+        expect(model.paper.title.th || model.paper.title.en).toBeTruthy();
+        rendered += 1;
       }
     }
-  }, 60_000);
+    expect(rendered).toBeGreaterThan(0);
+    expect(rejectedTypes.every((type) => type === "shl_manifest")).toBe(true);
+    console.info(
+      `Verified, normalized, and rendered ${rendered} live Portal credentials for ${username}; quarantined ${rejectedTypes.length} unsupported trust artifacts.`,
+    );
+  }, 120_000);
 });
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}

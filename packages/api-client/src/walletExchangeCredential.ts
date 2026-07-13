@@ -18,6 +18,7 @@ export type PrepareWalletExchangeCredentialInput = {
   change: WalletSyncUpsertChange;
   portalBaseUrl: string;
   holderDid: string;
+  requiredRenderBlocks: readonly string[];
   resolvedIssuer?: ResolvedPortalHospitalIssuer;
   fetchImpl?: typeof fetch;
   now?: Date;
@@ -109,10 +110,11 @@ export async function prepareWalletExchangeCredential(
           credentialData,
           portalOrigin,
           holderDid: input.holderDid,
+          requiredRenderBlocks: input.requiredRenderBlocks,
           checkedAt,
           issuerName:
-            resolvedIssuer.didDocument.trustcare.nameEn ??
-            resolvedIssuer.didDocument.trustcare.name,
+            resolvedIssuer.didDocument.trustcare?.nameEn ??
+            resolvedIssuer.didDocument.trustcare?.name,
         })
       : undefined;
   return { ...input.change, issuerEvidence, document };
@@ -140,6 +142,7 @@ function walletDocumentFromSyncedCredential(input: {
   credentialData: Record<string, unknown>;
   portalOrigin: string;
   holderDid: string;
+  requiredRenderBlocks: readonly string[];
   checkedAt: string;
   issuerName?: string;
 }): WalletDocumentRecordV2 | undefined {
@@ -151,6 +154,9 @@ function walletDocumentFromSyncedCredential(input: {
   const category = normalizeCategory(credential.documentCategory);
   const subject = objectRecord(input.credentialData.credentialSubject);
   if (subject.id !== input.holderDid) return undefined;
+  if (!hasCanonicalRenderBlocks(subject, input.requiredRenderBlocks)) {
+    return undefined;
+  }
   const expiresAt =
     credential.expiresAt ?? stringValue(input.credentialData.validUntil);
   const expiryPassed =
@@ -246,6 +252,20 @@ function walletDocumentFromSyncedCredential(input: {
   };
 }
 
+function hasCanonicalRenderBlocks(
+  subject: Record<string, unknown>,
+  requiredBlocks: readonly string[],
+): boolean {
+  const data = objectRecord(subject.data);
+  const humanDocument = objectRecord(data.humanDocument);
+  if (Object.keys(humanDocument).length === 0) return false;
+  const renderData = objectRecord(humanDocument.renderData);
+  const content = Object.keys(renderData).length > 0 ? renderData : humanDocument;
+  return requiredBlocks.every(
+    (block) => Object.keys(objectRecord(content[block])).length > 0,
+  );
+}
+
 function signedCredentialTypeMatches(
   change: WalletSyncUpsertChange,
   credentialData: Record<string, unknown>,
@@ -254,19 +274,30 @@ function signedCredentialTypeMatches(
     change.credential.cardType,
   );
   const subject = objectRecord(credentialData.credentialSubject);
-  const signedDocumentType = normalizeDocumentType(
-    stringValue(subject.documentType),
-  );
+  const declaredDocumentType = stringValue(subject.documentType);
+  const signedDocumentType = normalizeDocumentType(declaredDocumentType);
   const signedTypes = Array.isArray(credentialData.type)
     ? credentialData.type.filter(
         (value): value is string => typeof value === "string",
       )
     : [];
+  const metadataCredentialType = documentTypeFromCredentialType(
+    change.credential.credentialType,
+  );
   return Boolean(
     expectedDocumentType &&
-    signedDocumentType === expectedDocumentType &&
-    signedTypes.includes(change.credential.credentialType),
+    metadataCredentialType === expectedDocumentType &&
+    (!declaredDocumentType || signedDocumentType === expectedDocumentType) &&
+    signedTypes.some(
+      (type) => documentTypeFromCredentialType(type) === expectedDocumentType,
+    ),
   );
+}
+
+function documentTypeFromCredentialType(value: string): string | null {
+  const withoutSuffix = value.replace(/Credential$/i, "");
+  const snakeCase = withoutSuffix.replace(/([a-z0-9])([A-Z])/g, "$1_$2");
+  return normalizeDocumentType(snakeCase);
 }
 
 function signedDocumentTitle(

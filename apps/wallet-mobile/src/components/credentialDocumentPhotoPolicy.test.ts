@@ -24,10 +24,12 @@ describe("mobile credential document photo policy", () => {
         ...baseCard,
         credentialData: {
           credentialSubject: {
-            humanDocument: {
-              renderData: {
-                patient: {
-                  photoUrl: "/manus-storage/patient-source.jpg",
+            data: {
+              humanDocument: {
+                renderData: {
+                  patient: {
+                    photoUrl: "/manus-storage/patient-source.jpg",
+                  },
                 },
               },
             },
@@ -38,7 +40,8 @@ describe("mobile credential document photo policy", () => {
     );
 
     expect(candidates[0]).toMatchObject({
-      label: "credentialSubject.humanDocument.renderData.patient.photoUrl",
+      label:
+        "credentialSubject.data.humanDocument.renderData.patient.photoUrl",
       url: `${TRUSTCARE_PORTAL_ASSET_ORIGIN}/manus-storage/patient-source.jpg`,
     });
   });
@@ -51,8 +54,14 @@ describe("mobile credential document photo policy", () => {
         patientAvatarUrl: null,
         credentialData: {
           credentialSubject: {
-            patient: { photoUrl: "/manus-storage/wrong-patient.jpg" },
-            staff: { photoUrl: "/manus-storage/correct-staff.jpg" },
+            data: {
+              humanDocument: {
+                renderData: {
+                  patient: { photoUrl: "/manus-storage/wrong-patient.jpg" },
+                  staff: { photoUrl: "/manus-storage/correct-staff.jpg" },
+                },
+              },
+            },
           },
         },
       },

@@ -57,10 +57,12 @@ describe("photoSources", () => {
           patient: {
             photoUrl: "/manus-storage/legacy-subject.jpg",
           },
-          humanDocument: {
-            renderData: {
-              patient: {
-                photoUrl: "/manus-storage/canonical-patient.jpg",
+          data: {
+            humanDocument: {
+              renderData: {
+                patient: {
+                  photoUrl: "/manus-storage/canonical-patient.jpg",
+                },
               },
             },
           },
@@ -69,7 +71,8 @@ describe("photoSources", () => {
     });
 
     expect(candidates[0]).toMatchObject({
-      label: "credentialSubject.humanDocument.renderData.patient.photoUrl",
+      label:
+        "credentialSubject.data.humanDocument.renderData.patient.photoUrl",
       url: `${portalOrigin}/manus-storage/canonical-patient.jpg`,
     });
     expect(candidates.map((candidate) => candidate.url)).toEqual([
@@ -88,8 +91,14 @@ describe("photoSources", () => {
       patientAvatarUrl: null,
       credentialData: {
         credentialSubject: {
-          patient: { photoUrl: "/manus-storage/wrong-patient.jpg" },
-          staff: { photoUrl: "/manus-storage/correct-staff.jpg" },
+          data: {
+            humanDocument: {
+              renderData: {
+                patient: { photoUrl: "/manus-storage/wrong-patient.jpg" },
+                staff: { photoUrl: "/manus-storage/correct-staff.jpg" },
+              },
+            },
+          },
         },
       },
     });
@@ -109,8 +118,14 @@ describe("photoSources", () => {
       patientAvatarUrl: "/manus-storage/wrong-owner.jpg",
       credentialData: {
         credentialSubject: {
-          patient: { photoUrl: "/manus-storage/wrong-patient.jpg" },
-          staff: { photoUrl: "/manus-storage/correct-staff.jpg" },
+          data: {
+            humanDocument: {
+              renderData: {
+                patient: { photoUrl: "/manus-storage/wrong-patient.jpg" },
+                staff: { photoUrl: "/manus-storage/correct-staff.jpg" },
+              },
+            },
+          },
         },
       },
     });
@@ -126,16 +141,18 @@ describe("photoSources", () => {
     ).not.toContain("wrong-owner.jpg");
   });
 
-  it("uses the legacy staff renderData subject without borrowing another photo", () => {
+  it("uses the canonical staff renderData subject without borrowing another photo", () => {
     const candidates = photoCandidatesForCard({
       ...baseCard,
       cardType: "staff_identity",
       patientAvatarUrl: "/manus-storage/wrong-owner.jpg",
       credentialData: {
         credentialSubject: {
-          humanDocument: {
-            renderData: {
-              patient: { photoUrl: "/manus-storage/correct-staff.jpg" },
+          data: {
+            humanDocument: {
+              renderData: {
+                staff: { photoUrl: "/manus-storage/correct-staff.jpg" },
+              },
             },
           },
         },
@@ -150,9 +167,11 @@ describe("photoSources", () => {
     ).not.toContain("wrong-owner.jpg");
   });
 
-  it("reads Portal photo paths from current nested credential schemas", () => {
+  it("does not read portraits outside the canonical Portal render path", () => {
     const candidates = photoCandidatesForCard({
       ...baseCard,
+      sourceSystem: "trustcare_portal",
+      patientAvatarUrl: "/manus-storage/wrong-owner.jpg",
       credentialData: {
         credentialSubject: {
           patient: {
@@ -164,10 +183,7 @@ describe("photoSources", () => {
       },
     });
 
-    expect(candidates[0]).toMatchObject({
-      label: "credentialSubject.patient.demographics.photoUrl",
-      url: `${portalOrigin}/manus-storage/patient_somsak_a2e00e97.jpg`,
-    });
+    expect(candidates).toEqual([]);
   });
 
   it("dedupes owner and embedded photo candidates", () => {
