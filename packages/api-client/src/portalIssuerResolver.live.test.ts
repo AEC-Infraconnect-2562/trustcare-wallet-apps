@@ -20,7 +20,7 @@ describe.skipIf(!liveEnabled)("live Portal hospital issuers", () => {
         `did:web:trustcare-hospital-network-production.up.railway.app:hospital:${issuer.hospitalCode.toLowerCase()}`,
       );
       expect(issuer.activeAssertionMethod.publicKeyJwk.alg).toBe("ES256");
-      expect(issuer.didDocument.trustcare.syntheticTestData).toBe(false);
+      expect(issuer.didDocument.trustcare?.syntheticTestData).not.toBe(true);
     }
   }, 30_000);
 });

@@ -1184,7 +1184,7 @@ async function contractResponses(): Promise<Map<string, Response>> {
       renderVersion: TRUSTCARE_RENDER_VERSION,
       modelPackage: "@trustcare/wallet-core",
       webPackage: "@trustcare/ui-web",
-      rule: "Render human documents from credentialSubject.humanDocument.renderData.",
+      rule: "Render human documents from credentialSubject.data.humanDocument.",
     },
   };
   const health = {
@@ -1244,6 +1244,7 @@ async function contractResponses(): Promise<Map<string, Response>> {
     contractVersion: PORTAL_WALLET_V2_CONTRACT_VERSION,
     schema: {
       $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
       properties: Object.fromEntries(
         [
           "manifest",
@@ -1251,9 +1252,20 @@ async function contractResponses(): Promise<Map<string, Response>> {
           "serviceProfiles",
           "sharePackages",
           "renderContract",
+          "clinicalDocumentGraph",
           "problemDetails",
         ].map((key) => [key, { type: "object" }]),
       ),
+      required: [
+        "manifest",
+        "documentTypes",
+        "serviceProfiles",
+        "sharePackages",
+        "renderContract",
+        "clinicalDocumentGraph",
+        "problemDetails",
+      ],
+      additionalProperties: false,
     },
   };
   return new Map([

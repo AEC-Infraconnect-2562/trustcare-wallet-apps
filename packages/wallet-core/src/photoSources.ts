@@ -30,6 +30,11 @@ export function photoCandidatesForCard(card: WalletCard): PhotoCandidate[] {
     if (candidates.length) return candidates;
   }
 
+  // Portal credentials have one canonical signed portrait source. Never let
+  // stale card metadata substitute a different person's photo when it is
+  // absent from that credential.
+  if (card.sourceSystem === "trustcare_portal") return [];
+
   return photoCandidatesFromValue(
     "wallet_cards.patientAvatarUrl",
     card.patientAvatarUrl,
@@ -40,23 +45,11 @@ function photoPathsForDocumentType(documentType: string): string[] {
   const prefixes =
     documentType === "staff_identity"
       ? [
-          "credentialSubject.humanDocument.renderData.staff",
-          "credentialSubject.staff",
-          "staff",
-          // Some Portal staff credentials use the legacy renderData.patient
-          // slot for the staff subject. Keep the same resolution order as the
-          // shared renderer so the displayed name and portrait stay bound.
-          "credentialSubject.humanDocument.renderData.patient",
-          "credentialSubject.patient",
-          "patient",
+          "credentialSubject.data.humanDocument.renderData.staff",
+          "credentialSubject.data.humanDocument.renderData.patient",
         ]
       : [
-          "credentialSubject.humanDocument.renderData.patient",
-          "credentialSubject.patient",
-          "patient",
-          "credentialSubject.holder",
-          "credentialSubject.staff",
-          "credentialSubject.student",
+          "credentialSubject.data.humanDocument.renderData.patient",
         ];
   const suffixes = [
     "photoUrl",

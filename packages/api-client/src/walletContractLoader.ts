@@ -50,6 +50,9 @@ export type PortalRenderContract = Record<string, unknown> & {
   webPackage: string;
   portalUsage: string;
   primaryPath: string;
+  requiredBlocks: string[];
+  optionalBlocks: string[];
+  legacyReadCompatibility: string[];
   legacyWriteAllowed: boolean;
 };
 
@@ -83,6 +86,18 @@ const requiredCompatibilityRules = [
   "unknown_required_fields_fail_closed",
   "shl_is_transport_not_a_verifiable_credential",
 ] as const;
+
+const supportedSchemaRootBlocks = [
+  "manifest",
+  "documentTypes",
+  "serviceProfiles",
+  "sharePackages",
+  "renderContract",
+  "clinicalDocumentGraph",
+  "problemDetails",
+] as const;
+
+const supportedRequiredRenderBlocks = ["document"] as const;
 
 export async function loadWalletExchangeContracts(input: {
   portalBaseUrl: string;
@@ -356,6 +371,8 @@ async function assertManifestCompatibility(
 function assertRenderContractCompatibility(
   contract: PortalRenderContract,
 ): void {
+  const requiredBlocks = strictStringArray(contract.requiredBlocks);
+  const optionalBlocks = strictStringArray(contract.optionalBlocks);
   if (
     contract.version !== PORTAL_WALLET_V2_CONTRACT_VERSION ||
     contract.renderVersion !== TRUSTCARE_RENDER_VERSION ||
@@ -366,6 +383,14 @@ function assertRenderContractCompatibility(
     contract.webPackage !== "@trustcare/ui-web" ||
     contract.portalUsage !== "shared_wallet_renderer_only" ||
     contract.primaryPath !== "credentialSubject.data.humanDocument" ||
+    !requiredBlocks ||
+    !optionalBlocks ||
+    requiredBlocks.length !== supportedRequiredRenderBlocks.length ||
+    supportedRequiredRenderBlocks.some(
+      (block) => !requiredBlocks.includes(block),
+    ) ||
+    !Array.isArray(contract.legacyReadCompatibility) ||
+    contract.legacyReadCompatibility.length !== 0 ||
     contract.legacyWriteAllowed !== false ||
     contract.compatibilityGate !== "contract_profile_and_schema" ||
     contract.referenceCommitRole !== "provenance_only" ||
@@ -386,16 +411,30 @@ function assertSchemaCompatibility(schema: PortalWalletSchema): void {
     incompatible("Portal Wallet JSON Schema is incompatible.");
   }
   const properties = objectRecord(rootSchema.properties);
-  for (const required of [
-    "manifest",
-    "documentTypes",
-    "serviceProfiles",
-    "sharePackages",
-    "renderContract",
-    "problemDetails",
-  ]) {
+  const requiredBlocks = strictStringArray(rootSchema.required);
+  if (
+    rootSchema.type !== "object" ||
+    rootSchema.additionalProperties !== false ||
+    !requiredBlocks ||
+    requiredBlocks.length === 0
+  ) {
+    incompatible("Portal Wallet JSON Schema root policy is incompatible.");
+  }
+  for (const required of supportedSchemaRootBlocks) {
     if (!objectRecord(properties[required])) {
       incompatible(`Portal Wallet JSON Schema is missing ${required}.`);
+    }
+    if (!requiredBlocks.includes(required)) {
+      incompatible(
+        `Portal Wallet JSON Schema does not require ${required}.`,
+      );
+    }
+  }
+  for (const required of requiredBlocks) {
+    if (!(supportedSchemaRootBlocks as readonly string[]).includes(required)) {
+      incompatible(
+        `Portal Wallet JSON Schema adds unsupported required block ${required}.`,
+      );
     }
   }
 }
@@ -443,6 +482,16 @@ function objectRecord(value: unknown): Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function strictStringArray(value: unknown): string[] | undefined {
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== "string" || item.length === 0)
+  ) {
+    return undefined;
+  }
+  return value;
 }
 
 function canonicalJson(value: unknown): string {

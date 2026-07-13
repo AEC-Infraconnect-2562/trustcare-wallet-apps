@@ -52,6 +52,28 @@ describe("Portal hospital did:web resolver", () => {
     ]);
   });
 
+  it("accepts a standard DID document without proprietary trustcare metadata", async () => {
+    const fixture = await issuerFixture("TCC");
+    const { trustcare: _trustcare, ...standardDid } = fixture.did;
+    const fetchImpl: typeof fetch = async (url) => {
+      if (String(url).endsWith("/did.json")) {
+        return jsonResponse(standardDid, 200, "application/did+ld+json");
+      }
+      return fixture.fetchImpl(url);
+    };
+
+    await expect(
+      resolvePortalHospitalIssuer({
+        portalBaseUrl: portalOrigin,
+        hospitalCode: "TCC",
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({
+      issuerDid: "did:web:portal.example:hospital:tcc",
+      hospitalCode: "TCC",
+    });
+  });
+
   it("rejects HTML or missing JWKS instead of using a legacy key", async () => {
     const fixture = await issuerFixture("TCP");
     const fetchImpl: typeof fetch = async (url) => {

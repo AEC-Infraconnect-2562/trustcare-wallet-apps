@@ -10,9 +10,10 @@ Every synced credential that should render as a human medical document must incl
 {
   "credentialSubject": {
     "documentType": "quotation",
-    "humanDocument": {
-      "renderVersion": "trustcare-render-v1",
-      "renderData": {
+    "data": {
+      "humanDocument": {
+        "renderVersion": "trustcare-render-contract-v2",
+        "renderData": {
         "hospital": {
           "code": "tcp",
           "nameTh": "โรงพยาบาลทรัสต์แคร์ ภูเก็ต อินเตอร์เนชั่นแนล",
@@ -35,11 +36,12 @@ Every synced credential that should render as a human medical document must incl
           "expiresAt": "2027-07-01T02:00:00.000Z",
           "version": 2
         },
-        "treatmentQuotation": {
-          "packageName": "ผ่าตัดเปลี่ยนข้อเข่า",
-          "validityDays": 30,
-          "lineItems": [],
-          "estimatedTotal": 450000
+          "treatmentQuotation": {
+            "packageName": "ผ่าตัดเปลี่ยนข้อเข่า",
+            "validityDays": 30,
+            "lineItems": [],
+            "estimatedTotal": 450000
+          }
         }
       }
     }
@@ -49,7 +51,8 @@ Every synced credential that should render as a human medical document must incl
 
 ## Renderer Rules
 
-- `credentialSubject.humanDocument.renderData` is the primary renderer input.
+- `credentialSubject.data.humanDocument` is the canonical renderer root;
+  structured sections are read from its `renderData` member.
 - `hospital.nameTh` is rendered first, then `hospital.nameEn`.
 - `patient`, `hospital`, and `document` inside `renderData` override legacy fields with the same meaning.
 - Type-specific sections must live under a canonical key such as `treatmentQuotation`, `referral`, `medicalCertificate`, `allergyAlert`, `prescription`, `medicationSummary`, `pharmacyDispense`, `insuranceEligibility`, `claimReceipt`, `mpiLinkCertificate`, or `consentReceipt`.
@@ -76,7 +79,12 @@ Wallet commit.
 
 The current Wallet implementation normalizes Portal payloads through
 `@trustcare/wallet-core/portalRenderContract`; the payload boundary remains
-`credentialSubject.humanDocument.renderData`.
+`credentialSubject.data.humanDocument`.
+
+Portal schema changes must follow
+`docs/PORTAL_SCHEMA_CHANGE_COMPATIBILITY_POLICY.md`. The Wallet accepts
+additive optional data but fails closed on new required blocks, path changes,
+or incompatible contract versions.
 
 ## Physical Form Factor and VP Presentation Contract
 

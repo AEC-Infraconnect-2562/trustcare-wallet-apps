@@ -24,8 +24,21 @@ describe.skipIf(!liveEnabled)("live Portal Wallet Exchange contracts", () => {
     );
     expect(contracts.renderContract.payload).toMatchObject({
       authority: "wallet",
-      primaryPath: "credentialSubject.humanDocument.renderData",
+      primaryPath: "credentialSubject.data.humanDocument",
+      requiredBlocks: ["document"],
+      legacyReadCompatibility: [],
       legacyWriteAllowed: false,
     });
+    expect(contracts.schema.payload.schema.required).toEqual(
+      expect.arrayContaining([
+        "manifest",
+        "documentTypes",
+        "serviceProfiles",
+        "sharePackages",
+        "renderContract",
+        "clinicalDocumentGraph",
+        "problemDetails",
+      ]),
+    );
   }, 30_000);
 });

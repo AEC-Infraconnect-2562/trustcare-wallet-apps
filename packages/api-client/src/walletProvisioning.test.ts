@@ -32,12 +32,13 @@ describe("WalletProvisioningClient", () => {
       `${PORTAL}/api/wallet/provisioning/configuration`,
       expect.objectContaining({
         cache: "no-store",
-        headers: expect.objectContaining({
-          "cache-control": "no-cache",
-          pragma: "no-cache",
-        }),
       }),
     );
+    const requestHeaders = new Headers(
+      vi.mocked(fetchImpl).mock.calls[0]?.[1]?.headers,
+    );
+    expect(requestHeaders.has("cache-control")).toBe(false);
+    expect(requestHeaders.has("pragma")).toBe(false);
   });
 
   it("rejects a configuration endpoint that changes Portal origin", async () => {
