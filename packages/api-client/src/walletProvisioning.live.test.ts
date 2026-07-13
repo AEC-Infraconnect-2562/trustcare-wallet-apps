@@ -109,6 +109,10 @@ describe.skipIf(!liveEnabled)("live Portal Wallet binding and sync", () => {
     const page = await exchange.syncCredentials({ limit: 100 });
     expect(page.schema).toBe("trustcare.wallet.sync.v2");
     expect(page.nextCursor).toEqual(expect.any(String));
+    expect(page.changes.length).toBeGreaterThan(0);
+    console.info(
+      `Live Portal sync returned ${page.changes.length} credential changes for ${username}.`,
+    );
     for (const change of page.changes) {
       if (change.type === "credential.upsert") {
         expect(change.credential).toMatchObject({
