@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   WalletProvisioningProblemError,
   createWalletProvisioningClient,
@@ -42,7 +42,6 @@ export function usePortalWalletSession(input: {
   const [accessToken, setAccessToken] = useState<string>();
   const [state, setState] = useState<PortalWalletSessionState>("loading");
   const [error, setError] = useState("");
-  const sandboxRestoreAttempt = useRef("");
 
   useEffect(() => {
     let active = true;
@@ -84,17 +83,16 @@ export function usePortalWalletSession(input: {
   useEffect(() => {
     const username = input.sandboxUsername?.trim();
     const endpoint = configuration?.endpoints.sandboxTestLogin;
-    if (!username || !endpoint || state !== "sandbox_login_available") {
+    if (!username || !endpoint || accessToken) {
       return;
     }
     const attemptKey = `${endpoint}:${username}`;
-    if (sandboxRestoreAttempt.current === attemptKey) return;
-    sandboxRestoreAttempt.current = attemptKey;
     let active = true;
     setState("loading");
     setError("");
-    void client
-      .sandboxTestLogin(username)
+    void sharedSandboxLogin(attemptKey, () =>
+      client.sandboxTestLogin(username),
+    )
       .then((token) => {
         if (!active) return;
         if (!token.testOnly || token.username !== username) {
@@ -111,7 +109,7 @@ export function usePortalWalletSession(input: {
     return () => {
       active = false;
     };
-  }, [client, configuration, input.sandboxUsername, state]);
+  }, [accessToken, client, configuration, input.sandboxUsername]);
 
   const loginSandboxIdentity = useCallback(
     async (username: string) => {
@@ -133,7 +131,6 @@ export function usePortalWalletSession(input: {
   );
 
   const logout = useCallback(() => {
-    sandboxRestoreAttempt.current = "";
     setAccessToken(undefined);
     setState(
       configuration?.endpoints.sandboxTestLogin
@@ -153,6 +150,31 @@ export function usePortalWalletSession(input: {
     loginSandboxIdentity,
     logout,
   };
+}
+
+const pendingSandboxLogins = new Map<
+  string,
+  ReturnType<ReturnType<typeof createWalletProvisioningClient>["sandboxTestLogin"]>
+>();
+
+function sharedSandboxLogin(
+  key: string,
+  login: () => ReturnType<
+    ReturnType<typeof createWalletProvisioningClient>["sandboxTestLogin"]
+  >,
+) {
+  const pending = pendingSandboxLogins.get(key);
+  if (pending) return pending;
+  let request: ReturnType<
+    ReturnType<typeof createWalletProvisioningClient>["sandboxTestLogin"]
+  >;
+  request = login().finally(() => {
+    if (pendingSandboxLogins.get(key) === request) {
+      pendingSandboxLogins.delete(key);
+    }
+  });
+  pendingSandboxLogins.set(key, request);
+  return request;
 }
 
 function connectionErrorMessage(reason: unknown): string {
