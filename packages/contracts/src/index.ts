@@ -428,3 +428,4 @@ function assertNoIssues(
 }
 
 export * from "./walletExchangeV2";
+export * from "./clinicalDocumentGraphV2";

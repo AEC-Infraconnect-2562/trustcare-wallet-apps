@@ -1,7 +1,11 @@
 import {
+  assertClinicalDocumentGraphContract,
+  assertClinicalDocumentGraphPresentationSchema,
   PORTAL_WALLET_V2_CONTRACT_VERSION,
   WALLET_EXCHANGE_V2_CONTRACT_VERSION,
   assertWalletExchangeDiscovery,
+  type ClinicalDocumentGraphContract,
+  type ClinicalDocumentGraphPresentationSchema,
   type WalletExchangeDiscovery,
 } from "@trustcare/contracts";
 import type { RuntimeEnvironment } from "@trustcare/wallet-core";
@@ -76,6 +80,8 @@ export type WalletExchangeContractSet = {
   manifest: VerifiedContractResource<PortalWalletManifest>;
   renderContract: VerifiedContractResource<PortalRenderContract>;
   schema: VerifiedContractResource<PortalWalletSchema>;
+  clinicalDocumentGraph: VerifiedContractResource<ClinicalDocumentGraphContract>;
+  graphPresentationSchema: VerifiedContractResource<ClinicalDocumentGraphPresentationSchema>;
   loadedAt: string;
 };
 
@@ -108,28 +114,44 @@ export async function loadWalletExchangeContracts(input: {
 }): Promise<WalletExchangeContractSet> {
   const portalOrigin = normalizePortalOrigin(input.portalBaseUrl);
   const fetcher = input.fetchImpl ?? fetch;
-  const [discoveryResponse, healthResponse, manifest, renderContract, schema] =
-    await Promise.all([
-      fetcher(`${portalOrigin}/api/wallet/v2`, {
-        headers: { accept: "application/json" },
-      }),
-      fetcher(`${portalOrigin}/api/wallet/v2/health`, {
-        headers: { accept: "application/json" },
-        cache: "no-store",
-      }),
-      fetchVerifiedContractResource<PortalWalletManifest>(
-        fetcher,
-        `${portalOrigin}/api/public/wallet-contracts/manifest`,
-      ),
-      fetchVerifiedContractResource<PortalRenderContract>(
-        fetcher,
-        `${portalOrigin}/api/public/wallet-contracts/render-contract`,
-      ),
-      fetchVerifiedContractResource<PortalWalletSchema>(
-        fetcher,
-        `${portalOrigin}/api/public/wallet-contracts/schema`,
-      ),
-    ]);
+  const [
+    discoveryResponse,
+    healthResponse,
+    manifest,
+    renderContract,
+    schema,
+    clinicalDocumentGraph,
+    graphPresentationSchema,
+  ] = await Promise.all([
+    fetcher(`${portalOrigin}/api/wallet/v2`, {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    }),
+    fetcher(`${portalOrigin}/api/wallet/v2/health`, {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    }),
+    fetchVerifiedContractResource<PortalWalletManifest>(
+      fetcher,
+      `${portalOrigin}/api/public/wallet-contracts/manifest`,
+    ),
+    fetchVerifiedContractResource<PortalRenderContract>(
+      fetcher,
+      `${portalOrigin}/api/public/wallet-contracts/render-contract`,
+    ),
+    fetchVerifiedContractResource<PortalWalletSchema>(
+      fetcher,
+      `${portalOrigin}/api/public/wallet-contracts/schema`,
+    ),
+    fetchVerifiedContractResource<ClinicalDocumentGraphContract>(
+      fetcher,
+      `${portalOrigin}/api/public/wallet-contracts/clinical-document-graph`,
+    ),
+    fetchVerifiedContractResource<ClinicalDocumentGraphPresentationSchema>(
+      fetcher,
+      `${portalOrigin}/api/public/wallet-contracts/clinical-document-graph/presentation-schema`,
+    ),
+  ]);
 
   const discoveryPayload = await readJson<unknown>(
     discoveryResponse,
@@ -159,6 +181,24 @@ export async function loadWalletExchangeContracts(input: {
   );
   assertRenderContractCompatibility(renderContract.payload);
   assertSchemaCompatibility(schema.payload);
+  try {
+    assertClinicalDocumentGraphContract(clinicalDocumentGraph.payload);
+    assertClinicalDocumentGraphPresentationSchema(
+      graphPresentationSchema.payload,
+    );
+  } catch (error) {
+    throw new TrustCareApiError(
+      error instanceof Error
+        ? `Clinical Document Graph contract failed: ${error.message}`
+        : "Clinical Document Graph contract failed.",
+      { code: "clinical_document_graph_contract_incompatible" },
+    );
+  }
+  assertClinicalDocumentGraphEndpointCompatibility({
+    portalOrigin,
+    discovery,
+    graph: clinicalDocumentGraph.payload,
+  });
 
   return {
     portalOrigin,
@@ -167,8 +207,38 @@ export async function loadWalletExchangeContracts(input: {
     manifest,
     renderContract,
     schema,
+    clinicalDocumentGraph,
+    graphPresentationSchema,
     loadedAt: (input.now?.() ?? new Date()).toISOString(),
   };
+}
+
+function assertClinicalDocumentGraphEndpointCompatibility(input: {
+  portalOrigin: string;
+  discovery: WalletExchangeDiscovery;
+  graph: ClinicalDocumentGraphContract;
+}): void {
+  const changesUrl = new URL(
+    input.graph.changeProtocol.endpoint,
+    input.portalOrigin,
+  ).toString();
+  if (changesUrl !== input.discovery.endpoints.clinicalDocumentGraphChanges) {
+    throw new TrustCareApiError(
+      "Clinical Document Graph delta endpoint disagrees with Wallet Exchange discovery.",
+      { code: "clinical_document_graph_endpoint_mismatch" },
+    );
+  }
+  const schemaUrl = new URL(
+    input.graph.presentationProtocol.schemaEndpoint,
+    input.portalOrigin,
+  ).toString();
+  const expectedSchemaUrl = `${input.portalOrigin}/api/public/wallet-contracts/clinical-document-graph/presentation-schema`;
+  if (schemaUrl !== expectedSchemaUrl) {
+    throw new TrustCareApiError(
+      "Clinical Document Graph presentation schema endpoint is not the trusted Contract Hub resource.",
+      { code: "clinical_document_graph_schema_endpoint_mismatch" },
+    );
+  }
 }
 
 export async function fetchVerifiedContractResource<T>(
@@ -425,9 +495,7 @@ function assertSchemaCompatibility(schema: PortalWalletSchema): void {
       incompatible(`Portal Wallet JSON Schema is missing ${required}.`);
     }
     if (!requiredBlocks.includes(required)) {
-      incompatible(
-        `Portal Wallet JSON Schema does not require ${required}.`,
-      );
+      incompatible(`Portal Wallet JSON Schema does not require ${required}.`);
     }
   }
   for (const required of requiredBlocks) {

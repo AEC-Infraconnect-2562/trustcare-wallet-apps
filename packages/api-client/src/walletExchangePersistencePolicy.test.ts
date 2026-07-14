@@ -67,4 +67,80 @@ describe("Wallet Exchange shared persistence policy", () => {
       }),
     ).toThrow("exact Portal status endpoint");
   });
+
+  it("persists only holder-bound SHL certification metadata without transport secrets", () => {
+    const policy = createWalletExchangePersistencePolicy({
+      portalOrigin,
+      holderDid,
+    });
+    const shlPackageId = "A".repeat(43);
+    const link = {
+      clientRequestId: "client-shl-request-1",
+      requestId: "portal-shl-request-1",
+      idempotencyKey: "client-shl-request-1",
+      statusUrl:
+        "https://portal.example/api/wallet/v2/credential-requests/portal-shl-request-1",
+      targetHospitalCode: "TCC" as const,
+      context: "opd_visit" as const,
+      purpose: "OPD registration",
+      credentialTypes: ["shl_manifest"],
+      documentTypes: ["shl_manifest"],
+      shlCertification: {
+        schema: "trustcare.wallet.shl-certification-link.v1" as const,
+        binding: {
+          schema: "trustcare.wallet.shl-certification-binding.v1" as const,
+          shlPackageId,
+          holderDid,
+          manifestUrl: `https://portal.example/api/share-gateway/manifests/${shlPackageId}.json`,
+          manifestHash: `sha256:${"a".repeat(64)}`,
+          sourceBundleHash: `sha256:${"b".repeat(64)}`,
+          fileHashes: [`sha256:${"c".repeat(64)}`],
+          purpose: "OPD registration",
+          recipient: "did:web:portal.example:issuers:tcc",
+          audience: "https://portal.example",
+          context: "opd_visit" as const,
+          consentRef: "urn:trustcare:consent:001",
+          issuedAt: "2026-07-14T00:00:00.000Z",
+          expiresAt: "2026-07-14T00:10:00.000Z",
+          holderPresentationId: "urn:uuid:holder-presentation-1",
+          holderPresentationJwt: "header.payload.signature",
+          sourceCredentials: [
+            {
+              documentId: "document-1",
+              credentialId: "credential-1",
+              plaintextSha256: `sha256:${"d".repeat(64)}`,
+            },
+          ],
+        },
+      },
+      createdAt: "2026-07-14T00:00:00.000Z",
+      updatedAt: "2026-07-14T00:00:00.000Z",
+    };
+
+    expect(() => policy.assertRequestLink(link)).not.toThrow();
+    expect(() =>
+      policy.assertRequestLink({
+        ...link,
+        shlCertification: {
+          ...link.shlCertification,
+          binding: {
+            ...link.shlCertification.binding,
+            holderDid: "did:key:z6MknAnotherHolder",
+          },
+        },
+      }),
+    ).toThrow("binding is inconsistent");
+    expect(() =>
+      policy.assertRequestLink({
+        ...link,
+        shlCertification: {
+          ...link.shlCertification,
+          binding: {
+            ...link.shlCertification.binding,
+            shlContentKey: "must-not-persist",
+          },
+        },
+      } as never),
+    ).toThrow("Unknown Wallet Exchange persistence field");
+  });
 });

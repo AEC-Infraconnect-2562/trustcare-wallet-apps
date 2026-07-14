@@ -6,13 +6,19 @@ import {
   TRUSTCARE_RENDER_VERSION,
   WALLET_EXCHANGE_V2_CONTRACT_VERSION,
 } from "./walletContractLoader";
+import {
+  clinicalDocumentGraphContractFixture,
+  graphPresentationSchemaFixture,
+} from "./testFixtures/clinicalDocumentGraph";
 
 const origin = "https://portal.example";
 
 describe("Wallet Exchange live contract loader", () => {
   it("bypasses intermediary caches before validating contract integrity", async () => {
     const response = await integrityResponse({ version: "test" });
-    const fetchImpl = vi.fn(async () => response.clone()) as unknown as typeof fetch;
+    const fetchImpl = vi.fn(async () =>
+      response.clone(),
+    ) as unknown as typeof fetch;
 
     await fetchVerifiedContractResource(fetchImpl, `${origin}/contract`);
 
@@ -34,7 +40,10 @@ describe("Wallet Exchange live contract loader", () => {
     });
 
     await expect(
-      fetchVerifiedContractResource(async () => response.clone(), `${origin}/contract`),
+      fetchVerifiedContractResource(
+        async () => response.clone(),
+        `${origin}/contract`,
+      ),
     ).resolves.toMatchObject({ etag: expect.stringMatching(/^W\/"sha256-/) });
   });
   it("accepts integrity-bound sandbox contracts with Wallet authority", async () => {
@@ -313,6 +322,7 @@ async function contractFixture(
     endpoints: {
       credentialSync: `${endpointOrigin}/api/wallet/v2/credentials/sync`,
       credentialSyncAck: `${origin}/api/wallet/v2/credentials/sync/ack`,
+      clinicalDocumentGraphChanges: `${origin}/api/wallet/v2/clinical-document-graph/changes`,
       credentialRequests: `${origin}/api/wallet/v2/credential-requests`,
       documentSubmissions: `${origin}/api/wallet/v2/submissions`,
       publicContracts: `${origin}/api/public/wallet-contracts/manifest`,
@@ -450,6 +460,14 @@ async function contractFixture(
     [
       `${origin}/api/public/wallet-contracts/schema`,
       await integrityResponse(contractSchema),
+    ],
+    [
+      `${origin}/api/public/wallet-contracts/clinical-document-graph`,
+      await integrityResponse(clinicalDocumentGraphContractFixture(origin)),
+    ],
+    [
+      `${origin}/api/public/wallet-contracts/clinical-document-graph/presentation-schema`,
+      await integrityResponse(graphPresentationSchemaFixture()),
     ],
   ]);
   const fetchImpl: typeof fetch = async (url) => {

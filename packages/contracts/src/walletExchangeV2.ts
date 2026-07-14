@@ -52,6 +52,7 @@ export type WalletExchangeDiscovery = {
   endpoints: {
     credentialSync: string;
     credentialSyncAck: string;
+    clinicalDocumentGraphChanges: string;
     credentialRequests: string;
     documentSubmissions: string;
     publicContracts: string;
@@ -665,7 +666,7 @@ function validateDiscoveryEndpoints(value: unknown, issues: TrustCareValidationI
   const path = "$.endpoints";
   const object = nestedObject(value, path, issues);
   if (!object) return;
-  const requiredKeys = ["credentialSync", "credentialSyncAck", "credentialRequests", "documentSubmissions", "shlAssociations", "shlCertificationRequests", "publicContracts", "shareGateway", "issuerJwks"];
+  const requiredKeys = ["credentialSync", "credentialSyncAck", "clinicalDocumentGraphChanges", "credentialRequests", "documentSubmissions", "shlAssociations", "shlCertificationRequests", "publicContracts", "shareGateway", "issuerJwks"];
   exactKeys(object, requiredKeys, path, issues);
   requiredKeys.forEach((key) =>
     absoluteUrlString(object, key, path, issues),
@@ -696,6 +697,7 @@ function validateDiscoveryOriginCoherence(
     authorization?.sessionEndpoint,
     endpoints?.credentialSync,
     endpoints?.credentialSyncAck,
+    endpoints?.clinicalDocumentGraphChanges,
     endpoints?.credentialRequests,
     endpoints?.documentSubmissions,
     endpoints?.publicContracts,

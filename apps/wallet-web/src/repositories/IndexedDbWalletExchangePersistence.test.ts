@@ -4,14 +4,18 @@ import {
   enqueueWalletExchangeRetry,
   generateHolderIdentity,
   prepareWalletExchangeSyncCommit,
+  prepareWalletExchangeCredentialReverification,
   signHolderCompactJws,
   type WalletDocumentRecordV2,
   type WalletExchangeIssuerEvidence,
   type WalletExchangePreparedSyncPage,
   type WalletExchangePreparedUpsertChange,
+  type WalletClinicalDocumentGraphState,
+  type WalletClinicalDocumentGraphSyncReduction,
 } from "@trustcare/wallet-core";
 import {
   INDEXED_DB_WALLET_EXCHANGE_SCHEMA,
+  INDEXED_DB_WALLET_EXCHANGE_VERSION,
   IndexedDbWalletExchangePersistence,
   createIndexedDbWalletExchangeDatabaseName,
   type IndexedDbWalletExchangeStorage,
@@ -28,7 +32,30 @@ const issuerDid =
 const contentHash = `sha256:${"a".repeat(64)}` as `sha256:${string}`;
 
 describe("IndexedDbWalletExchangePersistence", () => {
+  it("atomically persists verifier-profile migration without replacing documents", async () => {
+    const storage = new MemoryWalletExchangeStorage();
+    const persistence = repository(storage);
+    const current = await persistence.loadOrCreateState();
+    const { credentialVerificationProfile: _profile, ...legacyFields } = current;
+    const legacy = {
+      ...legacyFields,
+      nextCursor: "opaque-legacy-cursor",
+    } as typeof current;
+    storage.seed("exchange_state", current.partition.key, {
+      partitionKey: current.partition.key,
+      value: legacy,
+    });
+    const migrated = prepareWalletExchangeCredentialReverification(legacy);
+
+    await persistence.persistCredentialReverificationState(legacy, migrated);
+
+    await expect(repository(storage).loadState()).resolves.toEqual(migrated);
+    await expect(repository(storage).listDocuments()).resolves.toEqual([]);
+  });
+
   it("uses a versioned database namespace partitioned by normalized Portal origin and holder", () => {
+    expect(INDEXED_DB_WALLET_EXCHANGE_SCHEMA).toBe("wallet-exchange-v2@2");
+    expect(INDEXED_DB_WALLET_EXCHANGE_VERSION).toBe(3);
     const name = createIndexedDbWalletExchangeDatabaseName({
       portalOrigin,
       holderDid,
@@ -49,6 +76,26 @@ describe("IndexedDbWalletExchangePersistence", () => {
         holderDid,
       }),
     ).toThrow("origin cannot contain credentials, query, or fragment");
+  });
+
+  it("migrates in place and commits graph objects plus cursor atomically", async () => {
+    const storage = new MemoryWalletExchangeStorage();
+    const persistence = repository(storage);
+    const initial = await persistence.loadOrCreateClinicalDocumentGraphState();
+    const reduction = graphReduction(initial);
+
+    storage.failNextPut("clinical_graph_cursors");
+    await expect(
+      persistence.commitClinicalDocumentGraphReduction(reduction),
+    ).rejects.toThrow("injected clinical_graph_cursors put failure");
+    await expect(
+      persistence.loadOrCreateClinicalDocumentGraphState(),
+    ).resolves.toEqual(initial);
+
+    await persistence.commitClinicalDocumentGraphReduction(reduction);
+    await expect(
+      repository(storage).loadOrCreateClinicalDocumentGraphState(),
+    ).resolves.toEqual(reduction.state);
   });
 
   it("rolls back documents and cursor when an atomic sync transaction fails", async () => {
@@ -521,6 +568,67 @@ function document(input: {
   };
 }
 
+function graphReduction(
+  initial: WalletClinicalDocumentGraphState,
+): WalletClinicalDocumentGraphSyncReduction {
+  const occurredAt = "2026-07-13T03:00:00.000Z";
+  const contentHash = `sha256:${"9".repeat(64)}` as `sha256:${string}`;
+  const state: WalletClinicalDocumentGraphState = {
+    ...initial,
+    nextCursor: "opaque-graph-cursor-1",
+    nodes: [
+      {
+        artifactId: "urn:trustcare:artifact:document-1",
+        artifactType: "clinical-document",
+        semanticClass: "clinical_document",
+        lifecycleStatus: "active",
+        versionId: "version-1",
+        contentHash,
+        profileUris: ["urn:trustcare:schema:clinical-document"],
+        retrievable: true,
+        object: {
+          objectId: "urn:trustcare:object:document-1",
+          mediaType: "application/fhir+json",
+          schemaId: "urn:trustcare:schema:clinical-document",
+          schemaVersion: "2.0.0",
+          profileUris: ["urn:trustcare:schema:clinical-document"],
+          contentHash,
+          canonicalization: "JCS",
+          location: "https://portal.example/objects/document-1",
+          requiredFields: ["issuer"],
+          extensions: { tenantReference: "hospital:1" },
+        },
+        occurredAt,
+        trustState: "organization_attested",
+      },
+    ],
+    changes: [
+      {
+        changeId: "graph-change-1",
+        changeSetId: "graph-change-set-1",
+        changeSetIdempotencyKey: "graph-idempotency-1",
+        sequence: 1,
+        occurredAt,
+        outcome: "applied",
+      },
+    ],
+    lastChangeSetId: "graph-change-set-1",
+    lastCorrelationId: "correlation-graph-1",
+    lastSyncedAt: occurredAt,
+  };
+  return {
+    state,
+    plan: {
+      expectedCursor: initial.nextCursor,
+      nextCursor: "opaque-graph-cursor-1",
+      changeSetId: "graph-change-set-1",
+      replayed: false,
+      appliedChangeIds: ["graph-change-1"],
+      quarantinedChangeIds: [],
+    },
+  };
+}
+
 class MemoryWalletExchangeStorage implements IndexedDbWalletExchangeStorage {
   private stores = createStores();
   private failStore: IndexedDbWalletExchangeStoreName | undefined;
@@ -579,6 +687,12 @@ function createStores(): Map<
       "request_links",
       "submission_links",
       "submission_outbox",
+      "clinical_graph_objects",
+      "clinical_graph_edges",
+      "clinical_bundle_members",
+      "clinical_graph_changes",
+      "clinical_graph_cursors",
+      "clinical_graph_quarantine",
     ].map((name) => [name, new Map<string, unknown>()]),
   ) as Map<IndexedDbWalletExchangeStoreName, Map<string, unknown>>;
 }

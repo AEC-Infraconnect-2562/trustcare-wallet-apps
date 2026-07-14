@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   applyWalletExchangeAckReceipt,
+  prepareWalletExchangeCredentialReverification,
   prepareWalletExchangeSyncCommit,
   type WalletDocumentRecordV2,
   type WalletExchangeIssuerEvidence,
   type WalletExchangePreparedSyncPage,
   type WalletExchangePreparedUpsertChange,
+  type WalletClinicalDocumentGraphState,
+  type WalletClinicalDocumentGraphSyncReduction,
 } from "@trustcare/wallet-core";
 import {
   MOBILE_HOLDER_KEY_PERSISTENCE_AVAILABLE,
+  MOBILE_WALLET_EXCHANGE_SCHEMA,
   SqliteWalletExchangePersistence,
   type MobileWalletExchangeStorage,
   type MobileWalletExchangeStoreName,
@@ -24,6 +28,48 @@ const issuerDid =
 const contentHash = `sha256:${"a".repeat(64)}` as `sha256:${string}`;
 
 describe("SqliteWalletExchangePersistence", () => {
+  it("atomically persists verifier-profile migration in the holder partition", async () => {
+    const storage = new MemoryWalletExchangeStorage();
+    const persistence = repository(storage);
+    const current = await persistence.loadOrCreateState();
+    const { credentialVerificationProfile: _profile, ...legacyFields } = current;
+    const legacy = {
+      ...legacyFields,
+      nextCursor: "opaque-legacy-cursor",
+    } as typeof current;
+    storage.seed("exchange_state", current.partition.key, {
+      partitionKey: current.partition.key,
+      schema: MOBILE_WALLET_EXCHANGE_SCHEMA,
+      value: legacy,
+    });
+    const migrated = prepareWalletExchangeCredentialReverification(legacy);
+
+    await persistence.persistCredentialReverificationState(legacy, migrated);
+
+    await expect(repository(storage).loadState()).resolves.toEqual(migrated);
+    await expect(repository(storage).listDocuments()).resolves.toEqual([]);
+  });
+
+  it("commits graph objects and opaque cursor in one SQLCipher transaction", async () => {
+    const storage = new MemoryWalletExchangeStorage();
+    const persistence = repository(storage);
+    const initial = await persistence.loadOrCreateClinicalDocumentGraphState();
+    const reduction = graphReduction(initial);
+
+    storage.failNextPut("clinical_graph_cursors");
+    await expect(
+      persistence.commitClinicalDocumentGraphReduction(reduction),
+    ).rejects.toThrow("injected clinical_graph_cursors put failure");
+    await expect(
+      persistence.loadOrCreateClinicalDocumentGraphState(),
+    ).resolves.toEqual(initial);
+
+    await persistence.commitClinicalDocumentGraphReduction(reduction);
+    await expect(
+      repository(storage).loadOrCreateClinicalDocumentGraphState(),
+    ).resolves.toEqual(reduction.state);
+  });
+
   it("atomically rolls back documents, cursor, and pending ACK", async () => {
     const storage = new MemoryWalletExchangeStorage();
     const persistence = repository(storage);
@@ -417,12 +463,77 @@ function document(jwt: string): WalletDocumentRecordV2 {
   };
 }
 
+function graphReduction(
+  initial: WalletClinicalDocumentGraphState,
+): WalletClinicalDocumentGraphSyncReduction {
+  const occurredAt = "2026-07-13T03:00:00.000Z";
+  const contentHash = `sha256:${"9".repeat(64)}` as `sha256:${string}`;
+  const state: WalletClinicalDocumentGraphState = {
+    ...initial,
+    nextCursor: "opaque-graph-cursor-1",
+    nodes: [
+      {
+        artifactId: "urn:trustcare:artifact:document-1",
+        artifactType: "clinical-document",
+        semanticClass: "clinical_document",
+        lifecycleStatus: "active",
+        versionId: "version-1",
+        contentHash,
+        profileUris: ["urn:trustcare:schema:clinical-document"],
+        retrievable: true,
+        object: {
+          objectId: "urn:trustcare:object:document-1",
+          mediaType: "application/fhir+json",
+          schemaId: "urn:trustcare:schema:clinical-document",
+          schemaVersion: "2.0.0",
+          profileUris: ["urn:trustcare:schema:clinical-document"],
+          contentHash,
+          canonicalization: "JCS",
+          location: "https://portal.example/objects/document-1",
+          requiredFields: ["issuer"],
+          extensions: { tenantReference: "hospital:1" },
+        },
+        occurredAt,
+        trustState: "organization_attested",
+      },
+    ],
+    changes: [
+      {
+        changeId: "graph-change-1",
+        changeSetId: "graph-change-set-1",
+        changeSetIdempotencyKey: "graph-idempotency-1",
+        sequence: 1,
+        occurredAt,
+        outcome: "applied",
+      },
+    ],
+    lastChangeSetId: "graph-change-set-1",
+    lastCorrelationId: "correlation-graph-1",
+    lastSyncedAt: occurredAt,
+  };
+  return {
+    state,
+    plan: {
+      expectedCursor: initial.nextCursor,
+      nextCursor: "opaque-graph-cursor-1",
+      changeSetId: "graph-change-set-1",
+      replayed: false,
+      appliedChangeIds: ["graph-change-1"],
+      quarantinedChangeIds: [],
+    },
+  };
+}
+
 class MemoryWalletExchangeStorage implements MobileWalletExchangeStorage {
   private stores = createStores();
   private failStore: MobileWalletExchangeStoreName | undefined;
 
   failNextPut(store: MobileWalletExchangeStoreName): void {
     this.failStore = store;
+  }
+
+  seed(store: MobileWalletExchangeStoreName, key: string, value: unknown): void {
+    this.stores.get(store)!.set(key, clone(value));
   }
 
   async transaction<T>(
@@ -472,6 +583,12 @@ function createStores(): Map<
       "request_links",
       "submission_links",
       "submission_outbox",
+      "clinical_graph_objects",
+      "clinical_graph_edges",
+      "clinical_bundle_members",
+      "clinical_graph_changes",
+      "clinical_graph_cursors",
+      "clinical_graph_quarantine",
     ].map((name) => [name, new Map<string, unknown>()]),
   ) as Map<MobileWalletExchangeStoreName, Map<string, unknown>>;
 }

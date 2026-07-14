@@ -634,6 +634,23 @@ export const walletTestLoginUsers = walletDemoUsers.filter(
   (user) => user.role === "patient" && isWalletTestLoginUser(user.id),
 );
 
+/**
+ * Narrows the local display profiles to identities advertised by the live
+ * Portal sandbox catalog. Unknown Portal identities and Wallet-only fixtures
+ * are deliberately omitted instead of being presented as compatible logins.
+ */
+export function walletTestLoginUsersForPortalCatalog(
+  identities: readonly Readonly<{ username: string }>[],
+): WalletDemoUser[] {
+  const byUsername = new Map(
+    walletTestLoginUsers.map((user) => [user.id, user] as const),
+  );
+  return identities.flatMap((identity) => {
+    const user = byUsername.get(identity.username);
+    return user ? [user] : [];
+  });
+}
+
 export function getDemoUser(userId?: string | number): WalletDemoUser {
   if (!userId) return demoPatient;
   return (

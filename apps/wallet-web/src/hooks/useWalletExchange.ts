@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  WalletExchangeProblemError,
-} from "@trustcare/api-client/walletExchangeV2";
+import { WalletExchangeProblemError } from "@trustcare/api-client/walletExchangeV2";
 import {
   WalletProvisioningProblemError,
   createWalletProvisioningClient,
@@ -15,10 +13,13 @@ import {
 } from "@trustcare/api-client/walletExchangeWorkflow";
 import {
   generateHolderIdentity,
+  listClinicalDocumentGraphArtifacts,
   type HolderSigningIdentity,
   type RuntimeEnvironment,
+  type WalletClinicalDocumentGraphState,
   type WalletDocumentRecordV2,
 } from "@trustcare/wallet-core";
+import type { ClinicalDocumentGraphPresentation } from "@trustcare/contracts";
 import { IndexedDbWalletExchangePersistence } from "../repositories";
 
 type WalletExchangeRuntime = {
@@ -42,6 +43,11 @@ type WalletExchangeRequestLinkState = {
 type WalletExchangePendingSubmissionState = {
   partitionKey?: string;
   records: WalletExchangePendingSubmissionDraft[];
+};
+
+type WalletExchangeClinicalGraphState = {
+  partitionKey?: string;
+  state?: WalletClinicalDocumentGraphState;
 };
 
 export type WalletPortalConnectionStatus =
@@ -93,6 +99,8 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     });
   const [pendingSubmissionState, setPendingSubmissionState] =
     useState<WalletExchangePendingSubmissionState>({ records: [] });
+  const [clinicalGraphState, setClinicalGraphState] =
+    useState<WalletExchangeClinicalGraphState>({});
   const currentPartitionKey = holderLocatorKey(options);
   const activeRuntime =
     options.enabled !== false && runtime?.partitionKey === currentPartitionKey
@@ -113,6 +121,14 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     pendingSubmissionState.partitionKey === currentPartitionKey
       ? pendingSubmissionState.records
       : [];
+  const clinicalDocumentGraph =
+    options.enabled !== false &&
+    clinicalGraphState.partitionKey === currentPartitionKey
+      ? clinicalGraphState.state
+      : undefined;
+  const graphArtifacts = clinicalDocumentGraph
+    ? listClinicalDocumentGraphArtifacts(clinicalDocumentGraph)
+    : [];
   const connection =
     options.enabled !== false &&
     connectionState.partitionKey === currentPartitionKey
@@ -131,6 +147,7 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
       setDocumentState({ records: [] });
       setRequestLinkState({ records: [] });
       setPendingSubmissionState({ records: [] });
+      setClinicalGraphState({});
       setError("");
       setConnectionState({
         status: "loading",
@@ -148,13 +165,16 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     setDocumentState({ records: [] });
     setRequestLinkState({ records: [] });
     setPendingSubmissionState({ records: [] });
+    setClinicalGraphState({});
     void initializeRuntime(options)
       .then(async (next) => {
-        const [state, links, pendingSubmissions] = await Promise.all([
-          next.persistence.loadOrCreateState(),
-          next.persistence.listCredentialRequestLinks(),
-          next.persistence.listPendingSubmissionDrafts(),
-        ]);
+        const [state, links, pendingSubmissions, graphState] =
+          await Promise.all([
+            next.persistence.loadOrCreateState(),
+            next.persistence.listCredentialRequestLinks(),
+            next.persistence.listPendingSubmissionDrafts(),
+            next.persistence.loadOrCreateClinicalDocumentGraphState(),
+          ]);
         if (!active) return;
         setRuntime(next);
         setDocumentState({
@@ -168,6 +188,10 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
         setPendingSubmissionState({
           partitionKey: next.partitionKey,
           records: pendingSubmissions,
+        });
+        setClinicalGraphState({
+          partitionKey: next.partitionKey,
+          state: graphState,
         });
       })
       .catch((reason: unknown) => {
@@ -276,7 +300,19 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
         partitionKey: activeRuntime.partitionKey,
         records: result.state.documents,
       });
-      return result;
+      const graphResult =
+        await activeRuntime.workflow.synchronizeClinicalDocumentGraph();
+      const links =
+        await activeRuntime.persistence.listCredentialRequestLinks();
+      setRequestLinkState({
+        partitionKey: activeRuntime.partitionKey,
+        records: links,
+      });
+      setClinicalGraphState({
+        partitionKey: activeRuntime.partitionKey,
+        state: graphResult.state,
+      });
+      return { ...result, clinicalDocumentGraph: graphResult };
     } catch (reason) {
       const message = walletExchangeErrorMessage(reason);
       setError(message);
@@ -288,10 +324,11 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
 
   const reload = useCallback(async () => {
     if (!activeRuntime) return;
-    const [state, links, pendingSubmissions] = await Promise.all([
+    const [state, links, pendingSubmissions, graphState] = await Promise.all([
       activeRuntime.persistence.loadOrCreateState(),
       activeRuntime.persistence.listCredentialRequestLinks(),
       activeRuntime.persistence.listPendingSubmissionDrafts(),
+      activeRuntime.persistence.loadOrCreateClinicalDocumentGraphState(),
     ]);
     setDocumentState({
       partitionKey: activeRuntime.partitionKey,
@@ -305,7 +342,29 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
       partitionKey: activeRuntime.partitionKey,
       records: pendingSubmissions,
     });
+    setClinicalGraphState({
+      partitionKey: activeRuntime.partitionKey,
+      state: graphState,
+    });
   }, [activeRuntime]);
+
+  const graphPresentation = useCallback(
+    async (
+      selectedArtifactId: string,
+    ): Promise<ClinicalDocumentGraphPresentation> => {
+      if (!activeRuntime || !provisioningReady) {
+        throw new Error(
+          connection.message ||
+            error ||
+            "Clinical Document Graph is not ready.",
+        );
+      }
+      return activeRuntime.workflow.clinicalDocumentGraphPresentation(
+        selectedArtifactId,
+      );
+    },
+    [activeRuntime, connection.message, error, provisioningReady],
+  );
 
   const recoverPendingSubmissions = useCallback(async () => {
     if (!activeRuntime || !provisioningReady) {
@@ -381,12 +440,15 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     documents,
     requestLinks,
     pendingSubmissions,
+    clinicalDocumentGraph,
+    graphArtifacts,
     initializing,
     syncing,
     error,
     connection,
     completeHolderBinding,
     synchronize,
+    graphPresentation,
     recoverPendingSubmissions,
     reload,
   };

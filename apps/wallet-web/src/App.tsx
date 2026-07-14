@@ -49,6 +49,7 @@ import {
   walletObjectsFromShl,
   walletCardForDocumentRendering,
   walletTestLoginUsers,
+  walletTestLoginUsersForPortalCatalog,
   walletTestUserProfile,
   type ContractHubCatalog,
   type DocumentRequestDraft,
@@ -264,6 +265,26 @@ export default function App() {
     appId: env.walletExchangeAppId,
     sandboxUsername: isAuthenticated ? selectedUserId : undefined,
   });
+  const loginUsers = useMemo(() => {
+    return portalWalletSession.configuration?.endpoints.sandboxTestIdentities
+      ? walletTestLoginUsersForPortalCatalog(
+          portalWalletSession.testIdentities,
+        )
+      : walletTestLoginUsers;
+  }, [
+    portalWalletSession.configuration?.endpoints.sandboxTestIdentities,
+    portalWalletSession.testIdentities,
+  ]);
+  useEffect(() => {
+    if (
+      isAuthenticated ||
+      !loginUsers.length ||
+      loginUsers.some((user) => user.id === selectedUserId)
+    ) {
+      return;
+    }
+    setSelectedUserId(loginUsers[0].id);
+  }, [isAuthenticated, loginUsers, selectedUserId]);
   useEffect(() => {
     if (
       !isAuthenticated ||
@@ -326,6 +347,57 @@ export default function App() {
       ];
     });
   }, [walletExchange.requestLinks]);
+
+  useEffect(() => {
+    const completed = walletExchange.requestLinks
+      .map((link) => link.shlCertification?.certified)
+      .filter((value) => value !== undefined);
+    if (!completed.length) return;
+    setStoredExtrasByUser((previous) => {
+      const current = previous[selectedUserId] ?? [];
+      let changed = false;
+      const next = current.map((object) => {
+        if (!object.payload || typeof object.payload !== "object") {
+          return object;
+        }
+        const payload = object.payload as Record<string, unknown>;
+        const certification = completed.find(
+          (candidate) =>
+            candidate.objectLinks.shlPackageId === payload.shlPackageId,
+        );
+        if (!certification) return object;
+        if (
+          object.status === "verified" &&
+          payload.manifestCredentialId ===
+            certification.manifestCredentialId
+        ) {
+          return object;
+        }
+        changed = true;
+        return {
+          ...object,
+          status: "verified",
+          payload: {
+            ...payload,
+            certificationStatus: "verified",
+            manifestCredentialId: certification.manifestCredentialId,
+            manifestCredentialJwt: certification.manifestCredentialJwt,
+            issuerDid: certification.issuerDid,
+            verificationMethod: certification.verificationMethod,
+            verifiedAt: certification.verifiedAt,
+            objectLinks: certification.objectLinks,
+          },
+        };
+      });
+      return changed
+        ? { ...previous, [selectedUserId]: next }
+        : previous;
+    });
+  }, [
+    selectedUserId,
+    setStoredExtrasByUser,
+    walletExchange.requestLinks,
+  ]);
 
   const canSyncPortalWallet = Boolean(walletExchange.workflow);
   const interopFixtures = useMemo(() => {
@@ -1403,7 +1475,7 @@ export default function App() {
           </div>
         )}
         <LoginView
-          users={walletTestLoginUsers}
+          users={loginUsers}
           pendingScan={Boolean(pendingScanPayload)}
           selectedUserId={selectedUserId}
           onSelect={setSelectedUserId}
@@ -1676,7 +1748,11 @@ export default function App() {
           !portalSyncMessage && (
             <div
               className="toast-line portal-sync-line"
-              role={walletExchange.connection.status === "error" ? "alert" : "status"}
+              role={
+                walletExchange.connection.status === "error"
+                  ? "alert"
+                  : "status"
+              }
             >
               {walletExchange.connection.message}
             </div>
@@ -1727,6 +1803,11 @@ export default function App() {
             selectedRecordId={routeMatch.params.recordId}
             onOpenRecord={openV2Record}
             onCloseRecord={() => routerNavigate("/records")}
+            graphArtifacts={walletExchange.graphArtifacts}
+            graphQuarantineCount={
+              walletExchange.clinicalDocumentGraph?.quarantine.length ?? 0
+            }
+            loadGraphPresentation={walletExchange.graphPresentation}
           />
         )}
         {routeView === "receive" && (
@@ -1851,6 +1932,14 @@ export default function App() {
             open={detailOpen}
             onClose={closeCredentialInspector}
             onShare={shareCredentialFromInspector}
+            graphArtifactId={
+              walletExchange.graphArtifacts.find(
+                (artifact) =>
+                  artifact.artifactId === selectedCard.credentialId ||
+                  artifact.object?.objectId === selectedCard.credentialId,
+              )?.artifactId
+            }
+            loadGraphPresentation={walletExchange.graphPresentation}
           />
         ) : null}
       </Suspense>

@@ -66,6 +66,7 @@ export async function prepareWalletExchangeCredential(
           expectedHolderDid: input.holderDid,
           expectedCredentialData: credentialData,
           now: input.now,
+          fetchImpl: input.fetchImpl,
         })
       : {
           verified: false,
@@ -218,8 +219,9 @@ function walletDocumentFromSyncedCredential(input: {
       credentialStatus: objectRecord(input.credentialData.credentialStatus),
     },
     trust: {
-      // Policy/status-list publication is not yet public in Portal. Never show
-      // green solely because the authenticated sync transport was valid.
+      // Proof, issuer, public status-list, expiry and holder binding passed.
+      // Keep the overall state non-green until recipient/purpose policy is
+      // evaluated for a concrete sharing event.
       state: "issuer_signed_untrusted",
       checks: [
         { key: "proof", status: "passed", checkedAt: input.checkedAt },
@@ -227,7 +229,7 @@ function walletDocumentFromSyncedCredential(input: {
         {
           key: "status",
           status: "passed",
-          detail: "portal_sync_active",
+          detail: "bitstring_status_list_active",
           checkedAt: input.checkedAt,
         },
         {

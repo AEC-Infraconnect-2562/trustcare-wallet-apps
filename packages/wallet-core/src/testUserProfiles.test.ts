@@ -3,6 +3,7 @@ import {
   getDemoWalletCards,
   walletDemoUsers,
   walletTestLoginUsers,
+  walletTestLoginUsersForPortalCatalog,
 } from "./demoData";
 import {
   walletTestUserProfile,
@@ -62,5 +63,24 @@ describe("Wallet sandbox test-user profiles", () => {
       ).not.toContain('"patientId"');
       expect(walletTestUserProfile(userId)?.initialState).toBe("partial");
     }
+  });
+
+  it("uses the live Portal catalog as the production sandbox-login allowlist", () => {
+    const users = walletTestLoginUsersForPortalCatalog([
+      { username: "demo-patient-003" },
+      { username: "portal-only-unknown" },
+      { username: "partner-patient-001" },
+    ]);
+
+    expect(users.map((user) => user.id)).toEqual([
+      "demo-patient-003",
+      "partner-patient-001",
+    ]);
+    expect(
+      walletTestUserProfile("demo-patient-complete-001")?.portalFixtureOpenId,
+    ).toBeUndefined();
+    expect(users.some((user) => user.id === "demo-patient-complete-001")).toBe(
+      false,
+    );
   });
 });

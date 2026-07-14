@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@trustcare/api-client": "workspace:*",
+    "@trustcare/contracts": "workspace:*",
     "@trustcare/design-tokens": "workspace:*",
     "@trustcare/i18n": "workspace:*",
     "@trustcare/ui-web": "workspace:*",

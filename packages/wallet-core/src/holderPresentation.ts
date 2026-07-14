@@ -10,6 +10,11 @@ import {
   signHolderCompactJws,
   type HolderSigningIdentity,
 } from "./holderIdentity";
+import {
+  assertTrustCareDirectCredential,
+  envelopCredentialJwt,
+  trustCareCredentialIssuerDid,
+} from "./directDocumentProfile";
 
 export type HolderSignedDirectVpInput = {
   identity: HolderSigningIdentity;
@@ -28,28 +33,20 @@ export type HolderSignedDirectVpInput = {
 };
 
 export type HolderSignedDirectVpPayload = {
-  iss: string;
-  sub: string;
-  aud: string;
-  iat: number;
-  exp: number;
-  jti: string;
-  vp: {
-    "@context": ["https://www.w3.org/ns/credentials/v2", string];
-    id: string;
-    type: ["VerifiablePresentation", "TrustcarePatientPresentation"];
-    holder: string;
-    purpose: string;
-    trustcare: {
-      context: WalletExchangeServiceContext;
-      consentRef: string;
-      recipient: string;
-      audience: string;
-      issuedAt: string;
-      expiresAt: string;
-    };
-    verifiableCredential: string[];
+  "@context": ["https://www.w3.org/ns/credentials/v2", string];
+  id: string;
+  type: ["VerifiablePresentation", "TrustcarePatientPresentation"];
+  holder: string;
+  purpose: string;
+  trustcare: {
+    context: WalletExchangeServiceContext;
+    consentRef: string;
+    recipient: string;
+    audience: string;
+    issuedAt: string;
+    expiresAt: string;
   };
+  verifiableCredential: ReturnType<typeof envelopCredentialJwt>[];
 };
 
 export type HolderSignedDirectVp = {
@@ -101,7 +98,12 @@ export async function createHolderSignedDirectVp(
     throw new Error("Holder VP requires at least one issuer-signed VC JWT.");
   }
   const credentialJwts = input.credentialJwts.map((credentialJwt, index) => {
-    assertIssuerSignedCredentialJwt(credentialJwt, input.identity.did, index);
+    assertIssuerSignedCredentialJwt(
+      credentialJwt,
+      input.identity.did,
+      index,
+      now,
+    );
     return credentialJwt;
   });
 
@@ -111,32 +113,24 @@ export async function createHolderSignedDirectVp(
   const issuedAtIso = new Date(issuedAt * 1_000).toISOString();
   const expiresAtIso = new Date(expirationTime * 1_000).toISOString();
   const payload: HolderSignedDirectVpPayload = {
-    iss: input.identity.did,
-    sub: input.identity.did,
-    aud: audience,
-    iat: issuedAt,
-    exp: expirationTime,
-    jti: presentationId,
-    vp: {
-      "@context": [
-        "https://www.w3.org/ns/credentials/v2",
-        `${new URL(audience).origin}/contexts/trustcare-credentials-v1.jsonld`,
-      ],
-      id: presentationId,
-      type: ["VerifiablePresentation", "TrustcarePatientPresentation"],
-      holder: input.identity.did,
-      purpose,
-      trustcare: {
-        context: input.context,
-        consentRef,
-        recipient,
-        audience,
-        issuedAt: issuedAtIso,
-        expiresAt: expiresAtIso,
-      },
-      // Retain each issuer-signed VC byte-for-byte inside the VP claim.
-      verifiableCredential: credentialJwts,
+    "@context": [
+      "https://www.w3.org/ns/credentials/v2",
+      `${new URL(audience).origin}/contexts/trustcare-credentials-v1.jsonld`,
+    ],
+    id: presentationId,
+    type: ["VerifiablePresentation", "TrustcarePatientPresentation"],
+    holder: input.identity.did,
+    purpose,
+    trustcare: {
+      context: input.context,
+      consentRef,
+      recipient,
+      audience,
+      issuedAt: issuedAtIso,
+      expiresAt: expiresAtIso,
     },
+    // Retain each issuer-signed VC byte-for-byte in a standard VC envelope.
+    verifiableCredential: credentialJwts.map(envelopCredentialJwt),
   };
   const vpJwt = await signHolderCompactJws({
     identity: input.identity,
@@ -149,7 +143,6 @@ export async function createHolderSignedDirectVp(
     transport: { mode: "direct_vp", vpJwt },
   };
 }
-
 function assertHolderIdentity(
   identity: HolderSigningIdentity,
   assertedHolderDid: string | undefined,
@@ -161,11 +154,11 @@ function assertHolderIdentity(
     throw new Error("Holder VP signer does not match the asserted holder DID.");
   }
 }
-
 function assertIssuerSignedCredentialJwt(
   value: unknown,
   holderDid: string,
   index: number,
+  now: Date,
 ): asserts value is string {
   const label = `Nested credential ${index + 1}`;
   if (typeof value !== "string" || !value || value.trim() !== value) {
@@ -198,10 +191,6 @@ function assertIssuerSignedCredentialJwt(
   ) {
     throw new Error(`${label} has no accountable issuer signature header.`);
   }
-  if (typeof payload.iss !== "string" || !payload.iss) {
-    throw new Error(`${label} has no issuer claim.`);
-  }
-
   if (
     header.typ !== "vc+jwt" ||
     header.cty !== "vc" ||
@@ -209,10 +198,20 @@ function assertIssuerSignedCredentialJwt(
   ) {
     throw new Error(`${label} is not a direct W3C VC-JWT payload.`);
   }
-  const credentialSubject = recordValue(payload.credentialSubject);
-  if (credentialSubject?.id !== holderDid) {
+  const issuerDid = trustCareCredentialIssuerDid(payload.issuer);
+  if (!header.kid.startsWith(`${issuerDid}#`)) {
+    throw new Error(`${label} kid is not controlled by its signed VC issuer.`);
+  }
+  try {
+    assertTrustCareDirectCredential({
+      payload: payload as Record<string, unknown>,
+      expectedIssuerDid: issuerDid,
+      expectedHolderDid: holderDid,
+      now,
+    });
+  } catch (error) {
     throw new Error(
-      `${label} credentialSubject.id does not match the holder did:key.`,
+      `${label} ${error instanceof Error ? error.message : "is not a valid TrustCare VC."}`,
     );
   }
 }
@@ -297,10 +296,4 @@ function freshUuid(): string {
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex
     .slice(6, 8)
     .join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
 }

@@ -14,6 +14,7 @@ import {
  * this file only adds patient-controlled persistence policy and reducers.
  */
 import type { WalletDocumentRecordV2 } from "./walletDocumentV2";
+import { TRUSTCARE_DIRECT_DOCUMENT_PROFILE_VERSION } from "./directDocumentProfile";
 
 export const WALLET_EXCHANGE_STATE_VERSION =
   "2026.07.wallet-exchange-state.v1" as const;
@@ -180,6 +181,8 @@ export type WalletExchangeRetryJournalEntry = {
 
 export type WalletExchangeState = {
   version: typeof WALLET_EXCHANGE_STATE_VERSION;
+  /** Missing only on durable state created before the direct VC/VP hard cutover. */
+  credentialVerificationProfile?: typeof TRUSTCARE_DIRECT_DOCUMENT_PROFILE_VERSION;
   partition: WalletExchangePartition;
   nextCursor?: string;
   documents: WalletDocumentRecordV2[];
@@ -252,6 +255,7 @@ export function createWalletExchangeState(input: {
 }): WalletExchangeState {
   return {
     version: WALLET_EXCHANGE_STATE_VERSION,
+    credentialVerificationProfile: TRUSTCARE_DIRECT_DOCUMENT_PROFILE_VERSION,
     partition: createWalletExchangePartition(input),
     documents: [],
     lineages: [],
@@ -259,6 +263,54 @@ export function createWalletExchangeState(input: {
     processedEvents: [],
     quarantine: [],
     retryJournal: [],
+  };
+}
+
+export function walletExchangeCredentialReverificationRequired(
+  state: WalletExchangeState,
+): boolean {
+  assertState(state);
+  return (
+    state.credentialVerificationProfile !==
+    TRUSTCARE_DIRECT_DOCUMENT_PROFILE_VERSION
+  );
+}
+
+/**
+ * Rewinds only rejected sync receipts after a verifier-profile hard cutover.
+ * Accepted documents and their lineages remain intact and are sent back as
+ * known hashes, while previously quarantined events can be delivered and
+ * verified again from the initial holder-bound feed.
+ */
+export function prepareWalletExchangeCredentialReverification(
+  current: WalletExchangeState,
+): WalletExchangeState {
+  assertState(current);
+  if (current.pendingAck) {
+    throw new Error(
+      "Wallet Exchange must ACK durable sync state before verifier migration.",
+    );
+  }
+  if (!walletExchangeCredentialReverificationRequired(current)) {
+    return current;
+  }
+  const rejectedEventIds = new Set(
+    current.processedEvents
+      .filter((receipt) => receipt.outcome === "rejected")
+      .map((receipt) => receipt.eventId),
+  );
+  return {
+    ...current,
+    credentialVerificationProfile:
+      TRUSTCARE_DIRECT_DOCUMENT_PROFILE_VERSION,
+    nextCursor: undefined,
+    processedEvents: current.processedEvents.filter(
+      (receipt) => !rejectedEventIds.has(receipt.eventId),
+    ),
+    quarantine: current.quarantine.filter(
+      (entry) => !rejectedEventIds.has(entry.eventId),
+    ),
+    lastAckReceipt: undefined,
   };
 }
 

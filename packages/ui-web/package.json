@@ -10,6 +10,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@trustcare/contracts": "workspace:*",
     "@trustcare/design-tokens": "workspace:*",
     "@trustcare/wallet-core": "workspace:*",
     "lucide-react": "^0.468.0",

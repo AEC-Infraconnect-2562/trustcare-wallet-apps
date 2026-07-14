@@ -2,6 +2,7 @@ import {
   PORTAL_WALLET_V2_CONTRACT_VERSION,
   WALLET_EXCHANGE_V2_CONTRACT_VERSION,
   WALLET_RENDERER_REFERENCE_COMMIT,
+  type ClinicalDocumentGraphChangeSet,
   type WalletCredentialRequest,
   type WalletCredentialRequestInput,
   type WalletCredentialRequestStatus,
@@ -13,21 +14,33 @@ import {
 } from "@trustcare/contracts";
 import {
   createHolderSignedDirectVp,
+  createWalletClinicalDocumentGraphState,
   createWalletExchangeState,
   generateHolderIdentity,
   prepareWalletExchangeSyncCommit,
   type HolderSigningIdentity,
+  type PreparedHolderAttestedShl,
   type WalletExchangeState,
   type WalletExchangeSyncReduction,
+  type WalletClinicalDocumentGraphState,
+  type WalletClinicalDocumentGraphSyncReduction,
 } from "@trustcare/wallet-core";
-import { decodeJwt, exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
+import {
+  base64url,
+  decodeJwt,
+  exportJWK,
+  generateKeyPair,
+  SignJWT,
+  type JWK,
+} from "jose";
+import { gzipSync } from "fflate";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { type TrustCarePortalHospitalCode } from "./portalIssuerResolver";
+import { TRUSTCARE_RENDER_VERSION } from "./walletContractLoader";
 import {
-  type TrustCarePortalHospitalCode,
-} from "./portalIssuerResolver";
-import {
-  TRUSTCARE_RENDER_VERSION,
-} from "./walletContractLoader";
+  clinicalDocumentGraphContractFixture,
+  graphPresentationSchemaFixture,
+} from "./testFixtures/clinicalDocumentGraph";
 import {
   createWalletExchangeV2Client,
   type WalletExchangeV2Client,
@@ -209,6 +222,72 @@ describe("WalletExchangeWorkflow", () => {
     });
   });
 
+  it("persists holder-bound graph pages idempotently and rebuilds the selected presentation", async () => {
+    const persistence = freshPersistence();
+    const fake = fakeClient();
+    fake.syncClinicalDocumentGraph
+      .mockResolvedValueOnce(
+        graphPage({
+          changeSetId: "graph-set-1",
+          nextCursor: "graph-cursor-1",
+          hasMore: true,
+          changes: [graphNodeChange("patient-identity-1", 1)],
+        }),
+      )
+      .mockResolvedValueOnce(
+        graphPage({
+          changeSetId: "graph-set-2",
+          cursor: "graph-cursor-1",
+          nextCursor: "graph-cursor-2",
+          changes: [
+            {
+              changeId: "graph-change-trust-1",
+              kind: "trust_state_changed",
+              sequence: 2,
+              occurredAt: now.toISOString(),
+              breaking: false,
+              requiresRefetch: false,
+              artifactId: "patient-identity-1",
+              from: "transport_valid",
+              to: "organization_attested",
+            },
+          ],
+        }),
+      );
+    const workflow = createWorkflow({ persistence, fake });
+
+    const result = await workflow.synchronizeClinicalDocumentGraph(50);
+    expect(result).toMatchObject({
+      pages: 2,
+      applied: 2,
+      quarantined: 0,
+      state: { nextCursor: "graph-cursor-2" },
+    });
+    expect(fake.syncClinicalDocumentGraph).toHaveBeenNthCalledWith(1, {
+      cursor: undefined,
+      limit: 50,
+    });
+    expect(fake.syncClinicalDocumentGraph).toHaveBeenNthCalledWith(2, {
+      cursor: "graph-cursor-1",
+      limit: 50,
+    });
+
+    const presentation =
+      await workflow.clinicalDocumentGraphPresentation("patient-identity-1");
+    expect(presentation.requestedArtifactId).toBe("patient-identity-1");
+    expect(presentation.nodes).toHaveLength(1);
+    expect(presentation.stages.map((stage) => stage.key)).toEqual([
+      "source",
+      "fhir",
+      "document",
+      "retrieval",
+      "attestation",
+      "vc",
+      "shl",
+      "vp",
+    ]);
+  });
+
   it("persists a credential-request link, reuses idempotency, and refreshes Maker/Checker status", async () => {
     const persistence = freshPersistence();
     const fake = fakeClient();
@@ -276,6 +355,98 @@ describe("WalletExchangeWorkflow", () => {
     ).toBeNull();
   });
 
+  it("persists and resumes SHL Maker/Checker tracking through credential-request status", async () => {
+    const shlPackageId = "A".repeat(43);
+    const persistence = freshPersistence();
+    const fake = fakeClient();
+    const accepted: WalletCredentialRequest = {
+      ...credentialRequestResponse(),
+      requestId: "wxr-shl-001",
+      clientRequestId: "wallet-shl-certification-001",
+      credentialTypes: ["shl_manifest"],
+    };
+    fake.requestShlCertification.mockResolvedValue(accepted);
+    fake.getCredentialRequestStatus.mockResolvedValue({
+      ...credentialRequestStatus(accepted),
+      status: "in_progress",
+    });
+    const workflow = createWorkflow({ persistence, fake });
+    const prepared = {
+      manifest: {
+        publicationId: shlPackageId,
+        holderDid: holder.did,
+        manifestUrl: "https://share.example/manifest-001",
+        accessPolicy: {
+          purpose: "OPD registration",
+          recipient: network.issuers.TCC.issuerDid,
+          audience: portalOrigin,
+          context: "opd_visit",
+          consentRef: "urn:trustcare:consent:shl:001",
+          issuedAt: "2026-07-11T12:00:00.000Z",
+          expiresAt: "2026-07-11T12:10:00.000Z",
+        },
+        documents: [
+          {
+            documentId: "document-shl-001",
+            credentialId: "credential-shl-001",
+            plaintextSha256: `sha256:${"d".repeat(64)}`,
+          },
+        ],
+      },
+      manifestHash: `sha256:${"a".repeat(64)}`,
+      sourceBundleHash: `sha256:${"b".repeat(64)}`,
+      files: [{ jweSha256: `sha256:${"c".repeat(64)}` }],
+      holderPresentationId: "urn:uuid:holder-shl-001",
+      holderPresentationJwt: "header.payload.signature",
+      certificationRequest: {
+        clientRequestId: accepted.clientRequestId,
+        shlPackageId,
+        targetHospitalCode: "TCC",
+        context: "opd_visit",
+        purpose: "OPD registration",
+        consentRef: "urn:trustcare:consent:shl:001",
+        manifestUrl: "https://share.example/manifest-001",
+        manifestHash: `sha256:${"a".repeat(64)}`,
+        sourceBundleHash: `sha256:${"b".repeat(64)}`,
+        fileHashes: [`sha256:${"c".repeat(64)}`],
+        expiresAt: "2026-07-11T12:10:00.000Z",
+        holderAuthorizationVpJwt: "header.payload.signature",
+      },
+    } as unknown as PreparedHolderAttestedShl;
+
+    const submitted = await workflow.requestHospitalShlCertification(prepared);
+    const refreshed = await workflow.refreshHospitalShlCertification(
+      accepted.clientRequestId,
+    );
+
+    expect(submitted).toMatchObject({
+      status: "submitted",
+      patientMessage: "รอการรับรองจากโรงพยาบาล",
+      response: { requestId: accepted.requestId },
+    });
+    expect(refreshed).toMatchObject({
+      status: "submitted",
+      response: { status: "in_progress" },
+    });
+    expect(fake.getCredentialRequestStatus).toHaveBeenCalledWith(
+      accepted.requestId,
+    );
+    expect(
+      await persistence.getCredentialRequestLink(accepted.clientRequestId),
+    ).toMatchObject({
+      requestId: accepted.requestId,
+      lastKnownStatus: "in_progress",
+      credentialTypes: ["shl_manifest"],
+      shlCertification: {
+        schema: "trustcare.wallet.shl-certification-link.v1",
+        binding: {
+          shlPackageId,
+          manifestHash: `sha256:${"a".repeat(64)}`,
+        },
+      },
+    });
+  });
+
   it("creates a holder-signed direct VP without changing nested issuer JWT bytes", async () => {
     const change = await signedCredentialChange({
       issuer: network.issuers.TCC,
@@ -318,18 +489,17 @@ describe("WalletExchangeWorkflow", () => {
       request?.transport.mode === "direct_vp" ? request.transport.vpJwt : "";
     const payload = decodeJwt(vpJwt);
     expect(payload).toMatchObject({
-      iss: holder.did,
-      sub: holder.did,
-      aud: `${portalOrigin}/verifier`,
-      vp: { holder: holder.did },
+      holder: holder.did,
+      trustcare: { audience: `${portalOrigin}/verifier` },
     });
+    expect(payload).not.toHaveProperty("vp");
+    expect(payload).not.toHaveProperty("iss");
     expect(
-      (payload.vp as { verifiableCredential: string[] }).verifiableCredential,
-    ).toEqual([change.credential.proof!.jwt]);
+      (payload.verifiableCredential as Array<{ id: string }>)[0]?.id,
+    ).toBe(`data:application/vc+jwt,${change.credential.proof!.jwt}`);
     expect(
-      (payload.vp as { verifiableCredential: string[] })
-        .verifiableCredential[0],
-    ).toBe(change.credential.proof!.jwt);
+      (payload.verifiableCredential as Array<{ type: string }>)[0]?.type,
+    ).toBe("EnvelopedVerifiableCredential");
     expect(response.submissionId).toBe("submission-001");
     expect(
       await persistence.getSubmissionLink("client-submission-001"),
@@ -608,6 +778,7 @@ describe("WalletExchangeWorkflow", () => {
 class MemoryPersistence implements WalletExchangePersistencePort {
   readonly partition;
   state: WalletExchangeState;
+  graphState: WalletClinicalDocumentGraphState;
   readonly operations: string[];
   private readonly credentialRequests = new Map<
     string,
@@ -625,6 +796,7 @@ class MemoryPersistence implements WalletExchangePersistencePort {
   constructor(state: WalletExchangeState, operations: string[] = []) {
     this.state = structuredClone(state);
     this.partition = this.state.partition;
+    this.graphState = createWalletClinicalDocumentGraphState(this.partition);
     this.operations = operations;
   }
 
@@ -647,11 +819,31 @@ class MemoryPersistence implements WalletExchangePersistencePort {
     this.state = structuredClone(reduction.state);
   }
 
+  async loadOrCreateClinicalDocumentGraphState(): Promise<WalletClinicalDocumentGraphState> {
+    return structuredClone(this.graphState);
+  }
+
+  async commitClinicalDocumentGraphReduction(
+    reduction: WalletClinicalDocumentGraphSyncReduction,
+  ): Promise<void> {
+    expect(reduction.plan.expectedCursor).toBe(this.graphState.nextCursor);
+    this.graphState = structuredClone(reduction.state);
+  }
+
   async persistAcknowledgedState(state: WalletExchangeState): Promise<void> {
     expect(state.pendingAck).toBeUndefined();
     this.operations.push(
       `persist:ack:${state.lastAckReceipt?.syncId ?? "missing"}`,
     );
+    this.state = structuredClone(state);
+  }
+
+  async persistCredentialReverificationState(
+    previous: WalletExchangeState,
+    state: WalletExchangeState,
+  ): Promise<void> {
+    expect(previous).toEqual(this.state);
+    this.operations.push("persist:credential-reverification");
     this.state = structuredClone(state);
   }
 
@@ -666,6 +858,14 @@ class MemoryPersistence implements WalletExchangePersistencePort {
   ): Promise<WalletExchangeCredentialRequestLink | null> {
     return structuredClone(
       this.credentialRequests.get(clientRequestId) ?? null,
+    );
+  }
+
+  async listCredentialRequestLinks(): Promise<
+    WalletExchangeCredentialRequestLink[]
+  > {
+    return [...this.credentialRequests.values()].map((link) =>
+      structuredClone(link),
     );
   }
 
@@ -755,6 +955,7 @@ function fakeClient() {
   const acknowledgeSync = vi.fn(async (request: WalletSyncAckRequest) =>
     ackFor(request),
   );
+  const syncClinicalDocumentGraph = vi.fn(async () => graphPage());
   const requestCredential = vi.fn(
     async (
       _input: WalletCredentialRequestInput,
@@ -784,23 +985,30 @@ function fakeClient() {
   const getSubmissionStatus = vi.fn(async (): Promise<WalletSubmission> =>
     submissionResponse("client-submission-001"),
   );
+  const requestShlCertification = vi.fn(
+    async (): Promise<WalletCredentialRequest> => credentialRequestResponse(),
+  );
   return {
     client: {
       syncCredentials,
       acknowledgeSync,
+      syncClinicalDocumentGraph,
       requestCredential,
       getCredentialRequestStatus,
       submitDocuments,
       submitDocumentsSerialized,
       getSubmissionStatus,
+      requestShlCertification,
     } as unknown as WalletExchangeV2Client,
     syncCredentials,
     acknowledgeSync,
+    syncClinicalDocumentGraph,
     requestCredential,
     getCredentialRequestStatus,
     submitDocuments,
     submitDocumentsSerialized,
     getSubmissionStatus,
+    requestShlCertification,
   };
 }
 
@@ -954,19 +1162,16 @@ async function signedCredentialChange(input: {
   eventId: string;
 }): Promise<WalletSyncUpsertChange> {
   const credentialData: Record<string, unknown> = {
-    "@context": ["https://www.w3.org/ns/credentials/v2"],
+    "@context": [
+      "https://www.w3.org/ns/credentials/v2",
+      `${portalOrigin}/contexts/trustcare-credentials-v1.jsonld`,
+    ],
     id: `urn:trustcare:credential:${input.credentialId}`,
     type: ["VerifiableCredential", "PatientIdentityCredential"],
-    iss: input.issuer.issuerDid,
-    sub: input.holderDid,
     issuer: { id: input.issuer.issuerDid },
     validFrom: "2026-07-11T11:55:00.000Z",
     validUntil: "2027-07-11T12:00:00.000Z",
-    credentialStatus: {
-      id: `${portalOrigin}/api/wallet/v2/credential-status/${input.credentialId}`,
-      type: "TrustCareCredentialStatus2026",
-      status: "active",
-    },
+    credentialStatus: statusEntries(input.issuer.issuerDid),
     credentialSubject: {
       id: input.holderDid,
       documentType: "patient_identity",
@@ -983,20 +1188,13 @@ async function signedCredentialChange(input: {
       },
     },
   };
-  const jwt = await new SignJWT({
-    ...credentialData,
-    trustcare_claim_digest: await sha256Canonical(credentialData),
-  })
+  const jwt = await new SignJWT(credentialData)
     .setProtectedHeader({
       alg: "ES256",
       typ: "vc+jwt",
       cty: "vc",
       kid: input.issuer.kid,
     })
-    .setIssuer(input.issuer.issuerDid)
-    .setSubject(input.holderDid)
-    .setIssuedAt(Math.floor(now.getTime() / 1000) - 60)
-    .setExpirationTime(Math.floor(now.getTime() / 1000) + 3_600)
     .sign(input.issuer.privateKey);
   const contentHash = await walletContentHash({
     credentialData,
@@ -1116,6 +1314,37 @@ async function createNetworkFixture() {
       `${portalOrigin}/hospital/${code}/did/jwks.json`,
       jsonResponse(issuer.jwks),
     );
+    for (const purpose of ["revocation", "suspension"] as const) {
+      const url = statusListUrl(issuer.issuerDid, purpose);
+      const jwt = await new SignJWT({
+        "@context": ["https://www.w3.org/ns/credentials/v2"],
+        id: url,
+        type: ["VerifiableCredential", "BitstringStatusListCredential"],
+        issuer: issuer.issuerDid,
+        validFrom: "2026-07-11T11:00:00.000Z",
+        validUntil: "2026-07-12T12:00:00.000Z",
+        credentialSubject: {
+          id: `${url}#list`,
+          type: "BitstringStatusList",
+          statusPurpose: purpose,
+          encodedList: `u${base64url.encode(gzipSync(new Uint8Array(16_384)))}`,
+        },
+      })
+        .setProtectedHeader({
+          alg: "ES256",
+          typ: "vc+jwt",
+          cty: "vc",
+          kid: issuer.kid,
+        })
+        .sign(issuer.privateKey);
+      responses.set(
+        url,
+        new Response(jwt, {
+          status: 200,
+          headers: { "content-type": "application/vc+jwt" },
+        }),
+      );
+    }
   }
   const fetchWith = (extra = new Map<string, Response>()): typeof fetch =>
     (async (resource) => {
@@ -1129,6 +1358,26 @@ async function createNetworkFixture() {
       return response?.clone() ?? jsonResponse({ title: "Not found" }, {}, 404);
     }) as typeof fetch;
   return { issuers, fetchImpl: fetchWith(), fetchWith };
+}
+
+function statusListUrl(
+  issuerDid: string,
+  purpose: "revocation" | "suspension",
+): string {
+  return `${portalOrigin}/api/credentials/status-lists/${encodeURIComponent(issuerDid)}/${purpose}`;
+}
+
+function statusEntries(issuerDid: string) {
+  return (["revocation", "suspension"] as const).map((purpose) => {
+    const url = statusListUrl(issuerDid, purpose);
+    return {
+      id: `${url}#1`,
+      type: "BitstringStatusListEntry",
+      statusPurpose: purpose,
+      statusListIndex: "1",
+      statusListCredential: url,
+    };
+  });
 }
 
 async function contractResponses(): Promise<Map<string, Response>> {
@@ -1153,6 +1402,7 @@ async function contractResponses(): Promise<Map<string, Response>> {
     endpoints: {
       credentialSync: `${portalOrigin}/api/wallet/v2/credentials/sync`,
       credentialSyncAck: `${portalOrigin}/api/wallet/v2/credentials/sync/ack`,
+      clinicalDocumentGraphChanges: `${portalOrigin}/api/wallet/v2/clinical-document-graph/changes`,
       credentialRequests: `${portalOrigin}/api/wallet/v2/credential-requests`,
       documentSubmissions: `${portalOrigin}/api/wallet/v2/submissions`,
       shlAssociations: `${portalOrigin}/api/wallet/v2/shl-associations/{shlId}`,
@@ -1288,7 +1538,70 @@ async function contractResponses(): Promise<Map<string, Response>> {
       `${portalOrigin}/api/public/wallet-contracts/schema`,
       await integrityResponse(schema),
     ],
+    [
+      `${portalOrigin}/api/public/wallet-contracts/clinical-document-graph`,
+      await integrityResponse(
+        clinicalDocumentGraphContractFixture(portalOrigin),
+      ),
+    ],
+    [
+      `${portalOrigin}/api/public/wallet-contracts/clinical-document-graph/presentation-schema`,
+      await integrityResponse(graphPresentationSchemaFixture()),
+    ],
   ]);
+}
+
+function graphPage(
+  input: Partial<ClinicalDocumentGraphChangeSet> = {},
+): ClinicalDocumentGraphChangeSet {
+  return {
+    contractVersion: "2026.07.pcdg.v2",
+    changeSetId: "graph-set-empty",
+    tenantReference: "hospital:1",
+    subjectReference: holder.did,
+    cursor: "initial",
+    nextCursor: "graph-cursor-empty",
+    correlationId: "correlation-graph-empty",
+    idempotencyKey: "idempotency-graph-empty",
+    occurredAt: now.toISOString(),
+    compatibility: {
+      minimumConsumerVersion: "2026.07.pcdg.v2",
+      additiveUnknownFieldsAllowed: true,
+      unknownRequiredFields: "quarantine",
+      immutableArtifactUpdates: "supersede",
+    },
+    changes: [],
+    hasMore: false,
+    ...input,
+  };
+}
+
+function graphNodeChange(artifactId: string, sequence: number) {
+  const contentHash = `sha256:${"7".repeat(64)}` as const;
+  return {
+    changeId: `graph-change-node-${sequence}`,
+    kind: "node_upsert",
+    sequence,
+    occurredAt: now.toISOString(),
+    breaking: false,
+    requiresRefetch: false,
+    artifactId,
+    artifactType: "patient_identity",
+    semanticClass: "identity_credential",
+    lifecycleStatus: "active",
+    versionId: `version-${sequence}`,
+    object: {
+      objectId: `object-${artifactId}`,
+      mediaType: "application/vc+jwt",
+      schemaId: "urn:trustcare:schema:patient_identity",
+      schemaVersion: "2.0.0",
+      profileUris: [],
+      contentHash,
+      canonicalization: "JCS",
+      requiredFields: ["issuer", "holderDid"],
+      extensions: { tenantReference: "hospital:1" },
+    },
+  };
 }
 
 function jsonResponse(

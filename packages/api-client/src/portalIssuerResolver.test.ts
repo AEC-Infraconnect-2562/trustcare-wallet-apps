@@ -1,9 +1,11 @@
-import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { base64url, exportJWK, generateKeyPair, SignJWT } from "jose";
+import { gzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import {
   resolvePortalHospitalIssuer,
   verifyPortalHospitalCredentialJwt,
 } from "./portalIssuerResolver";
+import { portalDirectCredentialFixture } from "./testFixtures/portalDirectCredential";
 
 const portalOrigin = "https://portal.example";
 
@@ -123,22 +125,22 @@ describe("Portal hospital did:web resolver", () => {
     });
     const now = new Date("2026-07-11T12:00:00.000Z");
     const credential = {
-      "@context": ["https://www.w3.org/ns/credentials/v2"],
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        `${portalOrigin}/contexts/trustcare-credentials-v1.jsonld`,
+      ],
+      id: "urn:trustcare:vc:patient-identity:1",
       type: ["VerifiableCredential", "PatientIdentityCredential"],
-      credentialSubject: { id: "did:key:zHolder" },
-      credentialStatus: { status: "active" },
+      issuer: issuer.issuerDid,
+      credentialSubject: { id: "did:key:zHolder", data: {} },
+      credentialStatus: statusEntries(issuer.issuerDid),
+      validFrom: "2026-07-11T11:00:00.000Z",
       validUntil: "2027-07-11T12:00:00.000Z",
     };
-    const jwt = await new SignJWT({
-      vc: credential,
-      trustcare_claim_digest: await sha256Canonical(credential),
-    })
-      .setProtectedHeader({ alg: "ES256", typ: "vc+jwt", kid: fixture.kid })
-      .setIssuer(issuer.issuerDid)
-      .setSubject("did:key:zHolder")
-      .setIssuedAt(Math.floor(now.getTime() / 1000))
-      .setExpirationTime(Math.floor(now.getTime() / 1000) + 600)
+    const jwt = await new SignJWT(credential)
+      .setProtectedHeader({ alg: "ES256", typ: "vc+jwt", cty: "vc", kid: fixture.kid })
       .sign(fixture.privateKey);
+    const fetchImpl = statusFetch(fixture, issuer.issuerDid, now);
 
     await expect(
       verifyPortalHospitalCredentialJwt({
@@ -146,16 +148,15 @@ describe("Portal hospital did:web resolver", () => {
         issuer,
         expectedHolderDid: "did:key:zHolder",
         now,
+        fetchImpl,
       }),
     ).resolves.toMatchObject({ verified: true, status: "active" });
 
     const wrongIssuerJwt = await new SignJWT({
-      credentialSubject: { id: "did:key:zHolder" },
-      credentialStatus: { status: "active" },
+      ...credential,
+      issuer: "did:web:untrusted-issuer.example:hospital:tcm",
     })
-      .setProtectedHeader({ alg: "ES256", typ: "vc+jwt", kid: fixture.kid })
-      .setIssuer("did:web:untrusted-issuer.example:hospital:tcm")
-      .setExpirationTime(Math.floor(now.getTime() / 1000) + 600)
+      .setProtectedHeader({ alg: "ES256", typ: "vc+jwt", cty: "vc", kid: fixture.kid })
       .sign(fixture.privateKey);
     await expect(
       verifyPortalHospitalCredentialJwt({
@@ -163,6 +164,7 @@ describe("Portal hospital did:web resolver", () => {
         issuer,
         expectedHolderDid: "did:key:zHolder",
         now,
+        fetchImpl,
       }),
     ).resolves.toMatchObject({ verified: false, status: "unknown" });
   });
@@ -183,21 +185,20 @@ describe("Portal hospital did:web resolver", () => {
       typ = "vc+jwt",
     ) => {
       const credential = {
-        "@context": ["https://www.w3.org/ns/credentials/v2"],
+        "@context": [
+          "https://www.w3.org/ns/credentials/v2",
+          `${portalOrigin}/contexts/trustcare-credentials-v1.jsonld`,
+        ],
+        id: `urn:trustcare:vc:holder:${subjectDid}`,
         type: ["VerifiableCredential", "PatientIdentityCredential"],
-        credentialSubject: { id: subjectDid },
-        credentialStatus: { status: "active" },
+        issuer: issuer.issuerDid,
+        credentialSubject: { id: subjectDid, data: {} },
+        credentialStatus: statusEntries(issuer.issuerDid),
+        validFrom: "2026-07-11T11:00:00.000Z",
         validUntil: "2027-07-11T12:00:00.000Z",
       };
-      return new SignJWT({
-        vc: credential,
-        trustcare_claim_digest: await sha256Canonical(credential),
-      })
-        .setProtectedHeader({ alg: "ES256", typ, kid: fixture.kid })
-        .setIssuer(issuer.issuerDid)
-        .setSubject(jwtSubject)
-        .setIssuedAt(Math.floor(now.getTime() / 1000))
-        .setExpirationTime(Math.floor(now.getTime() / 1000) + 600)
+      return new SignJWT({ ...credential, sub: jwtSubject })
+        .setProtectedHeader({ alg: "ES256", typ, cty: "vc", kid: fixture.kid })
         .sign(fixture.privateKey);
     };
 
@@ -212,9 +213,115 @@ describe("Portal hospital did:web resolver", () => {
           issuer,
           expectedHolderDid: holderDid,
           now,
+          fetchImpl: statusFetch(fixture, issuer.issuerDid, now),
         }),
       ).resolves.toMatchObject({ verified: false });
     }
+  });
+
+  it("rejects cryptographically valid credentials reported revoked or suspended", async () => {
+    const fixture = await issuerFixture("TCC");
+    const issuer = await resolvePortalHospitalIssuer({
+      portalBaseUrl: portalOrigin,
+      hospitalCode: "TCC",
+      fetchImpl: fixture.fetchImpl,
+    });
+    const now = new Date("2026-07-11T12:00:00.000Z");
+    const holderDid = "did:key:zStatusListHolder";
+    const credential = portalDirectCredentialFixture({
+      issuerDid: issuer.issuerDid,
+      holderDid,
+      portalOrigin,
+      now,
+    });
+    const jwt = await new SignJWT(credential)
+      .setProtectedHeader({
+        alg: "ES256",
+        typ: "vc+jwt",
+        cty: "vc",
+        kid: fixture.kid,
+      })
+      .sign(fixture.privateKey);
+
+    for (const purpose of ["revocation", "suspension"] as const) {
+      await expect(
+        verifyPortalHospitalCredentialJwt({
+          jwt,
+          issuer,
+          expectedHolderDid: holderDid,
+          now,
+          fetchImpl: statusFetch(fixture, issuer.issuerDid, now, purpose),
+        }),
+      ).resolves.toMatchObject({
+        verified: false,
+        status: purpose === "revocation" ? "revoked" : "suspended",
+        errors: [
+          `credential_status_${
+            purpose === "revocation" ? "revoked" : "suspended"
+          }`,
+        ],
+      });
+    }
+  });
+
+  it("rejects conflicting iss, wrong kid/controller, wrapper claims, and unsigned payloads", async () => {
+    const fixture = await issuerFixture("TCC");
+    const issuer = await resolvePortalHospitalIssuer({
+      portalBaseUrl: portalOrigin,
+      hospitalCode: "TCC",
+      fetchImpl: fixture.fetchImpl,
+    });
+    const now = new Date("2026-07-11T12:00:00.000Z");
+    const holderDid = "did:key:zPortalCompatibilityHolder";
+    const credential = portalDirectCredentialFixture({
+      issuerDid: issuer.issuerDid,
+      holderDid,
+      portalOrigin,
+      now,
+    });
+    const sign = (payload: Record<string, unknown>, kid = fixture.kid) =>
+      new SignJWT(payload)
+        .setProtectedHeader({ alg: "ES256", typ: "vc+jwt", cty: "vc", kid })
+        .sign(fixture.privateKey);
+    const fetchImpl = statusFetch(fixture, issuer.issuerDid, now);
+
+    const candidates = [
+      await sign({ ...credential, iss: "did:web:conflicting.example" }),
+      await sign(credential, `${issuer.issuerDid}#unknown-key`),
+      await sign({ ...credential, vc: credential }),
+      JSON.stringify(credential),
+    ];
+    for (const jwt of candidates) {
+      await expect(
+        verifyPortalHospitalCredentialJwt({
+          jwt,
+          issuer,
+          expectedHolderDid: holderDid,
+          now,
+          fetchImpl,
+        }),
+      ).resolves.toMatchObject({ verified: false });
+    }
+
+    const wrongControllerFetch: typeof fetch = async (url) => {
+      if (String(url).endsWith("/did.json")) {
+        return jsonResponse({
+          ...fixture.did,
+          verificationMethod: fixture.did.verificationMethod.map((method) => ({
+            ...method,
+            controller: "did:web:wrong-controller.example",
+          })),
+        });
+      }
+      return fixture.fetchImpl(url);
+    };
+    await expect(
+      resolvePortalHospitalIssuer({
+        portalBaseUrl: portalOrigin,
+        hospitalCode: "TCC",
+        fetchImpl: wrongControllerFetch,
+      }),
+    ).rejects.toThrow("controller");
   });
 });
 
@@ -266,26 +373,60 @@ function jsonResponse(
   });
 }
 
-async function sha256Canonical(value: unknown): Promise<string> {
-  const canonical = canonicalJson(value);
-  const digest = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical)),
-  );
-  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(
-    "",
-  );
+function statusEntries(issuerDid: string) {
+  return (["revocation", "suspension"] as const).map((purpose) => {
+    const url = `${portalOrigin}/api/credentials/status-lists/${encodeURIComponent(issuerDid)}/${purpose}`;
+    return {
+      id: `${url}#1`,
+      type: "BitstringStatusListEntry",
+      statusPurpose: purpose,
+      statusListIndex: "1",
+      statusListCredential: url,
+    };
+  });
 }
 
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
+function statusFetch(
+  fixture: Awaited<ReturnType<typeof issuerFixture>>,
+  issuerDid: string,
+  now: Date,
+  activePurpose?: "revocation" | "suspension",
+): typeof fetch {
+  return async (url) => {
+    const parsed = new URL(String(url));
+    const purpose = parsed.pathname.endsWith("/suspension")
+      ? "suspension"
+      : parsed.pathname.endsWith("/revocation")
+        ? "revocation"
+        : undefined;
+    if (!purpose) return fixture.fetchImpl(url);
+    const statusUrl = parsed.toString();
+    const bitstring = new Uint8Array(16_384);
+    if (purpose === activePurpose) bitstring[0] = 0x40;
+    const jwt = await new SignJWT({
+      "@context": ["https://www.w3.org/ns/credentials/v2"],
+      id: statusUrl,
+      type: ["VerifiableCredential", "BitstringStatusListCredential"],
+      issuer: issuerDid,
+      validFrom: new Date(now.getTime() - 60_000).toISOString(),
+      validUntil: new Date(now.getTime() + 86_400_000).toISOString(),
+      credentialSubject: {
+        id: `${statusUrl}#list`,
+        type: "BitstringStatusList",
+        statusPurpose: purpose,
+        encodedList: `u${base64url.encode(gzipSync(bitstring))}`,
+      },
+    })
+      .setProtectedHeader({
+        alg: "ES256",
+        typ: "vc+jwt",
+        cty: "vc",
+        kid: fixture.kid,
+      })
+      .sign(fixture.privateKey);
+    return new Response(jwt, {
+      status: 200,
+      headers: { "content-type": "application/vc+jwt" },
+    });
+  };
 }

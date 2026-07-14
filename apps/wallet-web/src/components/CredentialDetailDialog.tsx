@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -16,7 +10,12 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { Button, CredentialDocument } from "@trustcare/ui-web";
+import {
+  Button,
+  ClinicalDocumentGraphPresentation,
+  CredentialDocument,
+} from "@trustcare/ui-web";
+import type { ClinicalDocumentGraphPresentation as ClinicalDocumentGraphPresentationModel } from "@trustcare/contracts";
 import {
   credentialRenderModelFromCard,
   walletDocumentRecordV2FromCard,
@@ -30,11 +29,17 @@ export function CredentialDetailDialog({
   open,
   onClose,
   onShare,
+  graphArtifactId,
+  loadGraphPresentation,
 }: {
   card: WalletCard | null;
   open: boolean;
   onClose: () => void;
   onShare: (card: WalletCard) => void;
+  graphArtifactId?: string;
+  loadGraphPresentation?: (
+    artifactId: string,
+  ) => Promise<ClinicalDocumentGraphPresentationModel>;
 }) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const backButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -42,6 +47,11 @@ export function CredentialDetailDialog({
   const paperFrameRef = useRef<HTMLDivElement | null>(null);
   const [mobileInspector, setMobileInspector] = useState(false);
   const [documentExpanded, setDocumentExpanded] = useState(false);
+  const [graphExpanded, setGraphExpanded] = useState(false);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState("");
+  const [graphPresentation, setGraphPresentation] =
+    useState<ClinicalDocumentGraphPresentationModel | null>(null);
   const [paperLayout, setPaperLayout] = useState({
     scale: 1,
     width: 0,
@@ -138,7 +148,10 @@ export function CredentialDetailDialog({
 
   useEffect(() => {
     setDocumentExpanded(false);
-  }, [card?.id]);
+    setGraphExpanded(false);
+    setGraphError("");
+    setGraphPresentation(null);
+  }, [card?.credentialId, card?.id]);
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 940px)");
@@ -193,6 +206,29 @@ export function CredentialDetailDialog({
     window.setTimeout(cleanup, 1500);
   }
 
+  async function toggleGraphPresentation() {
+    if (graphExpanded) {
+      setGraphExpanded(false);
+      return;
+    }
+    if (!graphArtifactId || !loadGraphPresentation) return;
+    setGraphExpanded(true);
+    if (graphPresentation) return;
+    setGraphLoading(true);
+    setGraphError("");
+    try {
+      setGraphPresentation(await loadGraphPresentation(graphArtifactId));
+    } catch (reason) {
+      setGraphError(
+        reason instanceof Error
+          ? reason.message
+          : "ไม่สามารถสร้าง Graph Presentation จากข้อมูลที่ sync ได้",
+      );
+    } finally {
+      setGraphLoading(false);
+    }
+  }
+
   return (
     <aside
       className="credential-inspector"
@@ -230,6 +266,36 @@ export function CredentialDetailDialog({
       </header>
 
       <div className="credential-inspector-scroll">
+        {graphArtifactId && loadGraphPresentation ? (
+          <button
+            type="button"
+            className="credential-graph-toggle"
+            onClick={() => void toggleGraphPresentation()}
+            aria-expanded={graphExpanded}
+          >
+            <ShieldCheck size={17} />
+            {graphExpanded ? "กลับไปดูเอกสาร" : "ดูโครงสร้างและความน่าเชื่อถือ"}
+          </button>
+        ) : null}
+        {graphExpanded ? (
+          <section className="credential-graph-panel">
+            {graphLoading ? (
+              <p className="credential-graph-state">
+                กำลังสร้าง Graph Presentation…
+              </p>
+            ) : null}
+            {graphError ? (
+              <p className="credential-graph-state is-error" role="alert">
+                {graphError}
+              </p>
+            ) : null}
+            {graphPresentation ? (
+              <ClinicalDocumentGraphPresentation
+                presentation={graphPresentation}
+              />
+            ) : null}
+          </section>
+        ) : null}
         <section
           ref={isIdentity ? undefined : paperViewportRef}
           id="credential-document-preview"
@@ -244,9 +310,7 @@ export function CredentialDetailDialog({
             <div
               className="credential-paper-scaled-viewport"
               style={{
-                width: paperLayout.width
-                  ? `${paperLayout.width}px`
-                  : "100%",
+                width: paperLayout.width ? `${paperLayout.width}px` : "100%",
                 height: paperLayout.height
                   ? `${paperLayout.height}px`
                   : undefined,
@@ -410,7 +474,8 @@ function isDisplayValue(value: unknown): boolean {
 function displayValue(value: unknown): string {
   if (Array.isArray(value)) return value.map(displayValue).join(", ");
   if (typeof value === "boolean") return value ? "ใช่" : "ไม่ใช่";
-  if (typeof value === "number") return new Intl.NumberFormat("th-TH").format(value);
+  if (typeof value === "number")
+    return new Intl.NumberFormat("th-TH").format(value);
   return String(value ?? "-");
 }
 

@@ -6,17 +6,23 @@ import {
   CompactEncrypt,
   base64url,
   compactDecrypt,
+  compactVerify,
   decodeJwt,
   decodeProtectedHeader,
   importJWK,
-  jwtVerify,
-  type JWTPayload,
 } from "jose";
 import {
   holderJwsProtectedHeader,
   signHolderCompactJws,
   type HolderSigningIdentity,
 } from "./holderIdentity";
+import {
+  assertTrustCareDirectCredential,
+  envelopCredentialJwt,
+  extractEnvelopedCredentialJwt,
+  trustCareCredentialIssuerDid,
+  type JsonDocument,
+} from "./directDocumentProfile";
 import {
   isWalletDocumentTrustVerified,
   type WalletDocumentRecordV2,
@@ -28,8 +34,6 @@ const CERTIFIED_SHL_BINDING_TYPE =
   "TrustCareCertifiedShlManifestBinding" as const;
 const HOLDER_ATTESTED_VP_TYPE =
   "TrustCareHolderAttestedShlPresentation" as const;
-const SHL_CERTIFICATION_REQUEST_SCHEMA =
-  "trustcare.shl-certification-request.v1" as const;
 const A256GCM_KEY_BYTES = 32;
 const A256GCM_IV_BYTES = 12;
 const MAX_CLOCK_SKEW_SECONDS = 60;
@@ -92,34 +96,32 @@ export type CertifiedShlFileHashBinding = Readonly<{
 
 export type CertifiedShlManifestCredentialBinding = Readonly<{
   type: typeof CERTIFIED_SHL_BINDING_TYPE;
-  publicationId: string;
+  shlPackageId: string;
   holderDid: string;
   manifestUrl: string;
   manifestHash: string;
-  fileHashes: readonly CertifiedShlFileHashBinding[];
-  accessPolicy: CertifiedShlAccessPolicy;
-  accessPolicyHash: string;
+  sourceBundleHash: string;
+  fileHashes: readonly string[];
+  purpose: string;
+  context: WalletExchangeServiceContext;
+  consentRef: string;
+  expiresAt: string;
+  holderAuthorizationPresentationId: string;
 }>;
 
 export type ShlCertificationRequest = Readonly<{
-  schema: typeof SHL_CERTIFICATION_REQUEST_SCHEMA;
-  requestId: string;
-  targetHospitalCode: string;
+  clientRequestId: string;
   shlPackageId: string;
-  holderDid: string;
-  holderPresentationId: string;
-  holderPresentationJwt: string;
+  targetHospitalCode: "TCC" | "TCP" | "TCM";
+  context: WalletExchangeServiceContext;
+  purpose: string;
+  consentRef: string;
   manifestUrl: string;
   manifestHash: string;
-  fileHashes: readonly CertifiedShlFileHashBinding[];
-  accessPolicy: CertifiedShlAccessPolicy;
-  accessPolicyHash: string;
-  sourceCredentials: readonly Readonly<{
-    documentId: string;
-    credentialId: string;
-    issuerDid: string;
-    plaintextSha256: string;
-  }>[];
+  sourceBundleHash: string;
+  fileHashes: readonly string[];
+  expiresAt: string;
+  holderAuthorizationVpJwt: string;
 }>;
 
 export type PreparedHolderAttestedShl = Readonly<{
@@ -137,6 +139,7 @@ export type PreparedHolderAttestedShl = Readonly<{
   shlContentKey: string;
   holderPresentationId: string;
   holderPresentationJwt: string;
+  sourceBundleHash: string;
   certificationRequest: ShlCertificationRequest;
 }>;
 
@@ -148,7 +151,7 @@ export type ManifestCredentialVerificationEvidence = Readonly<{
   verifiedAt: string;
   issuerStatus: "active";
   credentialStatus: "active";
-  claims: JWTPayload;
+  claims: JsonDocument;
 }>;
 
 export type ManifestCredentialVerificationFailure = Readonly<{
@@ -221,6 +224,74 @@ export type FinalizeCertifiedShlInput = {
   now?: Date;
 };
 
+export type DurableShlCertificationBinding = Readonly<{
+  schema: "trustcare.wallet.shl-certification-binding.v1";
+  shlPackageId: string;
+  holderDid: string;
+  manifestUrl: string;
+  manifestHash: string;
+  sourceBundleHash: string;
+  fileHashes: readonly string[];
+  purpose: string;
+  recipient: string;
+  audience: string;
+  context: WalletExchangeServiceContext;
+  consentRef: string;
+  issuedAt: string;
+  expiresAt: string;
+  holderPresentationId: string;
+  holderPresentationJwt: string;
+  sourceCredentials: readonly Readonly<{
+    documentId: string;
+    credentialId: string;
+    plaintextSha256: string;
+  }>[];
+}>;
+
+export type CertifiedShlAssociation = Readonly<{
+  manifestCredentialJwt: string;
+  manifestCredentialEvidence: ManifestCredentialVerificationEvidence;
+  objectLinks: CertifiedShlPublication["objectLinks"];
+}>;
+
+/** Creates the opaque 256-bit identifier used in a public SHL manifest path. */
+export function createShlPackageId(): string {
+  return base64UrlEncode(randomBytes(32));
+}
+
+/**
+ * Removes encryption material from a prepared SHL before durable workflow
+ * tracking. The content key and encrypted file bodies stay with the platform's
+ * active-share store and never enter generic request-link persistence.
+ */
+export function durableShlCertificationBinding(
+  prepared: PreparedHolderAttestedShl,
+): DurableShlCertificationBinding {
+  return deepFreeze({
+    schema: "trustcare.wallet.shl-certification-binding.v1" as const,
+    shlPackageId: prepared.manifest.publicationId,
+    holderDid: prepared.manifest.holderDid,
+    manifestUrl: prepared.manifest.manifestUrl,
+    manifestHash: prepared.manifestHash,
+    sourceBundleHash: prepared.sourceBundleHash,
+    fileHashes: prepared.files.map((file) => file.jweSha256),
+    purpose: prepared.manifest.accessPolicy.purpose,
+    recipient: prepared.manifest.accessPolicy.recipient,
+    audience: prepared.manifest.accessPolicy.audience,
+    context: prepared.manifest.accessPolicy.context,
+    consentRef: prepared.manifest.accessPolicy.consentRef,
+    issuedAt: prepared.manifest.accessPolicy.issuedAt,
+    expiresAt: prepared.manifest.accessPolicy.expiresAt,
+    holderPresentationId: prepared.holderPresentationId,
+    holderPresentationJwt: prepared.holderPresentationJwt,
+    sourceCredentials: prepared.manifest.documents.map((document) => ({
+      documentId: document.documentId,
+      credentialId: document.credentialId,
+      plaintextSha256: document.plaintextSha256,
+    })),
+  });
+}
+
 /**
  * Encrypts presentable Portal-issued VC JWTs for Standard SHL transport and
  * produces the exact binding an external integration issuer must sign.
@@ -244,7 +315,7 @@ export async function prepareHolderAttestedShl(
       "Certified SHL requires issuer DIDs resolved from the live Portal trust registry.",
     );
   }
-  const publicationId = requireIdentifier(
+  const publicationId = requireOpaqueShlPackageId(
     input.publicationId,
     "publication ID",
   );
@@ -372,18 +443,6 @@ export async function prepareHolderAttestedShl(
   const accessPolicyHash = await sha256Urn(
     new TextEncoder().encode(canonicalJson(accessPolicy)),
   );
-  const fileHashes = immutableFileHashBindings(files);
-  const expectedManifestCredentialBinding = deepFreeze({
-    type: CERTIFIED_SHL_BINDING_TYPE,
-    publicationId,
-    holderDid: input.identity.did,
-    manifestUrl,
-    manifestHash,
-    fileHashes,
-    accessPolicy,
-    accessPolicyHash,
-  }) satisfies CertifiedShlManifestCredentialBinding;
-
   const holderPresentationId = `urn:uuid:${freshUuid()}`;
   const sourceCredentials = deepFreeze(
     immutableManifestFiles.map((file) =>
@@ -395,59 +454,101 @@ export async function prepareHolderAttestedShl(
       }),
     ),
   );
+  const sourceBundleHash = await sha256Urn(
+    new TextEncoder().encode(
+      canonicalJson(
+        sourceCredentials.map((credential) => ({
+          credentialId: credential.credentialId,
+          plaintextSha256: credential.plaintextSha256,
+        })),
+      ),
+    ),
+  );
+  const encryptedFileHashes = deepFreeze(
+    files.map((file) => file.jweSha256),
+  );
+  const expectedManifestCredentialBinding = deepFreeze({
+    type: CERTIFIED_SHL_BINDING_TYPE,
+    shlPackageId: publicationId,
+    holderDid: input.identity.did,
+    manifestUrl,
+    manifestHash,
+    sourceBundleHash,
+    fileHashes: encryptedFileHashes,
+    purpose: accessPolicy.purpose,
+    context: accessPolicy.context,
+    consentRef: accessPolicy.consentRef,
+    expiresAt: accessPolicy.expiresAt,
+    holderAuthorizationPresentationId: holderPresentationId,
+  }) satisfies CertifiedShlManifestCredentialBinding;
+  const holderPresentationExpiresAt = new Date(
+    Math.min(
+      Date.parse(accessPolicy.expiresAt),
+      Date.parse(accessPolicy.issuedAt) + 10 * 60_000,
+    ),
+  ).toISOString();
   const holderPresentationPayload = {
-    iss: input.identity.did,
-    sub: input.identity.did,
-    aud: accessPolicy.audience,
-    iat: Math.floor(Date.parse(accessPolicy.issuedAt) / 1_000),
-    nbf: Math.floor(Date.parse(accessPolicy.issuedAt) / 1_000),
-    exp: Math.floor(Date.parse(accessPolicy.expiresAt) / 1_000),
-    jti: holderPresentationId,
-    vp: {
-      "@context": ["https://www.w3.org/ns/credentials/v2"],
-      type: ["VerifiablePresentation", HOLDER_ATTESTED_VP_TYPE],
-      holder: input.identity.did,
-      purpose: accessPolicy.purpose,
-      trustcare: {
-        trustMode: "holder_attested",
-        shlPackageId: publicationId,
+    "@context": [
+      "https://www.w3.org/ns/credentials/v2",
+      `${new URL(input.portalOrigin).origin}/contexts/trustcare-credentials-v1.jsonld`,
+    ],
+    id: holderPresentationId,
+    type: ["VerifiablePresentation", HOLDER_ATTESTED_VP_TYPE],
+    holder: input.identity.did,
+    purpose: accessPolicy.purpose,
+    trustcare: {
+      trustMode: "holder_attested",
+      recipient: accessPolicy.recipient,
+      audience: accessPolicy.audience,
+      context: accessPolicy.context,
+      consentRef: accessPolicy.consentRef,
+      issuedAt: accessPolicy.issuedAt,
+      expiresAt: holderPresentationExpiresAt,
+      shl: {
+        packageId: publicationId,
         manifestUrl,
         manifestHash,
-        fileHashes,
-        accessPolicyHash,
-        recipient: accessPolicy.recipient,
-        audience: accessPolicy.audience,
-        context: accessPolicy.context,
-        consentRef: accessPolicy.consentRef,
-        issuedAt: accessPolicy.issuedAt,
+        sourceBundleHash,
+        fileHashes: encryptedFileHashes,
         expiresAt: accessPolicy.expiresAt,
-        sourceCredentials,
       },
     },
+    verifiableCredential: immutableManifestFiles.map((file) =>
+      envelopCredentialJwt(
+        requireCompactJwt(
+          input.documents.find((record) => record.id === file.documentId)
+            ?.credential.jwt,
+          `Certified SHL document ${file.documentId} original issuer VC`,
+        ),
+      ),
+    ),
   };
   const holderPresentationJwt = await signHolderCompactJws({
     identity: input.identity,
     protectedHeader: holderJwsProtectedHeader(input.identity, "vp"),
     payload: JSON.stringify(holderPresentationPayload),
   });
+  const targetHospitalCode = requireText(
+    input.targetHospitalCode,
+    "target hospital code",
+    32,
+  ).toUpperCase();
+  if (!(["TCC", "TCP", "TCM"] as const).includes(targetHospitalCode as never)) {
+    throw new Error("Target hospital code is not in the live Portal trust registry.");
+  }
   const certificationRequest = deepFreeze({
-    schema: SHL_CERTIFICATION_REQUEST_SCHEMA,
-    requestId: `urn:uuid:${freshUuid()}`,
-    targetHospitalCode: requireText(
-      input.targetHospitalCode,
-      "target hospital code",
-      32,
-    ).toUpperCase(),
+    clientRequestId: `wallet-shl-certification-${freshUuid()}`,
     shlPackageId: publicationId,
-    holderDid: input.identity.did,
-    holderPresentationId,
-    holderPresentationJwt,
+    targetHospitalCode: targetHospitalCode as "TCC" | "TCP" | "TCM",
+    context: accessPolicy.context,
+    purpose: accessPolicy.purpose,
+    consentRef: accessPolicy.consentRef,
     manifestUrl,
     manifestHash,
-    fileHashes,
-    accessPolicy,
-    accessPolicyHash,
-    sourceCredentials,
+    sourceBundleHash,
+    fileHashes: encryptedFileHashes,
+    expiresAt: accessPolicy.expiresAt,
+    holderAuthorizationVpJwt: holderPresentationJwt,
   }) satisfies ShlCertificationRequest;
 
   return deepFreeze({
@@ -461,6 +562,7 @@ export async function prepareHolderAttestedShl(
     shlContentKey,
     holderPresentationId,
     holderPresentationJwt,
+    sourceBundleHash,
     certificationRequest,
   });
 }
@@ -482,7 +584,55 @@ export async function finalizeCertifiedShl(
   }
   await assertPreparedIntegrity(input.prepared);
   const now = input.now ?? new Date();
-  await assertHolderPresentationIntegrity(input.prepared, input.identity, now);
+  const association = await finalizeShlCertificationAssociation({
+    identity: input.identity,
+    binding: durableShlCertificationBinding(input.prepared),
+    manifestCredentialJwt: input.manifestCredentialJwt,
+    verifyManifestCredential: input.verifyManifestCredential,
+    now,
+  });
+
+  return deepFreeze({
+    trustMode: "hospital_certified" as const,
+    manifest: input.prepared.manifest,
+    manifestJson: input.prepared.manifestJson,
+    manifestHash: input.prepared.manifestHash,
+    files: input.prepared.files,
+    shlContentKey: input.prepared.shlContentKey,
+    hashes: deepFreeze({
+      manifestSha256: input.prepared.manifestHash,
+      accessPolicySha256: input.prepared.accessPolicyHash,
+      files: immutableFileHashBindings(input.prepared.files),
+    }),
+    manifestCredentialJwt: association.manifestCredentialJwt,
+    manifestCredentialEvidence: association.manifestCredentialEvidence,
+    holderPresentationId: input.prepared.holderPresentationId,
+    holderPresentationJwt: input.prepared.holderPresentationJwt,
+    objectLinks: association.objectLinks,
+  });
+}
+
+/** Verifies and durably links a synced Portal Manifest VC after restart. */
+export async function finalizeShlCertificationAssociation(input: {
+  identity: HolderSigningIdentity;
+  binding: DurableShlCertificationBinding;
+  manifestCredentialJwt?: string;
+  verifyManifestCredential?: ManifestCredentialVerifier;
+  now?: Date;
+}): Promise<CertifiedShlAssociation> {
+  assertNoPatientId(input);
+  assertHolderIdentity(input.identity);
+  if (input.identity.did !== input.binding.holderDid) {
+    throw new Error(
+      "Certified SHL holder signer does not match the durable binding.",
+    );
+  }
+  const now = input.now ?? new Date();
+  await assertHolderPresentationIntegrity(
+    holderPresentationIntegrityView(input.binding),
+    input.identity,
+    now,
+  );
   const manifestCredentialJwt = requireCompactJwt(
     input.manifestCredentialJwt,
     "Externally issuer-signed Manifest VC",
@@ -492,7 +642,6 @@ export async function finalizeCertifiedShl(
       "Certified SHL requires an injected Manifest VC signature verifier.",
     );
   }
-
   let verification;
   try {
     verification = await input.verifyManifestCredential(manifestCredentialJwt);
@@ -507,50 +656,42 @@ export async function finalizeCertifiedShl(
     );
   }
   const evidence = verification;
+  const expectedBinding: CertifiedShlManifestCredentialBinding = {
+    type: CERTIFIED_SHL_BINDING_TYPE,
+    shlPackageId: input.binding.shlPackageId,
+    holderDid: input.binding.holderDid,
+    manifestUrl: input.binding.manifestUrl,
+    manifestHash: input.binding.manifestHash,
+    sourceBundleHash: input.binding.sourceBundleHash,
+    fileHashes: input.binding.fileHashes,
+    purpose: input.binding.purpose,
+    context: input.binding.context,
+    consentRef: input.binding.consentRef,
+    expiresAt: input.binding.expiresAt,
+    holderAuthorizationPresentationId: input.binding.holderPresentationId,
+  };
   assertManifestCredentialEvidence({
     jwt: manifestCredentialJwt,
     evidence,
-    expectedBinding: input.prepared.expectedManifestCredentialBinding,
+    expectedBinding,
     now,
   });
-
   return deepFreeze({
-    trustMode: "hospital_certified" as const,
-    manifest: input.prepared.manifest,
-    manifestJson: input.prepared.manifestJson,
-    manifestHash: input.prepared.manifestHash,
-    files: input.prepared.files,
-    shlContentKey: input.prepared.shlContentKey,
-    hashes: deepFreeze({
-      manifestSha256: input.prepared.manifestHash,
-      accessPolicySha256: input.prepared.accessPolicyHash,
-      files: input.prepared.expectedManifestCredentialBinding.fileHashes,
-    }),
     manifestCredentialJwt,
     manifestCredentialEvidence: evidence,
-    holderPresentationId: input.prepared.holderPresentationId,
-    holderPresentationJwt: input.prepared.holderPresentationJwt,
-    objectLinks: deepFreeze({
-      shlPackageId: input.prepared.manifest.publicationId,
-      manifestHash: input.prepared.manifestHash,
+    objectLinks: {
+      shlPackageId: input.binding.shlPackageId,
+      manifestHash: input.binding.manifestHash,
       manifestCredentialId: requireText(
-        String(evidence.claims.jti ?? evidence.claims.id ?? ""),
+        String(evidence.claims.id ?? ""),
         "Manifest VC credential ID",
         700,
       ),
       manifestCredentialJwt,
-      holderPresentationId: input.prepared.holderPresentationId,
-      holderPresentationJwt: input.prepared.holderPresentationJwt,
-      sourceCredentials: deepFreeze(
-        input.prepared.manifest.documents.map((document) =>
-          deepFreeze({
-            documentId: document.documentId,
-            credentialId: document.credentialId,
-            plaintextSha256: document.plaintextSha256,
-          }),
-        ),
-      ),
-    }),
+      holderPresentationId: input.binding.holderPresentationId,
+      holderPresentationJwt: input.binding.holderPresentationJwt,
+      sourceCredentials: input.binding.sourceCredentials,
+    },
   });
 }
 
@@ -658,6 +799,8 @@ function assertPresentablePortalCredential(input: {
     typeof header.alg !== "string" ||
     !header.alg ||
     header.alg.toLowerCase() === "none" ||
+    header.typ !== "vc+jwt" ||
+    header.cty !== "vc" ||
     typeof header.kid !== "string" ||
     !header.kid.startsWith(`${issuerDid}#`)
   ) {
@@ -665,22 +808,34 @@ function assertPresentablePortalCredential(input: {
       `Certified SHL document ${record.id} has no accountable Portal issuer signature header.`,
     );
   }
-  if (payload.iss !== issuerDid) {
+  const signedIssuerDid = trustCareCredentialIssuerDid(payload.issuer);
+  if (signedIssuerDid !== issuerDid) {
     throw new Error(
       `Certified SHL document ${record.id} issuer claim does not match its live Portal issuer DID.`,
     );
   }
-  const credential = recordValue(payload.vc) ?? payload;
-  const subject = recordValue(credential.credentialSubject);
-  if (subject?.id !== holderDid) {
+  try {
+    assertTrustCareDirectCredential({
+      payload: payload as JsonDocument,
+      expectedIssuerDid: issuerDid,
+      expectedHolderDid: holderDid,
+      now,
+    });
+  } catch (error) {
     throw new Error(
-      `Certified SHL document ${record.id} credentialSubject.id does not match the holder did:key.`,
+      `Certified SHL document ${record.id} is not a direct TrustCare VC: ${errorMessage(error)}.`,
     );
   }
-  if (
-    typeof payload.exp !== "number" ||
-    payload.exp < shareExpiresAt.getTime() / 1_000
-  ) {
+  if (payload.id !== credentialId) {
+    throw new Error(
+      `Certified SHL document ${record.id} credential ID does not match its signed VC.`,
+    );
+  }
+  const validUntil =
+    typeof payload.validUntil === "string"
+      ? Date.parse(payload.validUntil)
+      : Number.NaN;
+  if (!Number.isFinite(validUntil) || validUntil < shareExpiresAt.getTime()) {
     throw new Error(
       `Certified SHL document ${record.id} issuer VC does not remain valid for the SHL access period.`,
     );
@@ -760,17 +915,34 @@ async function assertPreparedIntegrity(
       );
     }
   }
+  const expectedSourceBundleHash = await sha256Urn(
+    new TextEncoder().encode(
+      canonicalJson(
+        prepared.manifest.documents.map((document) => ({
+          credentialId: document.credentialId,
+          plaintextSha256: document.plaintextSha256,
+        })),
+      ),
+    ),
+  );
+  if (prepared.sourceBundleHash !== expectedSourceBundleHash) {
+    throw new Error("Certified SHL source bundle hash changed after preparation.");
+  }
   if (
     canonicalJson(prepared.expectedManifestCredentialBinding) !==
     canonicalJson({
       type: CERTIFIED_SHL_BINDING_TYPE,
-      publicationId: prepared.manifest.publicationId,
+      shlPackageId: prepared.manifest.publicationId,
       holderDid: prepared.manifest.holderDid,
       manifestUrl: prepared.manifest.manifestUrl,
       manifestHash: prepared.manifestHash,
-      fileHashes: immutableFileHashBindings(prepared.files),
-      accessPolicy: prepared.manifest.accessPolicy,
-      accessPolicyHash: prepared.accessPolicyHash,
+      sourceBundleHash: prepared.sourceBundleHash,
+      fileHashes: prepared.files.map((file) => file.jweSha256),
+      purpose: prepared.manifest.accessPolicy.purpose,
+      context: prepared.manifest.accessPolicy.context,
+      consentRef: prepared.manifest.accessPolicy.consentRef,
+      expiresAt: prepared.manifest.accessPolicy.expiresAt,
+      holderAuthorizationPresentationId: prepared.holderPresentationId,
     })
   ) {
     throw new Error(
@@ -779,74 +951,155 @@ async function assertPreparedIntegrity(
   }
 }
 
+type HolderPresentationIntegrityView = Readonly<{
+  manifest: Readonly<{
+    publicationId: string;
+    holderDid: string;
+    manifestUrl: string;
+    accessPolicy: CertifiedShlAccessPolicy;
+    documents: readonly Readonly<{
+      credentialId: string;
+    }>[];
+  }>;
+  manifestHash: string;
+  sourceBundleHash: string;
+  files: readonly Readonly<{ jweSha256: string }>[];
+  holderPresentationId: string;
+  holderPresentationJwt: string;
+}>;
+
+function holderPresentationIntegrityView(
+  binding: DurableShlCertificationBinding,
+): HolderPresentationIntegrityView {
+  return {
+    manifest: {
+      publicationId: binding.shlPackageId,
+      holderDid: binding.holderDid,
+      manifestUrl: binding.manifestUrl,
+      accessPolicy: {
+        purpose: binding.purpose,
+        recipient: binding.recipient,
+        audience: binding.audience,
+        context: binding.context,
+        consentRef: binding.consentRef,
+        issuedAt: binding.issuedAt,
+        expiresAt: binding.expiresAt,
+        passcodeRequired: true,
+        maxAccessCount: 1,
+      },
+      documents: binding.sourceCredentials.map((credential) => ({
+        credentialId: credential.credentialId,
+      })),
+    },
+    manifestHash: binding.manifestHash,
+    sourceBundleHash: binding.sourceBundleHash,
+    files: binding.fileHashes.map((jweSha256) => ({ jweSha256 })),
+    holderPresentationId: binding.holderPresentationId,
+    holderPresentationJwt: binding.holderPresentationJwt,
+  };
+}
+
 async function assertHolderPresentationIntegrity(
-  prepared: PreparedHolderAttestedShl,
+  prepared: HolderPresentationIntegrityView,
   identity: HolderSigningIdentity,
   now: Date,
 ): Promise<void> {
   assertCanonicalCompactJws(prepared.holderPresentationJwt);
   const publicKey = await importJWK(identity.publicJwk, identity.jwsAlgorithm);
-  let verified;
+  let verifiedPayload: Uint8Array;
+  let protectedHeader: Awaited<ReturnType<typeof compactVerify>>["protectedHeader"];
   try {
-    verified = await jwtVerify(prepared.holderPresentationJwt, publicKey, {
+    const result = await compactVerify(prepared.holderPresentationJwt, publicKey, {
       algorithms: [identity.jwsAlgorithm],
-      issuer: identity.did,
-      audience: prepared.manifest.accessPolicy.audience,
-      currentDate: now,
-      clockTolerance: MAX_CLOCK_SKEW_SECONDS,
     });
+    verifiedPayload = result.payload;
+    protectedHeader = result.protectedHeader;
   } catch {
     throw new Error(
-      "Holder-attested SHL VP signature or registered claims are invalid.",
+      "Holder-attested SHL VP signature is invalid.",
     );
   }
-  const { payload, protectedHeader } = verified;
+  let payload: JsonDocument;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(verifiedPayload)) as JsonDocument;
+  } catch {
+    throw new Error("Holder-attested SHL VP payload is not JSON.");
+  }
   if (
     protectedHeader.typ !== "vp+jwt" ||
+    protectedHeader.cty !== "vp" ||
     protectedHeader.kid !== identity.kid ||
-    payload.sub !== identity.did ||
-    payload.jti !== prepared.holderPresentationId
+    protectedHeader.alg !== identity.jwsAlgorithm
   ) {
     throw new Error("Holder-attested SHL VP protected binding is invalid.");
   }
-  const vp = recordValue(payload.vp);
-  const trustcare = recordValue(vp?.trustcare);
-  const types = Array.isArray(vp?.type) ? vp.type : [];
-  if (
-    vp?.holder !== identity.did ||
-    !types.includes("VerifiablePresentation") ||
-    !types.includes(HOLDER_ATTESTED_VP_TYPE) ||
-    "verifiableCredential" in (vp ?? {})
-  ) {
-    throw new Error(
-      "Holder-attested SHL VP must contain only holder-signed package bindings.",
-    );
+  if ("vp" in payload || "vc" in payload) {
+    throw new Error("Holder-attested SHL VP must be a direct W3C VP payload.");
   }
-  const expectedSourceCredentials = prepared.manifest.documents.map((file) => ({
-    documentId: file.documentId,
-    credentialId: file.credentialId,
-    issuerDid: file.issuerDid,
-    plaintextSha256: file.plaintextSha256,
-  }));
+  const trustcare = recordValue(payload.trustcare);
+  const types = Array.isArray(payload.type) ? payload.type : [];
+  if (
+    payload.id !== prepared.holderPresentationId ||
+    payload.holder !== identity.did ||
+    payload.purpose !== prepared.manifest.accessPolicy.purpose ||
+    !types.includes("VerifiablePresentation") ||
+    !types.includes(HOLDER_ATTESTED_VP_TYPE)
+  ) {
+    throw new Error("Holder-attested SHL VP document binding is invalid.");
+  }
+  const presentationIssuedAt = Date.parse(String(trustcare?.issuedAt ?? ""));
+  const presentationExpiresAt = Date.parse(String(trustcare?.expiresAt ?? ""));
+  if (
+    !Number.isFinite(presentationIssuedAt) ||
+    !Number.isFinite(presentationExpiresAt) ||
+    presentationIssuedAt > now.getTime() + MAX_CLOCK_SKEW_SECONDS * 1_000 ||
+    presentationExpiresAt <= presentationIssuedAt ||
+    presentationExpiresAt - presentationIssuedAt > 15 * 60_000
+  ) {
+    throw new Error("Holder-attested SHL VP validity is invalid.");
+  }
+  const shl = recordValue(trustcare?.shl);
   const expectedTrustcare = {
     trustMode: "holder_attested",
-    shlPackageId: prepared.manifest.publicationId,
-    manifestUrl: prepared.manifest.manifestUrl,
-    manifestHash: prepared.manifestHash,
-    fileHashes: prepared.expectedManifestCredentialBinding.fileHashes,
-    accessPolicyHash: prepared.accessPolicyHash,
     recipient: prepared.manifest.accessPolicy.recipient,
     audience: prepared.manifest.accessPolicy.audience,
     context: prepared.manifest.accessPolicy.context,
     consentRef: prepared.manifest.accessPolicy.consentRef,
     issuedAt: prepared.manifest.accessPolicy.issuedAt,
-    expiresAt: prepared.manifest.accessPolicy.expiresAt,
-    sourceCredentials: expectedSourceCredentials,
+    expiresAt: new Date(
+      Math.min(
+        Date.parse(prepared.manifest.accessPolicy.expiresAt),
+        Date.parse(prepared.manifest.accessPolicy.issuedAt) + 10 * 60_000,
+      ),
+    ).toISOString(),
+    shl: {
+      packageId: prepared.manifest.publicationId,
+      manifestUrl: prepared.manifest.manifestUrl,
+      manifestHash: prepared.manifestHash,
+      sourceBundleHash: prepared.sourceBundleHash,
+      fileHashes: prepared.files.map((file) => file.jweSha256),
+      expiresAt: prepared.manifest.accessPolicy.expiresAt,
+    },
   };
   if (canonicalJson(trustcare) !== canonicalJson(expectedTrustcare)) {
     throw new Error(
       "Holder-attested SHL VP does not match the manifest, files, purpose, recipient, consent, or source credentials.",
     );
+  }
+  if (!shl) {
+    throw new Error("Holder-attested SHL VP is missing its SHL binding.");
+  }
+  const envelopes = Array.isArray(payload.verifiableCredential)
+    ? payload.verifiableCredential
+    : [];
+  const credentialJwts = envelopes.map(extractEnvelopedCredentialJwt);
+  if (
+    credentialJwts.length !== prepared.manifest.documents.length ||
+    credentialJwts.some(
+      (jwt, index) => decodeJwt(jwt).id !== prepared.manifest.documents[index].credentialId,
+    )
+  ) {
+    throw new Error("Holder-attested SHL VP source credential envelopes changed after preparation.");
   }
 }
 
@@ -887,19 +1140,20 @@ function assertManifestCredentialEvidence(input: {
       "Manifest VC verifier evidence claims do not match the signed JWT.",
     );
   }
-  if (
-    typeof decodedClaims.iss !== "string" ||
-    !decodedClaims.iss.startsWith("did:web:") ||
-    decodedClaims.iss !== input.evidence.issuerDid
-  ) {
-    throw new Error(
-      "Manifest VC issuer evidence does not match its did:web issuer claim.",
-    );
+  let direct;
+  try {
+    direct = assertTrustCareDirectCredential({
+      payload: decodedClaims as JsonDocument,
+      expectedIssuerDid: input.evidence.issuerDid,
+      expectedHolderDid: input.expectedBinding.holderDid,
+      now: input.now,
+      clockSkewSeconds: MAX_CLOCK_SKEW_SECONDS,
+    });
+  } catch (error) {
+    throw new Error(`Manifest VC direct profile is invalid: ${errorMessage(error)}.`);
   }
-  if (decodedClaims.sub !== input.expectedBinding.holderDid) {
-    throw new Error(
-      "Manifest VC subject does not match the SHL holder did:key.",
-    );
+  if (!direct.issuerDid.startsWith("did:web:")) {
+    throw new Error("Manifest VC issuer must be a Portal hospital did:web.");
   }
   if (
     typeof header.alg !== "string" ||
@@ -910,22 +1164,16 @@ function assertManifestCredentialEvidence(input: {
     header.alg !== input.evidence.algorithm ||
     typeof header.kid !== "string" ||
     header.kid !== input.evidence.verificationMethod ||
-    !header.kid.startsWith(`${decodedClaims.iss}#`)
+    !header.kid.startsWith(`${direct.issuerDid}#`)
   ) {
     throw new Error(
       "Manifest VC signature evidence does not match its protected header.",
     );
   }
-  if ("vc" in decodedClaims) {
+  if ("vc" in decodedClaims || "vp" in decodedClaims) {
     throw new Error(
       "Manifest VC must use W3C VC 2.0 direct claims without a vc wrapper.",
     );
-  }
-  const audiences = Array.isArray(decodedClaims.aud)
-    ? decodedClaims.aud
-    : [decodedClaims.aud];
-  if (!audiences.includes(input.expectedBinding.accessPolicy.audience)) {
-    throw new Error("Manifest VC audience does not match the SHL request.");
   }
   const verifiedAt = Date.parse(input.evidence.verifiedAt);
   if (
@@ -942,18 +1190,15 @@ function assertManifestCredentialEvidence(input: {
   if (input.evidence.credentialStatus !== "active") {
     throw new Error("Manifest VC credential status is not active.");
   }
+  const requiredExpiry = Date.parse(input.expectedBinding.expiresAt);
+  const credentialExpiry =
+    typeof decodedClaims.validUntil === "string"
+      ? Date.parse(decodedClaims.validUntil)
+      : Number.NaN;
   if (
-    typeof decodedClaims.nbf === "number" &&
-    decodedClaims.nbf > input.now.getTime() / 1_000 + MAX_CLOCK_SKEW_SECONDS
-  ) {
-    throw new Error("Manifest VC is not valid yet.");
-  }
-  const requiredExpiry =
-    Date.parse(input.expectedBinding.accessPolicy.expiresAt) / 1_000;
-  if (
-    typeof decodedClaims.exp !== "number" ||
-    decodedClaims.exp < requiredExpiry ||
-    decodedClaims.exp <= input.now.getTime() / 1_000
+    !Number.isFinite(credentialExpiry) ||
+    credentialExpiry < requiredExpiry ||
+    credentialExpiry <= input.now.getTime()
   ) {
     throw new Error(
       "Manifest VC does not remain valid for the SHL access period.",
@@ -962,18 +1207,48 @@ function assertManifestCredentialEvidence(input: {
   const types = Array.isArray(decodedClaims.type) ? decodedClaims.type : [];
   if (
     !types.includes("VerifiableCredential") ||
-    !types.includes("TrustCareShlManifestCredential")
+    !types.includes("ShlManifestCredential")
   ) {
     throw new Error("Manifest VC has the wrong credential type.");
   }
-  if (decodedClaims.issuer !== decodedClaims.iss) {
-    throw new Error("Manifest VC issuer claim does not match JWT iss.");
+  const trustcare = recordValue(decodedClaims.trustcare);
+  if (
+    trustcare?.intendedAudience !== undefined &&
+    trustcare.intendedAudience !== input.expectedBinding.manifestUrl
+  ) {
+    throw new Error("Manifest VC intended audience does not match the SHL manifest URL.");
   }
-  if (!recordValue(decodedClaims.credentialStatus)) {
-    throw new Error("Manifest VC credentialStatus is required.");
-  }
-  const binding = recordValue(decodedClaims.credentialSubject);
-  if (canonicalJson(binding) !== canonicalJson(input.expectedBinding)) {
+  const subject = recordValue(decodedClaims.credentialSubject);
+  const data = recordValue(subject?.data);
+  const signedBinding = data
+    ? {
+        shlPackageId: data.shlPackageId,
+        manifestUrl: data.manifestUrl,
+        manifestHash: data.manifestHash,
+        sourceBundleHash: data.sourceBundleHash,
+        fileHashes: data.fileHashes,
+        purpose: data.purpose,
+        context: data.context,
+        consentRef: data.consentRef,
+        expiresAt: recordValue(data.limits)?.expiresAt,
+        holderAuthorizationPresentationId:
+          data.holderAuthorizationPresentationId,
+      }
+    : null;
+  const expectedSignedBinding = {
+    shlPackageId: input.expectedBinding.shlPackageId,
+    manifestUrl: input.expectedBinding.manifestUrl,
+    manifestHash: input.expectedBinding.manifestHash,
+    sourceBundleHash: input.expectedBinding.sourceBundleHash,
+    fileHashes: input.expectedBinding.fileHashes,
+    purpose: input.expectedBinding.purpose,
+    context: input.expectedBinding.context,
+    consentRef: input.expectedBinding.consentRef,
+    expiresAt: input.expectedBinding.expiresAt,
+    holderAuthorizationPresentationId:
+      input.expectedBinding.holderAuthorizationPresentationId,
+  };
+  if (canonicalJson(signedBinding) !== canonicalJson(expectedSignedBinding)) {
     throw new Error(
       "Manifest VC signed binding does not match the prepared SHL manifest.",
     );
@@ -1171,6 +1446,14 @@ function requireIdentifier(value: unknown, label: string): string {
   const text = requireText(value, label, 255);
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(text)) {
     throw new Error(`${label} contains unsupported characters.`);
+  }
+  return text;
+}
+
+function requireOpaqueShlPackageId(value: unknown, label: string): string {
+  const text = requireText(value, label, 43);
+  if (!/^[A-Za-z0-9_-]{43}$/.test(text)) {
+    throw new Error(`${label} must be a 256-bit base64url identifier.`);
   }
   return text;
 }

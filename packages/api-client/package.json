@@ -17,6 +17,7 @@
     "@trpc/client": "^11.4.4",
     "@trustcare/contracts": "workspace:*",
     "@trustcare/wallet-core": "workspace:*",
+    "fflate": "^0.8.2",
     "jose": "6.1.0",
     "superjson": "^2.2.2"
   },

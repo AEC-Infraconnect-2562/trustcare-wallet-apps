@@ -1,4 +1,15 @@
-import { decodeProtectedHeader, importJWK, jwtVerify, type JWK } from "jose";
+import {
+  compactVerify,
+  decodeProtectedHeader,
+  importJWK,
+  type JWK,
+} from "jose";
+import { gunzipSync } from "fflate";
+import {
+  assertTrustCareDirectCredential,
+  credentialStatusEntries,
+  trustCareCredentialIssuerDid,
+} from "@trustcare/wallet-core";
 import { TrustCareApiError } from "./errors";
 import { normalizePortalOrigin } from "./walletContractLoader";
 
@@ -94,7 +105,7 @@ export async function resolvePortalHospitalIssuer(input: {
   if (
     !Array.isArray(didDocument.verificationMethod) ||
     !Array.isArray(didDocument.assertionMethod) ||
-    didDocument.assertionMethod.length !== 1 ||
+    didDocument.assertionMethod.length < 1 ||
     !Array.isArray(jwks.keys)
   ) {
     throw issuerError("Portal hospital DID/JWKS shape is incomplete.");
@@ -159,6 +170,7 @@ export async function verifyPortalHospitalCredentialJwt(input: {
   expectedCredentialData?: Record<string, unknown>;
   profile?: "portal_credential" | "shl_manifest_credential";
   now?: Date;
+  fetchImpl?: typeof fetch;
 }): Promise<PortalCredentialJwtVerification> {
   const errors: string[] = [];
   try {
@@ -177,38 +189,40 @@ export async function verifyPortalHospitalCredentialJwt(input: {
     if (
       !kid ||
       !jwk ||
-      kid !== input.issuer.activeAssertionMethod.id ||
-      !input.issuer.didDocument.assertionMethod.includes(kid) ||
       !kid.startsWith(`${input.issuer.issuerDid}#`) ||
       alg !== "ES256" ||
       jwk.alg !== "ES256" ||
       typ.toLowerCase() !== "vc+jwt" ||
-      (input.profile === "shl_manifest_credential" && cty !== "vc")
+      cty !== "vc"
     ) {
       throw issuerError(
         "Credential kid is not governed by the Portal hospital DID.",
       );
     }
+    const method = input.issuer.didDocument.verificationMethod.find(
+      (candidate) => candidate.id === kid,
+    );
+    if (!method || method.controller !== input.issuer.issuerDid) {
+      throw issuerError("Credential signing key controller is not the signed issuer.");
+    }
     const key = await importJWK(jwk, String(jwk.alg ?? "ES256"));
-    const verified = await jwtVerify(input.jwt, key, {
-      issuer: input.issuer.issuerDid,
-      currentDate: input.now,
+    const verified = await compactVerify(input.jwt, key, {
       algorithms: ["ES256"],
     });
-    const payload = verified.payload as Record<string, unknown>;
-    if (
-      input.profile === "shl_manifest_credential" &&
-      Object.prototype.hasOwnProperty.call(payload, "vc")
-    ) {
-      throw issuerError(
-        "Manifest Credential must use W3C VC 2.0 direct claims without a vc wrapper.",
-      );
-    }
-    const credential = credentialPayload(payload);
+    const payload = JSON.parse(
+      new TextDecoder().decode(verified.payload),
+    ) as Record<string, unknown>;
+    const direct = assertTrustCareDirectCredential({
+      payload,
+      expectedIssuerDid: input.issuer.issuerDid,
+      expectedHolderDid: input.expectedHolderDid,
+      now: input.now,
+    });
+    const credential = direct.document;
     if (input.profile !== "shl_manifest_credential") {
       const declaredDigest = stringValue(payload.trustcare_claim_digest);
       const actualDigest = await sha256Canonical(credential);
-      if (!declaredDigest || declaredDigest !== actualDigest) {
+      if (declaredDigest && declaredDigest !== actualDigest) {
         errors.push("credential_claim_digest_mismatch");
       }
     }
@@ -218,15 +232,20 @@ export async function verifyPortalHospitalCredentialJwt(input: {
     ) {
       errors.push("credential_payload_mismatch");
     }
-    const subject = objectRecord(credential.credentialSubject);
     if (
       input.expectedHolderDid &&
-      (subject.id !== input.expectedHolderDid ||
-        payload.sub !== input.expectedHolderDid)
+      typeof payload.sub === "string" &&
+      payload.sub !== input.expectedHolderDid
     ) {
       errors.push("credential_holder_mismatch");
     }
-    const status = credentialLifecycleStatus(credential, payload, input.now);
+    const status = await credentialLifecycleStatus({
+      credential,
+      payload,
+      issuer: input.issuer,
+      fetchImpl: input.fetchImpl,
+      now: input.now,
+    });
     if (status !== "active") errors.push(`credential_status_${status}`);
     return {
       verified: errors.length === 0,
@@ -300,28 +319,16 @@ function samePublicJwk(left: JWK, right: JWK): boolean {
   );
 }
 
-function credentialPayload(
-  payload: Record<string, unknown>,
-): Record<string, unknown> {
-  const vc = objectRecord(payload.vc);
-  if (Object.keys(vc).length) return vc;
-  const {
-    aud: _aud,
-    jti: _jti,
-    iat: _iat,
-    exp: _exp,
-    nbf: _nbf,
-    trustcare_claim_digest: _digest,
-    ...directClaims
-  } = payload;
-  return directClaims;
-}
-
-function credentialLifecycleStatus(
-  credential: Record<string, unknown>,
-  payload: Record<string, unknown>,
-  now = new Date(),
-): PortalCredentialJwtVerification["status"] {
+async function credentialLifecycleStatus(input: {
+  credential: Record<string, unknown>;
+  payload: Record<string, unknown>;
+  issuer: ResolvedPortalHospitalIssuer;
+  fetchImpl?: typeof fetch;
+  now?: Date;
+}): Promise<PortalCredentialJwtVerification["status"]> {
+  const now = input.now ?? new Date();
+  const credential = input.credential;
+  const payload = input.payload;
   const expires =
     stringValue(credential.validUntil) ??
     stringValue(credential.expirationDate) ??
@@ -329,19 +336,133 @@ function credentialLifecycleStatus(
       ? new Date(payload.exp * 1000).toISOString()
       : undefined);
   if (expires && Date.parse(expires) <= now.getTime()) return "expired";
-  const statusRecord = objectRecord(credential.credentialStatus);
-  const raw = (
-    stringValue(statusRecord.status) ??
-    stringValue(statusRecord.state) ??
-    stringValue(credential.credentialStatus) ??
-    stringValue(objectRecord(credential.trustcare).status) ??
-    ""
-  ).toLowerCase();
-  if (["active", "valid", "current"].includes(raw)) return "active";
-  if (raw === "revoked") return "revoked";
-  if (raw === "suspended") return "suspended";
-  if (raw === "expired") return "expired";
-  return "unknown";
+  try {
+    const results = await Promise.all(
+      credentialStatusEntries(credential.credentialStatus).map((entry) =>
+        verifyStatusEntry({
+          entry,
+          issuer: input.issuer,
+          fetchImpl: input.fetchImpl,
+          now,
+        }),
+      ),
+    );
+    if (results.some((result) => result === "revoked")) return "revoked";
+    if (results.some((result) => result === "suspended")) return "suspended";
+    return "active";
+  } catch {
+    return "unknown";
+  }
+}
+
+async function verifyStatusEntry(input: {
+  entry: ReturnType<typeof credentialStatusEntries>[number];
+  issuer: ResolvedPortalHospitalIssuer;
+  fetchImpl?: typeof fetch;
+  now: Date;
+}): Promise<"active" | "revoked" | "suspended"> {
+  const url = new URL(input.entry.statusListCredential);
+  if (
+    url.origin !== input.issuer.portalOrigin ||
+    !url.pathname.startsWith("/api/credentials/status-lists/") ||
+    url.username ||
+    url.password
+  ) {
+    throw issuerError("Credential status-list URL is outside the Portal trust boundary.");
+  }
+  const response = await (input.fetchImpl ?? fetch)(url, {
+    headers: { accept: "application/vc+jwt" },
+    redirect: "error",
+    cache: "no-store",
+  });
+  const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+  if (!response.ok || !contentType.startsWith("application/vc+jwt")) {
+    throw issuerError("Credential status list is unavailable or has the wrong media type.");
+  }
+  const jwt = await response.text();
+  const header = decodeProtectedHeader(jwt);
+  if (
+    header.alg !== "ES256" ||
+    header.typ !== "vc+jwt" ||
+    header.cty !== "vc" ||
+    typeof header.kid !== "string" ||
+    !input.issuer.didDocument.verificationMethod.some(
+      (candidate) => candidate.id === header.kid,
+    )
+  ) {
+    throw issuerError("Status-list VC protected header is invalid.");
+  }
+  const method = input.issuer.didDocument.verificationMethod.find(
+    (candidate) => candidate.id === header.kid,
+  );
+  const jwk = input.issuer.jwks.keys.find((candidate) => candidate.kid === header.kid);
+  if (!method || method.controller !== input.issuer.issuerDid || !jwk) {
+    throw issuerError("Status-list signing key is not controlled by the issuer.");
+  }
+  const verified = await compactVerify(
+    jwt,
+    await importJWK(jwk, "ES256"),
+    { algorithms: ["ES256"] },
+  );
+  const payload = JSON.parse(new TextDecoder().decode(verified.payload)) as Record<
+    string,
+    unknown
+  >;
+  if (
+    Object.prototype.hasOwnProperty.call(payload, "vc") ||
+    Object.prototype.hasOwnProperty.call(payload, "vp")
+  ) {
+    throw issuerError("Status-list VC must use direct W3C VC JOSE claims.");
+  }
+  const issuerDid = trustCareCredentialIssuerDid(payload.issuer);
+  if (
+    issuerDid !== input.issuer.issuerDid ||
+    (typeof payload.iss === "string" && payload.iss !== issuerDid) ||
+    payload.id !== input.entry.statusListCredential
+  ) {
+    throw issuerError("Status-list VC issuer or id binding is invalid.");
+  }
+  const types = Array.isArray(payload.type) ? payload.type : [payload.type];
+  const contexts = Array.isArray(payload["@context"])
+    ? payload["@context"]
+    : [payload["@context"]];
+  const subject = objectRecord(payload.credentialSubject);
+  const validFrom = Date.parse(String(payload.validFrom ?? ""));
+  const validUntil = Date.parse(String(payload.validUntil ?? ""));
+  if (
+    contexts[0] !== "https://www.w3.org/ns/credentials/v2" ||
+    !types.includes("VerifiableCredential") ||
+    !types.includes("BitstringStatusListCredential") ||
+    subject.type !== "BitstringStatusList" ||
+    subject.statusPurpose !== input.entry.statusPurpose ||
+    typeof subject.encodedList !== "string" ||
+    !Number.isFinite(validFrom) ||
+    !Number.isFinite(validUntil) ||
+    validFrom > input.now.getTime() + 60_000 ||
+    validUntil <= input.now.getTime() - 60_000
+  ) {
+    throw issuerError("Status-list VC profile or validity is invalid.");
+  }
+  const compressed = base64UrlBytes(subject.encodedList.slice(1));
+  if (!subject.encodedList.startsWith("u")) {
+    throw issuerError("Status-list encodedList is not multibase base64url.");
+  }
+  const bitstring = gunzipSync(compressed);
+  if (bitstring.length < 16_384) {
+    throw issuerError("Status list has fewer than 131072 entries.");
+  }
+  const active = Boolean(
+    bitstring[Math.floor(input.entry.statusListIndex / 8)] &
+      (1 << (7 - (input.entry.statusListIndex % 8))),
+  );
+  return active ? input.entry.statusPurpose === "revocation" ? "revoked" : "suspended" : "active";
+}
+
+function base64UrlBytes(value: string): Uint8Array {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
 function objectRecord(value: unknown): Record<string, unknown> {

@@ -1,12 +1,17 @@
 import {
   createWalletExchangePartition,
   createWalletExchangeState,
+  createWalletClinicalDocumentGraphState,
+  prepareWalletExchangeCredentialReverification,
   holderIdentityFromPublicKey,
+  assertWalletClinicalDocumentGraphState,
   type HolderSigningIdentity,
   type WalletDocumentRecordV2,
   type WalletExchangePartition,
   type WalletExchangeState,
   type WalletExchangeSyncReduction,
+  type WalletClinicalDocumentGraphState,
+  type WalletClinicalDocumentGraphSyncReduction,
 } from "@trustcare/wallet-core";
 import {
   createWalletExchangePersistencePolicy,
@@ -20,7 +25,9 @@ import type {
 
 export const INDEXED_DB_WALLET_EXCHANGE_SCHEMA =
   "wallet-exchange-v2@2" as const;
-export const INDEXED_DB_WALLET_EXCHANGE_VERSION = 2 as const;
+// Keep the database namespace stable so the IndexedDB version upgrade preserves
+// holder keys and previously acknowledged Wallet Exchange state.
+export const INDEXED_DB_WALLET_EXCHANGE_VERSION = 3 as const;
 
 export type IndexedDbWalletExchangeStoreName =
   | "exchange_state"
@@ -28,7 +35,13 @@ export type IndexedDbWalletExchangeStoreName =
   | "holder_keys"
   | "request_links"
   | "submission_links"
-  | "submission_outbox";
+  | "submission_outbox"
+  | "clinical_graph_objects"
+  | "clinical_graph_edges"
+  | "clinical_bundle_members"
+  | "clinical_graph_changes"
+  | "clinical_graph_cursors"
+  | "clinical_graph_quarantine";
 
 export type IndexedDbWalletExchangeTransactionMode = "readonly" | "readwrite";
 
@@ -75,6 +88,20 @@ type PartitionRecord<T> = {
 type HolderKeyRecord = PartitionRecord<HolderSigningIdentity> & {
   schema: "trustcare.wallet.holder-key.v1";
 };
+
+type ClinicalGraphMetadata = Omit<
+  WalletClinicalDocumentGraphState,
+  "nodes" | "edges" | "bundleMembers" | "changes" | "quarantine"
+>;
+
+const clinicalGraphStores = [
+  "clinical_graph_objects",
+  "clinical_graph_edges",
+  "clinical_bundle_members",
+  "clinical_graph_changes",
+  "clinical_graph_cursors",
+  "clinical_graph_quarantine",
+] as const satisfies readonly IndexedDbWalletExchangeStoreName[];
 
 /**
  * Durable browser storage for Wallet Exchange V2 only. It intentionally uses
@@ -151,6 +178,127 @@ export class IndexedDbWalletExchangePersistence {
     );
   }
 
+  async persistCredentialReverificationState(
+    previous: WalletExchangeState,
+    state: WalletExchangeState,
+  ): Promise<void> {
+    const expected = prepareWalletExchangeCredentialReverification(previous);
+    if (!this.policy.sameValue(expected, state)) {
+      throw new Error(
+        "Wallet Exchange verifier migration state does not match the shared policy.",
+      );
+    }
+    await this.storage.transaction(
+      ["exchange_state"],
+      "readwrite",
+      async (transaction) => {
+        const record = await transaction.get<PartitionRecord<WalletExchangeState>>(
+          "exchange_state",
+          this.partition.key,
+        );
+        if (!record) throw new Error("Wallet Exchange state is not initialized.");
+        this.assertPartitionRecord(record, "exchange state");
+        if (!this.policy.sameValue(record.value, previous)) {
+          throw new Error(
+            "Wallet Exchange verifier migration cannot replace changed durable state.",
+          );
+        }
+        this.policy.assertState(state);
+        transaction.put("exchange_state", this.partition.key, {
+          partitionKey: this.partition.key,
+          value: cloneValue(state),
+        } satisfies PartitionRecord<WalletExchangeState>);
+      },
+    );
+  }
+
+  async loadOrCreateClinicalDocumentGraphState(): Promise<WalletClinicalDocumentGraphState> {
+    return this.storage.transaction(
+      clinicalGraphStores,
+      "readwrite",
+      async (transaction) => {
+        const existing = await this.readClinicalGraphState(transaction);
+        if (existing) return existing;
+        const state = createWalletClinicalDocumentGraphState({
+          portalOrigin: this.partition.portalOrigin,
+          holderDid: this.partition.holderDid,
+        });
+        transaction.put("clinical_graph_cursors", this.partition.key, {
+          partitionKey: this.partition.key,
+          value: graphMetadata(state),
+        } satisfies PartitionRecord<ClinicalGraphMetadata>);
+        return cloneValue(state);
+      },
+    );
+  }
+
+  async commitClinicalDocumentGraphReduction(
+    reduction: WalletClinicalDocumentGraphSyncReduction,
+  ): Promise<void> {
+    assertWalletClinicalDocumentGraphState(reduction.state, this.partition);
+    await this.storage.transaction(
+      clinicalGraphStores,
+      "readwrite",
+      async (transaction) => {
+        const persisted = await this.readClinicalGraphState(transaction);
+        if (!persisted) {
+          throw new Error(
+            "Clinical Document Graph state must be initialized before commit.",
+          );
+        }
+        if (persisted.nextCursor !== reduction.plan.expectedCursor) {
+          if (
+            reduction.plan.replayed &&
+            stableValue(persisted) === stableValue(reduction.state)
+          )
+            return;
+          throw new Error(
+            "Clinical Document Graph atomic cursor no longer matches persisted state.",
+          );
+        }
+        await this.replaceClinicalGraphCollection(
+          transaction,
+          "clinical_graph_objects",
+          persisted.nodes,
+          reduction.state.nodes,
+          (item) => item.artifactId,
+        );
+        await this.replaceClinicalGraphCollection(
+          transaction,
+          "clinical_graph_edges",
+          persisted.edges,
+          reduction.state.edges,
+          (item) => item.edgeId,
+        );
+        await this.replaceClinicalGraphCollection(
+          transaction,
+          "clinical_bundle_members",
+          persisted.bundleMembers,
+          reduction.state.bundleMembers,
+          (item) => `${item.bundleArtifactId}\u0000${item.memberArtifactId}`,
+        );
+        await this.replaceClinicalGraphCollection(
+          transaction,
+          "clinical_graph_changes",
+          persisted.changes,
+          reduction.state.changes,
+          (item) => item.changeId,
+        );
+        await this.replaceClinicalGraphCollection(
+          transaction,
+          "clinical_graph_quarantine",
+          persisted.quarantine,
+          reduction.state.quarantine,
+          (item) => item.changeId,
+        );
+        transaction.put("clinical_graph_cursors", this.partition.key, {
+          partitionKey: this.partition.key,
+          value: graphMetadata(reduction.state),
+        } satisfies PartitionRecord<ClinicalGraphMetadata>);
+      },
+    );
+  }
+
   async listDocuments(): Promise<WalletDocumentRecordV2[]> {
     return this.storage.transaction(
       ["documents"],
@@ -202,7 +350,12 @@ export class IndexedDbWalletExchangePersistence {
         }
 
         if (reduction.plan.replayed) {
-          if (!this.policy.sameValue(persisted.pendingAck, reduction.plan.pendingAck)) {
+          if (
+            !this.policy.sameValue(
+              persisted.pendingAck,
+              reduction.plan.pendingAck,
+            )
+          ) {
             throw new Error(
               "Wallet Exchange replay does not match the persisted pending ACK.",
             );
@@ -421,7 +574,9 @@ export class IndexedDbWalletExchangePersistence {
   ): Promise<WalletExchangeCredentialRequestLink | null> {
     return this.getLink(
       "request_links",
-      this.policy.requestLinkKey(requireText(clientRequestId, "clientRequestId")),
+      this.policy.requestLinkKey(
+        requireText(clientRequestId, "clientRequestId"),
+      ),
       (link) => this.policy.assertRequestLink(link),
     );
   }
@@ -715,6 +870,74 @@ export class IndexedDbWalletExchangePersistence {
     }
   }
 
+  private async readClinicalGraphState(
+    transaction: IndexedDbWalletExchangeTransaction,
+  ): Promise<WalletClinicalDocumentGraphState | null> {
+    const metadata = await transaction.get<
+      PartitionRecord<ClinicalGraphMetadata>
+    >("clinical_graph_cursors", this.partition.key);
+    if (!metadata) return null;
+    this.assertPartitionRecord(metadata, "clinical graph cursor");
+    const [nodes, edges, bundleMembers, changes, quarantine] =
+      await Promise.all([
+        transaction.getAll<
+          PartitionRecord<WalletClinicalDocumentGraphState["nodes"][number]>
+        >("clinical_graph_objects"),
+        transaction.getAll<
+          PartitionRecord<WalletClinicalDocumentGraphState["edges"][number]>
+        >("clinical_graph_edges"),
+        transaction.getAll<
+          PartitionRecord<
+            WalletClinicalDocumentGraphState["bundleMembers"][number]
+          >
+        >("clinical_bundle_members"),
+        transaction.getAll<
+          PartitionRecord<WalletClinicalDocumentGraphState["changes"][number]>
+        >("clinical_graph_changes"),
+        transaction.getAll<
+          PartitionRecord<
+            WalletClinicalDocumentGraphState["quarantine"][number]
+          >
+        >("clinical_graph_quarantine"),
+      ]);
+    const values = <T>(records: PartitionRecord<T>[]) =>
+      records
+        .filter((record) => record.partitionKey === this.partition.key)
+        .map((record) => cloneValue(record.value));
+    const state: WalletClinicalDocumentGraphState = {
+      ...cloneValue(metadata.value),
+      nodes: values(nodes),
+      edges: values(edges),
+      bundleMembers: values(bundleMembers),
+      changes: values(changes),
+      quarantine: values(quarantine),
+    };
+    assertWalletClinicalDocumentGraphState(state, this.partition);
+    return state;
+  }
+
+  private async replaceClinicalGraphCollection<T>(
+    transaction: IndexedDbWalletExchangeTransaction,
+    store: IndexedDbWalletExchangeStoreName,
+    previous: T[],
+    next: T[],
+    identifier: (item: T) => string,
+  ): Promise<void> {
+    for (const item of previous) {
+      transaction.delete(store, this.graphItemKey(identifier(item)));
+    }
+    for (const item of next) {
+      transaction.put(store, this.graphItemKey(identifier(item)), {
+        partitionKey: this.partition.key,
+        value: cloneValue(item),
+      } satisfies PartitionRecord<T>);
+    }
+  }
+
+  private graphItemKey(identifier: string): string {
+    return `${this.partition.key}\u0000${identifier}`;
+  }
+
   private assertPartitionRecord<T>(
     record: PartitionRecord<T>,
     label: string,
@@ -723,7 +946,6 @@ export class IndexedDbWalletExchangePersistence {
       throw new Error(`Wallet Exchange ${label} partition boundary violation.`);
     }
   }
-
 }
 
 export function createIndexedDbWalletExchangeDatabaseName(input: {
@@ -808,6 +1030,12 @@ class BrowserIndexedDbWalletExchangeStorage implements IndexedDbWalletExchangeSt
           "request_links",
           "submission_links",
           "submission_outbox",
+          "clinical_graph_objects",
+          "clinical_graph_edges",
+          "clinical_bundle_members",
+          "clinical_graph_changes",
+          "clinical_graph_cursors",
+          "clinical_graph_quarantine",
         ] satisfies IndexedDbWalletExchangeStoreName[]) {
           if (!database.objectStoreNames.contains(store)) {
             database.createObjectStore(store);
@@ -878,4 +1106,29 @@ function requireText(value: string, name: string): string {
 
 function cloneValue<T>(value: T): T {
   return globalThis.structuredClone(value);
+}
+
+function graphMetadata(
+  state: WalletClinicalDocumentGraphState,
+): ClinicalGraphMetadata {
+  const {
+    nodes: _nodes,
+    edges: _edges,
+    bundleMembers: _bundleMembers,
+    changes: _changes,
+    quarantine: _quarantine,
+    ...metadata
+  } = state;
+  return cloneValue(metadata);
+}
+
+function stableValue(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableValue).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableValue(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }

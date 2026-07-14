@@ -189,6 +189,9 @@ describe.skipIf(!liveEnabled)("live Portal Wallet binding and sync", () => {
               ? change.credential.credentialData.type
               : [],
             signedDocumentType: subject.documentType,
+            signedSubjectId:
+              typeof subject.id === "string" ? subject.id : "missing",
+            expectedHolderDid: holder.did,
             verificationErrors: verification?.errors ?? ["issuer_or_proof_missing"],
             contentHashValid: await verifyWalletExchangeContentHash(change),
             proofVerified: prepared.issuerEvidence?.proofVerified ?? false,
