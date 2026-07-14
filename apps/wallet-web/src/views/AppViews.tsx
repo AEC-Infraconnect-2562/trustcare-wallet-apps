@@ -55,7 +55,7 @@ import {
   createAutomaticDocumentRequestDraft,
   createDocumentRequestDraft,
   createShareDraftFromPrepare,
-  createSharingEventArtifactId,
+  createShlPackageId,
   createHolderSignedDirectVp,
   createSharePolicy,
   createShlViewerUrl,
@@ -1101,7 +1101,7 @@ export function ShareView({
           );
         }
         const prepared = await walletExchangeWorkflow.prepareHolderAttestedShl({
-          publicationId: createSharingEventArtifactId("shl"),
+          publicationId: createShlPackageId(),
           documents,
           purpose: readinessContextLabels[purpose].th,
           recipient,
@@ -1128,34 +1128,12 @@ export function ShareView({
                 prepared,
               )
             : null;
-        const certifiedPublication =
-          certificationAttempt?.status === "submitted" &&
-          certificationAttempt.response.status === "approved"
-            ? await walletExchangeWorkflow.finalizeHospitalCertifiedShl({
-                prepared,
-                response: certificationAttempt.response,
-              })
-            : null;
-        const publishedCertification = certifiedPublication
-          ? await shareGatewayApi.publishHospitalCertifiedShl({
-              gatewayBaseUrl: shareGatewayBaseUrl,
-              publication: certifiedPublication,
-              userId: user.id,
-              holderDid: holderIdentity.did,
-              purpose,
-              purposeLabel: readinessContextLabels[purpose].th,
-              recipient,
-            })
-          : null;
         const exportPayload = JSON.stringify(
           {
-            type: publishedCertification
-              ? "HospitalCertifiedSHL"
-              : "HolderAttestedSHL",
-            trustMode: publishedCertification?.trustMode ?? published.trustMode,
+            type: "HolderAttestedSHL",
+            trustMode: published.trustMode,
             shlPackageId: published.shlPackageId,
-            manifestUrl:
-              publishedCertification?.manifestUrl ?? published.manifestUrl,
+            manifestUrl: published.manifestUrl,
             canonicalShlUrl: published.canonicalShlUrl,
             holderPresentationId: prepared.holderPresentationId,
             manifestHash: prepared.manifestHash,
@@ -1166,10 +1144,8 @@ export function ShareView({
                 : (certificationAttempt?.status ?? "not_requested"),
             certificationRequestId:
               certificationAttempt?.status === "submitted"
-                ? certificationAttempt.response.certificationRequestId
+                ? certificationAttempt.response.requestId
                 : undefined,
-            manifestCredentialId:
-              certifiedPublication?.objectLinks.manifestCredentialId,
           },
           null,
           2,
@@ -1181,26 +1157,19 @@ export function ShareView({
         );
         setSharePublication({
           state: "published",
-          message: publishedCertification
-            ? "โรงพยาบาลรับรองแล้ว · ตรวจลายเซ็น สถานะ hashes ผู้ถือ และนโยบายครบ"
-            : packageProtocol === "hybrid"
+          message:
+            packageProtocol === "hybrid"
               ? "สร้าง SHL ที่ผู้ป่วยลงนามแล้ว · รอการรับรองจากโรงพยาบาล"
               : "สร้าง Standard SHL ที่ผู้ป่วยลงนามแล้ว",
-          warnings: [
-            ...published.warnings,
-            ...(publishedCertification?.warnings ?? []),
-          ],
-          artifactUrl:
-            publishedCertification?.manifestUrl ?? published.manifestUrl,
+          warnings: published.warnings,
+          artifactUrl: published.manifestUrl,
         });
         onPersistShare({
           id: `shl:${published.shlPackageId}:${createdAt}`,
           type: "shl",
-          title: publishedCertification
-            ? "SHL ที่โรงพยาบาลรับรองแล้ว"
-            : "SHL ที่ผู้ป่วยยืนยันการแชร์",
+          title: "SHL ที่ผู้ป่วยยืนยันการแชร์",
           subtitle: readinessContextLabels[purpose].th,
-          status: publishedCertification ? "verified" : "active",
+          status: "active",
           protocol: "shl",
           createdAt,
           expiresAt,

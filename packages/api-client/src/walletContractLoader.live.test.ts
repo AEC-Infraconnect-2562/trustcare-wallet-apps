@@ -40,5 +40,33 @@ describe.skipIf(!liveEnabled)("live Portal Wallet Exchange contracts", () => {
         "problemDetails",
       ]),
     );
+    expect(contracts.clinicalDocumentGraph.payload).toMatchObject({
+      graphContractVersion: "2026.07.pcdg.v2",
+      trustDecisionOwnership: "portal",
+      holderPresentationOwnership: "wallet",
+      rendererAuthority: "wallet",
+    });
+    expect(
+      contracts.clinicalDocumentGraph.payload.presentationProtocol.stageKeys,
+    ).toEqual([
+      "source",
+      "fhir",
+      "document",
+      "retrieval",
+      "attestation",
+      "vc",
+      "shl",
+      "vp",
+    ]);
+    expect(contracts.graphPresentationSchema.payload.$id).toBe(
+      "urn:trustcare:schema:graph-presentation:2026.07.pcdg.v2",
+    );
+    for (const resource of [
+      contracts.clinicalDocumentGraph,
+      contracts.graphPresentationSchema,
+    ]) {
+      expect(resource.etag).toBe(`"sha256-${resource.sha256}"`);
+      expect(resource.contentDigest).toMatch(/^sha-256=:[A-Za-z0-9+/]+=*:$/);
+    }
   }, 30_000);
 });

@@ -15,6 +15,10 @@ import { describe, expect, it, vi } from "vitest";
 import { calculateDpopAccessTokenHash, type DpopProofClaims } from "./dpop";
 import type { WalletExchangeContractSet } from "./walletContractLoader";
 import {
+  clinicalDocumentGraphContractFixture,
+  graphPresentationSchemaFixture,
+} from "./testFixtures/clinicalDocumentGraph";
+import {
   WalletExchangeProblemError,
   createWalletExchangeV2Client,
   resolveWalletExchangeFetch,
@@ -220,64 +224,65 @@ describe("Wallet Exchange v2 client", () => {
     );
   });
 
+  it("reads the holder-bound graph delta with vendor JSON and exact GET DPoP htu", async () => {
+    const harness = await createHarness({
+      protectedHandler: async () =>
+        jsonResponse(graphChangePage(), {
+          "content-type":
+            "application/vnd.trustcare.pcdg-changes+json;version=2",
+        }),
+    });
+    await expect(
+      harness.client.syncClinicalDocumentGraph({
+        cursor: "opaque+cursor/value=",
+        limit: 200,
+      }),
+    ).resolves.toEqual(graphChangePage());
+
+    const request = harness.protectedRequests[0]!;
+    const expectedUrl = `${PORTAL_ORIGIN}/api/wallet/v2/clinical-document-graph/changes?limit=200&cursor=opaque%2Bcursor%2Fvalue%3D`;
+    expect(request.url).toBe(expectedUrl);
+    expect(request.method).toBe("GET");
+    expect(request.body).toBeUndefined();
+    expect(request.headers.get("accept")).toBe(
+      "application/vnd.trustcare.pcdg-changes+json;version=2, application/problem+json",
+    );
+    const proof = await verifyDpop(request, harness.identity);
+    expect(proof.claims).toMatchObject({
+      htm: "GET",
+      htu: `${PORTAL_ORIGIN}/api/wallet/v2/clinical-document-graph/changes`,
+    });
+  });
+
   it("sends the holder-signed SHL certification request through DPoP without patientId", async () => {
-    const manifestCredentialJwt =
-      "eyJhbGciOiJFUzI1NiJ9.eyJ0eXBlIjpbIlZlcmlmaWFibGVDcmVkZW50aWFsIl19.c2ln";
     const response = {
-      schema: "trustcare.wallet.shl-certification.v1" as const,
-      certificationRequestId: "certification-001",
-      requestId: "urn:uuid:request-001",
-      shlPackageId: "shl-package-001",
-      status: "approved" as const,
-      statusUrl: `${PORTAL_ORIGIN}/api/wallet/v2/shl-certifications/certification-001`,
+      schema: "trustcare.wallet.credential-request.v1" as const,
+      requestId: "wxr_shl_certification_001",
+      clientRequestId: "wallet-shl-certification-001",
+      status: "received" as const,
+      credentialTypes: ["shl_manifest"],
+      statusUrl: `${PORTAL_ORIGIN}/api/wallet/v2/credential-requests/wxr_shl_certification_001`,
+      nextAction: "wait_for_maker_checker" as const,
       createdAt: FIXED_NOW.toISOString(),
-      updatedAt: FIXED_NOW.toISOString(),
-      manifestCredentialContentType: "application/vc+jwt" as const,
-      manifestCredentialJwt,
-      correlationId: "corr-shl-001",
       idempotent: false,
     };
     const harness = await createHarness({
       protectedHandler: async () => jsonResponse(response),
     });
+    const shlPackageId = "A".repeat(43);
     const request = {
-      schema: "trustcare.shl-certification-request.v1",
-      requestId: "urn:uuid:request-001",
-      targetHospitalCode: "TCC",
-      shlPackageId: "shl-package-001",
-      holderDid: harness.identity.did,
-      holderPresentationId: "urn:uuid:holder-vp-001",
-      holderPresentationJwt: VP_JWT,
-      manifestUrl: "https://share.example/manifests/shl-package-001.json",
+      clientRequestId: "wallet-shl-certification-001",
+      shlPackageId,
+      targetHospitalCode: "TCC" as const,
+      context: "opd_visit" as const,
+      purpose: "OPD registration",
+      consentRef: "consent:001",
+      manifestUrl: `https://share.example/manifests/${shlPackageId}.json`,
       manifestHash: `sha256:${"b".repeat(64)}`,
-      fileHashes: [
-        {
-          fileId: "file-001",
-          documentId: "document-001",
-          plaintextSha256: `sha256:${"c".repeat(64)}`,
-          jweSha256: `sha256:${"d".repeat(64)}`,
-        },
-      ],
-      accessPolicy: {
-        purpose: "OPD registration",
-        recipient: "TrustCare TCC",
-        audience: `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,
-        context: "opd_visit",
-        consentRef: "consent:001",
-        issuedAt: FIXED_NOW.toISOString(),
-        expiresAt: new Date(FIXED_NOW.getTime() + 600_000).toISOString(),
-        passcodeRequired: false,
-        maxAccessCount: 3,
-      },
-      accessPolicyHash: `sha256:${"e".repeat(64)}`,
-      sourceCredentials: [
-        {
-          documentId: "document-001",
-          credentialId: "credential-001",
-          issuerDid: "did:web:issuer.example:hospital:tcc",
-          plaintextSha256: `sha256:${"c".repeat(64)}`,
-        },
-      ],
+      sourceBundleHash: `sha256:${"c".repeat(64)}`,
+      fileHashes: [`sha256:${"d".repeat(64)}`],
+      expiresAt: new Date(FIXED_NOW.getTime() + 600_000).toISOString(),
+      holderAuthorizationVpJwt: VP_JWT,
     } satisfies ShlCertificationRequest;
 
     await expect(
@@ -786,6 +791,7 @@ function contractSet(): WalletExchangeContractSet {
     endpoints: {
       credentialSync: `${PORTAL_ORIGIN}/api/wallet/v2/credentials/sync`,
       credentialSyncAck: `${PORTAL_ORIGIN}/api/wallet/v2/credentials/sync/ack`,
+      clinicalDocumentGraphChanges: `${PORTAL_ORIGIN}/api/wallet/v2/clinical-document-graph/changes`,
       credentialRequests: `${PORTAL_ORIGIN}/api/wallet/v2/credential-requests`,
       documentSubmissions: `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,
       shlAssociations: `${PORTAL_ORIGIN}/api/wallet/v2/shl-associations/{shlId}`,
@@ -875,6 +881,10 @@ function contractSet(): WalletExchangeContractSet {
         $schema: "https://json-schema.org/draft/2020-12/schema",
       },
     }),
+    clinicalDocumentGraph: resource(
+      clinicalDocumentGraphContractFixture(PORTAL_ORIGIN),
+    ),
+    graphPresentationSchema: resource(graphPresentationSchemaFixture()),
     loadedAt: FIXED_NOW.toISOString(),
   };
 }
@@ -890,6 +900,28 @@ function syncPage() {
     hasMore: false,
     serverTime: FIXED_NOW.toISOString(),
   } as const;
+}
+
+function graphChangePage() {
+  return {
+    contractVersion: "2026.07.pcdg.v2",
+    changeSetId: "graphset-001",
+    tenantReference: "holder-authorized-multi-tenant-feed",
+    subjectReference: "did:key:zGraphHolder",
+    cursor: "opaque+cursor/value=",
+    nextCursor: "opaque-next-cursor-001",
+    correlationId: "corr-graph-001",
+    idempotencyKey: "graph-feed:1:2",
+    occurredAt: FIXED_NOW.toISOString(),
+    compatibility: {
+      minimumConsumerVersion: "2026.07.pcdg.v2",
+      additiveUnknownFieldsAllowed: true,
+      unknownRequiredFields: "quarantine",
+      immutableArtifactUpdates: "supersede",
+    },
+    changes: [],
+    hasMore: false,
+  };
 }
 
 function syncAck() {

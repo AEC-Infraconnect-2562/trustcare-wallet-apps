@@ -1,4 +1,6 @@
 import {
+  CLINICAL_DOCUMENT_GRAPH_CHANGES_MEDIA_TYPE,
+  assertClinicalDocumentGraphChangeSet,
   assertWalletCredentialRequest,
   assertWalletCredentialRequestInput,
   assertWalletCredentialRequestStatus,
@@ -27,6 +29,7 @@ import {
   type WalletSyncAckRequest,
   type WalletSyncPage,
   type WalletSyncRequest,
+  type ClinicalDocumentGraphChangeSet,
 } from "@trustcare/contracts";
 import {
   signHolderCompactJws,
@@ -38,8 +41,6 @@ import { TrustCareApiError } from "./errors";
 import type { WalletExchangeContractSet } from "./walletContractLoader";
 import {
   assertShlCertificationRequest,
-  assertShlCertificationResponse,
-  type ShlCertificationResponse,
 } from "./shlCertification";
 
 export type WalletExchangeSessionState = {
@@ -96,6 +97,7 @@ type ProtectedRequest = {
   method: "GET" | "POST";
   url: string;
   body?: string;
+  accept?: string;
   idempotencyKey?: string;
   requestId: string;
 };
@@ -221,6 +223,44 @@ export class WalletExchangeV2Client {
     );
   }
 
+  async syncClinicalDocumentGraph(
+    input: {
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ): Promise<ClinicalDocumentGraphChangeSet> {
+    const limit = input.limit ?? 200;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+      throw new TrustCareApiError(
+        "Clinical Document Graph sync limit must be 1-1000.",
+        { code: "clinical_document_graph_sync_limit_invalid" },
+      );
+    }
+    const endpoint = new URL(
+      this.options.contracts.discovery.endpoints.clinicalDocumentGraphChanges,
+    );
+    endpoint.searchParams.set("limit", String(limit));
+    if (input.cursor !== undefined) {
+      const cursor = input.cursor.trim();
+      if (!cursor || cursor.length > 2_000) {
+        throw new TrustCareApiError(
+          "Clinical Document Graph cursor is invalid.",
+          { code: "clinical_document_graph_cursor_invalid" },
+        );
+      }
+      endpoint.searchParams.set("cursor", cursor);
+    }
+    return this.protectedJson(
+      {
+        method: "GET",
+        url: endpoint.toString(),
+        accept: `${CLINICAL_DOCUMENT_GRAPH_CHANGES_MEDIA_TYPE}, application/problem+json`,
+        requestId: this.requestIdentifier(),
+      },
+      assertClinicalDocumentGraphChangeSet,
+    );
+  }
+
   async acknowledgeSync(
     input: WalletSyncAckRequest,
     idempotencyKey: string,
@@ -336,7 +376,7 @@ export class WalletExchangeV2Client {
   async requestShlCertification(
     input: ShlCertificationRequest,
     idempotencyKey: string,
-  ): Promise<ShlCertificationResponse> {
+  ): Promise<WalletCredentialRequest> {
     const endpoint =
       this.options.contracts.discovery.endpoints.shlCertificationRequests;
     const request = assertShlCertificationRequest(input);
@@ -348,22 +388,7 @@ export class WalletExchangeV2Client {
         idempotencyKey: requireIdempotencyKey(idempotencyKey),
         requestId: this.requestIdentifier(),
       },
-      assertShlCertificationResponse,
-    );
-  }
-
-  async getShlCertificationStatus(
-    certificationRequestId: string,
-  ): Promise<ShlCertificationResponse> {
-    const endpoint =
-      this.options.contracts.discovery.endpoints.shlCertificationRequests;
-    return this.protectedJson(
-      {
-        method: "GET",
-        url: childEndpoint(endpoint, certificationRequestId),
-        requestId: this.requestIdentifier(),
-      },
-      assertShlCertificationResponse,
+      assertWalletCredentialRequest,
     );
   }
 
@@ -387,7 +412,8 @@ export class WalletExchangeV2Client {
           clockOffsetSeconds: this.clockOffsetSeconds,
         });
         const headers: Record<string, string> = {
-          accept: "application/json, application/problem+json",
+          accept:
+            request.accept ?? "application/json, application/problem+json",
           authorization: `DPoP ${session.accessToken}`,
           dpop,
           "x-request-id": request.requestId,
@@ -621,10 +647,8 @@ function jsonHeaders(requestId: string): Record<string, string> {
 
 async function readResponseJson(response: Response): Promise<unknown> {
   const contentType = response.headers.get("content-type") ?? "";
-  if (
-    !contentType.includes("application/json") &&
-    !contentType.includes("application/problem+json")
-  ) {
+  const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  if (mediaType !== "application/json" && !mediaType.endsWith("+json")) {
     if (!response.ok) return null;
     throw new WalletExchangeProblemError(
       "Wallet Exchange response is not JSON.",

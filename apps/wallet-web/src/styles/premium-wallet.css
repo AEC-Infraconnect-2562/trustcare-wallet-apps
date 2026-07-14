@@ -16,6 +16,690 @@
   color-scheme: light;
 }
 
+/* Portable Clinical Document Graph V2 — shared presentation shell. */
+.tc-graph-presentation {
+  --graph-ink: #15283d;
+  --graph-muted: #66778b;
+  --graph-line: #dce7f1;
+  --graph-blue: #1769aa;
+  display: grid;
+  gap: 20px;
+  color: var(--graph-ink);
+}
+
+.tc-graph-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 4px 2px 18px;
+  border-bottom: 1px solid var(--graph-line);
+}
+
+.tc-graph-eyebrow,
+.tc-graph-section-heading span {
+  color: var(--graph-blue);
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.tc-graph-hero h2,
+.tc-graph-section-heading h3 {
+  margin: 5px 0 0;
+  color: var(--graph-ink);
+  letter-spacing: -0.018em;
+}
+
+.tc-graph-hero h2 {
+  font-size: clamp(20px, 2vw, 27px);
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.tc-graph-hero p {
+  margin: 4px 0 0;
+  color: var(--graph-muted);
+  font-size: 13px;
+}
+
+.tc-graph-trust-summary {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+  min-width: max-content;
+}
+
+.tc-graph-trust-summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #cfe5d6;
+  border-radius: 999px;
+  background: #f0faf3;
+  color: #237148;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.tc-graph-trust-summary > span.is-pending {
+  border-color: #eadcab;
+  background: #fffaf0;
+  color: #876516;
+}
+
+.tc-graph-trust-summary > span.is-invalid {
+  border-color: #efc5c5;
+  background: #fff4f4;
+  color: #a43c3c;
+}
+
+.tc-graph-trust-summary small {
+  color: var(--graph-muted);
+  font-size: 11px;
+}
+
+.tc-graph-stage-rail {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(118px, 1fr));
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 10px;
+  scrollbar-width: thin;
+}
+
+.tc-graph-stage {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 168px;
+  padding: 13px 12px 12px;
+  border: 1px solid var(--graph-line);
+  border-radius: 15px;
+  background: #fbfdff;
+}
+
+.tc-graph-stage.is-not_applicable {
+  opacity: 0.58;
+}
+
+.tc-graph-stage.is-blocked {
+  border-color: #efc5c5;
+  background: #fff9f9;
+}
+
+.tc-graph-stage.is-pending {
+  border-color: #eadcab;
+  background: #fffdf7;
+}
+
+.tc-graph-stage-marker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--graph-blue);
+}
+
+.tc-graph-stage-marker span {
+  color: #8b99a9;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.tc-graph-stage > div:nth-child(2) {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+}
+
+.tc-graph-stage strong {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.tc-graph-stage small {
+  color: var(--graph-muted);
+  font-size: 10.5px;
+}
+
+.tc-graph-stage p {
+  margin: 6px 0 0;
+  color: #607185;
+  font-size: 10.5px;
+  line-height: 1.48;
+}
+
+.tc-graph-stage em {
+  align-self: end;
+  margin-top: 7px;
+  color: #287650;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 650;
+}
+
+.tc-graph-stage.is-pending em {
+  color: #896817;
+}
+
+.tc-graph-stage.is-blocked em {
+  color: #a43c3c;
+}
+
+.tc-graph-stage-arrow {
+  position: absolute;
+  z-index: 1;
+  top: 28px;
+  right: -9px;
+  padding: 2px;
+  border-radius: 999px;
+  background: #fff;
+  color: #9aabba;
+}
+
+.tc-graph-content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  gap: 14px;
+}
+
+.tc-graph-object-panel,
+.tc-graph-relationship-panel {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--graph-line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 11px 34px rgba(34, 66, 98, 0.055);
+}
+
+.tc-graph-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.tc-graph-section-heading h3 {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.tc-graph-section-heading > code {
+  max-width: 46%;
+  overflow: hidden;
+  color: #718196;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tc-graph-object {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid #e1eaf2;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.tc-graph-object.is-selected {
+  border-color: #aed0ec;
+  background: linear-gradient(135deg, #f7fbff, #fff);
+  box-shadow: inset 3px 0 0 var(--graph-blue);
+}
+
+.tc-graph-object-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 11px;
+  background: #eaf4fd;
+  color: var(--graph-blue);
+}
+
+.tc-graph-object > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.tc-graph-object > div > span {
+  color: #5f7790;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.tc-graph-object strong {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.tc-graph-object small,
+.tc-graph-object code {
+  overflow: hidden;
+  color: var(--graph-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tc-graph-object > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #cbdde9;
+  border-radius: 9px;
+  background: #fff;
+  color: #17669e;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tc-graph-evidence-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.tc-graph-evidence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 12px;
+  background: #f4f7fa;
+  color: #5e7083;
+}
+
+.tc-graph-evidence.is-passed {
+  background: #eff9f2;
+  color: #26734c;
+}
+
+.tc-graph-evidence.is-warning {
+  background: #fff8e9;
+  color: #846116;
+}
+
+.tc-graph-evidence > span {
+  display: grid;
+}
+
+.tc-graph-evidence strong {
+  font-size: 14px;
+}
+
+.tc-graph-evidence small {
+  overflow: hidden;
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tc-graph-node-stack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tc-graph-object.is-compact {
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 10px;
+}
+
+.tc-graph-object.is-compact .tc-graph-object-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.tc-graph-object.is-compact > button {
+  display: none;
+}
+
+.tc-graph-edge-list {
+  display: grid;
+  gap: 5px;
+  max-height: 152px;
+  overflow: auto;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid #e6edf4;
+}
+
+.tc-graph-edge-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+}
+
+.tc-graph-edge-list code {
+  overflow: hidden;
+  color: #64788c;
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tc-graph-edge-list code:last-child {
+  text-align: right;
+}
+
+.tc-graph-edge-list span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #edf4fa;
+  color: #49657d;
+  font-size: 8.5px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.tc-graph-contract-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 15px;
+  border: 1px solid #dce7f1;
+  border-radius: 14px;
+  background: #f8fbfe;
+  color: #587086;
+}
+
+.tc-graph-contract-note p {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.tc-graph-contract-note code {
+  font-size: 9.5px;
+}
+
+.tc-graph-empty {
+  color: var(--graph-muted);
+  font-size: 12px;
+}
+
+.clinical-graph-surface {
+  padding: clamp(18px, 2.2vw, 30px);
+  border-radius: 20px;
+}
+
+.clinical-graph-catalog {
+  display: grid;
+  gap: 16px;
+  padding: 20px 22px;
+  border-color: #d7e5f1;
+  background: linear-gradient(135deg, #fbfdff 0%, #f5faff 100%);
+}
+
+.clinical-graph-catalog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.clinical-graph-catalog-heading h3 {
+  margin: 4px 0 0;
+  color: #17314a;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.clinical-graph-catalog-heading p {
+  max-width: 720px;
+  margin: 5px 0 0;
+  color: #65778a;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.clinical-graph-artifact-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  max-height: 288px;
+  overflow: auto;
+}
+
+.clinical-graph-artifact-list > button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 76px;
+  padding: 11px 12px;
+  border: 1px solid #dce7f0;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #17314a;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.clinical-graph-artifact-list > button:hover,
+.clinical-graph-artifact-list > button:focus-visible {
+  border-color: #a9cce9;
+  box-shadow: 0 10px 24px rgba(29, 78, 121, 0.08);
+  transform: translateY(-1px);
+}
+
+.clinical-graph-artifact-list > button > span:first-child {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 10px;
+  background: #eaf4fd;
+  color: #1769aa;
+}
+
+.clinical-graph-artifact-list > button > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.clinical-graph-artifact-list strong,
+.clinical-graph-artifact-list small,
+.clinical-graph-artifact-list code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clinical-graph-artifact-list strong {
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.clinical-graph-artifact-list small,
+.clinical-graph-artifact-list code {
+  color: #6b7c8f;
+  font-size: 9.5px;
+}
+
+.record-v2-graph-action {
+  margin-top: 14px;
+}
+
+.credential-graph-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  margin-bottom: 12px;
+  border: 1px solid #c8dceb;
+  border-radius: 11px;
+  background: #f7fbff;
+  color: #17669e;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.credential-graph-panel {
+  margin-bottom: 15px;
+  padding: 14px;
+  border: 1px solid #dce7f1;
+  border-radius: 15px;
+  background: #fbfdff;
+}
+
+.credential-graph-panel .tc-graph-hero {
+  display: grid;
+  gap: 11px;
+}
+
+.credential-graph-panel .tc-graph-trust-summary {
+  justify-items: start;
+}
+
+.credential-graph-panel .tc-graph-stage-rail {
+  grid-template-columns: repeat(8, minmax(138px, 1fr));
+}
+
+.credential-graph-panel .tc-graph-content-grid,
+.credential-graph-panel .tc-graph-node-stack {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.credential-graph-state {
+  margin: 0;
+  color: #62768a;
+  font-size: 12px;
+}
+
+.credential-graph-state.is-error {
+  color: #9f3838;
+}
+
+@media (max-width: 900px) {
+  .tc-graph-hero {
+    display: grid;
+    gap: 13px;
+  }
+
+  .tc-graph-trust-summary {
+    justify-items: start;
+  }
+
+  .tc-graph-stage-rail {
+    grid-template-columns: repeat(8, minmax(140px, 1fr));
+  }
+
+  .tc-graph-content-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .clinical-graph-artifact-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .tc-graph-presentation {
+    gap: 14px;
+  }
+
+  .tc-graph-stage-rail {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+
+  .tc-graph-stage {
+    grid-template-columns: 36px minmax(0, 1fr);
+    min-height: 0;
+    padding: 12px;
+  }
+
+  .tc-graph-stage-marker {
+    display: grid;
+    justify-items: center;
+    gap: 7px;
+  }
+
+  .tc-graph-stage-arrow {
+    top: auto;
+    right: auto;
+    bottom: -10px;
+    left: 22px;
+    transform: rotate(90deg);
+  }
+
+  .tc-graph-object-panel,
+  .tc-graph-relationship-panel {
+    padding: 14px;
+    border-radius: 15px;
+  }
+
+  .tc-graph-node-stack {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tc-graph-object {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .tc-graph-object > button {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
+  .tc-graph-contract-note {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .tc-graph-contract-note code {
+    grid-column: 2;
+  }
+
+  .clinical-graph-catalog {
+    padding: 16px;
+  }
+
+  .clinical-graph-catalog-heading {
+    display: grid;
+    gap: 11px;
+  }
+
+  .clinical-graph-artifact-list {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: 340px;
+  }
+}
+
 html,
 body,
 #root {
@@ -25,7 +709,8 @@ body,
 
 body {
   color: var(--clinical-ink);
-  font-family: "IBM Plex Sans Thai", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family:
+    "IBM Plex Sans Thai", Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
 .app-shell {
@@ -239,10 +924,7 @@ body {
   .app-shell[data-sidebar-collapsed="true"] .side-nav .brand-copy,
   .app-shell[data-sidebar-collapsed="true"] .side-nav .nav-button span,
   .app-shell[data-sidebar-collapsed="true"] .side-nav-toggle span,
-  .app-shell[data-sidebar-collapsed="true"]
-    .side-nav
-    .user-scope-card
-    > div,
+  .app-shell[data-sidebar-collapsed="true"] .side-nav .user-scope-card > div,
   .app-shell[data-sidebar-collapsed="true"]
     .side-nav
     .user-scope-panel
@@ -846,8 +1528,7 @@ body {
   padding: 10px 0;
 }
 
-.credential-inspector-preview.is-id-card
-  > .credential-doc.tc-form-iso-id-1 {
+.credential-inspector-preview.is-id-card > .credential-doc.tc-form-iso-id-1 {
   width: min(85.6mm, 100%);
   max-width: 100%;
   margin: 0 auto;
@@ -1180,8 +1861,7 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .app-shell[data-inspector-open="true"]
-    .clinical-document-pass:last-child {
+  .app-shell[data-inspector-open="true"] .clinical-document-pass:last-child {
     grid-column: 1 / -1;
   }
 }
@@ -1191,8 +1871,7 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .app-shell[data-inspector-open="true"]
-    .clinical-document-pass:last-child {
+  .app-shell[data-inspector-open="true"] .clinical-document-pass:last-child {
     grid-column: auto;
   }
 }
@@ -1352,8 +2031,7 @@ body {
     padding: 0;
   }
 
-  .credential-inspector-preview.is-id-card
-    > .credential-doc.tc-form-iso-id-1 {
+  .credential-inspector-preview.is-id-card > .credential-doc.tc-form-iso-id-1 {
     width: min(85.6mm, 100%);
   }
 

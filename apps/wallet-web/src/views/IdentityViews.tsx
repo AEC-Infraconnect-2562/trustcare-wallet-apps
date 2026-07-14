@@ -28,7 +28,10 @@ export function LoginView({
   onOpenScanner: () => void;
   error?: string;
 }) {
-  const selectedUser = getDemoUser(selectedUserId);
+  const selectedUser =
+    users.find((user) => user.id === selectedUserId) ??
+    users[0] ??
+    getDemoUser(selectedUserId);
   const loginCardsByUser = useMemo(
     () =>
       new Map(
@@ -78,6 +81,11 @@ export function LoginView({
           </button>
         </div>
         <div className="login-user-grid">
+          {!users.length && (
+            <p className="login-error" role="status">
+              Portal ยังไม่ได้ประกาศผู้ใช้ทดสอบที่ Wallet รองรับ
+            </p>
+          )}
           {users.map((user) => (
             <button
               key={user.id}
@@ -132,7 +140,10 @@ export function LoginView({
               : "ขอบเขตผู้ป่วย"}
           </Badge>
         </Surface>
-        <Button onClick={() => void onLogin(selectedUserId)}>
+        <Button
+          disabled={!users.length}
+          onClick={() => void onLogin(selectedUser.id)}
+        >
           <ShieldCheck size={18} /> เข้าสู่ระบบด้วยผู้ใช้นี้
         </Button>
       </section>

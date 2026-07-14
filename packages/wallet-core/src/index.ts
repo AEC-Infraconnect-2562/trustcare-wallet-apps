@@ -52,3 +52,5 @@ export * from "./holderIdentity";
 export * from "./certifiedShl";
 export * from "./testUserProfiles";
 export * from "./sandboxHolderIdentity";
+export * from "./clinicalDocumentGraphV2";
+export * from "./directDocumentProfile";

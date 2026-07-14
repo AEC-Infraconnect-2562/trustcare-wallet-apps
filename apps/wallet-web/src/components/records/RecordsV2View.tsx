@@ -2,22 +2,28 @@ import { useDeferredValue, useMemo, useState } from "react";
 import {
   ArrowLeft,
   FileText,
+  Fingerprint,
   ImageOff,
+  KeyRound,
   RefreshCw,
   Search,
   Share2,
+  ShieldCheck,
 } from "lucide-react";
 import {
   Badge,
   Button,
+  ClinicalDocumentGraphPresentation,
   CredentialDocument,
   Surface,
   useLoadedPhotoCandidate,
 } from "@trustcare/ui-web";
 import type {
   RuntimeEnvironment,
+  WalletClinicalDocumentGraphNode,
   WalletDocumentRecordV2,
 } from "@trustcare/wallet-core";
+import type { ClinicalDocumentGraphPresentation as ClinicalDocumentGraphPresentationModel } from "@trustcare/contracts";
 import {
   mergeWalletDocumentRecordsV2,
   photoBearingCredentialTypes,
@@ -52,6 +58,9 @@ export function RecordsV2View({
   selectedRecordId,
   onOpenRecord,
   onCloseRecord,
+  graphArtifacts = [],
+  loadGraphPresentation,
+  graphQuarantineCount = 0,
 }: {
   runtimeEnvironment: RuntimeEnvironment;
   userId: string;
@@ -73,10 +82,20 @@ export function RecordsV2View({
   selectedRecordId?: string;
   onOpenRecord: (record: WalletDocumentRecordV2) => void;
   onCloseRecord: () => void;
+  graphArtifacts?: WalletClinicalDocumentGraphNode[];
+  loadGraphPresentation?: (
+    artifactId: string,
+  ) => Promise<ClinicalDocumentGraphPresentationModel>;
+  graphQuarantineCount?: number;
 }) {
   const [search, setSearch] = useState("");
   const [recoveringShares, setRecoveringShares] = useState(false);
   const [shareRecoveryError, setShareRecoveryError] = useState("");
+  const [selectedGraphArtifactId, setSelectedGraphArtifactId] = useState("");
+  const [graphPresentation, setGraphPresentation] =
+    useState<ClinicalDocumentGraphPresentationModel | null>(null);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState("");
   const deferredSearch = useDeferredValue(search);
   const {
     records: repositoryRecords,
@@ -151,6 +170,81 @@ export function RecordsV2View({
     [exchangeRecords, selectedRecord],
   );
 
+  const openGraph = async (artifactId: string) => {
+    if (!loadGraphPresentation || graphLoading) return;
+    setSelectedGraphArtifactId(artifactId);
+    setGraphPresentation(null);
+    setGraphError("");
+    setGraphLoading(true);
+    try {
+      setGraphPresentation(await loadGraphPresentation(artifactId));
+    } catch (reason) {
+      setGraphError(
+        reason instanceof Error
+          ? reason.message
+          : "ไม่สามารถสร้าง Graph Presentation จากข้อมูลที่ sync ได้",
+      );
+    } finally {
+      setGraphLoading(false);
+    }
+  };
+
+  const closeGraph = () => {
+    setSelectedGraphArtifactId("");
+    setGraphPresentation(null);
+    setGraphError("");
+  };
+
+  const openUnderlyingDocument = (artifactId: string) => {
+    const node = graphPresentation?.nodes.find(
+      (candidate) => candidate.artifactId === artifactId,
+    );
+    const record = findRecordForGraphArtifact(records, artifactId, node);
+    if (!record) {
+      setGraphError(
+        "ยังไม่มี underlying document object รายการนี้ใน local Wallet จึงไม่เปิดข้อมูลอื่นทดแทน",
+      );
+      return;
+    }
+    closeGraph();
+    onOpenRecord(record);
+  };
+
+  if (selectedGraphArtifactId) {
+    return (
+      <div className="view-stack records-v2-view clinical-graph-view">
+        <Button className="secondary record-v2-back" onClick={closeGraph}>
+          <ArrowLeft size={17} /> กลับไปเอกสาร
+        </Button>
+        {graphLoading ? (
+          <Surface className="record-v2-state" aria-live="polite">
+            <RefreshCw className="spin-icon" size={22} />
+            <div>
+              <h3>กำลังสร้าง Graph Presentation</h3>
+              <p>Wallet กำลังประกอบจาก holder-authorized delta ที่เก็บไว้</p>
+            </div>
+          </Surface>
+        ) : null}
+        {graphError ? (
+          <Surface className="record-v2-state record-v2-error" role="alert">
+            <div>
+              <h3>ไม่สามารถเปิด Graph Presentation ได้</h3>
+              <p>{graphError}</p>
+            </div>
+          </Surface>
+        ) : null}
+        {graphPresentation ? (
+          <Surface className="clinical-graph-surface">
+            <ClinicalDocumentGraphPresentation
+              presentation={graphPresentation}
+              onOpenArtifact={openUnderlyingDocument}
+            />
+          </Surface>
+        ) : null}
+      </div>
+    );
+  }
+
   if (selectedRecord) {
     return (
       <RecordV2Detail
@@ -163,6 +257,11 @@ export function RecordsV2View({
         onRefreshExchangeSubmission={
           selectedExchangeRecord ? onRefreshExchangeSubmission : undefined
         }
+        graphArtifactId={findGraphArtifactForRecord(
+          graphArtifacts,
+          selectedRecord,
+        )}
+        onOpenGraph={(artifactId) => void openGraph(artifactId)}
       />
     );
   }
@@ -220,6 +319,50 @@ export function RecordsV2View({
           </Button>
         </Surface>
       )}
+
+      {graphArtifacts.length > 0 ? (
+        <Surface className="clinical-graph-catalog">
+          <div className="clinical-graph-catalog-heading">
+            <div>
+              <span className="eyebrow">Portable Clinical Document Graph</span>
+              <h3>ดูที่มาและความสัมพันธ์ของเอกสาร</h3>
+              <p>
+                เลือกรายการเพื่อดู Source, FHIR, Document, Retrieval,
+                Attestation, VC, SHL และ Holder VP ที่สัมพันธ์กันจริง
+              </p>
+            </div>
+            <div className="trust-chip-row">
+              <Badge tone="blue">{graphArtifacts.length} objects</Badge>
+              {graphQuarantineCount > 0 ? (
+                <Badge tone="yellow">
+                  {graphQuarantineCount} รายการรอตรวจ compatibility
+                </Badge>
+              ) : null}
+            </div>
+          </div>
+          <div className="clinical-graph-artifact-list">
+            {primaryGraphArtifacts(graphArtifacts).map((artifact) => (
+              <button
+                key={artifact.artifactId}
+                type="button"
+                onClick={() => void openGraph(artifact.artifactId)}
+              >
+                <span>{graphArtifactIcon(artifact.semanticClass)}</span>
+                <span>
+                  <strong>{graphArtifactLabel(artifact)}</strong>
+                  <small>{artifact.semanticClass.replaceAll("_", " ")}</small>
+                  <code>{shortGraphId(artifact.artifactId)}</code>
+                </span>
+                <Badge
+                  tone={artifact.trustState === "invalid" ? "red" : "neutral"}
+                >
+                  {artifact.lifecycleStatus}
+                </Badge>
+              </button>
+            ))}
+          </div>
+        </Surface>
+      ) : null}
 
       <Surface className="document-controls">
         <label className="search-box">
@@ -417,6 +560,8 @@ function RecordV2Detail({
   defaultTargetHospitalCode,
   onSubmitExchangeRecord,
   onRefreshExchangeSubmission,
+  graphArtifactId,
+  onOpenGraph,
 }: {
   record: WalletDocumentRecordV2;
   onBack: () => void;
@@ -428,6 +573,8 @@ function RecordV2Detail({
   onRefreshExchangeSubmission?: (
     clientSubmissionId: string,
   ) => Promise<RecordExchangeSubmissionResult>;
+  graphArtifactId?: string;
+  onOpenGraph?: (artifactId: string) => void;
 }) {
   const trust = recordTrustPresentation(record);
   const [targetHospitalCode, setTargetHospitalCode] =
@@ -485,6 +632,14 @@ function RecordV2Detail({
           </Badge>
           <Badge tone="blue">{sourceLabel(record.provenance.sourceKind)}</Badge>
         </div>
+        {graphArtifactId && onOpenGraph ? (
+          <Button
+            className="secondary record-v2-graph-action"
+            onClick={() => onOpenGraph(graphArtifactId)}
+          >
+            <Share2 size={17} /> ดูโครงสร้างและความน่าเชื่อถือ
+          </Button>
+        ) : null}
         <dl className="details-grid compact">
           <div>
             <dt>ผู้ออกเอกสาร</dt>
@@ -656,6 +811,109 @@ function lifecycleLabel(value: WalletDocumentRecordV2["lifecycle"]["status"]) {
       revoked: "เพิกถอน",
     } as const
   )[value];
+}
+
+function primaryGraphArtifacts(
+  artifacts: readonly WalletClinicalDocumentGraphNode[],
+): WalletClinicalDocumentGraphNode[] {
+  const primary = artifacts.filter(
+    (artifact) =>
+      artifact.retrievable ||
+      [
+        "identity_credential",
+        "trust_artifact",
+        "transport_artifact",
+        "presentation_artifact",
+      ].includes(artifact.semanticClass),
+  );
+  return primary.length ? primary : [...artifacts];
+}
+
+function findGraphArtifactForRecord(
+  artifacts: readonly WalletClinicalDocumentGraphNode[],
+  record: WalletDocumentRecordV2,
+): string | undefined {
+  const identifiers = new Set(
+    [record.id, record.credential.credentialId].filter(
+      (value): value is string => Boolean(value),
+    ),
+  );
+  const hashes = recordHashes(record);
+  return artifacts.find(
+    (artifact) =>
+      identifiers.has(artifact.artifactId) ||
+      identifiers.has(artifact.object?.objectId ?? "") ||
+      hashes.has(normalizeHash(artifact.contentHash)),
+  )?.artifactId;
+}
+
+function findRecordForGraphArtifact(
+  records: readonly WalletDocumentRecordV2[],
+  artifactId: string,
+  node?: ClinicalDocumentGraphPresentationModel["nodes"][number],
+): WalletDocumentRecordV2 | undefined {
+  return records.find((record) => {
+    const identifiers = new Set(
+      [record.id, record.credential.credentialId].filter(
+        (value): value is string => Boolean(value),
+      ),
+    );
+    return (
+      identifiers.has(artifactId) ||
+      identifiers.has(node?.object?.objectId ?? "") ||
+      (node ? recordHashes(record).has(normalizeHash(node.contentHash)) : false)
+    );
+  });
+}
+
+function recordHashes(record: WalletDocumentRecordV2): Set<string> {
+  const hashes = new Set<string>();
+  for (const attachment of record.content.originalAttachments) {
+    if (attachment.hash) hashes.add(normalizeHash(attachment.hash));
+  }
+  const content = record.content.documentReference.content;
+  if (Array.isArray(content)) {
+    for (const entry of content) {
+      const hash = entry?.attachment?.hash;
+      if (typeof hash === "string" && hash.trim()) {
+        hashes.add(normalizeHash(hash));
+      }
+    }
+  }
+  return hashes;
+}
+
+function normalizeHash(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/^sha-?256:/, "")
+    .replace(/^sha256-/, "");
+}
+
+function graphArtifactLabel(artifact: WalletClinicalDocumentGraphNode): string {
+  const labels: Record<string, string> = {
+    "holder-presentation": "Holder VP ที่ Wallet ลงนาม",
+    "verifiable-credential": "Verifiable Credential ที่ Portal ลงนาม",
+    "shl-transport": "Smart Health Link transport",
+    "shl-manifest": "SHL manifest",
+  };
+  return (
+    labels[artifact.artifactType] ?? artifact.artifactType.replaceAll("-", " ")
+  );
+}
+
+function graphArtifactIcon(semanticClass: string) {
+  if (semanticClass === "presentation_artifact")
+    return <Fingerprint size={18} />;
+  if (semanticClass === "transport_artifact") return <KeyRound size={18} />;
+  if (semanticClass === "trust_artifact") return <ShieldCheck size={18} />;
+  return <FileText size={18} />;
+}
+
+function shortGraphId(value: string): string {
+  return value.length > 28
+    ? `${value.slice(0, 13)}…${value.slice(-10)}`
+    : value;
 }
 
 function sourceLabel(

@@ -8,7 +8,8 @@ import {
   prepareWalletExchangeSyncCommit,
   type WalletExchangePreparedUpsertChange,
 } from "@trustcare/wallet-core";
-import { exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
+import { base64url, exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
+import { gzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import {
   type ResolvedPortalHospitalIssuer,
@@ -244,6 +245,7 @@ type PortalCredentialFixture = {
   issuer: ResolvedPortalHospitalIssuer;
   jwt: string;
   renderData: Record<string, unknown>;
+  fetchImpl: typeof fetch;
 };
 
 async function signedPortalCredential(input?: {
@@ -296,7 +298,10 @@ async function signedPortalCredential(input?: {
     },
   };
   const credentialData: Record<string, unknown> = {
-    "@context": ["https://www.w3.org/ns/credentials/v2"],
+    "@context": [
+      "https://www.w3.org/ns/credentials/v2",
+      `${portalOrigin}/contexts/trustcare-credentials-v1.jsonld`,
+    ],
     id: "urn:trustcare:credential:patient-identity:001",
     type: [
       "VerifiableCredential",
@@ -305,11 +310,22 @@ async function signedPortalCredential(input?: {
     issuer: { id: issuerDid },
     validFrom: "2026-07-11T11:55:00.000Z",
     validUntil: "2027-07-11T12:00:00.000Z",
-    credentialStatus: {
-      id: `${portalOrigin}/api/wallet/v2/credential-status/001`,
-      type: "TrustCareCredentialStatus2026",
-      status: "active",
-    },
+    credentialStatus: [
+      {
+        id: `${portalOrigin}/api/credentials/status-lists/${encodeURIComponent(issuerDid)}/revocation#1`,
+        type: "BitstringStatusListEntry",
+        statusPurpose: "revocation",
+        statusListIndex: "1",
+        statusListCredential: `${portalOrigin}/api/credentials/status-lists/${encodeURIComponent(issuerDid)}/revocation`,
+      },
+      {
+        id: `${portalOrigin}/api/credentials/status-lists/${encodeURIComponent(issuerDid)}/suspension#1`,
+        type: "BitstringStatusListEntry",
+        statusPurpose: "suspension",
+        statusListIndex: "1",
+        statusListCredential: `${portalOrigin}/api/credentials/status-lists/${encodeURIComponent(issuerDid)}/suspension`,
+      },
+    ],
     credentialSubject: {
       id: signedHolderDid,
       ...(input?.omitSignedDocumentType
@@ -321,16 +337,40 @@ async function signedPortalCredential(input?: {
       data: { humanDocument: { renderData } },
     },
   };
-  const jwt = await new SignJWT({
-    vc: credentialData,
-    trustcare_claim_digest: await sha256Canonical(credentialData),
-  })
-    .setProtectedHeader({ alg: "ES256", typ: "vc+jwt", kid })
-    .setIssuer(issuerDid)
-    .setSubject(signedHolderDid)
-    .setIssuedAt(Math.floor(now.getTime() / 1000) - 60)
-    .setExpirationTime(Math.floor(now.getTime() / 1000) + 3_600)
+  const jwt = await new SignJWT(credentialData)
+    .setProtectedHeader({ alg: "ES256", typ: "vc+jwt", cty: "vc", kid })
     .sign(privateKey);
+  const statusJwts = new Map<string, string>();
+  for (const purpose of ["revocation", "suspension"] as const) {
+    const url = `${portalOrigin}/api/credentials/status-lists/${encodeURIComponent(issuerDid)}/${purpose}`;
+    statusJwts.set(
+      url,
+      await new SignJWT({
+        "@context": ["https://www.w3.org/ns/credentials/v2"],
+        id: url,
+        type: ["VerifiableCredential", "BitstringStatusListCredential"],
+        issuer: issuerDid,
+        validFrom: "2026-07-11T11:00:00.000Z",
+        validUntil: "2026-07-12T12:00:00.000Z",
+        credentialSubject: {
+          id: `${url}#list`,
+          type: "BitstringStatusList",
+          statusPurpose: purpose,
+          encodedList: `u${base64url.encode(gzipSync(new Uint8Array(16_384)))}`,
+        },
+      })
+        .setProtectedHeader({ alg: "ES256", typ: "vc+jwt", cty: "vc", kid })
+        .sign(privateKey),
+    );
+  }
+  const fetchImpl: typeof fetch = async (url) => {
+    const statusJwt = statusJwts.get(String(url));
+    if (!statusJwt) return new Response(null, { status: 404 });
+    return new Response(statusJwt, {
+      status: 200,
+      headers: { "content-type": "application/vc+jwt" },
+    });
+  };
   const proofJwt = input?.omitProof ? null : jwt;
   const contentHash = await walletExchangeContentHash({
     credentialData,
@@ -385,7 +425,7 @@ async function signedPortalCredential(input?: {
       },
     },
   };
-  return { change, credentialData, issuer, jwt, renderData };
+  return { change, credentialData, issuer, jwt, renderData, fetchImpl };
 }
 
 async function prepare(
@@ -397,6 +437,7 @@ async function prepare(
     holderDid,
     requiredRenderBlocks: ["document"],
     resolvedIssuer: fixture.issuer,
+    fetchImpl: fixture.fetchImpl,
     now,
   });
 }

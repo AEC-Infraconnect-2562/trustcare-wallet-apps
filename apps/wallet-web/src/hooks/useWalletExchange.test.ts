@@ -13,7 +13,10 @@ const harness = vi.hoisted(() => ({
   loadOrCreateState: vi.fn(),
   listCredentialRequestLinks: vi.fn(),
   listPendingSubmissionDrafts: vi.fn(),
+  loadOrCreateClinicalDocumentGraphState: vi.fn(),
   synchronize: vi.fn(),
+  synchronizeClinicalDocumentGraph: vi.fn(),
+  clinicalDocumentGraphPresentation: vi.fn(),
   recoverPendingDirectSubmissions: vi.fn(),
   loadProvisioningConfiguration: vi.fn(),
   getWalletIdentity: vi.fn(),
@@ -81,6 +84,14 @@ vi.mock("@trustcare/api-client/walletExchangeWorkflow", () => ({
       return harness.synchronize();
     }
 
+    synchronizeClinicalDocumentGraph() {
+      return harness.synchronizeClinicalDocumentGraph();
+    }
+
+    clinicalDocumentGraphPresentation(artifactId: string) {
+      return harness.clinicalDocumentGraphPresentation(artifactId);
+    }
+
     recoverPendingDirectSubmissions() {
       return harness.recoverPendingDirectSubmissions();
     }
@@ -89,6 +100,8 @@ vi.mock("@trustcare/api-client/walletExchangeWorkflow", () => ({
 
 vi.mock("@trustcare/wallet-core", () => ({
   generateHolderIdentity: harness.generateHolderIdentity,
+  listClinicalDocumentGraphArtifacts: (state: { nodes?: unknown[] }) =>
+    state.nodes ?? [],
 }));
 
 vi.mock("../repositories", () => ({
@@ -115,6 +128,10 @@ vi.mock("../repositories", () => ({
 
     listPendingSubmissionDrafts() {
       return harness.listPendingSubmissionDrafts();
+    }
+
+    loadOrCreateClinicalDocumentGraphState() {
+      return harness.loadOrCreateClinicalDocumentGraphState();
     }
   },
 }));
@@ -147,7 +164,10 @@ describe("useWalletExchange lifecycle", () => {
     harness.saveHolderIdentity.mockReset();
     harness.loadOrCreateState.mockReset();
     harness.listPendingSubmissionDrafts.mockReset();
+    harness.loadOrCreateClinicalDocumentGraphState.mockReset();
     harness.synchronize.mockReset();
+    harness.synchronizeClinicalDocumentGraph.mockReset();
+    harness.clinicalDocumentGraphPresentation.mockReset();
     harness.recoverPendingDirectSubmissions.mockReset();
     harness.loadProvisioningConfiguration.mockReset();
     harness.getProvisioningStatus.mockReset();
@@ -158,6 +178,10 @@ describe("useWalletExchange lifecycle", () => {
     harness.loadOrCreateState.mockResolvedValue({ documents: [] });
     harness.listCredentialRequestLinks.mockResolvedValue([]);
     harness.listPendingSubmissionDrafts.mockResolvedValue([]);
+    harness.loadOrCreateClinicalDocumentGraphState.mockResolvedValue({
+      nodes: [],
+      quarantine: [],
+    });
     harness.recoverPendingDirectSubmissions.mockResolvedValue([]);
     harness.loadProvisioningConfiguration.mockResolvedValue({
       appId: "trustcare-wallet-production",

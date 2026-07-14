@@ -14,6 +14,8 @@ import {
   dueWalletExchangeRetries,
   enqueueWalletExchangeRetry,
   prepareWalletExchangeSyncCommit,
+  prepareWalletExchangeCredentialReverification,
+  walletExchangeCredentialReverificationRequired,
   scheduleWalletExchangeRetry,
   type WalletExchangeIssuerEvidence,
   type WalletExchangePreparedSyncPage,
@@ -30,6 +32,72 @@ const hashA = `sha256:${"a".repeat(64)}` as `sha256:${string}`;
 const hashB = `sha256:${"b".repeat(64)}` as `sha256:${string}`;
 
 describe("Wallet Exchange V2 state", () => {
+  it("rewinds only rejected receipts when migrating to the direct secured-document verifier", () => {
+    const current = createWalletExchangeState({ portalOrigin, holderDid });
+    const { credentialVerificationProfile: _profile, ...legacyFields } = current;
+    const legacy = {
+      ...legacyFields,
+      nextCursor: cursor("legacy"),
+      lastAckReceipt: {
+        receiptId: "receipt-legacy",
+        syncId: "sync-legacy",
+        acceptedAt: "2026-07-11T10:00:00.000Z",
+        idempotent: false,
+        cursor: cursor("legacy"),
+      },
+      processedEvents: [
+        {
+          eventId: "event-accepted",
+          fingerprint: "accepted",
+          syncId: "sync-legacy",
+          cursor: cursor("legacy"),
+          ordinal: 1,
+          occurredAt: "2026-07-11T09:00:00.000Z",
+          credentialId: "credential-accepted",
+          changeType: "credential.upsert" as const,
+          outcome: "applied" as const,
+          processedAt: "2026-07-11T10:00:00.000Z",
+        },
+        {
+          eventId: "event-rejected",
+          fingerprint: "rejected",
+          syncId: "sync-legacy",
+          cursor: cursor("legacy"),
+          ordinal: 2,
+          occurredAt: "2026-07-11T09:01:00.000Z",
+          credentialId: "credential-rejected",
+          changeType: "credential.upsert" as const,
+          outcome: "rejected" as const,
+          reasonCode: "proof_invalid",
+          processedAt: "2026-07-11T10:00:00.000Z",
+        },
+      ],
+      quarantine: [
+        {
+          quarantineId: "quarantine-rejected",
+          eventId: "event-rejected",
+          syncId: "sync-legacy",
+          credentialId: "credential-rejected",
+          changeType: "credential.upsert" as const,
+          occurredAt: "2026-07-11T09:01:00.000Z",
+          quarantinedAt: "2026-07-11T10:00:00.000Z",
+          reason: "proof_invalid" as const,
+          detail: "legacy verifier required iss",
+        },
+      ],
+    } as WalletExchangeState;
+
+    expect(walletExchangeCredentialReverificationRequired(legacy)).toBe(true);
+    const migrated = prepareWalletExchangeCredentialReverification(legacy);
+    expect(migrated.nextCursor).toBeUndefined();
+    expect(migrated.lastAckReceipt).toBeUndefined();
+    expect(migrated.processedEvents.map((event) => event.eventId)).toEqual([
+      "event-accepted",
+    ]);
+    expect(migrated.quarantine).toEqual([]);
+    expect(walletExchangeCredentialReverificationRequired(migrated)).toBe(false);
+  });
+
   it("partitions durable state by normalized Portal origin and holder did:key", () => {
     const partition = createWalletExchangePartition({
       portalOrigin: `${portalOrigin}/`,

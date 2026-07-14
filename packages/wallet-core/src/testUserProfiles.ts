@@ -105,6 +105,7 @@ export const walletTestUserProfiles: readonly WalletTestUserProfile[] = [
       expectedObjects: ["all credential types", "VP", "SHL", "payer artifacts"],
       functionScopes: [...standardPatientScopes, "payer_orchestration"],
     },
+    false,
   ),
   profile("portal-empty-patient-001", ["opd_visit"], {
     initialState: "empty",

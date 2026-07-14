@@ -13,6 +13,7 @@ import type {
 
 const stateKeys = [
   "version",
+  "credentialVerificationProfile",
   "partition",
   "nextCursor",
   "documents",
@@ -126,6 +127,7 @@ export class WalletExchangePersistencePolicy {
       "purpose",
       "credentialTypes",
       "documentTypes",
+      "shlCertification",
       "createdAt",
       "updatedAt",
     ]);
@@ -150,6 +152,113 @@ export class WalletExchangePersistencePolicy {
     requireStringList(link.credentialTypes, "credentialTypes");
     if (link.documentTypes !== undefined) {
       requireStringList(link.documentTypes, "documentTypes");
+    }
+    if (link.shlCertification !== undefined) {
+      const certification = link.shlCertification;
+      assertExactKeys(certification, ["schema", "binding", "certified"]);
+      if (certification.schema !== "trustcare.wallet.shl-certification-link.v1") {
+        throw new Error("Unsupported Wallet SHL certification link schema.");
+      }
+      const binding = certification.binding;
+      assertExactKeys(binding, [
+        "schema",
+        "shlPackageId",
+        "holderDid",
+        "manifestUrl",
+        "manifestHash",
+        "sourceBundleHash",
+        "fileHashes",
+        "purpose",
+        "recipient",
+        "audience",
+        "context",
+        "consentRef",
+        "issuedAt",
+        "expiresAt",
+        "holderPresentationId",
+        "holderPresentationJwt",
+        "sourceCredentials",
+      ]);
+      if (
+        binding.schema !==
+          "trustcare.wallet.shl-certification-binding.v1" ||
+        binding.holderDid !== this.partition.holderDid
+      ) {
+        throw new Error("Wallet SHL certification binding is inconsistent.");
+      }
+      requireOpaqueShlPackageId(binding.shlPackageId, "shlPackageId");
+      requireHttpsUrl(binding.manifestUrl, "manifestUrl");
+      requireSha256(binding.manifestHash, "manifestHash");
+      requireSha256(binding.sourceBundleHash, "sourceBundleHash");
+      requireStringList([...binding.fileHashes], "fileHashes");
+      binding.fileHashes.forEach((hash) => requireSha256(hash, "fileHash"));
+      requireText(binding.purpose, "purpose");
+      requireText(binding.recipient, "recipient");
+      requireHttpsUrl(binding.audience, "audience");
+      requireText(binding.context, "context");
+      requireText(binding.consentRef, "consentRef");
+      requireTimestamp(binding.issuedAt, "issuedAt");
+      requireTimestamp(binding.expiresAt, "expiresAt");
+      if (Date.parse(binding.expiresAt) <= Date.parse(binding.issuedAt)) {
+        throw new Error("Wallet SHL certification binding expiry is invalid.");
+      }
+      requireText(binding.holderPresentationId, "holderPresentationId");
+      requireCompactJws(binding.holderPresentationJwt, "holderPresentationJwt");
+      if (!binding.sourceCredentials.length) {
+        throw new Error("Wallet SHL certification binding requires source credentials.");
+      }
+      binding.sourceCredentials.forEach((source, index) => {
+        assertExactKeys(source, [
+          "documentId",
+          "credentialId",
+          "plaintextSha256",
+        ]);
+        requireText(source.documentId, `sourceCredentials[${index}].documentId`);
+        requireText(source.credentialId, `sourceCredentials[${index}].credentialId`);
+        requireSha256(
+          source.plaintextSha256,
+          `sourceCredentials[${index}].plaintextSha256`,
+        );
+      });
+      if (certification.certified) {
+        const certified = certification.certified;
+        assertExactKeys(certified, [
+          "manifestCredentialId",
+          "manifestCredentialJwt",
+          "issuerDid",
+          "verificationMethod",
+          "verifiedAt",
+          "objectLinks",
+        ]);
+        requireTimestamp(certified.verifiedAt, "verifiedAt");
+        requireText(certified.manifestCredentialId, "manifestCredentialId");
+        requireCompactJws(certified.manifestCredentialJwt, "manifestCredentialJwt");
+        requireDidWeb(certified.issuerDid, "issuerDid");
+        if (!certified.verificationMethod.startsWith(`${certified.issuerDid}#`)) {
+          throw new Error("Certified SHL verification method is not controlled by its issuer.");
+        }
+        const objectLinks = certified.objectLinks;
+        assertExactKeys(objectLinks, [
+          "shlPackageId",
+          "manifestHash",
+          "manifestCredentialId",
+          "manifestCredentialJwt",
+          "holderPresentationId",
+          "holderPresentationJwt",
+          "sourceCredentials",
+        ]);
+        if (
+          objectLinks.shlPackageId !== binding.shlPackageId ||
+          objectLinks.manifestHash !== binding.manifestHash ||
+          objectLinks.manifestCredentialId !== certified.manifestCredentialId ||
+          objectLinks.manifestCredentialJwt !== certified.manifestCredentialJwt ||
+          objectLinks.holderPresentationId !== binding.holderPresentationId ||
+          objectLinks.holderPresentationJwt !== binding.holderPresentationJwt ||
+          !sameValue(objectLinks.sourceCredentials, binding.sourceCredentials)
+        ) {
+          throw new Error("Certified SHL object links do not match their request binding.");
+        }
+      }
     }
     assertNoSensitiveMaterial(link);
   }
@@ -399,7 +508,10 @@ function assertExactKeys(value: object, allowedKeys: readonly string[]): void {
   }
 }
 
-function requireText(value: string, name: string): string {
+function requireText(value: unknown, name: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`${name} must be a non-empty string.`);
+  }
   const normalized = value.trim();
   if (!normalized) throw new Error(`${name} must be a non-empty string.`);
   return normalized;
@@ -419,11 +531,40 @@ function requireTimestamp(value: string, name: string): void {
   }
 }
 
-function requireStringList(value: string[], name: string): void {
+function requireStringList(value: unknown, name: string): asserts value is string[] {
   if (!Array.isArray(value) || !value.length) {
     throw new Error(`${name} must contain at least one value.`);
   }
   value.forEach((item) => requireText(item, name));
+}
+
+function requireOpaqueShlPackageId(value: unknown, name: string): void {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(value)) {
+    throw new Error(`${name} must be a 256-bit base64url identifier.`);
+  }
+}
+
+function requireHttpsUrl(value: unknown, name: string): void {
+  const url = new URL(requireText(value, name));
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error(`${name} must be an HTTPS URL without credentials, query, or fragment.`);
+  }
+}
+
+function requireCompactJws(value: unknown, name: string): void {
+  const compact = requireText(value, name);
+  if (
+    compact.split(".").length !== 3 ||
+    compact.split(".").some((part) => !/^[A-Za-z0-9_-]+$/.test(part))
+  ) {
+    throw new Error(`${name} must be a signed compact JWS.`);
+  }
 }
 
 function requireSha256(value: string, name: string): void {

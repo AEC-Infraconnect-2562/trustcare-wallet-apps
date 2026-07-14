@@ -1,20 +1,33 @@
 import {
   applyWalletExchangeAckReceipt,
+  assertTrustCareDirectPresentation,
+  buildClinicalDocumentGraphPresentation,
   createHolderSignedDirectVp,
+  durableShlCertificationBinding,
   finalizeCertifiedShl,
+  finalizeShlCertificationAssociation,
   normalizeDocumentType,
   prepareHolderAttestedShl,
+  prepareWalletClinicalDocumentGraphSyncCommit,
   prepareWalletExchangeSyncCommit,
+  prepareWalletExchangeCredentialReverification,
+  walletExchangeCredentialReverificationRequired,
+  trustCareCredentialIssuerDid,
   type HolderSigningIdentity,
   type CertifiedShlPublication,
+  type CertifiedShlAssociation,
+  type DurableShlCertificationBinding,
   type PreparedHolderAttestedShl,
   type PrepareHolderAttestedShlInput as CorePrepareHolderAttestedShlInput,
   type RuntimeEnvironment,
   type WalletExchangePartition,
   type WalletExchangeState,
   type WalletExchangeSyncReduction,
+  type WalletClinicalDocumentGraphState,
+  type WalletClinicalDocumentGraphSyncReduction,
 } from "@trustcare/wallet-core";
 import type {
+  ClinicalDocumentGraphPresentation,
   WalletCredentialRequest,
   WalletCredentialRequestInput,
   WalletCredentialRequestStatus,
@@ -28,7 +41,7 @@ import {
   decodeJwt,
   decodeProtectedHeader,
   importJWK,
-  jwtVerify,
+  compactVerify,
   type JWTPayload,
 } from "jose";
 import {
@@ -47,8 +60,6 @@ import {
   type WalletExchangeV2Client,
 } from "./walletExchangeV2";
 import { TrustCareApiError } from "./errors";
-import type { ShlCertificationResponse } from "./shlCertification";
-
 export type PrepareHolderAttestedShlInput = Omit<
   CorePrepareHolderAttestedShlInput,
   | "identity"
@@ -60,7 +71,11 @@ export type PrepareHolderAttestedShlInput = Omit<
 >;
 
 export type ShlCertificationAttempt =
-  | { status: "submitted"; response: ShlCertificationResponse }
+  | {
+      status: "submitted";
+      response: WalletCredentialRequest | WalletCredentialRequestStatus;
+      patientMessage: "รอการรับรองจากโรงพยาบาล";
+    }
   | {
       status: "portal_unavailable";
       patientMessage: "รอการรับรองจากโรงพยาบาล";
@@ -77,8 +92,22 @@ export type WalletExchangeCredentialRequestLink = {
   purpose: string;
   credentialTypes: string[];
   documentTypes?: string[];
+  shlCertification?: WalletExchangeShlCertificationPersistence;
   createdAt: string;
   updatedAt: string;
+};
+
+export type WalletExchangeShlCertificationPersistence = {
+  schema: "trustcare.wallet.shl-certification-link.v1";
+  binding: DurableShlCertificationBinding;
+  certified?: {
+    manifestCredentialId: string;
+    manifestCredentialJwt: string;
+    issuerDid: string;
+    verificationMethod: string;
+    verifiedAt: string;
+    objectLinks: CertifiedShlPublication["objectLinks"];
+  };
 };
 
 export type WalletExchangeSubmissionLink = {
@@ -111,13 +140,22 @@ export interface WalletExchangePersistencePort {
   configureTrustedIssuers(issuerDids: readonly string[]): void;
   loadOrCreateState(): Promise<WalletExchangeState>;
   commitSyncReduction(reduction: WalletExchangeSyncReduction): Promise<void>;
+  loadOrCreateClinicalDocumentGraphState(): Promise<WalletClinicalDocumentGraphState>;
+  commitClinicalDocumentGraphReduction(
+    reduction: WalletClinicalDocumentGraphSyncReduction,
+  ): Promise<void>;
   persistAcknowledgedState(state: WalletExchangeState): Promise<void>;
+  persistCredentialReverificationState(
+    previous: WalletExchangeState,
+    state: WalletExchangeState,
+  ): Promise<void>;
   saveCredentialRequestLink(
     link: WalletExchangeCredentialRequestLink,
   ): Promise<void>;
   getCredentialRequestLink(
     clientRequestId: string,
   ): Promise<WalletExchangeCredentialRequestLink | null>;
+  listCredentialRequestLinks(): Promise<WalletExchangeCredentialRequestLink[]>;
   saveSubmissionLink(link: WalletExchangeSubmissionLink): Promise<void>;
   getSubmissionLink(
     clientSubmissionId: string,
@@ -156,6 +194,14 @@ export type WalletExchangeSyncResult = {
   archived: number;
   rejected: number;
   pendingAckRecovered: boolean;
+  certifiedShls: number;
+};
+
+export type WalletClinicalDocumentGraphSyncResult = {
+  state: WalletClinicalDocumentGraphState;
+  pages: number;
+  applied: number;
+  quarantined: number;
 };
 
 export type WalletMissingCredentialRequestInput = {
@@ -227,6 +273,15 @@ export class WalletExchangeWorkflow {
       "",
     );
     const encodedPackageId = encodeURIComponent(input.publicationId);
+    const targetIssuer = issuers.find(
+      (issuer) => issuer.hospitalCode === input.targetHospitalCode,
+    );
+    if (!targetIssuer) {
+      throw new TrustCareApiError(
+        "Target hospital is not in the live Portal trust registry.",
+        { code: "portal_issuer_not_found" },
+      );
+    }
     return prepareHolderAttestedShl({
       ...input,
       identity: this.options.identity,
@@ -234,7 +289,8 @@ export class WalletExchangeWorkflow {
       manifestUrl: `${shareGateway}/manifests/${encodedPackageId}.json`,
       fileBaseUrl: `${shareGateway}/files/`,
       trustedIssuerDids: issuers.map((issuer) => issuer.issuerDid),
-      audience: contracts.discovery.endpoints.documentSubmissions,
+      recipient: targetIssuer.issuerDid,
+      audience: contracts.portalOrigin,
     });
   }
 
@@ -246,47 +302,68 @@ export class WalletExchangeWorkflow {
       await this.client()
     ).requestShlCertification(
       prepared.certificationRequest,
-      prepared.certificationRequest.requestId,
+      prepared.certificationRequest.clientRequestId,
     );
-    return { status: "submitted", response };
+    await this.options.persistence.saveCredentialRequestLink({
+      clientRequestId: prepared.certificationRequest.clientRequestId,
+      requestId: response.requestId,
+      idempotencyKey: prepared.certificationRequest.clientRequestId,
+      statusUrl: response.statusUrl,
+      lastKnownStatus: response.status,
+      targetHospitalCode: prepared.certificationRequest.targetHospitalCode,
+      context: prepared.certificationRequest.context,
+      purpose: prepared.certificationRequest.purpose,
+      credentialTypes: ["shl_manifest"],
+      documentTypes: ["shl_manifest"],
+      shlCertification: {
+        schema: "trustcare.wallet.shl-certification-link.v1",
+        binding: durableShlCertificationBinding(prepared),
+      },
+      createdAt: response.createdAt,
+      updatedAt: response.createdAt,
+    });
+    return {
+      status: "submitted",
+      response,
+      patientMessage: "รอการรับรองจากโรงพยาบาล",
+    };
   }
 
   async refreshHospitalShlCertification(
-    certificationRequestId: string,
+    clientRequestId: string,
   ): Promise<ShlCertificationAttempt> {
     await this.contracts();
+    const link =
+      await this.options.persistence.getCredentialRequestLink(clientRequestId);
+    if (!link || !link.credentialTypes.includes("shl_manifest")) {
+      throw new TrustCareApiError(
+        "Wallet SHL certification tracking link was not found.",
+        { code: "shl_certification_link_missing" },
+      );
+    }
     const response = await (
       await this.client()
-    ).getShlCertificationStatus(certificationRequestId);
-    return { status: "submitted", response };
+    ).getCredentialRequestStatus(link.requestId);
+    await this.options.persistence.saveCredentialRequestLink({
+      ...link,
+      lastKnownStatus: response.status,
+      updatedAt: response.updatedAt,
+    });
+    return {
+      status: "submitted",
+      response,
+      patientMessage: "รอการรับรองจากโรงพยาบาล",
+    };
   }
 
   async finalizeHospitalCertifiedShl(input: {
     prepared: PreparedHolderAttestedShl;
-    response: ShlCertificationResponse;
+    manifestCredentialJwt: string;
   }): Promise<CertifiedShlPublication> {
-    if (
-      input.response.status !== "approved" ||
-      input.response.manifestCredentialContentType !== "application/vc+jwt" ||
-      !input.response.manifestCredentialJwt
-    ) {
-      throw new TrustCareApiError(
-        "รอการรับรองจากโรงพยาบาล",
-        { code: "shl_certification_pending" },
-      );
-    }
-    if (
-      input.response.requestId !== input.prepared.certificationRequest.requestId ||
-      input.response.shlPackageId !== input.prepared.manifest.publicationId
-    ) {
-      throw new TrustCareApiError(
-        "Portal SHL certification response does not match the holder request.",
-        { code: "shl_certification_binding_invalid" },
-      );
-    }
-    const decoded = decodeJwt(input.response.manifestCredentialJwt);
+    const decoded = decodeJwt(input.manifestCredentialJwt);
+    const signedIssuerDid = trustCareCredentialIssuerDid(decoded.issuer);
     const issuer = (await this.issuers()).find(
-      (candidate) => candidate.issuerDid === decoded.iss,
+      (candidate) => candidate.issuerDid === signedIssuerDid,
     );
     if (!issuer) {
       throw new TrustCareApiError(
@@ -295,10 +372,10 @@ export class WalletExchangeWorkflow {
       );
     }
     const now = this.options.now?.() ?? new Date();
-    return finalizeCertifiedShl({
+    const publication = await finalizeCertifiedShl({
       identity: this.options.identity,
       prepared: input.prepared,
-      manifestCredentialJwt: input.response.manifestCredentialJwt,
+      manifestCredentialJwt: input.manifestCredentialJwt,
       now,
       verifyManifestCredential: async (jwt) => {
         const verification = await verifyPortalHospitalCredentialJwt({
@@ -307,6 +384,7 @@ export class WalletExchangeWorkflow {
           expectedHolderDid: this.options.identity.did,
           profile: "shl_manifest_credential",
           now,
+          fetchImpl: this.options.fetchImpl,
         });
         if (
           !verification.verified ||
@@ -334,6 +412,144 @@ export class WalletExchangeWorkflow {
         };
       },
     });
+    const clientRequestId =
+      input.prepared.certificationRequest.clientRequestId;
+    const link =
+      await this.options.persistence.getCredentialRequestLink(clientRequestId);
+    if (link?.shlCertification) {
+      await this.options.persistence.saveCredentialRequestLink({
+        ...link,
+        shlCertification: {
+          ...link.shlCertification,
+          certified: {
+            manifestCredentialId:
+              publication.objectLinks.manifestCredentialId,
+            manifestCredentialJwt: publication.manifestCredentialJwt,
+            issuerDid: publication.manifestCredentialEvidence.issuerDid,
+            verificationMethod:
+              publication.manifestCredentialEvidence.verificationMethod,
+            verifiedAt: publication.manifestCredentialEvidence.verifiedAt,
+            objectLinks: publication.objectLinks,
+          },
+        },
+        lastKnownStatus: "completed",
+        updatedAt: publication.manifestCredentialEvidence.verifiedAt,
+      });
+    }
+    return publication;
+  }
+
+  /**
+   * Associates newly synced Portal Manifest VCs with durable SHL requests.
+   * Untrusted payload claims are used only to narrow candidates; the final
+   * association still verifies the hospital signature, status and every exact
+   * holder-signed binding before it is persisted as certified.
+   */
+  async reconcileHospitalShlCertifications(
+    state?: WalletExchangeState,
+  ): Promise<CertifiedShlAssociation[]> {
+    const current =
+      state ?? (await this.options.persistence.loadOrCreateState());
+    const links =
+      await this.options.persistence.listCredentialRequestLinks();
+    const pending = links.filter(
+      (link) =>
+        link.shlCertification && !link.shlCertification.certified,
+    );
+    if (!pending.length) return [];
+    const candidates = current.documents.filter(
+      (document) => document.credential.jwt,
+    );
+    const associations: CertifiedShlAssociation[] = [];
+    for (const link of pending) {
+      const tracking = link.shlCertification!;
+      const candidate = candidates.find((document) => {
+        try {
+          const payload = decodeJwt(document.credential.jwt!);
+          const subject = payload.credentialSubject;
+          const data =
+            subject && typeof subject === "object" && !Array.isArray(subject)
+              ? (subject as Record<string, unknown>).data
+              : undefined;
+          return (
+            data &&
+            typeof data === "object" &&
+            !Array.isArray(data) &&
+            (data as Record<string, unknown>).shlPackageId ===
+              tracking.binding.shlPackageId
+          );
+        } catch {
+          return false;
+        }
+      });
+      if (!candidate?.credential.jwt) continue;
+      const decoded = decodeJwt(candidate.credential.jwt);
+      const signedIssuerDid = trustCareCredentialIssuerDid(decoded.issuer);
+      const issuer = (await this.issuers()).find(
+        (candidateIssuer) => candidateIssuer.issuerDid === signedIssuerDid,
+      );
+      if (!issuer) continue;
+      const now = this.options.now?.() ?? new Date();
+      const association = await finalizeShlCertificationAssociation({
+        identity: this.options.identity,
+        binding: tracking.binding,
+        manifestCredentialJwt: candidate.credential.jwt,
+        now,
+        verifyManifestCredential: async (jwt) => {
+          const verification = await verifyPortalHospitalCredentialJwt({
+            jwt,
+            issuer,
+            expectedHolderDid: this.options.identity.did,
+            profile: "shl_manifest_credential",
+            now,
+            fetchImpl: this.options.fetchImpl,
+          });
+          if (
+            !verification.verified ||
+            verification.status !== "active" ||
+            !verification.kid ||
+            !verification.alg ||
+            !verification.payload
+          ) {
+            return {
+              verified: false,
+              reason:
+                verification.errors.join(", ") ||
+                "Portal Manifest Credential verification failed",
+            };
+          }
+          return {
+            verified: true,
+            issuerDid: issuer.issuerDid,
+            verificationMethod: verification.kid,
+            algorithm: verification.alg,
+            verifiedAt: now.toISOString(),
+            issuerStatus: "active",
+            credentialStatus: "active",
+            claims: verification.payload as JWTPayload,
+          };
+        },
+      });
+      await this.options.persistence.saveCredentialRequestLink({
+        ...link,
+        shlCertification: {
+          ...tracking,
+          certified: {
+            manifestCredentialId: association.objectLinks.manifestCredentialId,
+            manifestCredentialJwt: association.manifestCredentialJwt,
+            issuerDid: association.manifestCredentialEvidence.issuerDid,
+            verificationMethod:
+              association.manifestCredentialEvidence.verificationMethod,
+            verifiedAt: association.manifestCredentialEvidence.verifiedAt,
+            objectLinks: association.objectLinks,
+          },
+        },
+        lastKnownStatus: "completed",
+        updatedAt: association.manifestCredentialEvidence.verifiedAt,
+      });
+      associations.push(association);
+    }
+    return associations;
   }
 
   async synchronize(limit = 100): Promise<WalletExchangeSyncResult> {
@@ -352,6 +568,14 @@ export class WalletExchangeWorkflow {
     if (state.pendingAck) {
       state = await this.acknowledgePendingState(client, state);
       pendingAckRecovered = true;
+    }
+    if (walletExchangeCredentialReverificationRequired(state)) {
+      const previous = state;
+      state = prepareWalletExchangeCredentialReverification(previous);
+      await this.options.persistence.persistCredentialReverificationState(
+        previous,
+        state,
+      );
     }
 
     const issuerByDid = new Map(
@@ -423,6 +647,7 @@ export class WalletExchangeWorkflow {
       pages += 1;
       if (!page.hasMore) break;
     }
+    const certifiedShls = await this.reconcileHospitalShlCertifications(state);
     return {
       state,
       pages,
@@ -430,7 +655,71 @@ export class WalletExchangeWorkflow {
       archived,
       rejected,
       pendingAckRecovered,
+      certifiedShls: certifiedShls.length,
     };
+  }
+
+  async synchronizeClinicalDocumentGraph(
+    limit = 200,
+  ): Promise<WalletClinicalDocumentGraphSyncResult> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+      throw new TrustCareApiError(
+        "Clinical Document Graph sync limit must be 1-1000.",
+        { code: "clinical_document_graph_sync_limit_invalid" },
+      );
+    }
+    const [contracts, client] = await Promise.all([
+      this.contracts(),
+      this.client(),
+    ]);
+    let state =
+      await this.options.persistence.loadOrCreateClinicalDocumentGraphState();
+    let pages = 0;
+    let applied = 0;
+    let quarantined = 0;
+    const seenCursors = new Set<string>();
+    while (true) {
+      const page = await client.syncClinicalDocumentGraph({
+        cursor: state.nextCursor,
+        limit,
+      });
+      if (seenCursors.has(page.nextCursor)) {
+        throw new TrustCareApiError(
+          "Clinical Document Graph Portal repeated a cursor in one sync run.",
+          { code: "clinical_document_graph_cursor_loop" },
+        );
+      }
+      seenCursors.add(page.nextCursor);
+      const reduction = prepareWalletClinicalDocumentGraphSyncCommit({
+        state,
+        page,
+        graphContract: contracts.clinicalDocumentGraph.payload,
+      });
+      await this.options.persistence.commitClinicalDocumentGraphReduction(
+        reduction,
+      );
+      state = reduction.state;
+      pages += 1;
+      applied += reduction.plan.appliedChangeIds.length;
+      quarantined += reduction.plan.quarantinedChangeIds.length;
+      if (!page.hasMore) break;
+    }
+    return { state, pages, applied, quarantined };
+  }
+
+  async clinicalDocumentGraphPresentation(
+    selectedArtifactId: string,
+  ): Promise<ClinicalDocumentGraphPresentation> {
+    const [contracts, state] = await Promise.all([
+      this.contracts(),
+      this.options.persistence.loadOrCreateClinicalDocumentGraphState(),
+    ]);
+    return buildClinicalDocumentGraphPresentation({
+      state,
+      graphContract: contracts.clinicalDocumentGraph.payload,
+      selectedArtifactId,
+      now: this.options.now?.(),
+    });
   }
 
   async requestCredential(
@@ -864,37 +1153,40 @@ export class WalletExchangeWorkflow {
       this.options.identity.jwsAlgorithm,
     );
     const audience = `${this.options.persistence.partition.portalOrigin}/verifier`;
-    let verified;
+    let payload: Record<string, unknown>;
     try {
-      verified = await jwtVerify(draft.request.transport.vpJwt, key, {
-        issuer: this.options.identity.did,
-        subject: this.options.identity.did,
-        audience,
+      const verified = await compactVerify(draft.request.transport.vpJwt, key, {
         algorithms: [this.options.identity.jwsAlgorithm],
-        currentDate: this.options.now?.() ?? new Date(),
       });
+      payload = JSON.parse(new TextDecoder().decode(verified.payload));
     } catch {
       throw new TrustCareApiError(
         "Durable Wallet submission no longer contains a valid holder-signed VP.",
         { code: "wallet_submission_outbox_invalid" },
       );
     }
-    const vp = isRecord(verified.payload.vp) ? verified.payload.vp : undefined;
-    const trustcare = isRecord(vp?.trustcare) ? vp.trustcare : undefined;
-    const recipient =
-      typeof trustcare?.recipient === "string" ? trustcare.recipient : "";
+    let direct;
+    try {
+      direct = assertTrustCareDirectPresentation({
+        payload,
+        expectedHolderDid: this.options.identity.did,
+        expectedAudience: audience,
+        expectedPurpose: draft.request.purpose,
+        expectedConsentRef: draft.request.consentRef,
+        now: this.options.now?.() ?? new Date(),
+      });
+    } catch {
+      throw new TrustCareApiError(
+        "Durable Wallet submission holder binding does not match its request.",
+        { code: "wallet_submission_outbox_invalid" },
+      );
+    }
+    const recipient = String(direct.trustcare.recipient ?? "");
     if (
       header.typ !== "vp+jwt" ||
+      header.cty !== "vp" ||
       header.kid !== this.options.identity.kid ||
-      vp?.holder !== this.options.identity.did ||
-      vp?.purpose !== draft.request.purpose ||
-      trustcare?.context !== draft.request.context ||
-      trustcare?.consentRef !== draft.request.consentRef ||
-      trustcare?.audience !== audience ||
-      !Array.isArray(vp?.verifiableCredential) ||
-      vp.verifiableCredential.some(
-        (credential) => !isNonEmptyString(credential),
-      )
+      direct.trustcare.context !== draft.request.context
     ) {
       throw new TrustCareApiError(
         "Durable Wallet submission holder binding does not match its request.",
@@ -980,37 +1272,37 @@ export class WalletExchangeWorkflow {
       this.options.identity.jwsAlgorithm,
     );
     const verificationTime = this.options.now?.() ?? new Date();
-    const verified = await jwtVerify(published, key, {
-      issuer: this.options.identity.did,
-      subject: this.options.identity.did,
+    const verified = await compactVerify(published, key, {
       algorithms: [this.options.identity.jwsAlgorithm],
-      currentDate: verificationTime,
     });
-    const vp = isRecord(verified.payload.vp) ? verified.payload.vp : undefined;
-    const trustcare = isRecord(vp?.trustcare) ? vp.trustcare : undefined;
-    const audience =
-      typeof verified.payload.aud === "string"
-        ? verified.payload.aud
-        : undefined;
+    const payload = JSON.parse(
+      new TextDecoder().decode(verified.payload),
+    ) as Record<string, unknown>;
+    let direct;
+    try {
+      direct = assertTrustCareDirectPresentation({
+        payload,
+        expectedHolderDid: this.options.identity.did,
+        expectedAudience: input.binding.audience,
+        expectedRecipient: input.binding.recipient,
+        expectedPurpose: input.purpose,
+        expectedConsentRef: input.consentRef,
+        now: verificationTime,
+      });
+    } catch {
+      throw new TrustCareApiError(
+        "Certified Share Gateway VP holder binding is invalid.",
+        { code: "share_gateway_holder_vp_invalid" },
+      );
+    }
     if (
       header.typ !== "vp+jwt" ||
+      header.cty !== "vp" ||
       header.kid !== this.options.identity.kid ||
-      verified.payload.sub !== this.options.identity.did ||
-      verified.payload.iss !== this.options.identity.did ||
-      vp?.holder !== this.options.identity.did ||
-      vp?.purpose !== input.purpose ||
-      trustcare?.context !== input.context ||
-      trustcare?.consentRef !== input.consentRef ||
-      trustcare?.recipient !== input.binding.recipient ||
-      trustcare?.audience !== input.binding.audience ||
       input.binding.purpose !== input.purpose ||
-      audience !== input.binding.audience ||
-      typeof verified.payload.iat !== "number" ||
-      typeof verified.payload.exp !== "number" ||
-      verified.payload.exp <= verified.payload.iat ||
-      verified.payload.exp > verified.payload.iat + 15 * 60 ||
+      direct.trustcare.context !== input.context ||
       !/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        String(verified.payload.jti ?? ""),
+        direct.presentationId,
       )
     ) {
       throw new TrustCareApiError(

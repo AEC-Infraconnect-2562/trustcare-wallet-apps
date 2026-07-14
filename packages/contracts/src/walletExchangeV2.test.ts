@@ -50,6 +50,7 @@ function discoveryFixture() {
     endpoints: {
       credentialSync: `${PORTAL}/api/wallet/v2/credentials/sync`,
       credentialSyncAck: `${PORTAL}/api/wallet/v2/credentials/sync/ack`,
+      clinicalDocumentGraphChanges: `${PORTAL}/api/wallet/v2/clinical-document-graph/changes`,
       credentialRequests: `${PORTAL}/api/wallet/v2/credential-requests`,
       documentSubmissions: `${PORTAL}/api/wallet/v2/submissions`,
       publicContracts: `${PORTAL}/api/public/wallet-contracts`,
