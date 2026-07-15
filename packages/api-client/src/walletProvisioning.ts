@@ -68,14 +68,47 @@ export type WalletOidcIdentity = {
 };
 
 export type WalletTestIdentity = {
+  walletUserId: string;
   username: string;
   name: string;
+  nameEn: string | null;
+  email: string;
+  phone: string | null;
+  birthDate: string | null;
+  gender: string | null;
+  nationality: string | null;
+  preferredLocale: string | null;
   scenario: string;
+  homeHospitalCode: string | null;
+  connectedHospitalCodes: string[];
+  useCases: string[];
+  expectedCredentialTypes: string[];
+  expectedObjectTypes: string[];
+  expectedFlowStates: string[];
+  portraitUrl: string | null;
+  holder: {
+    did: string;
+    algorithm: "EdDSA";
+    publicJwk: Record<string, unknown>;
+    privateKeyOwner: "wallet";
+  } | null;
   expectedProvisioningState:
     | "holder_binding_required"
     | "patient_reference_required";
   patientReferenceProvisioned: boolean;
+  /** Unknown optional catalog fields are retained for forward-compatible UI. */
+  extensions: Readonly<Record<string, unknown>>;
 };
+
+export type WalletTestIdentityCatalog = {
+  schema: "trustcare.wallet.test-identities.v1";
+  catalogVersion: string;
+  identities: WalletTestIdentity[];
+  extensions: Readonly<Record<string, unknown>>;
+};
+
+export const TRUSTCARE_TEST_IDENTITY_CATALOG_VERSION =
+  "2026.07.test-identities.v4";
 
 export type WalletOidcTokenSet = {
   tokenType: string;
@@ -89,14 +122,21 @@ export type WalletOidcTokenSet = {
 };
 
 export class WalletProvisioningProblemError extends TrustCareApiError {
+  readonly requestId?: string;
   readonly correlationId?: string;
 
   constructor(
     message: string,
-    options: { status?: number; code?: string; correlationId?: string } = {},
+    options: {
+      status?: number;
+      code?: string;
+      requestId?: string;
+      correlationId?: string;
+    } = {},
   ) {
     super(message, { status: options.status, code: options.code });
     this.name = "WalletProvisioningProblemError";
+    this.requestId = options.requestId;
     this.correlationId = options.correlationId;
   }
 }
@@ -142,6 +182,10 @@ export class WalletProvisioningClient {
   }
 
   async listSandboxTestIdentities(): Promise<WalletTestIdentity[]> {
+    return (await this.loadSandboxTestIdentityCatalog()).identities;
+  }
+
+  async loadSandboxTestIdentityCatalog(): Promise<WalletTestIdentityCatalog> {
     const configuration = await this.loadConfiguration();
     const endpoint = configuration.endpoints.sandboxTestIdentities;
     if (!endpoint) {
@@ -154,17 +198,26 @@ export class WalletProvisioningClient {
       method: "GET",
     });
     const object = record(payload, "Wallet test identity catalog");
-    exactKeys(object, ["schema", "catalogVersion", "identities"]);
+    const knownKeys = ["schema", "catalogVersion", "identities"] as const;
     requireLiteral(
       object.schema,
       "trustcare.wallet.test-identities.v1",
       "Wallet test identity catalog schema",
     );
-    requireString(object.catalogVersion, "Wallet test catalog version");
+    requireLiteral(
+      object.catalogVersion,
+      TRUSTCARE_TEST_IDENTITY_CATALOG_VERSION,
+      "Wallet test catalog version",
+    );
     if (!Array.isArray(object.identities)) {
       invalid("Wallet test identity catalog is invalid.");
     }
-    return object.identities.map(assertTestIdentity);
+    return {
+      schema: "trustcare.wallet.test-identities.v1",
+      catalogVersion: object.catalogVersion as string,
+      identities: object.identities.map(assertTestIdentity),
+      extensions: optionalExtensions(object, knownKeys),
+    };
   }
 
   async sandboxTestLogin(username: string): Promise<WalletOidcTokenSet> {
@@ -363,9 +416,10 @@ export class WalletProvisioningClient {
         {
           status: response.status,
           code: stringValue(object.code) ?? stringValue(object.error),
+          requestId: response.headers.get("x-request-id") ?? undefined,
           correlationId:
             stringValue(object.correlationId) ??
-            response.headers.get("x-request-id") ??
+            response.headers.get("x-correlation-id") ??
             undefined,
         },
       );
@@ -596,15 +650,36 @@ function assertHolderBindingChallenge(
 
 function assertTestIdentity(value: unknown): WalletTestIdentity {
   const object = record(value, "Wallet test identity");
-  exactKeys(object, [
+  const knownKeys = [
+    "walletUserId",
     "username",
     "name",
+    "nameEn",
+    "email",
+    "phone",
+    "birthDate",
+    "gender",
+    "nationality",
+    "preferredLocale",
     "scenario",
+    "homeHospitalCode",
+    "connectedHospitalCodes",
+    "useCases",
+    "expectedCredentialTypes",
+    "expectedObjectTypes",
+    "expectedFlowStates",
+    "portraitUrl",
+    "holder",
     "expectedProvisioningState",
     "patientReferenceProvisioned",
-  ]);
+  ] as const;
+  const walletUserId = requirePathSafe(object.walletUserId, "Wallet test user ID");
   requirePathSafe(object.username, "Wallet test username");
+  if (object.username !== walletUserId) {
+    invalid("Wallet test identity username is not bound to walletUserId.");
+  }
   requireString(object.name, "Wallet test identity name");
+  requireString(object.email, "Wallet test identity email");
   requireString(object.scenario, "Wallet test identity scenario");
   if (
     object.expectedProvisioningState !== "holder_binding_required" &&
@@ -615,7 +690,63 @@ function assertTestIdentity(value: unknown): WalletTestIdentity {
   if (typeof object.patientReferenceProvisioned !== "boolean") {
     invalid("Wallet test identity patient reference flag is invalid.");
   }
-  return value as WalletTestIdentity;
+  const holder = assertTestIdentityHolder(object.holder);
+  const portraitUrl = nullableHttpsUrl(object.portraitUrl, "Wallet portrait URL");
+  if (object.patientReferenceProvisioned) {
+    if (!holder || !portraitUrl || object.expectedProvisioningState !== "holder_binding_required") {
+      invalid("Linked Wallet test identity is missing holder or portrait metadata.");
+    }
+  } else if (holder || portraitUrl || object.expectedProvisioningState !== "patient_reference_required") {
+    invalid("Negative Wallet test identity unexpectedly has linked holder metadata.");
+  }
+  return {
+    walletUserId,
+    username: object.username as string,
+    name: object.name as string,
+    nameEn: nullableString(object.nameEn),
+    email: object.email as string,
+    phone: nullableString(object.phone),
+    birthDate: nullableDate(object.birthDate, "Wallet birth date"),
+    gender: nullableString(object.gender),
+    nationality: nullableString(object.nationality),
+    preferredLocale: nullableString(object.preferredLocale),
+    scenario: object.scenario as string,
+    homeHospitalCode: nullableString(object.homeHospitalCode),
+    connectedHospitalCodes: stringArray(object.connectedHospitalCodes, "connected hospitals"),
+    useCases: stringArray(object.useCases, "use cases"),
+    expectedCredentialTypes: stringArray(object.expectedCredentialTypes, "credential types"),
+    expectedObjectTypes: stringArray(object.expectedObjectTypes, "object types"),
+    expectedFlowStates: stringArray(object.expectedFlowStates, "flow states"),
+    portraitUrl,
+    holder,
+    expectedProvisioningState: object.expectedProvisioningState as WalletTestIdentity["expectedProvisioningState"],
+    patientReferenceProvisioned: object.patientReferenceProvisioned,
+    extensions: optionalExtensions(object, knownKeys),
+  };
+}
+
+function assertTestIdentityHolder(
+  value: unknown,
+): WalletTestIdentity["holder"] {
+  if (value === null) return null;
+  const object = record(value, "Wallet test holder");
+  exactKeys(object, ["did", "algorithm", "publicJwk", "privateKeyOwner"]);
+  const did = requirePathSafe(object.did, "Wallet test holder DID");
+  if (object.algorithm !== "EdDSA" || object.privateKeyOwner !== "wallet") {
+    invalid("Wallet test holder ownership or algorithm is invalid.");
+  }
+  const publicJwk = record(object.publicJwk, "Wallet test holder public JWK");
+  if ("d" in publicJwk) invalid("Portal test catalog exposed holder private key material.");
+  let derivedDid: string;
+  try {
+    derivedDid = didKeyFromPublicJwk(publicJwk);
+  } catch {
+    invalid("Wallet test holder public JWK is invalid.");
+  }
+  if (did !== derivedDid) {
+    invalid("Wallet test holder DID does not match its public JWK.");
+  }
+  return { did, algorithm: "EdDSA", publicJwk, privateKeyOwner: "wallet" };
 }
 
 function assertTokenSet(object: Record<string, unknown>): WalletOidcTokenSet {
@@ -675,6 +806,45 @@ function requireString(value: unknown, label: string): string {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function nullableString(value: unknown): string | null {
+  if (value === null) return null;
+  return requireString(value, "Wallet test identity text");
+}
+
+function nullableDate(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  const text = requireString(value, label);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00.000Z`))) {
+    invalid(`${label} is invalid.`);
+  }
+  return text;
+}
+
+function nullableHttpsUrl(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  const url = requireAbsoluteUrl(value, label);
+  if (url.protocol !== "https:") invalid(`${label} must use HTTPS.`);
+  return url.toString();
+}
+
+function stringArray(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
+    invalid(`Wallet test identity ${label} are invalid.`);
+  }
+  return [...new Set(value as string[])];
+}
+
+function optionalExtensions<const T extends readonly string[]>(
+  object: Record<string, unknown>,
+  knownKeys: T,
+): Readonly<Record<string, unknown>> {
+  return Object.freeze(
+    Object.fromEntries(
+      Object.entries(object).filter(([key]) => !knownKeys.includes(key)),
+    ),
+  );
 }
 
 function requirePathSafe(value: unknown, label: string): string {

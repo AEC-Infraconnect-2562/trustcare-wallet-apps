@@ -14,6 +14,10 @@ import { describe, expect, it } from "vitest";
 import {
   type ResolvedPortalHospitalIssuer,
 } from "./portalIssuerResolver";
+import {
+  portalIssuanceAuthorityEvidenceFixture,
+  portalIssuanceAuthorityFixture,
+} from "./testFixtures/portalDirectCredential";
 import { prepareWalletExchangeCredential } from "./walletExchangeCredential";
 
 const portalOrigin = "https://portal.example";
@@ -113,6 +117,49 @@ describe("Wallet Exchange credential normalization", () => {
 
     expect(prepared.issuerEvidence?.proofVerified).toBe(true);
     expect(prepared.document).toBeDefined();
+  });
+
+  it("maps the Portal-certified TrustCare SHL W3C type to the canonical manifest document", async () => {
+    const fixture = await signedPortalCredential({
+      cardType: "shl_manifest",
+      credentialType: "TrustCareShlManifestCredential",
+      signedDocumentType: "shl_manifest",
+      signedCredentialType: "TrustCareShlManifestCredential",
+    });
+
+    const prepared = await prepare(fixture);
+
+    expect(prepared.issuerEvidence?.proofVerified).toBe(true);
+    expect(prepared.document?.documentType).toBe("shl_manifest");
+    expect(reduce(prepared).plan.quarantine.put).toHaveLength(0);
+  });
+
+  it("accepts the required document block beside renderData as published by Portal v4", async () => {
+    const fixture = await signedPortalCredential({
+      documentAtHumanDocumentRoot: true,
+    });
+
+    const prepared = await prepare(fixture);
+
+    expect(prepared.issuerEvidence?.proofVerified).toBe(true);
+    expect(prepared.document?.title).toEqual({
+      th: "บัตรประจำตัวผู้ป่วย",
+      en: "PATIENT ID CARD",
+    });
+  });
+
+  it("accepts Portal v4 flattened signed document metadata without inventing fields", async () => {
+    const fixture = await signedPortalCredential({
+      flattenedDocumentRenderData: true,
+    });
+
+    const prepared = await prepare(fixture);
+
+    expect(prepared.issuerEvidence?.proofVerified).toBe(true);
+    expect(prepared.document?.title).toEqual({
+      th: "บัตรประจำตัวผู้ป่วย",
+      en: "PATIENT ID CARD",
+    });
   });
 
   it("does not normalize a VC whose signed subject is a different holder", async () => {
@@ -261,6 +308,8 @@ async function signedPortalCredential(input?: {
   omitProof?: boolean;
   omitDocument?: boolean;
   omitSignedDocumentType?: boolean;
+  documentAtHumanDocumentRoot?: boolean;
+  flattenedDocumentRenderData?: boolean;
 }): Promise<PortalCredentialFixture> {
   const issuerDid = "did:web:portal.example:hospital:tcc";
   const { privateKey, publicKey } = await generateKeyPair("ES256", {
@@ -276,16 +325,22 @@ async function signedPortalCredential(input?: {
   };
   const issuer = resolvedIssuer(issuerDid, kid, jwk);
   const signedHolderDid = input?.signedHolderDid ?? holderDid;
+  const document = {
+    titleTh: "บัตรประจำตัวผู้ป่วย",
+    titleEn: "PATIENT ID CARD",
+    layout: "photo_identity_card",
+  };
   const renderData = {
-    ...(input?.omitDocument
-      ? {}
-      : {
-          document: {
-            titleTh: "บัตรประจำตัวผู้ป่วย",
-            titleEn: "PATIENT ID CARD",
-            layout: "photo_identity_card",
-          },
-        }),
+    ...(input?.flattenedDocumentRenderData
+      ? {
+          titleTh: document.titleTh,
+          titleEn: document.titleEn,
+          layout: document.layout,
+          rendererVersion: "trustcare-render-contract-v2",
+        }
+      : input?.omitDocument || input?.documentAtHumanDocumentRoot
+        ? {}
+        : { document }),
     patient: {
       nameTh: "นายสมชาย ใจดี",
       nameEn: "Mr. Somchai Jaidee",
@@ -326,6 +381,9 @@ async function signedPortalCredential(input?: {
         statusListCredential: `${portalOrigin}/api/credentials/status-lists/${encodeURIComponent(issuerDid)}/suspension`,
       },
     ],
+    evidence: portalIssuanceAuthorityEvidenceFixture(
+      "urn:trustcare:credential:patient-identity:001",
+    ),
     credentialSubject: {
       id: signedHolderDid,
       ...(input?.omitSignedDocumentType
@@ -334,7 +392,13 @@ async function signedPortalCredential(input?: {
             documentType:
               input?.signedDocumentType ?? "patient_identity",
           }),
-      data: { humanDocument: { renderData } },
+      data: {
+        ...portalIssuanceAuthorityFixture(),
+        humanDocument: {
+          ...(input?.documentAtHumanDocumentRoot ? { document } : {}),
+          renderData,
+        },
+      },
     },
   };
   const jwt = await new SignJWT(credentialData)
@@ -505,34 +569,19 @@ async function walletExchangeContentHash(input: {
   proofJwt: string | null;
   status: WalletSyncUpsertChange["status"];
 }): Promise<`sha256:${string}`> {
-  return `sha256:${await sha256Canonical(input)}`;
+  return `sha256:${await sha256Utf8(input.proofJwt ?? "")}`;
 }
 
-async function sha256Canonical(value: unknown): Promise<string> {
+async function sha256Utf8(value: string): Promise<string> {
   const digest = new Uint8Array(
     await crypto.subtle.digest(
       "SHA-256",
-      new TextEncoder().encode(canonicalJson(value)),
+      new TextEncoder().encode(value),
     ),
   );
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(
     "",
   );
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .filter((key) => record[key] !== undefined)
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function objectRecord(value: unknown): Record<string, unknown> {

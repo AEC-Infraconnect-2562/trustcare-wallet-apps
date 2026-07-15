@@ -12,6 +12,7 @@ import {
   type WalletExchangePreparedUpsertChange,
   type WalletClinicalDocumentGraphState,
   type WalletClinicalDocumentGraphSyncReduction,
+  type WalletAvatarAssetRecord,
 } from "@trustcare/wallet-core";
 import {
   INDEXED_DB_WALLET_EXCHANGE_SCHEMA,
@@ -55,7 +56,7 @@ describe("IndexedDbWalletExchangePersistence", () => {
 
   it("uses a versioned database namespace partitioned by normalized Portal origin and holder", () => {
     expect(INDEXED_DB_WALLET_EXCHANGE_SCHEMA).toBe("wallet-exchange-v2@2");
-    expect(INDEXED_DB_WALLET_EXCHANGE_VERSION).toBe(3);
+    expect(INDEXED_DB_WALLET_EXCHANGE_VERSION).toBe(4);
     const name = createIndexedDbWalletExchangeDatabaseName({
       portalOrigin,
       holderDid,
@@ -76,6 +77,39 @@ describe("IndexedDbWalletExchangePersistence", () => {
         holderDid,
       }),
     ).toThrow("origin cannot contain credentials, query, or fragment");
+  });
+
+  it("atomically replaces avatar bytes, archives changes, and ignores replay duplicates", async () => {
+    const storage = new MemoryWalletExchangeStorage();
+    const persistence = repository(storage);
+    const first = avatarAsset({
+      fetchedAt: "2026-07-14T10:00:00.000Z",
+      hash: `sha256:${"1".repeat(64)}`,
+      sourceUrl: "https://portal.example/avatar-v1.jpg",
+    });
+    await persistence.saveAvatarAsset(first);
+    await persistence.saveAvatarAsset({
+      ...first,
+      fetchedAt: "2026-07-14T10:05:00.000Z",
+    });
+    expect(await persistence.listAvatarHistory(first.binding)).toEqual([]);
+    expect(await persistence.loadAvatarAsset(first.binding)).toEqual(first);
+
+    const second = avatarAsset({
+      fetchedAt: "2026-07-14T11:00:00.000Z",
+      hash: `sha256:${"2".repeat(64)}`,
+      sourceUrl: "https://portal.example/avatar-v2.jpg",
+    });
+    storage.failNextPut("avatar_current");
+    await expect(persistence.saveAvatarAsset(second)).rejects.toThrow(
+      "injected avatar_current put failure",
+    );
+    expect(await persistence.loadAvatarAsset(first.binding)).toEqual(first);
+    expect(await persistence.listAvatarHistory(first.binding)).toEqual([]);
+
+    await persistence.saveAvatarAsset(second);
+    expect(await persistence.loadAvatarAsset(first.binding)).toEqual(second);
+    expect(await persistence.listAvatarHistory(first.binding)).toEqual([first]);
   });
 
   it("migrates in place and commits graph objects plus cursor atomically", async () => {
@@ -568,6 +602,31 @@ function document(input: {
   };
 }
 
+function avatarAsset(input: {
+  fetchedAt: string;
+  hash: `sha256:${string}`;
+  sourceUrl: string;
+}): WalletAvatarAssetRecord {
+  return {
+    schema: "trustcare.wallet.avatar.v1",
+    binding: {
+      walletUserId: "demo-patient-001",
+      holderDid,
+      credentialSubjectId: holderDid,
+    },
+    status: "ready",
+    sourceUrl: input.sourceUrl,
+    sourceCredentialId: "credential-1",
+    sourceDocumentId: "document-1",
+    mediaType: "image/jpeg",
+    httpStatus: 200,
+    fetchedAt: input.fetchedAt,
+    localSha256: input.hash,
+    proofScope: "cache_integrity_only",
+    contentBase64: "AQID",
+  };
+}
+
 function graphReduction(
   initial: WalletClinicalDocumentGraphState,
 ): WalletClinicalDocumentGraphSyncReduction {
@@ -693,6 +752,8 @@ function createStores(): Map<
       "clinical_graph_changes",
       "clinical_graph_cursors",
       "clinical_graph_quarantine",
+      "avatar_current",
+      "avatar_history",
     ].map((name) => [name, new Map<string, unknown>()]),
   ) as Map<IndexedDbWalletExchangeStoreName, Map<string, unknown>>;
 }

@@ -33,8 +33,18 @@ export function UserAvatarImage({
     useLoadedPhotoCandidate(photoCandidates);
   const initials = initialsFromName(user.nameEn || user.nameTh);
 
+  const unavailable = user.avatarState && user.avatarState !== "ready";
+
   return (
-    <span className="user-avatar-image" aria-label={user.nameEn || user.nameTh}>
+    <span
+      className="user-avatar-image"
+      aria-label={
+        unavailable
+          ? `${user.nameEn || user.nameTh} · รูปยังไม่พร้อม`
+          : user.nameEn || user.nameTh
+      }
+      title={unavailable ? "รูปยังไม่พร้อม" : undefined}
+    >
       <span className="user-avatar-fallback" aria-hidden="true">
         {initials}
       </span>
@@ -83,6 +93,11 @@ export function avatarUrlCandidatesForUser(
   user: WalletDemoUser,
   cards: WalletCard[] = [],
 ): string[] {
+  if (user.avatarState && user.avatarState !== "ready") return [];
+  if (user.avatarState === "ready") {
+    const resolved = resolveAvatarCandidateUrl(user.avatarUrl);
+    return resolved && !isUnstableBrowserAvatarUrl(resolved) ? [resolved] : [];
+  }
   const candidates: string[] = [];
   const add = (url: string | null | undefined) => {
     if (!url) return;
@@ -90,6 +105,13 @@ export function avatarUrlCandidatesForUser(
     if (isUnstableBrowserAvatarUrl(resolved)) return;
     if (resolved && !candidates.includes(resolved)) candidates.push(resolved);
   };
+
+  if (user.avatarSource === "trustcare_portal") {
+    for (const candidate of normalizePhotoUrlCandidates(user.avatarUrl)) {
+      add(candidate);
+    }
+    return candidates;
+  }
 
   for (const card of cards) {
     if (card.ownerUserId && card.ownerUserId !== user.id) continue;

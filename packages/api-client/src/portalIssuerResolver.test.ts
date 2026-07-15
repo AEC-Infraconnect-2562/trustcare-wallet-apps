@@ -5,7 +5,11 @@ import {
   resolvePortalHospitalIssuer,
   verifyPortalHospitalCredentialJwt,
 } from "./portalIssuerResolver";
-import { portalDirectCredentialFixture } from "./testFixtures/portalDirectCredential";
+import {
+  portalDirectCredentialFixture,
+  portalIssuanceAuthorityEvidenceFixture,
+  portalIssuanceAuthorityFixture,
+} from "./testFixtures/portalDirectCredential";
 
 const portalOrigin = "https://portal.example";
 
@@ -132,7 +136,13 @@ describe("Portal hospital did:web resolver", () => {
       id: "urn:trustcare:vc:patient-identity:1",
       type: ["VerifiableCredential", "PatientIdentityCredential"],
       issuer: issuer.issuerDid,
-      credentialSubject: { id: "did:key:zHolder", data: {} },
+      credentialSubject: {
+        id: "did:key:zHolder",
+        data: portalIssuanceAuthorityFixture(),
+      },
+      evidence: portalIssuanceAuthorityEvidenceFixture(
+        "urn:trustcare:vc:patient-identity:1",
+      ),
       credentialStatus: statusEntries(issuer.issuerDid),
       validFrom: "2026-07-11T11:00:00.000Z",
       validUntil: "2027-07-11T12:00:00.000Z",
@@ -192,7 +202,13 @@ describe("Portal hospital did:web resolver", () => {
         id: `urn:trustcare:vc:holder:${subjectDid}`,
         type: ["VerifiableCredential", "PatientIdentityCredential"],
         issuer: issuer.issuerDid,
-        credentialSubject: { id: subjectDid, data: {} },
+        credentialSubject: {
+          id: subjectDid,
+          data: portalIssuanceAuthorityFixture(),
+        },
+        evidence: portalIssuanceAuthorityEvidenceFixture(
+          `urn:trustcare:vc:holder:${subjectDid}`,
+        ),
         credentialStatus: statusEntries(issuer.issuerDid),
         validFrom: "2026-07-11T11:00:00.000Z",
         validUntil: "2027-07-11T12:00:00.000Z",
@@ -260,6 +276,62 @@ describe("Portal hospital did:web resolver", () => {
             purpose === "revocation" ? "revoked" : "suspended"
           }`,
         ],
+      });
+    }
+  });
+
+  it("rejects missing, mismatched, or workforce issuance-authority evidence", async () => {
+    const fixture = await issuerFixture("TCC");
+    const issuer = await resolvePortalHospitalIssuer({
+      portalBaseUrl: portalOrigin,
+      hospitalCode: "TCC",
+      fetchImpl: fixture.fetchImpl,
+    });
+    const now = new Date("2026-07-11T12:00:00.000Z");
+    const holderDid = "did:key:zIssuanceAuthorityHolder";
+    const source = portalDirectCredentialFixture({
+      issuerDid: issuer.issuerDid,
+      holderDid,
+      portalOrigin,
+      now,
+    });
+    const missing = structuredClone(source);
+    delete ((missing.credentialSubject as Record<string, unknown>).data as Record<
+      string,
+      unknown
+    >).issuanceAuthority;
+    const mismatched = structuredClone(source);
+    const evidence = mismatched.evidence as Array<Record<string, unknown>>;
+    (evidence[0].evidenceData as Record<string, unknown>).digest = "c".repeat(64);
+    const workforce = structuredClone(source);
+    const workforceData = (
+      (workforce.credentialSubject as Record<string, unknown>)
+        .data as Record<string, unknown>
+    ).issuanceAuthority as Record<string, unknown>;
+    workforceData.authority = "sandbox_workforce_registry";
+
+    for (const credential of [missing, mismatched, workforce]) {
+      const jwt = await new SignJWT(credential)
+        .setProtectedHeader({
+          alg: "ES256",
+          typ: "vc+jwt",
+          cty: "vc",
+          kid: fixture.kid,
+        })
+        .sign(fixture.privateKey);
+      await expect(
+        verifyPortalHospitalCredentialJwt({
+          jwt,
+          issuer,
+          expectedHolderDid: holderDid,
+          now,
+          fetchImpl: statusFetch(fixture, issuer.issuerDid, now),
+        }),
+      ).resolves.toMatchObject({
+        verified: false,
+        errors: expect.arrayContaining([
+          "credential_issuance_authority_invalid",
+        ]),
       });
     }
   });

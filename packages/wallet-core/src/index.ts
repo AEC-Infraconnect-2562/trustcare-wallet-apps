@@ -1,5 +1,6 @@
 export * from "./models";
 export * from "./runtimeEnvironment";
+export * from "./walletAvatar";
 export * from "./documentCategories";
 export * from "./credentialTypes";
 export * from "./canonicalDocuments";

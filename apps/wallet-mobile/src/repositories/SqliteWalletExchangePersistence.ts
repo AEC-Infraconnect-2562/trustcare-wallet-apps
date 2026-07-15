@@ -14,6 +14,7 @@ import {
   createWalletClinicalDocumentGraphState,
   prepareWalletExchangeCredentialReverification,
   assertWalletClinicalDocumentGraphState,
+  walletAvatarBindingKey,
   type HolderSigningIdentity,
   type WalletDocumentRecordV2,
   type WalletExchangePartition,
@@ -21,6 +22,8 @@ import {
   type WalletExchangeSyncReduction,
   type WalletClinicalDocumentGraphState,
   type WalletClinicalDocumentGraphSyncReduction,
+  type WalletAvatarAssetRecord,
+  type WalletAvatarIdentityBinding,
 } from "@trustcare/wallet-core";
 import type * as SQLite from "expo-sqlite";
 import { createRetryableAsyncLoader } from "../utils/retryableAsyncLoader";
@@ -44,7 +47,9 @@ export type MobileWalletExchangeStoreName =
   | "clinical_bundle_members"
   | "clinical_graph_changes"
   | "clinical_graph_cursors"
-  | "clinical_graph_quarantine";
+  | "clinical_graph_quarantine"
+  | "avatar_current"
+  | "avatar_history";
 
 export type MobileWalletExchangeTransactionMode = "readonly" | "readwrite";
 
@@ -289,6 +294,68 @@ export class SqliteWalletExchangePersistence implements WalletExchangePersistenc
           return cloneJson(record.value);
         })
         .sort((left, right) => left.id.localeCompare(right.id));
+    });
+  }
+
+  async loadAvatarAsset(
+    binding: WalletAvatarIdentityBinding,
+  ): Promise<WalletAvatarAssetRecord | null> {
+    return this.storage.transaction("readonly", async (transaction) => {
+      const record = await transaction.get<
+        PartitionRecord<WalletAvatarAssetRecord>
+      >("avatar_current", this.avatarItemKey(binding));
+      if (!record) return null;
+      this.assertPartitionRecord(record, "avatar asset");
+      this.assertAvatarAsset(record.value, binding);
+      return cloneJson(record.value);
+    });
+  }
+
+  async listAvatarHistory(
+    binding: WalletAvatarIdentityBinding,
+  ): Promise<WalletAvatarAssetRecord[]> {
+    return this.storage.transaction("readonly", async (transaction) => {
+      const records = await transaction.getAll<
+        PartitionRecord<WalletAvatarAssetRecord>
+      >("avatar_history", this.partition.key);
+      return records
+        .filter(
+          (record) =>
+            walletAvatarBindingKey(record.value.binding) ===
+            walletAvatarBindingKey(binding),
+        )
+        .map((record) => {
+          this.assertPartitionRecord(record, "avatar history");
+          this.assertAvatarAsset(record.value, binding);
+          return cloneJson(record.value);
+        })
+        .sort((left, right) => left.fetchedAt.localeCompare(right.fetchedAt));
+    });
+  }
+
+  async saveAvatarAsset(asset: WalletAvatarAssetRecord): Promise<void> {
+    this.assertAvatarAsset(asset, asset.binding);
+    const key = this.avatarItemKey(asset.binding);
+    await this.storage.transaction("readwrite", async (transaction) => {
+      const existing = await transaction.get<
+        PartitionRecord<WalletAvatarAssetRecord>
+      >("avatar_current", key);
+      if (existing) {
+        this.assertPartitionRecord(existing, "avatar asset");
+        this.assertAvatarAsset(existing.value, asset.binding);
+        if (sameAvatarVersion(existing.value, asset)) return;
+        const historyKey = [
+          key,
+          existing.value.fetchedAt,
+          existing.value.localSha256 ?? existing.value.errorCode ?? "unknown",
+        ].join("\u0000");
+        await transaction.put(
+          "avatar_history",
+          historyKey,
+          this.record(existing.value),
+        );
+      }
+      await transaction.put("avatar_current", key, this.record(asset));
     });
   }
 
@@ -760,6 +827,36 @@ export class SqliteWalletExchangePersistence implements WalletExchangePersistenc
     return `${this.partition.key}\u0000${identifier}`;
   }
 
+  private avatarItemKey(binding: WalletAvatarIdentityBinding): string {
+    if (binding.holderDid !== this.partition.holderDid) {
+      throw new Error("Wallet avatar holder partition boundary violation.");
+    }
+    return `${this.partition.key}\u0000${walletAvatarBindingKey(binding)}`;
+  }
+
+  private assertAvatarAsset(
+    asset: WalletAvatarAssetRecord,
+    binding: WalletAvatarIdentityBinding,
+  ): void {
+    if (
+      asset.schema !== "trustcare.wallet.avatar.v1" ||
+      walletAvatarBindingKey(asset.binding) !== walletAvatarBindingKey(binding) ||
+      asset.binding.holderDid !== this.partition.holderDid ||
+      !Number.isFinite(Date.parse(asset.fetchedAt))
+    ) {
+      throw new Error("Wallet avatar asset violates its identity binding.");
+    }
+    if (
+      asset.status === "ready" &&
+      (!asset.sourceUrl?.startsWith("https://") ||
+        !asset.mediaType?.startsWith("image/") ||
+        !/^sha256:[a-f0-9]{64}$/.test(asset.localSha256 ?? "") ||
+        !asset.contentBase64)
+    ) {
+      throw new Error("Ready Wallet avatar asset is incomplete.");
+    }
+  }
+
   private assertPartitionRecord<T>(
     record: PartitionRecord<T>,
     label: string,
@@ -1055,4 +1152,22 @@ function stableValue(value: unknown): string {
       .join(",")}}`;
   }
   return JSON.stringify(value);
+}
+
+function sameAvatarVersion(
+  left: WalletAvatarAssetRecord,
+  right: WalletAvatarAssetRecord,
+): boolean {
+  return (
+    walletAvatarBindingKey(left.binding) === walletAvatarBindingKey(right.binding) &&
+    left.status === right.status &&
+    left.sourceUrl === right.sourceUrl &&
+    left.sourceCredentialId === right.sourceCredentialId &&
+    left.sourceDocumentId === right.sourceDocumentId &&
+    left.mediaType === right.mediaType &&
+    left.localSha256 === right.localSha256 &&
+    left.signedDigest === right.signedDigest &&
+    left.proofScope === right.proofScope &&
+    left.errorCode === right.errorCode
+  );
 }

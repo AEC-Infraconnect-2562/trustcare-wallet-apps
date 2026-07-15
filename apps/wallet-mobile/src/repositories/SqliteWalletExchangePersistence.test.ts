@@ -9,6 +9,7 @@ import {
   type WalletExchangePreparedUpsertChange,
   type WalletClinicalDocumentGraphState,
   type WalletClinicalDocumentGraphSyncReduction,
+  type WalletAvatarAssetRecord,
 } from "@trustcare/wallet-core";
 import {
   MOBILE_HOLDER_KEY_PERSISTENCE_AVAILABLE,
@@ -68,6 +69,36 @@ describe("SqliteWalletExchangePersistence", () => {
     await expect(
       repository(storage).loadOrCreateClinicalDocumentGraphState(),
     ).resolves.toEqual(reduction.state);
+  });
+
+  it("persists avatar replacement and history atomically without replay duplicates", async () => {
+    const storage = new MemoryWalletExchangeStorage();
+    const persistence = repository(storage);
+    const first = avatarAsset(
+      "2026-07-14T10:00:00.000Z",
+      `sha256:${"1".repeat(64)}`,
+    );
+    await persistence.saveAvatarAsset(first);
+    await persistence.saveAvatarAsset({
+      ...first,
+      fetchedAt: "2026-07-14T10:05:00.000Z",
+    });
+    expect(await persistence.listAvatarHistory(first.binding)).toEqual([]);
+
+    const second = avatarAsset(
+      "2026-07-14T11:00:00.000Z",
+      `sha256:${"2".repeat(64)}`,
+    );
+    storage.failNextPut("avatar_current");
+    await expect(persistence.saveAvatarAsset(second)).rejects.toThrow(
+      "injected avatar_current put failure",
+    );
+    expect(await persistence.loadAvatarAsset(first.binding)).toEqual(first);
+    expect(await persistence.listAvatarHistory(first.binding)).toEqual([]);
+
+    await persistence.saveAvatarAsset(second);
+    expect(await persistence.loadAvatarAsset(first.binding)).toEqual(second);
+    expect(await persistence.listAvatarHistory(first.binding)).toEqual([first]);
   });
 
   it("atomically rolls back documents, cursor, and pending ACK", async () => {
@@ -524,6 +555,30 @@ function graphReduction(
   };
 }
 
+function avatarAsset(
+  fetchedAt: string,
+  hash: `sha256:${string}`,
+): WalletAvatarAssetRecord {
+  return {
+    schema: "trustcare.wallet.avatar.v1",
+    binding: {
+      walletUserId: "demo-patient-001",
+      holderDid,
+      credentialSubjectId: holderDid,
+    },
+    status: "ready",
+    sourceUrl: `https://portal.example/avatar-${hash.slice(7, 8)}.jpg`,
+    sourceCredentialId: "credential-1",
+    sourceDocumentId: "document-1",
+    mediaType: "image/jpeg",
+    httpStatus: 200,
+    fetchedAt,
+    localSha256: hash,
+    proofScope: "cache_integrity_only",
+    contentBase64: "AQID",
+  };
+}
+
 class MemoryWalletExchangeStorage implements MobileWalletExchangeStorage {
   private stores = createStores();
   private failStore: MobileWalletExchangeStoreName | undefined;
@@ -589,6 +644,8 @@ function createStores(): Map<
       "clinical_graph_changes",
       "clinical_graph_cursors",
       "clinical_graph_quarantine",
+      "avatar_current",
+      "avatar_history",
     ].map((name) => [name, new Map<string, unknown>()]),
   ) as Map<MobileWalletExchangeStoreName, Map<string, unknown>>;
 }

@@ -219,6 +219,9 @@ export async function verifyPortalHospitalCredentialJwt(input: {
       now: input.now,
     });
     const credential = direct.document;
+    if (!hasValidIssuanceAuthorityBinding(credential)) {
+      errors.push("credential_issuance_authority_invalid");
+    }
     if (input.profile !== "shl_manifest_credential") {
       const declaredDigest = stringValue(payload.trustcare_claim_digest);
       const actualDigest = await sha256Canonical(credential);
@@ -469,6 +472,43 @@ function objectRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function hasValidIssuanceAuthorityBinding(
+  credential: Record<string, unknown>,
+): boolean {
+  const subject = objectRecord(credential.credentialSubject);
+  const data = objectRecord(subject.data);
+  const authority = objectRecord(data.issuanceAuthority);
+  const snapshotDigest = stringValue(authority.snapshotDigest);
+  const sourcePayloadDigest = stringValue(authority.sourcePayloadDigest);
+  const authorityKind = stringValue(authority.authority);
+  if (
+    authority.version !== "trustcare-issuance-authority-v1" ||
+    !authorityKind ||
+    !/^[a-f0-9]{64}$/.test(snapshotDigest ?? "") ||
+    !/^[a-f0-9]{64}$/.test(sourcePayloadDigest ?? "")
+  ) {
+    return false;
+  }
+  if (
+    authorityKind === "sandbox_workforce_registry" ||
+    (authorityKind.startsWith("sandbox_") &&
+      !stringValue(authority.identityCatalogVersion))
+  ) {
+    return false;
+  }
+  const evidence = Array.isArray(credential.evidence)
+    ? credential.evidence
+    : [credential.evidence];
+  return evidence.some((entry) => {
+    const evidenceData = objectRecord(objectRecord(entry).evidenceData);
+    return (
+      evidenceData.type === "IssuanceAuthoritySnapshot" &&
+      evidenceData.digest === snapshotDigest &&
+      Boolean(stringValue(evidenceData.resourceId))
+    );
+  });
 }
 
 function stringValue(value: unknown): string | undefined {

@@ -634,6 +634,8 @@ export class WalletExchangeWorkflow {
         ...page,
         requestCursor,
         ackIdempotencyKey,
+        requestId: client.lastResponseTrace?.requestId,
+        correlationId: client.lastResponseTrace?.correlationId,
         changes,
       });
       await this.options.persistence.commitSyncReduction(reduction);

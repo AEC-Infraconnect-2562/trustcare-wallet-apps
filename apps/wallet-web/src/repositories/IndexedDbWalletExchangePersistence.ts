@@ -5,6 +5,7 @@ import {
   prepareWalletExchangeCredentialReverification,
   holderIdentityFromPublicKey,
   assertWalletClinicalDocumentGraphState,
+  walletAvatarBindingKey,
   type HolderSigningIdentity,
   type WalletDocumentRecordV2,
   type WalletExchangePartition,
@@ -12,6 +13,8 @@ import {
   type WalletExchangeSyncReduction,
   type WalletClinicalDocumentGraphState,
   type WalletClinicalDocumentGraphSyncReduction,
+  type WalletAvatarAssetRecord,
+  type WalletAvatarIdentityBinding,
 } from "@trustcare/wallet-core";
 import {
   createWalletExchangePersistencePolicy,
@@ -27,7 +30,7 @@ export const INDEXED_DB_WALLET_EXCHANGE_SCHEMA =
   "wallet-exchange-v2@2" as const;
 // Keep the database namespace stable so the IndexedDB version upgrade preserves
 // holder keys and previously acknowledged Wallet Exchange state.
-export const INDEXED_DB_WALLET_EXCHANGE_VERSION = 3 as const;
+export const INDEXED_DB_WALLET_EXCHANGE_VERSION = 4 as const;
 
 export type IndexedDbWalletExchangeStoreName =
   | "exchange_state"
@@ -41,7 +44,9 @@ export type IndexedDbWalletExchangeStoreName =
   | "clinical_bundle_members"
   | "clinical_graph_changes"
   | "clinical_graph_cursors"
-  | "clinical_graph_quarantine";
+  | "clinical_graph_quarantine"
+  | "avatar_current"
+  | "avatar_history";
 
 export type IndexedDbWalletExchangeTransactionMode = "readonly" | "readwrite";
 
@@ -315,6 +320,86 @@ export class IndexedDbWalletExchangePersistence {
             return cloneValue(record.value);
           })
           .sort((left, right) => left.id.localeCompare(right.id));
+      },
+    );
+  }
+
+  async loadAvatarAsset(
+    binding: WalletAvatarIdentityBinding,
+  ): Promise<WalletAvatarAssetRecord | null> {
+    const key = this.avatarItemKey(binding);
+    return this.storage.transaction(
+      ["avatar_current"],
+      "readonly",
+      async (transaction) => {
+        const record = await transaction.get<PartitionRecord<WalletAvatarAssetRecord>>(
+          "avatar_current",
+          key,
+        );
+        if (!record) return null;
+        this.assertPartitionRecord(record, "avatar asset");
+        this.assertAvatarAsset(record.value, binding);
+        return cloneValue(record.value);
+      },
+    );
+  }
+
+  async listAvatarHistory(
+    binding: WalletAvatarIdentityBinding,
+  ): Promise<WalletAvatarAssetRecord[]> {
+    return this.storage.transaction(
+      ["avatar_history"],
+      "readonly",
+      async (transaction) => {
+        const records =
+          await transaction.getAll<PartitionRecord<WalletAvatarAssetRecord>>(
+            "avatar_history",
+          );
+        return records
+          .filter(
+            (record) =>
+              record.partitionKey === this.partition.key &&
+              walletAvatarBindingKey(record.value.binding) ===
+                walletAvatarBindingKey(binding),
+          )
+          .map((record) => {
+            this.assertAvatarAsset(record.value, binding);
+            return cloneValue(record.value);
+          })
+          .sort((left, right) => left.fetchedAt.localeCompare(right.fetchedAt));
+      },
+    );
+  }
+
+  /** Atomically replaces the current avatar and archives only changed bytes/source. */
+  async saveAvatarAsset(asset: WalletAvatarAssetRecord): Promise<void> {
+    this.assertAvatarAsset(asset, asset.binding);
+    const key = this.avatarItemKey(asset.binding);
+    await this.storage.transaction(
+      ["avatar_current", "avatar_history"],
+      "readwrite",
+      async (transaction) => {
+        const existing = await transaction.get<
+          PartitionRecord<WalletAvatarAssetRecord>
+        >("avatar_current", key);
+        if (existing) {
+          this.assertPartitionRecord(existing, "avatar asset");
+          this.assertAvatarAsset(existing.value, asset.binding);
+          if (sameAvatarVersion(existing.value, asset)) return;
+          const historyKey = [
+            key,
+            existing.value.fetchedAt,
+            existing.value.localSha256 ?? existing.value.errorCode ?? "unknown",
+          ].join("\u0000");
+          transaction.put("avatar_history", historyKey, {
+            partitionKey: this.partition.key,
+            value: cloneValue(existing.value),
+          } satisfies PartitionRecord<WalletAvatarAssetRecord>);
+        }
+        transaction.put("avatar_current", key, {
+          partitionKey: this.partition.key,
+          value: cloneValue(asset),
+        } satisfies PartitionRecord<WalletAvatarAssetRecord>);
       },
     );
   }
@@ -938,6 +1023,36 @@ export class IndexedDbWalletExchangePersistence {
     return `${this.partition.key}\u0000${identifier}`;
   }
 
+  private avatarItemKey(binding: WalletAvatarIdentityBinding): string {
+    if (binding.holderDid !== this.partition.holderDid) {
+      throw new Error("Wallet avatar holder partition boundary violation.");
+    }
+    return `${this.partition.key}\u0000${walletAvatarBindingKey(binding)}`;
+  }
+
+  private assertAvatarAsset(
+    asset: WalletAvatarAssetRecord,
+    binding: WalletAvatarIdentityBinding,
+  ): void {
+    if (
+      asset.schema !== "trustcare.wallet.avatar.v1" ||
+      walletAvatarBindingKey(asset.binding) !== walletAvatarBindingKey(binding) ||
+      asset.binding.holderDid !== this.partition.holderDid ||
+      !Number.isFinite(Date.parse(asset.fetchedAt))
+    ) {
+      throw new Error("Wallet avatar asset violates its identity binding.");
+    }
+    if (
+      asset.status === "ready" &&
+      (!asset.sourceUrl?.startsWith("https://") ||
+        !asset.mediaType?.startsWith("image/") ||
+        !/^sha256:[a-f0-9]{64}$/.test(asset.localSha256 ?? "") ||
+        !asset.contentBase64)
+    ) {
+      throw new Error("Ready Wallet avatar asset is incomplete.");
+    }
+  }
+
   private assertPartitionRecord<T>(
     record: PartitionRecord<T>,
     label: string,
@@ -1036,6 +1151,8 @@ class BrowserIndexedDbWalletExchangeStorage implements IndexedDbWalletExchangeSt
           "clinical_graph_changes",
           "clinical_graph_cursors",
           "clinical_graph_quarantine",
+          "avatar_current",
+          "avatar_history",
         ] satisfies IndexedDbWalletExchangeStoreName[]) {
           if (!database.objectStoreNames.contains(store)) {
             database.createObjectStore(store);
@@ -1077,6 +1194,24 @@ function transactionComplete(transaction: IDBTransaction): Promise<void> {
     transaction.onabort = () =>
       reject(transaction.error ?? new Error("IndexedDB transaction aborted."));
   });
+}
+
+function sameAvatarVersion(
+  left: WalletAvatarAssetRecord,
+  right: WalletAvatarAssetRecord,
+): boolean {
+  return (
+    walletAvatarBindingKey(left.binding) === walletAvatarBindingKey(right.binding) &&
+    left.status === right.status &&
+    left.sourceUrl === right.sourceUrl &&
+    left.sourceCredentialId === right.sourceCredentialId &&
+    left.sourceDocumentId === right.sourceDocumentId &&
+    left.mediaType === right.mediaType &&
+    left.localSha256 === right.localSha256 &&
+    left.signedDigest === right.signedDigest &&
+    left.proofScope === right.proofScope &&
+    left.errorCode === right.errorCode
+  );
 }
 
 function isJwk(value: unknown): value is Record<string, unknown> {

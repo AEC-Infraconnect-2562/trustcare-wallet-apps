@@ -42,6 +42,10 @@ import {
   graphPresentationSchemaFixture,
 } from "./testFixtures/clinicalDocumentGraph";
 import {
+  portalIssuanceAuthorityEvidenceFixture,
+  portalIssuanceAuthorityFixture,
+} from "./testFixtures/portalDirectCredential";
+import {
   createWalletExchangeV2Client,
   type WalletExchangeV2Client,
 } from "./walletExchangeV2";
@@ -1161,12 +1165,13 @@ async function signedCredentialChange(input: {
   lineageKey: string;
   eventId: string;
 }): Promise<WalletSyncUpsertChange> {
+  const signedCredentialId = `urn:trustcare:credential:${input.credentialId}`;
   const credentialData: Record<string, unknown> = {
     "@context": [
       "https://www.w3.org/ns/credentials/v2",
       `${portalOrigin}/contexts/trustcare-credentials-v1.jsonld`,
     ],
-    id: `urn:trustcare:credential:${input.credentialId}`,
+    id: signedCredentialId,
     type: ["VerifiableCredential", "PatientIdentityCredential"],
     issuer: { id: input.issuer.issuerDid },
     validFrom: "2026-07-11T11:55:00.000Z",
@@ -1176,6 +1181,7 @@ async function signedCredentialChange(input: {
       id: input.holderDid,
       documentType: "patient_identity",
       data: {
+        ...portalIssuanceAuthorityFixture(),
         humanDocument: {
           document: {
             titleTh: "บัตรประจำตัวผู้ป่วย",
@@ -1187,6 +1193,7 @@ async function signedCredentialChange(input: {
         },
       },
     },
+    evidence: portalIssuanceAuthorityEvidenceFixture(signedCredentialId),
   };
   const jwt = await new SignJWT(credentialData)
     .setProtectedHeader({
@@ -1196,11 +1203,7 @@ async function signedCredentialChange(input: {
       kid: input.issuer.kid,
     })
     .sign(input.issuer.privateKey);
-  const contentHash = await walletContentHash({
-    credentialData,
-    proofJwt: jwt,
-    status: "active",
-  });
+  const contentHash = await walletContentHash(jwt);
   return {
     eventId: input.eventId,
     type: "credential.upsert",
@@ -1636,6 +1639,14 @@ async function integrityResponse(value: unknown): Promise<Response> {
 }
 
 async function walletContentHash(value: unknown): Promise<`sha256:${string}`> {
+  if (typeof value === "string" && value.split(".").length === 3) {
+    const digest = new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
+    );
+    return `sha256:${Array.from(digest, (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("")}`;
+  }
   return `sha256:${await sha256Canonical(value)}`;
 }
 

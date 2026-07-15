@@ -98,6 +98,44 @@ describe("login user photos", () => {
 
     expect(candidates).toContain("/assets/users/wallet-native-02.png");
   });
+
+  it("does not try stale credential photos before the catalog v4 portrait", () => {
+    const user = {
+      ...getDemoUser("demo-patient-003"),
+      avatarUrl:
+        "https://trustcare-hospital-network-production.up.railway.app/seed-avatars/patient_john_williams_b4e9e7f3.jpg",
+      avatarSource: "trustcare_portal" as const,
+    };
+
+    expect(avatarUrlCandidatesForUser(user, getDemoWalletCards(user.id))).toEqual([
+      user.avatarUrl,
+    ]);
+  });
+
+  it("never falls back to a credential or catalog portrait while the bound avatar is unavailable", () => {
+    const user = {
+      ...getDemoUser("demo-patient-004"),
+      avatarUrl: "https://portal.example/avatar-004.jpg",
+      avatarState: "unavailable" as const,
+    };
+
+    expect(avatarUrlCandidatesForUser(user, getDemoWalletCards(user.id))).toEqual(
+      [],
+    );
+  });
+
+  it("uses only the atomically cached avatar bytes after validation succeeds", () => {
+    const cached = "data:image/jpeg;base64,YXZhdGFyLTAwNA==";
+    const user = {
+      ...getDemoUser("demo-patient-004"),
+      avatarUrl: cached,
+      avatarState: "ready" as const,
+    };
+
+    expect(avatarUrlCandidatesForUser(user, getDemoWalletCards(user.id))).toEqual(
+      [cached],
+    );
+  });
 });
 
 describe("TrustCare Manifest wallet copy", () => {

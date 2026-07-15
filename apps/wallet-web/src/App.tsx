@@ -252,7 +252,7 @@ export default function App() {
     writeStringStorage(sidebarCollapsedKey, String(sidebarCollapsed));
   }, [sidebarCollapsed]);
 
-  const activeUser = useMemo(
+  const localActiveUser = useMemo(
     () => getDemoUser(selectedUserId),
     [selectedUserId],
   );
@@ -270,11 +270,25 @@ export default function App() {
       ? walletTestLoginUsersForPortalCatalog(
           portalWalletSession.testIdentities,
         )
-      : walletTestLoginUsers;
+      : env.demoMode
+        ? walletTestLoginUsers
+        : [];
   }, [
     portalWalletSession.configuration?.endpoints.sandboxTestIdentities,
     portalWalletSession.testIdentities,
   ]);
+  const activeSandboxIdentity = useMemo(
+    () =>
+      portalWalletSession.testIdentities.find(
+        (identity) => identity.walletUserId === selectedUserId,
+      ),
+    [portalWalletSession.testIdentities, selectedUserId],
+  );
+  const catalogActiveUser = useMemo(
+    () =>
+      loginUsers.find((user) => user.id === selectedUserId) ?? localActiveUser,
+    [localActiveUser, loginUsers, selectedUserId],
+  );
   useEffect(() => {
     if (
       isAuthenticated ||
@@ -304,6 +318,9 @@ export default function App() {
   const walletExchange = useWalletExchange({
     enabled:
       isAuthenticated &&
+      Boolean(portalWalletSession.configuration) &&
+      (!portalWalletSession.configuration?.endpoints.sandboxTestIdentities ||
+        Boolean(activeSandboxIdentity)) &&
       routeMatch.route.id !== "verify" &&
       !(pendingScanPayload && isPublicVerifierScanLocation()),
     portalBaseUrl: env.portalBaseUrl,
@@ -312,7 +329,29 @@ export default function App() {
     walletVersion: "0.1.0",
     localUserKey: selectedUserId,
     portalAccessToken: portalWalletSession.accessToken,
+    sandboxIdentity:
+      env.runtimeEnvironment === "sandbox" ? activeSandboxIdentity : undefined,
   });
+  const activeUser = useMemo(
+    () =>
+      activeSandboxIdentity
+        ? {
+            ...catalogActiveUser,
+            avatarUrl: walletExchange.avatarUrl ?? "",
+            avatarState: walletExchange.avatar?.status ?? "unavailable",
+            holderDid:
+              walletExchange.holderDid ??
+              activeSandboxIdentity.holder?.did ??
+              "",
+          }
+        : catalogActiveUser,
+    [
+      activeSandboxIdentity,
+      catalogActiveUser,
+      walletExchange.avatarUrl,
+      walletExchange.holderDid,
+    ],
+  );
   const apiOptions = useMemo(
     () => ({
       ...baseApiOptions,
@@ -911,6 +950,22 @@ export default function App() {
       setPortalSyncBusy(false);
     }
   }, [canSyncPortalWallet, walletExchange]);
+
+  const bindActiveWalletToPortal = useCallback(async () => {
+    setPortalSyncMessage(
+      "กำลังยืนยันความยินยอมและผูก holder DID กับ Portal...",
+    );
+    try {
+      await walletExchange.completeHolderBinding();
+      setPortalSyncMessage(
+        "ผูก holder DID สำเร็จ พร้อม Sync เอกสารจาก Portal",
+      );
+    } catch (error) {
+      setPortalSyncMessage(
+        `ผูก holder DID ไม่สำเร็จ: ${friendlyPortalSyncError(error)}`,
+      );
+    }
+  }, [walletExchange]);
 
   const addScanHistory = useCallback(
     (outcome: ScanOutcome) => {
@@ -1693,23 +1748,7 @@ export default function App() {
             <button
               type="button"
               className="portal-sync-button"
-              onClick={() => {
-                setPortalSyncMessage(
-                  "กำลังยืนยันความยินยอมและผูก holder DID กับ Portal...",
-                );
-                void walletExchange
-                  .completeHolderBinding()
-                  .then(() => {
-                    setPortalSyncMessage(
-                      "ผูก holder DID สำเร็จ พร้อม Sync เอกสารจาก Portal",
-                    );
-                  })
-                  .catch((error) => {
-                    setPortalSyncMessage(
-                      `ผูก holder DID ไม่สำเร็จ: ${friendlyPortalSyncError(error)}`,
-                    );
-                  });
-              }}
+              onClick={() => void bindActiveWalletToPortal()}
             >
               <Fingerprint size={18} /> ยืนยันผูกกับ Portal
             </button>
@@ -1747,14 +1786,24 @@ export default function App() {
           walletExchange.connection.status !== "loading" &&
           !portalSyncMessage && (
             <div
-              className="toast-line portal-sync-line"
+              className="toast-line portal-sync-line portal-connection-action"
               role={
                 walletExchange.connection.status === "error"
                   ? "alert"
                   : "status"
               }
             >
-              {walletExchange.connection.message}
+              <span>{walletExchange.connection.message}</span>
+              {routeView === "home" &&
+                walletExchange.connection.status ===
+                  "holder_binding_required" && (
+                  <button
+                    type="button"
+                    onClick={() => void bindActiveWalletToPortal()}
+                  >
+                    <Fingerprint size={16} /> ยืนยันและเชื่อมต่อ Portal
+                  </button>
+                )}
             </div>
           )}
 
