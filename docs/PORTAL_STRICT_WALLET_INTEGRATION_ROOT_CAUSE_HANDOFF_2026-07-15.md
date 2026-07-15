@@ -49,6 +49,20 @@ reason=version_conflict
 detail=Credential content changed without a new normalized document version.
 ```
 
+The implementation root cause is visible in Portal revision `21c0b248` at
+`server/walletExchange/service.ts`:
+
+- `credentialLineageKey(...)` prioritizes
+  `credentialSubject.data.humanDocument.renderData.document.id`; the seed
+  documents use generic FHIR type labels such as `Patient` as that ID;
+- `credentialVersion(...)` falls back to the credential `schemaVersion` when
+  no logical document version is present, so unrelated/reissued objects all
+  become `2.0.0`.
+
+Correct these values at issuance/delta generation. Do not change the Wallet
+lineage reducer: it is correctly protecting immutable history from two
+different signed objects claiming the same logical identity and version.
+
 Affected credential IDs include:
 
 - 001: `patient_identity`, `patient_summary`, `consent_receipt`,
