@@ -5,8 +5,9 @@ Status: passed on the current Wallet branch against the live Portal sandbox
 ## Tested contracts
 
 - Portal: `https://trustcare-hospital-network-production.up.railway.app`
-- Portal branch commit: `e38b17b`
-- Railway deployment: `81123d3e-64b0-4ea3-9859-97dc4c3b33fd`
+- Portal PR head: `6818d64`
+- Browser-QA deployment: `81123d3e-64b0-4ea3-9859-97dc4c3b33fd`
+- Post-rebase deployment: `83914dab-9fb4-4167-ab99-5cc42effd9eb`
 - Wallet Exchange: `2026.07.wallet-exchange.v2.1.strict-w3c`
 - Clinical Document Graph: `2026.07.pcdg.v2`
 - Test identity catalog: `2026.07.test-identities.v4`
