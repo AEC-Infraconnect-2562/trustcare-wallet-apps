@@ -1652,6 +1652,63 @@ body {
   font-weight: 800;
 }
 
+.shl-association-consent {
+  padding: 16px 0;
+  border-top: 1px solid var(--clinical-line);
+  border-bottom: 1px solid var(--clinical-line);
+}
+
+.shl-association-explanation {
+  margin: 0 0 12px;
+  color: var(--clinical-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.shl-association-check {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  margin-bottom: 12px;
+  color: #263952;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.shl-association-check input {
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  accent-color: var(--clinical-blue);
+}
+
+.shl-association-consent .button {
+  width: 100%;
+}
+
+.shl-association-result {
+  margin: 10px 0 0;
+  color: var(--clinical-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.shl-association-result.is-complete {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  color: var(--clinical-success);
+  font-weight: 750;
+}
+
+.shl-association-result.is-error {
+  color: #a93434;
+}
+
 .credential-claim-list {
   margin: 0;
   border-top: 1px solid #e5ebf2;

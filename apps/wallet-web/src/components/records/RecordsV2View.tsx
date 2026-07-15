@@ -24,6 +24,7 @@ import type {
   WalletDocumentRecordV2,
 } from "@trustcare/wallet-core";
 import type { ClinicalDocumentGraphPresentation as ClinicalDocumentGraphPresentationModel } from "@trustcare/contracts";
+import type { WalletShlAssociation } from "@trustcare/contracts";
 import {
   mergeWalletDocumentRecordsV2,
   photoBearingCredentialTypes,
@@ -36,6 +37,7 @@ import type {
   PortalHospitalCode,
   RecordExchangeSubmissionResult,
 } from "../../walletExchangeSubmission";
+import { ShlAssociationConsent } from "../ShlAssociationConsent";
 
 export type {
   PortalHospitalCode,
@@ -55,6 +57,7 @@ export function RecordsV2View({
   defaultTargetHospitalCode = "TCC",
   onSubmitExchangeRecord,
   onRefreshExchangeSubmission,
+  onAssociateShl,
   selectedRecordId,
   onOpenRecord,
   onCloseRecord,
@@ -79,6 +82,9 @@ export function RecordsV2View({
   onRefreshExchangeSubmission?: (
     clientSubmissionId: string,
   ) => Promise<RecordExchangeSubmissionResult>;
+  onAssociateShl?: (
+    record: WalletDocumentRecordV2,
+  ) => Promise<WalletShlAssociation>;
   selectedRecordId?: string;
   onOpenRecord: (record: WalletDocumentRecordV2) => void;
   onCloseRecord: () => void;
@@ -257,6 +263,7 @@ export function RecordsV2View({
         onRefreshExchangeSubmission={
           selectedExchangeRecord ? onRefreshExchangeSubmission : undefined
         }
+        onAssociateShl={onAssociateShl}
         graphArtifactId={findGraphArtifactForRecord(
           graphArtifacts,
           selectedRecord,
@@ -423,6 +430,9 @@ export function RecordsV2View({
               <button
                 key={record.id}
                 type="button"
+                data-testid={`wallet-record-${record.id}`}
+                data-document-type={record.documentType}
+                data-credential-id={record.credential.credentialId}
                 className="record-v2-row"
                 onClick={() => onOpenRecord(record)}
               >
@@ -560,6 +570,7 @@ function RecordV2Detail({
   defaultTargetHospitalCode,
   onSubmitExchangeRecord,
   onRefreshExchangeSubmission,
+  onAssociateShl,
   graphArtifactId,
   onOpenGraph,
 }: {
@@ -573,6 +584,9 @@ function RecordV2Detail({
   onRefreshExchangeSubmission?: (
     clientSubmissionId: string,
   ) => Promise<RecordExchangeSubmissionResult>;
+  onAssociateShl?: (
+    record: WalletDocumentRecordV2,
+  ) => Promise<WalletShlAssociation>;
   graphArtifactId?: string;
   onOpenGraph?: (artifactId: string) => void;
 }) {
@@ -639,6 +653,12 @@ function RecordV2Detail({
           >
             <Share2 size={17} /> ดูโครงสร้างและความน่าเชื่อถือ
           </Button>
+        ) : null}
+        {record.documentType === "shl_manifest" && onAssociateShl ? (
+          <ShlAssociationConsent
+            associationKey={String(record.credential.credentialId)}
+            onAssociate={() => onAssociateShl(record)}
+          />
         ) : null}
         <dl className="details-grid compact">
           <div>

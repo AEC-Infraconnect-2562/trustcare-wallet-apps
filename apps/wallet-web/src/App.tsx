@@ -625,14 +625,23 @@ export default function App() {
   );
 
   const allCards = useMemo(() => {
-    if (!env.demoMode) return exchangeCards;
+    // Once the Wallet is connected to the live Portal contract, verified
+    // Exchange records are the only document authority. Sandbox fixtures are
+    // for offline product exploration and must never shadow a real sync.
+    if (canSyncPortalWallet || !env.demoMode) return exchangeCards;
     const online = flattenCardsByCategory(grouped);
     return online.length
       ? online
       : offlineWallet.offlineCards.filter(
           (card) => card.ownerUserId === selectedUserId,
         );
-  }, [exchangeCards, grouped, offlineWallet.offlineCards, selectedUserId]);
+  }, [
+    canSyncPortalWallet,
+    exchangeCards,
+    grouped,
+    offlineWallet.offlineCards,
+    selectedUserId,
+  ]);
 
   const openRecord = useCallback(
     (card: WalletCard) => {
@@ -966,6 +975,56 @@ export default function App() {
       );
     }
   }, [walletExchange]);
+
+  const associatePortalShlFromInspector = useCallback(
+    async (card: WalletCard) => {
+      if (card.cardType !== "shl_manifest" || !card.credentialId) {
+        throw new Error(
+          "เอกสารนี้ไม่ใช่ Manifest Credential ที่พร้อมผูกกับลิงก์สุขภาพ",
+        );
+      }
+      setPortalSyncMessage(
+        "กำลังลงนาม Holder VP และยืนยันลิงก์สุขภาพกับ Portal...",
+      );
+      try {
+        const result = await walletExchange.associatePortalShl({
+          manifestCredentialId: String(card.credentialId),
+          consentRef: `urn:trustcare:consent:shl:${crypto.randomUUID()}`,
+        });
+        setPortalSyncMessage(
+          `ยืนยันลิงก์สุขภาพหมายเลข ${result.association.shlId} แล้ว และอัปเดต Graph สำเร็จ`,
+        );
+        return result.association;
+      } catch (error) {
+        const message = friendlyPortalSyncError(error);
+        setPortalSyncMessage(`ยืนยันลิงก์สุขภาพไม่สำเร็จ: ${message}`);
+        throw error;
+      }
+    },
+    [walletExchange],
+  );
+
+  const associatePortalShlFromRecord = useCallback(
+    async (record: WalletDocumentRecordV2) => {
+      if (
+        record.documentType !== "shl_manifest" ||
+        !record.credential.credentialId
+      ) {
+        throw new Error(
+          "เอกสารนี้ไม่ใช่ Manifest Credential ที่พร้อมผูกกับลิงก์สุขภาพ",
+        );
+      }
+      const result = await walletExchange.associatePortalShl({
+        manifestCredentialId: record.credential.credentialId,
+        consentRef: `urn:trustcare:consent:shl:${crypto.randomUUID()}`,
+      });
+      setPortalSyncMessage(
+        `ยืนยันลิงก์สุขภาพหมายเลข ${result.association.shlId} แล้ว และอัปเดต Graph สำเร็จ`,
+      );
+      return result.association;
+    },
+    [walletExchange],
+  );
 
   const addScanHistory = useCallback(
     (outcome: ScanOutcome) => {
@@ -1733,6 +1792,7 @@ export default function App() {
           {canSyncPortalWallet && (
             <button
               type="button"
+              data-testid="portal-sync"
               className="portal-sync-button"
               onClick={syncActiveWalletFromPortal}
               disabled={portalSyncBusy}
@@ -1747,6 +1807,7 @@ export default function App() {
           {walletExchange.connection.status === "holder_binding_required" && (
             <button
               type="button"
+              data-testid="portal-holder-binding"
               className="portal-sync-button"
               onClick={() => void bindActiveWalletToPortal()}
             >
@@ -1799,6 +1860,7 @@ export default function App() {
                   "holder_binding_required" && (
                   <button
                     type="button"
+                    data-testid="portal-holder-binding-help"
                     onClick={() => void bindActiveWalletToPortal()}
                   >
                     <Fingerprint size={16} /> ยืนยันและเชื่อมต่อ Portal
@@ -1849,6 +1911,7 @@ export default function App() {
             )}
             onSubmitExchangeRecord={submitExchangeRecord}
             onRefreshExchangeSubmission={refreshExchangeSubmission}
+            onAssociateShl={associatePortalShlFromRecord}
             selectedRecordId={routeMatch.params.recordId}
             onOpenRecord={openV2Record}
             onCloseRecord={() => routerNavigate("/records")}
@@ -1981,6 +2044,7 @@ export default function App() {
             open={detailOpen}
             onClose={closeCredentialInspector}
             onShare={shareCredentialFromInspector}
+            onAssociateShl={associatePortalShlFromInspector}
             graphArtifactId={
               walletExchange.graphArtifacts.find(
                 (artifact) =>

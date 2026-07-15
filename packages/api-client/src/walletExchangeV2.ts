@@ -9,6 +9,8 @@ import {
   assertWalletSessionChallenge,
   assertWalletSessionChallengeRequest,
   assertWalletSessionCompletionRequest,
+  assertWalletShlAssociation,
+  assertWalletShlAssociationRequest,
   assertWalletSubmission,
   assertWalletSubmissionRequest,
   assertWalletSubmissionStatus,
@@ -23,6 +25,8 @@ import {
   type WalletProblemDetails,
   type WalletSession,
   type WalletSessionChallenge,
+  type WalletShlAssociation,
+  type WalletShlAssociationRequest,
   type WalletSubmission,
   type WalletSubmissionRequest,
   type WalletSyncAck,
@@ -415,6 +419,28 @@ export class WalletExchangeV2Client {
     );
   }
 
+  async associateShlPresentation(
+    shlId: number,
+    input: WalletShlAssociationRequest,
+    idempotencyKey: string,
+  ): Promise<WalletShlAssociation> {
+    const endpoint = shlAssociationEndpoint(
+      this.options.contracts.discovery.endpoints.shlAssociations,
+      shlId,
+    );
+    const request = assertWalletShlAssociationRequest(input);
+    return this.protectedJson(
+      {
+        method: "POST",
+        url: endpoint,
+        body: JSON.stringify(request),
+        idempotencyKey: requireIdempotencyKey(idempotencyKey),
+        requestId: this.requestIdentifier(),
+      },
+      assertWalletShlAssociation,
+    );
+  }
+
   private async protectedJson<T>(
     request: ProtectedRequest,
     assertResponse: (value: unknown) => T,
@@ -649,6 +675,20 @@ function childEndpoint(base: string, id: string): string {
     });
   }
   return `${base.replace(/\/+$/, "")}/${encodeURIComponent(normalized)}`;
+}
+
+function shlAssociationEndpoint(template: string, shlId: number): string {
+  if (!Number.isInteger(shlId) || shlId < 1) {
+    throw new TrustCareApiError(
+      "SHL association id must be a positive integer.",
+      { code: "shl_association_id_invalid" },
+    );
+  }
+  const encoded = String(shlId);
+  if (template.includes("{shlId}")) {
+    return template.replace("{shlId}", encoded);
+  }
+  return childEndpoint(template, encoded);
 }
 
 function requireIdempotencyKey(value: string): string {

@@ -108,3 +108,13 @@ an available underlying document returns to `@trustcare/ui-web`'s canonical
 
 The Portal must publish a new contract major and an explicit migration for a
 breaking change. Missing fields never trigger a demo or legacy fallback.
+
+## Live sandbox acceptance - 2026-07-15
+
+The current implementation passed the strict live flow for all nine linked
+Portal identities and the expected onboarding failure for all three negative
+identities. It also passed desktop and mobile Browser E2E for canonical
+rendering, identity-bound portraits, consent-gated Holder VP creation, SHL
+association, Graph synchronization, and idempotent replay. Detailed counts and
+release evidence are recorded in
+[`PORTAL_SANDBOX_AVATAR_SHL_E2E_ACCEPTANCE_2026-07-15.md`](./PORTAL_SANDBOX_AVATAR_SHL_E2E_ACCEPTANCE_2026-07-15.md).

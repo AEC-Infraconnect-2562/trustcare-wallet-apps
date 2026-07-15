@@ -26,6 +26,9 @@ export function photoCandidatesForCard(card: WalletCard): PhotoCandidate[] {
     const candidates = photoCandidatesFromValue(
       path,
       getValueAtPath(data, path),
+      card.sourceSystem === "trustcare_portal"
+        ? TRUSTCARE_PORTAL_ORIGIN
+        : undefined,
     );
     if (candidates.length) return candidates;
   }
@@ -46,10 +49,13 @@ function photoPathsForDocumentType(documentType: string): string[] {
     documentType === "staff_identity"
       ? [
           "credentialSubject.data.humanDocument.renderData.staff",
+          "credentialSubject.data.humanDocument.staff",
           "credentialSubject.data.humanDocument.renderData.patient",
+          "credentialSubject.data.humanDocument.patient",
         ]
       : [
           "credentialSubject.data.humanDocument.renderData.patient",
+          "credentialSubject.data.humanDocument.patient",
         ];
   const suffixes = [
     "photoUrl",
@@ -71,10 +77,18 @@ export function normalizePhotoUrl(value: string): string {
   return normalizePhotoUrlCandidates(value)[0] ?? value.trim();
 }
 
-export function normalizePhotoUrlCandidates(value: string): string[] {
+export function normalizePhotoUrlCandidates(
+  value: string,
+  issuerOrigin?: string,
+): string[] {
   const trimmed = value.trim();
   if (!trimmed) return [trimmed];
   if (/^data:/i.test(trimmed)) return [trimmed];
+
+  if (issuerOrigin && trimmed.startsWith("/")) {
+    const origin = issuerOrigin.replace(/\/$/, "");
+    return [`${origin}${trimmed}`];
+  }
 
   const candidates: string[] = [];
   const add = (url: string | null | undefined) => {
@@ -160,10 +174,11 @@ export function initialsFromName(name: string): string {
 function photoCandidatesFromValue(
   label: string,
   value: unknown,
+  issuerOrigin?: string,
 ): PhotoCandidate[] {
   if (typeof value !== "string" || !value.trim()) return [];
   return dedupePhotoCandidates(
-    normalizePhotoUrlCandidates(value).map((url, index) => ({
+    normalizePhotoUrlCandidates(value, issuerOrigin).map((url, index) => ({
       label: index === 0 ? label : `${label}:candidate:${index + 1}`,
       url,
     })),

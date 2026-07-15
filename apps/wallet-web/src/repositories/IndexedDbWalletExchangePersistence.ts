@@ -23,14 +23,15 @@ import {
 import type {
   WalletExchangeCredentialRequestLink,
   WalletExchangePendingSubmissionDraft,
+  WalletExchangeShlAssociationRecord,
   WalletExchangeSubmissionLink,
 } from "@trustcare/api-client/walletExchangeWorkflow";
 
 export const INDEXED_DB_WALLET_EXCHANGE_SCHEMA =
-  "wallet-exchange-v2@2" as const;
+  "wallet-exchange-v2@3" as const;
 // Keep the database namespace stable so the IndexedDB version upgrade preserves
 // holder keys and previously acknowledged Wallet Exchange state.
-export const INDEXED_DB_WALLET_EXCHANGE_VERSION = 4 as const;
+export const INDEXED_DB_WALLET_EXCHANGE_VERSION = 5 as const;
 
 export type IndexedDbWalletExchangeStoreName =
   | "exchange_state"
@@ -39,6 +40,7 @@ export type IndexedDbWalletExchangeStoreName =
   | "request_links"
   | "submission_links"
   | "submission_outbox"
+  | "shl_associations"
   | "clinical_graph_objects"
   | "clinical_graph_edges"
   | "clinical_bundle_members"
@@ -848,6 +850,100 @@ export class IndexedDbWalletExchangePersistence {
     );
   }
 
+  async savePendingShlAssociation(
+    record: WalletExchangeShlAssociationRecord,
+  ): Promise<void> {
+    this.assertShlAssociationRecord(record);
+    if (record.status !== "pending" || record.response) {
+      throw new Error("Only a pending SHL association may enter the outbox.");
+    }
+    const key = this.graphItemKey(record.manifestCredentialId);
+    await this.storage.transaction(
+      ["shl_associations"],
+      "readwrite",
+      async (transaction) => {
+        const existing = await transaction.get<
+          PartitionRecord<WalletExchangeShlAssociationRecord>
+        >("shl_associations", key);
+        if (existing) {
+          this.assertPartitionRecord(existing, "SHL association");
+          this.assertShlAssociationRecord(existing.value);
+          if (JSON.stringify(existing.value) !== JSON.stringify(record)) {
+            throw new Error(
+              "Wallet SHL association conflicts with immutable signed request bytes.",
+            );
+          }
+          return;
+        }
+        transaction.put("shl_associations", key, {
+          partitionKey: this.partition.key,
+          value: cloneValue(record),
+        } satisfies PartitionRecord<WalletExchangeShlAssociationRecord>);
+      },
+    );
+  }
+
+  async getShlAssociation(
+    manifestCredentialId: string,
+  ): Promise<WalletExchangeShlAssociationRecord | null> {
+    const key = this.graphItemKey(
+      requireText(manifestCredentialId, "manifestCredentialId"),
+    );
+    return this.storage.transaction(
+      ["shl_associations"],
+      "readonly",
+      async (transaction) => {
+        const record = await transaction.get<
+          PartitionRecord<WalletExchangeShlAssociationRecord>
+        >("shl_associations", key);
+        if (!record) return null;
+        this.assertPartitionRecord(record, "SHL association");
+        this.assertShlAssociationRecord(record.value);
+        return cloneValue(record.value);
+      },
+    );
+  }
+
+  async completeShlAssociation(
+    pending: WalletExchangeShlAssociationRecord,
+    response: NonNullable<WalletExchangeShlAssociationRecord["response"]>,
+  ): Promise<void> {
+    this.assertShlAssociationRecord(pending);
+    const key = this.graphItemKey(pending.manifestCredentialId);
+    await this.storage.transaction(
+      ["shl_associations"],
+      "readwrite",
+      async (transaction) => {
+        const existing = await transaction.get<
+          PartitionRecord<WalletExchangeShlAssociationRecord>
+        >("shl_associations", key);
+        if (!existing) throw new Error("SHL association outbox entry is missing.");
+        this.assertPartitionRecord(existing, "SHL association");
+        this.assertShlAssociationRecord(existing.value);
+        if (
+          existing.value.status === "complete" &&
+          JSON.stringify(existing.value.response) === JSON.stringify(response)
+        ) {
+          return;
+        }
+        if (JSON.stringify(existing.value) !== JSON.stringify(pending)) {
+          throw new Error("SHL association changed before completion.");
+        }
+        const complete: WalletExchangeShlAssociationRecord = {
+          ...pending,
+          status: "complete",
+          response: cloneValue(response),
+          updatedAt: response.associatedAt,
+        };
+        this.assertShlAssociationRecord(complete);
+        transaction.put("shl_associations", key, {
+          partitionKey: this.partition.key,
+          value: complete,
+        } satisfies PartitionRecord<WalletExchangeShlAssociationRecord>);
+      },
+    );
+  }
+
   private async saveLink<T>(
     store: "request_links" | "submission_links",
     key: string,
@@ -912,6 +1008,36 @@ export class IndexedDbWalletExchangePersistence {
           });
       },
     );
+  }
+
+  private assertShlAssociationRecord(
+    record: WalletExchangeShlAssociationRecord,
+  ): void {
+    if (
+      record.schema !== "trustcare.wallet.shl-association-outbox.v1" ||
+      !Number.isInteger(record.shlId) ||
+      record.shlId < 1 ||
+      !record.manifestCredentialId ||
+      !record.clientAssociationId ||
+      !record.consentRef ||
+      !record.idempotencyKey ||
+      !record.holderPresentationId ||
+      record.holderVpJwt.split(".").length !== 3 ||
+      !/^sha256:[a-f0-9]{64}$/.test(record.requestDigest) ||
+      !Number.isFinite(Date.parse(record.createdAt)) ||
+      !Number.isFinite(Date.parse(record.updatedAt)) ||
+      (record.status === "complete") !== Boolean(record.response)
+    ) {
+      throw new Error("Wallet SHL association outbox record is invalid.");
+    }
+    if (
+      record.response &&
+      (record.response.shlId !== record.shlId ||
+        record.response.manifestCredentialId !== record.manifestCredentialId ||
+        record.response.holderPresentationId !== record.holderPresentationId)
+    ) {
+      throw new Error("Wallet SHL association response binding is invalid.");
+    }
   }
 
   private async assertHolderIdentity(
@@ -1145,6 +1271,7 @@ class BrowserIndexedDbWalletExchangeStorage implements IndexedDbWalletExchangeSt
           "request_links",
           "submission_links",
           "submission_outbox",
+          "shl_associations",
           "clinical_graph_objects",
           "clinical_graph_edges",
           "clinical_bundle_members",

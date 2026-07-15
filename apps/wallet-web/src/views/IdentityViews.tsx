@@ -90,6 +90,8 @@ export function LoginView({
             <button
               key={user.id}
               type="button"
+              data-testid={`login-user-${user.id}`}
+              data-wallet-user-id={user.id}
               className={
                 selectedUserId === user.id
                   ? "login-user-card active"

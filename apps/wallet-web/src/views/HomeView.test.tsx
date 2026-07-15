@@ -67,6 +67,7 @@ describe("premium patient Home", () => {
         active
         icon={<Home />}
         label="หน้าแรก"
+        testId="nav-home"
         onClick={vi.fn()}
       />,
     );

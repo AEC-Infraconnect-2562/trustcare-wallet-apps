@@ -6,6 +6,7 @@ import {
   type WalletCredentialRequest,
   type WalletCredentialRequestInput,
   type WalletCredentialRequestStatus,
+  type WalletShlAssociation,
   type WalletSubmission,
   type WalletSubmissionRequest,
   type WalletSyncAckRequest,
@@ -55,6 +56,7 @@ import {
   type WalletExchangeCredentialRequestLink,
   type WalletExchangePendingSubmissionDraft,
   type WalletExchangePersistencePort,
+  type WalletExchangeShlAssociationRecord,
   type WalletExchangeSubmissionLink,
 } from "./walletExchangeWorkflow";
 
@@ -451,6 +453,91 @@ describe("WalletExchangeWorkflow", () => {
     });
   });
 
+  it("associates a verified Portal Manifest VC only after explicit holder consent", async () => {
+    const manifest = await signedManifestCredentialChange({
+      issuer: network.issuers.TCC,
+      holderDid: holder.did,
+      shlId: 42,
+      eventId: "event-shl-manifest-42",
+    });
+    const persistence = freshPersistence();
+    const fake = fakeClient();
+    fake.syncCredentials.mockResolvedValue(
+      syncPage({
+        syncId: "sync-shl-manifest",
+        nextCursor: "cursor-shl-manifest",
+        changes: [manifest],
+      }),
+    );
+    fake.associateShlPresentation.mockImplementation(
+      async (shlId, request): Promise<WalletShlAssociation> => ({
+        schema: "trustcare.wallet.shl-association.v1",
+        shlId,
+        status: "active",
+        trustLevel: "hospital_certified",
+        manifestCredentialId: manifest.credentialId,
+        holderPresentationId: decodeJwt(request.holderVpJwt).id as string,
+        associatedAt: now.toISOString(),
+        idempotent: false,
+      }),
+    );
+    const workflow = createWorkflow({ persistence, fake });
+    const sync = await workflow.synchronize();
+    expect(sync.state.documents).toEqual([
+      expect.objectContaining({
+        documentType: "shl_manifest",
+        credential: expect.objectContaining({ credentialId: manifest.credentialId }),
+        trust: expect.objectContaining({ state: "issuer_signed_untrusted" }),
+      }),
+    ]);
+
+    const response = await workflow.associatePortalShlManifest({
+      manifestCredentialId: manifest.credentialId,
+      consentRef: "urn:trustcare:consent:shl:42",
+      presentationId: "urn:uuid:holder-presentation-42",
+    });
+
+    expect(response).toMatchObject({
+      shlId: 42,
+      trustLevel: "hospital_certified",
+      holderPresentationId: "urn:uuid:holder-presentation-42",
+    });
+    const [shlId, request, idempotencyKey] =
+      fake.associateShlPresentation.mock.calls[0]!;
+    expect(shlId).toBe(42);
+    expect(idempotencyKey).toMatch(/^shl-association-[a-f0-9]{48}$/);
+    expect(request).toMatchObject({
+      clientAssociationId: "wallet-shl-association-42",
+      consentRef: "urn:trustcare:consent:shl:42",
+    });
+    const vp = decodeJwt(request.holderVpJwt);
+    expect(vp).toMatchObject({
+      id: "urn:uuid:holder-presentation-42",
+      holder: holder.did,
+      purpose: "patient_summary",
+      trustcare: {
+        context: "opd_visit",
+        consentRef: "urn:trustcare:consent:shl:42",
+        recipient: network.issuers.TCC.issuerDid,
+        audience: `${portalOrigin}/api/wallet/v2/shl-associations/42`,
+        shl: {
+          packageId: "42",
+          manifestHash: `sha256:${"1".repeat(64)}`,
+          sourceBundleHash: `sha256:${"2".repeat(64)}`,
+          manifestCredentialId: manifest.credentialId,
+        },
+      },
+    });
+    expect(JSON.stringify(vp)).not.toContain("patientId");
+
+    const replay = await workflow.associatePortalShlManifest({
+      manifestCredentialId: manifest.credentialId,
+      consentRef: "urn:trustcare:consent:shl:42",
+    });
+    expect(replay).toEqual(response);
+    expect(fake.associateShlPresentation).toHaveBeenCalledTimes(1);
+  });
+
   it("creates a holder-signed direct VP without changing nested issuer JWT bytes", async () => {
     const change = await signedCredentialChange({
       issuer: network.issuers.TCC,
@@ -796,6 +883,10 @@ class MemoryPersistence implements WalletExchangePersistencePort {
     string,
     WalletExchangePendingSubmissionDraft
   >();
+  private readonly shlAssociations = new Map<
+    string,
+    WalletExchangeShlAssociationRecord
+  >();
 
   constructor(state: WalletExchangeState, operations: string[] = []) {
     this.state = structuredClone(state);
@@ -923,6 +1014,45 @@ class MemoryPersistence implements WalletExchangePersistencePort {
     this.submissions.set(link.clientSubmissionId, structuredClone(link));
     this.pendingSubmissions.delete(draft.clientSubmissionId);
   }
+
+  async savePendingShlAssociation(
+    record: WalletExchangeShlAssociationRecord,
+  ): Promise<void> {
+    const existing = this.shlAssociations.get(record.manifestCredentialId);
+    if (existing && JSON.stringify(existing) !== JSON.stringify(record)) {
+      throw new Error("SHL association conflict");
+    }
+    if (!existing) {
+      this.shlAssociations.set(
+        record.manifestCredentialId,
+        structuredClone(record),
+      );
+    }
+  }
+
+  async getShlAssociation(
+    manifestCredentialId: string,
+  ): Promise<WalletExchangeShlAssociationRecord | null> {
+    return structuredClone(
+      this.shlAssociations.get(manifestCredentialId) ?? null,
+    );
+  }
+
+  async completeShlAssociation(
+    pending: WalletExchangeShlAssociationRecord,
+    response: WalletShlAssociation,
+  ): Promise<void> {
+    const existing = this.shlAssociations.get(pending.manifestCredentialId);
+    if (!existing || JSON.stringify(existing) !== JSON.stringify(pending)) {
+      throw new Error("SHL association changed before completion");
+    }
+    this.shlAssociations.set(pending.manifestCredentialId, {
+      ...structuredClone(pending),
+      status: "complete",
+      response: structuredClone(response),
+      updatedAt: response.associatedAt,
+    });
+  }
 }
 
 function freshPersistence(): MemoryPersistence {
@@ -992,6 +1122,26 @@ function fakeClient() {
   const requestShlCertification = vi.fn(
     async (): Promise<WalletCredentialRequest> => credentialRequestResponse(),
   );
+  const associateShlPresentation = vi.fn(
+    async (
+      shlId: number,
+      _request: {
+        clientAssociationId: string;
+        consentRef: string;
+        holderVpJwt: string;
+      },
+      _idempotencyKey: string,
+    ): Promise<WalletShlAssociation> => ({
+      schema: "trustcare.wallet.shl-association.v1",
+      shlId,
+      status: "active",
+      trustLevel: "hospital_certified",
+      manifestCredentialId: "urn:trustcare:vc:shl:42",
+      holderPresentationId: "urn:uuid:holder-presentation-42",
+      associatedAt: now.toISOString(),
+      idempotent: false,
+    }),
+  );
   return {
     client: {
       syncCredentials,
@@ -1003,6 +1153,7 @@ function fakeClient() {
       submitDocumentsSerialized,
       getSubmissionStatus,
       requestShlCertification,
+      associateShlPresentation,
     } as unknown as WalletExchangeV2Client,
     syncCredentials,
     acknowledgeSync,
@@ -1013,6 +1164,7 @@ function fakeClient() {
     submitDocumentsSerialized,
     getSubmissionStatus,
     requestShlCertification,
+    associateShlPresentation,
   };
 }
 
@@ -1232,6 +1384,104 @@ async function signedCredentialChange(input: {
       holderDid: input.holderDid,
       sourceSystem: "trustcare_portal",
       lineageKey: input.lineageKey,
+      version: "1",
+      contentHash,
+      issuedAt: "2026-07-11T11:55:00.000Z",
+      expiresAt: "2027-07-11T12:00:00.000Z",
+      updatedAt: now.toISOString(),
+      deliveryState: "signed",
+      renderer: rendererMetadata(),
+    },
+  };
+}
+
+async function signedManifestCredentialChange(input: {
+  issuer: IssuerFixture;
+  holderDid: string;
+  shlId: number;
+  eventId: string;
+}): Promise<WalletSyncUpsertChange> {
+  const credentialId = `urn:trustcare:vc:shl:${input.shlId}`;
+  const manifestUrl = `${portalOrigin}/api/shl/${input.shlId}/manifest`;
+  const credentialData: Record<string, unknown> = {
+    "@context": [
+      "https://www.w3.org/ns/credentials/v2",
+      `${portalOrigin}/contexts/trustcare-credentials-v1.jsonld`,
+    ],
+    id: credentialId,
+    type: ["VerifiableCredential", "ShlManifestCredential"],
+    issuer: { id: input.issuer.issuerDid },
+    validFrom: "2026-07-11T11:55:00.000Z",
+    validUntil: "2027-07-11T12:00:00.000Z",
+    credentialStatus: statusEntries(input.issuer.issuerDid),
+    trustcare: {
+      intendedAudience: manifestUrl,
+    },
+    credentialSubject: {
+      id: input.holderDid,
+      documentType: "shl_manifest",
+      data: {
+        ...portalIssuanceAuthorityFixture(),
+        smartHealthLinkId: input.shlId,
+        manifestUrl,
+        manifestHash: `sha256:${"1".repeat(64)}`,
+        sourceBundleHash: `sha256:${"2".repeat(64)}`,
+        purpose: "patient_summary",
+        context: "opd_visit",
+        hospital: {
+          code: input.issuer.hospitalCode,
+          did: input.issuer.issuerDid,
+        },
+        humanDocument: {
+          document: {
+            titleTh: "รายการเอกสารในลิงก์สุขภาพ",
+            titleEn: "Smart Health Link Manifest",
+            layout: "shl_manifest",
+          },
+          patient: { nameEn: "Test Patient", hn: "HN-TEST-001" },
+          issuer: { nameEn: "TrustCare Test Hospital" },
+        },
+      },
+    },
+    evidence: portalIssuanceAuthorityEvidenceFixture(credentialId),
+  };
+  const jwt = await new SignJWT(credentialData)
+    .setProtectedHeader({
+      alg: "ES256",
+      typ: "vc+jwt",
+      cty: "vc",
+      kid: input.issuer.kid,
+    })
+    .sign(input.issuer.privateKey);
+  const contentHash = await walletContentHash(jwt);
+  return {
+    eventId: input.eventId,
+    type: "credential.upsert",
+    credentialId,
+    status: "active",
+    occurredAt: now.toISOString(),
+    contentHash,
+    credential: {
+      credentialId,
+      cardType: "shl_manifest",
+      credentialType: "ShlManifestCredential",
+      displayName: "รายการเอกสารในลิงก์สุขภาพ",
+      displayNameEn: "Smart Health Link Manifest",
+      documentCategory: "sharing_and_sync",
+      credentialStatus: "active",
+      credentialData,
+      proof: {
+        type: "jwt",
+        jwt,
+        alg: "ES256",
+        kid: input.issuer.kid,
+        issuer: input.issuer.issuerDid,
+      },
+      issuerDid: input.issuer.issuerDid,
+      issuerHospitalName: "TrustCare Test Hospital",
+      holderDid: input.holderDid,
+      sourceSystem: "trustcare_portal",
+      lineageKey: `shl-manifest:${input.shlId}`,
       version: "1",
       contentHash,
       issuedAt: "2026-07-11T11:55:00.000Z",

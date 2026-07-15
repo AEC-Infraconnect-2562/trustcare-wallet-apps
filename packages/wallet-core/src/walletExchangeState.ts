@@ -708,6 +708,12 @@ function applyUpsert(
     const sameVersion =
       existing.lifecycle.versionId === document.lifecycle.versionId;
     if (sameVersion) {
+      // The compact JWS hash is the signed object identity. Repeated outbox
+      // events can legitimately carry a later transport occurredAt value,
+      // which changes normalized provenance but not the credential itself.
+      if (lineage?.contentHash === change.contentHash) {
+        return unchangedApplication(current, "already_current");
+      }
       if (stableJson(existing) === stableJson(document)) {
         return unchangedApplication(current, "already_current");
       }

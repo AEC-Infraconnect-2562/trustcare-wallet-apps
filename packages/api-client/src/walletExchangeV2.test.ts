@@ -305,6 +305,50 @@ describe("Wallet Exchange v2 client", () => {
     });
   });
 
+  it("associates an exact holder VP with a Portal-created SHL through DPoP", async () => {
+    const response = {
+      schema: "trustcare.wallet.shl-association.v1" as const,
+      shlId: 42,
+      status: "active",
+      trustLevel: "hospital_certified" as const,
+      manifestCredentialId: "urn:trustcare:vc:shl:42",
+      holderPresentationId: "urn:uuid:holder-presentation-42",
+      associatedAt: FIXED_NOW.toISOString(),
+      idempotent: false,
+    };
+    const harness = await createHarness({
+      protectedHandler: async () => jsonResponse(response),
+    });
+    const request = {
+      clientAssociationId: "wallet-shl-association-42",
+      consentRef: "urn:trustcare:consent:shl:42",
+      holderVpJwt: VP_JWT,
+    };
+
+    await expect(
+      harness.client.associateShlPresentation(
+        42,
+        request,
+        "idempotency-shl-association-42",
+      ),
+    ).resolves.toEqual(response);
+
+    const protectedRequest = harness.protectedRequests[0]!;
+    expect(protectedRequest.url).toBe(
+      `${PORTAL_ORIGIN}/api/wallet/v2/shl-associations/42`,
+    );
+    expect(JSON.parse(protectedRequest.body ?? "null")).toEqual(request);
+    expect(protectedRequest.headers.get("idempotency-key")).toBe(
+      "idempotency-shl-association-42",
+    );
+    const proof = await verifyDpop(protectedRequest, harness.identity);
+    expect(proof.claims).toMatchObject({
+      htm: "POST",
+      htu: `${PORTAL_ORIGIN}/api/wallet/v2/shl-associations/42`,
+      ath: await calculateDpopAccessTokenHash("wxt_access_token_1"),
+    });
+  });
+
   it("keeps ack body and idempotency stable across a 503 retry but creates fresh DPoP", async () => {
     const sleep = vi.fn(async (_milliseconds: number) => undefined);
     let attempt = 0;

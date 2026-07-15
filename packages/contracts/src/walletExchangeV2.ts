@@ -360,6 +360,23 @@ export type WalletSubmission = {
   idempotent: boolean;
 };
 
+export type WalletShlAssociationRequest = {
+  clientAssociationId: string;
+  consentRef: string;
+  holderVpJwt: string;
+};
+
+export type WalletShlAssociation = {
+  schema: "trustcare.wallet.shl-association.v1";
+  shlId: number;
+  status: string;
+  trustLevel: "hospital_certified" | "pending";
+  manifestCredentialId: string | null;
+  holderPresentationId: string;
+  associatedAt: string;
+  idempotent: boolean;
+};
+
 export type WalletProblemDetails = {
   type: string;
   title: string;
@@ -631,6 +648,68 @@ export function assertWalletSubmission(value: unknown): WalletSubmission {
 
 export function assertWalletSubmissionStatus(value: unknown): WalletSubmission {
   return assertSubmissionResponse(value, "WalletSubmissionStatus");
+}
+
+export function assertWalletShlAssociationRequest(
+  value: unknown,
+): WalletShlAssociationRequest {
+  const contract = "WalletShlAssociationRequest";
+  const issues: TrustCareValidationIssue[] = [];
+  const object = rootObject(value, contract);
+  exactKeys(
+    object,
+    ["clientAssociationId", "consentRef", "holderVpJwt"],
+    "$",
+    issues,
+  );
+  pathSafeString(object, "clientAssociationId", "$", issues, 1, 100);
+  nonEmptyString(object, "consentRef", "$", issues, 1, 255);
+  compactJwtString(object, "holderVpJwt", "$", issues, 80, 1_500_000);
+  return finish(contract, value, issues);
+}
+
+export function assertWalletShlAssociation(
+  value: unknown,
+): WalletShlAssociation {
+  const contract = "WalletShlAssociation";
+  const issues: TrustCareValidationIssue[] = [];
+  const object = rootObject(value, contract);
+  exactKeys(
+    object,
+    [
+      "schema",
+      "shlId",
+      "status",
+      "trustLevel",
+      "manifestCredentialId",
+      "holderPresentationId",
+      "associatedAt",
+      "idempotent",
+    ],
+    "$",
+    issues,
+  );
+  literalString(
+    object,
+    "schema",
+    "trustcare.wallet.shl-association.v1",
+    "$",
+    issues,
+  );
+  integer(object, "shlId", "$", issues, 1);
+  nonEmptyString(object, "status", "$", issues, 1, 80);
+  enumString(
+    object,
+    "trustLevel",
+    ["hospital_certified", "pending"],
+    "$",
+    issues,
+  );
+  nullableString(object, "manifestCredentialId", "$", issues, 1, 500);
+  nonEmptyString(object, "holderPresentationId", "$", issues, 1, 255);
+  isoDateString(object, "associatedAt", "$", issues);
+  booleanValue(object, "idempotent", "$", issues);
+  return finish(contract, value, issues);
 }
 
 export function assertWalletProblemDetails(value: unknown): WalletProblemDetails {

@@ -38,10 +38,15 @@ const portalBaseUrl =
   "https://trustcare-hospital-network-production.up.railway.app";
 const username =
   process.env.TRUSTCARE_WALLET_TEST_USERNAME ?? "demo-patient-003";
+const linkedUsernames = (
+  process.env.TRUSTCARE_WALLET_TEST_USERNAMES?.split(",") ?? [username]
+)
+  .map((value) => value.trim())
+  .filter(Boolean);
 const appId = "trustcare-wallet-production";
 
 describe.skipIf(!liveEnabled)("live Portal Wallet binding and sync", () => {
-  it("reloads configuration then completes test-login -> binding -> DPoP session -> sync", async () => {
+  it.each(linkedUsernames)("%s completes test-login -> binding -> DPoP session -> sync", async (username) => {
     const identity = await sandboxHolderIdentityForUser({
       userId: username,
       sandboxRuntime: true,

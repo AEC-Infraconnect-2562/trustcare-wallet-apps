@@ -1,10 +1,13 @@
-import { SignJWT, compactVerify, generateKeyPair, importJWK } from "jose";
+import { SignJWT, compactVerify, decodeJwt, generateKeyPair, importJWK } from "jose";
 import { describe, expect, it } from "vitest";
 import {
   generateHolderIdentity,
   type HolderKeyAlgorithm,
 } from "./holderIdentity";
-import { createHolderSignedDirectVp } from "./holderPresentation";
+import {
+  createHolderSignedDirectVp,
+  createHolderSignedShlAssociationVp,
+} from "./holderPresentation";
 
 const NOW = new Date("2026-07-11T10:00:00.000Z");
 const AUDIENCE =
@@ -248,6 +251,116 @@ describe("createHolderSignedDirectVp", () => {
   });
 });
 
+describe("createHolderSignedShlAssociationVp", () => {
+  it("envelopes the exact Portal Manifest VC and signs every SHL binding with the holder key", async () => {
+    const identity = await generateHolderIdentity({ algorithm: "P-256" });
+    const manifestCredentialJwt = await issuerManifestCredentialJwt(
+      identity.did,
+    );
+    expect(decodeJwt(manifestCredentialJwt)).not.toHaveProperty("aud");
+    const audience = `${AUDIENCE.replace(/\/verifier$/, "")}/api/wallet/v2/shl-associations/42`;
+    const result = await createHolderSignedShlAssociationVp({
+      identity,
+      audience,
+      recipient: RECIPIENT,
+      context: "opd_visit",
+      purpose: "patient_summary",
+      consentRef: "urn:trustcare:consent:shl:42",
+      shlId: 42,
+      manifestHash: `sha256:${"1".repeat(64)}`,
+      sourceBundleHash: `sha256:${"2".repeat(64)}`,
+      manifestCredentialId: "urn:trustcare:vc:shl:42",
+      manifestCredentialJwt,
+      presentationId: "urn:uuid:holder-presentation-42",
+      now: NOW,
+    });
+
+    const verified = await compactVerify(
+      result.vpJwt,
+      await importJWK(identity.publicJwk, identity.jwsAlgorithm),
+      { algorithms: [identity.jwsAlgorithm] },
+    );
+    expect(verified.protectedHeader).toEqual({
+      alg: "ES256",
+      typ: "vp+jwt",
+      cty: "vp",
+      kid: identity.kid,
+    });
+    expect(result.payload).toMatchObject({
+      id: "urn:uuid:holder-presentation-42",
+      type: [
+        "VerifiablePresentation",
+        "TrustcareShlAssociationPresentation",
+      ],
+      holder: identity.did,
+      purpose: "patient_summary",
+      trustcare: {
+        context: "opd_visit",
+        consentRef: "urn:trustcare:consent:shl:42",
+        recipient: RECIPIENT,
+        audience,
+        shl: {
+          packageId: "42",
+          manifestHash: `sha256:${"1".repeat(64)}`,
+          sourceBundleHash: `sha256:${"2".repeat(64)}`,
+          manifestCredentialId: "urn:trustcare:vc:shl:42",
+        },
+      },
+    });
+    expect(result.payload.verifiableCredential).toEqual([
+      {
+        "@context": "https://www.w3.org/ns/credentials/v2",
+        id: `data:application/vc+jwt,${manifestCredentialJwt}`,
+        type: "EnvelopedVerifiableCredential",
+      },
+    ]);
+  });
+
+  it("fails closed when signed Manifest VC claims differ from the requested SHL", async () => {
+    const identity = await generateHolderIdentity({ algorithm: "P-256" });
+    const manifestCredentialJwt = await issuerManifestCredentialJwt(
+      identity.did,
+    );
+    await expect(
+      createHolderSignedShlAssociationVp({
+        identity,
+        audience: `${AUDIENCE.replace(/\/verifier$/, "")}/api/wallet/v2/shl-associations/43`,
+        recipient: RECIPIENT,
+        context: "opd_visit",
+        purpose: "patient_summary",
+        consentRef: "urn:trustcare:consent:shl:43",
+        shlId: 43,
+        manifestHash: `sha256:${"1".repeat(64)}`,
+        sourceBundleHash: `sha256:${"2".repeat(64)}`,
+        manifestCredentialId: "urn:trustcare:vc:shl:42",
+        manifestCredentialJwt,
+        now: NOW,
+      }),
+    ).rejects.toThrow("smartHealthLinkId does not match");
+
+    const wrongAudienceJwt = await issuerManifestCredentialJwt(
+      identity.did,
+      "https://portal.example/api/shl/wrong-manifest",
+    );
+    await expect(
+      createHolderSignedShlAssociationVp({
+        identity,
+        audience: `${AUDIENCE.replace(/\/verifier$/, "")}/api/wallet/v2/shl-associations/42`,
+        recipient: RECIPIENT,
+        context: "opd_visit",
+        purpose: "patient_summary",
+        consentRef: "urn:trustcare:consent:shl:42",
+        shlId: 42,
+        manifestHash: `sha256:${"1".repeat(64)}`,
+        sourceBundleHash: `sha256:${"2".repeat(64)}`,
+        manifestCredentialId: "urn:trustcare:vc:shl:42",
+        manifestCredentialJwt: wrongAudienceJwt,
+        now: NOW,
+      }),
+    ).rejects.toThrow("audience does not match");
+  });
+});
+
 async function issuerCredentialJwt(
   holderDid: string,
   additions: Record<string, unknown> = {},
@@ -279,6 +392,58 @@ async function issuerCredentialJwt(
       alg: "ES256",
       typ: "vc+jwt",
       kid: `${issuerDid}#vc-signing-test`,
+      cty: "vc",
+    })
+    .sign(keyPair.privateKey);
+}
+
+async function issuerManifestCredentialJwt(
+  holderDid: string,
+  intendedAudience?: string,
+): Promise<string> {
+  const keyPair = await generateKeyPair("ES256");
+  const manifestUrl =
+    "https://trustcare-hospital-network-production.up.railway.app/api/shl/42/manifest";
+  return new SignJWT({
+    "@context": [
+      "https://www.w3.org/ns/credentials/v2",
+      "https://trustcare-hospital-network-production.up.railway.app/contexts/trustcare-credentials-v1.jsonld",
+    ],
+    id: "urn:trustcare:vc:shl:42",
+    type: ["VerifiableCredential", "ShlManifestCredential"],
+    issuer: RECIPIENT,
+    credentialSubject: {
+      id: holderDid,
+      data: {
+        smartHealthLinkId: 42,
+        manifestUrl,
+        manifestHash: `sha256:${"1".repeat(64)}`,
+        sourceBundleHash: `sha256:${"2".repeat(64)}`,
+        purpose: "patient_summary",
+        context: "opd_visit",
+        hospital: { did: RECIPIENT },
+      },
+    },
+    trustcare: {
+      intendedAudience: intendedAudience ?? manifestUrl,
+    },
+    validFrom: NOW.toISOString(),
+    validUntil: "2026-07-11T11:00:00.000Z",
+    credentialStatus: [
+      {
+        id: "https://trustcare-hospital-network-production.up.railway.app/status/1#0",
+        type: "BitstringStatusListEntry",
+        statusPurpose: "revocation",
+        statusListIndex: "0",
+        statusListCredential:
+          "https://trustcare-hospital-network-production.up.railway.app/status/1",
+      },
+    ],
+  })
+    .setProtectedHeader({
+      alg: "ES256",
+      typ: "vc+jwt",
+      kid: `${RECIPIENT}#vc-signing-test`,
       cty: "vc",
     })
     .sign(keyPair.privateKey);

@@ -443,6 +443,39 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     [activeRuntime, connection.message, error, provisioningReady],
   );
 
+  const associatePortalShl = useCallback(
+    async (input: {
+      manifestCredentialId: string;
+      consentRef: string;
+      clientAssociationId?: string;
+    }) => {
+      if (!activeRuntime || !provisioningReady) {
+        throw new Error(
+          connection.message || error || "Wallet Exchange is not ready.",
+        );
+      }
+      setSyncing(true);
+      setError("");
+      try {
+        const association =
+          await activeRuntime.workflow.associatePortalShlManifest(input);
+        const graphResult =
+          await activeRuntime.workflow.synchronizeClinicalDocumentGraph();
+        setClinicalGraphState({
+          partitionKey: activeRuntime.partitionKey,
+          state: graphResult.state,
+        });
+        return { association, clinicalDocumentGraph: graphResult };
+      } catch (reason) {
+        setError(walletExchangeErrorMessage(reason));
+        throw reason;
+      } finally {
+        setSyncing(false);
+      }
+    },
+    [activeRuntime, connection.message, error, provisioningReady],
+  );
+
   const recoverPendingSubmissions = useCallback(async () => {
     if (!activeRuntime || !provisioningReady) {
       throw new Error(
@@ -528,6 +561,7 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     completeHolderBinding,
     synchronize,
     graphPresentation,
+    associatePortalShl,
     recoverPendingSubmissions,
     reload,
   };

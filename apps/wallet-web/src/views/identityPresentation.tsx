@@ -38,6 +38,9 @@ export function UserAvatarImage({
   return (
     <span
       className="user-avatar-image"
+      data-testid={`user-avatar-${user.id}`}
+      data-wallet-user-id={user.id}
+      data-avatar-state={unavailable ? "unavailable" : "ready"}
       aria-label={
         unavailable
           ? `${user.nameEn || user.nameTh} · รูปยังไม่พร้อม`
@@ -69,6 +72,9 @@ export function CredentialSubjectAvatar({ card }: { card: WalletCard }) {
   return (
     <span
       className="user-avatar-image credential-subject-avatar"
+      data-testid={`credential-avatar-${card.id}`}
+      data-owner-user-id={card.ownerUserId}
+      data-credential-id={String(card.credentialId ?? "")}
       aria-label={
         candidate && imageSrc
           ? "รูปผู้ถือเอกสารจาก credential เดียวกัน"

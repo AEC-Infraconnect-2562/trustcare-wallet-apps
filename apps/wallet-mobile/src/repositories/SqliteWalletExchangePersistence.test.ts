@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { WalletExchangeShlAssociationRecord } from "@trustcare/api-client/walletExchangeWorkflow";
 import {
   applyWalletExchangeAckReceipt,
   prepareWalletExchangeCredentialReverification,
@@ -231,6 +232,36 @@ describe("SqliteWalletExchangePersistence", () => {
     await expect(
       restarted.getSubmissionLink(draft.clientSubmissionId),
     ).resolves.toEqual(link);
+  });
+
+  it("retains exact holder VP bytes and completes an SHL association atomically", async () => {
+    const storage = new MemoryWalletExchangeStorage();
+    const first = repository(storage);
+    const pending = shlAssociationRecord();
+    await first.savePendingShlAssociation(pending);
+
+    const restarted = repository(storage);
+    await expect(
+      restarted.getShlAssociation(pending.manifestCredentialId),
+    ).resolves.toEqual(pending);
+    const response = shlAssociationResponse(pending);
+    storage.failNextPut("shl_associations");
+    await expect(
+      restarted.completeShlAssociation(pending, response),
+    ).rejects.toThrow("injected shl_associations put failure");
+    await expect(
+      restarted.getShlAssociation(pending.manifestCredentialId),
+    ).resolves.toEqual(pending);
+
+    await restarted.completeShlAssociation(pending, response);
+    await expect(
+      restarted.getShlAssociation(pending.manifestCredentialId),
+    ).resolves.toEqual({
+      ...pending,
+      status: "complete",
+      response,
+      updatedAt: response.associatedAt,
+    });
   });
 
   it("rejects legacy issuers, patientId, tokens, and private JWK material", async () => {
@@ -555,6 +586,38 @@ function graphReduction(
   };
 }
 
+function shlAssociationRecord(): WalletExchangeShlAssociationRecord {
+  return {
+    schema: "trustcare.wallet.shl-association-outbox.v1",
+    manifestCredentialId: "urn:credential:manifest:42",
+    shlId: 42,
+    clientAssociationId: "wallet-shl-association-42",
+    consentRef: "urn:consent:shl:42",
+    idempotencyKey: "shl-association-idempotency-42",
+    holderPresentationId: "urn:uuid:holder-presentation-42",
+    holderVpJwt: "eyJhbGciOiJFUzI1NiJ9.eyJ2cCI6MX0.signature",
+    requestDigest: `sha256:${"f".repeat(64)}`,
+    status: "pending",
+    createdAt: "2026-07-11T11:00:00.000Z",
+    updatedAt: "2026-07-11T11:00:00.000Z",
+  };
+}
+
+function shlAssociationResponse(
+  pending: WalletExchangeShlAssociationRecord,
+): NonNullable<WalletExchangeShlAssociationRecord["response"]> {
+  return {
+    schema: "trustcare.wallet.shl-association.v1",
+    shlId: pending.shlId,
+    status: "active",
+    trustLevel: "hospital_certified",
+    manifestCredentialId: pending.manifestCredentialId,
+    holderPresentationId: pending.holderPresentationId,
+    associatedAt: "2026-07-11T11:00:01.000Z",
+    idempotent: false,
+  };
+}
+
 function avatarAsset(
   fetchedAt: string,
   hash: `sha256:${string}`,
@@ -638,6 +701,7 @@ function createStores(): Map<
       "request_links",
       "submission_links",
       "submission_outbox",
+      "shl_associations",
       "clinical_graph_objects",
       "clinical_graph_edges",
       "clinical_bundle_members",
