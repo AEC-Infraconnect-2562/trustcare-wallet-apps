@@ -23,10 +23,7 @@ import {
   trustCareCredentialIssuerDid,
   type JsonDocument,
 } from "./directDocumentProfile";
-import {
-  isWalletDocumentTrustVerified,
-  type WalletDocumentRecordV2,
-} from "./walletDocumentV2";
+import { type WalletDocumentRecordV2 } from "./walletDocumentV2";
 
 const CERTIFIED_SHL_MANIFEST_SCHEMA =
   "trustcare.certified-shl.manifest.v1" as const;
@@ -749,9 +746,9 @@ function assertPresentablePortalCredential(input: {
       `Certified SHL document ${record.id} does not belong to the signing holder did:key.`,
     );
   }
-  if (!isWalletDocumentTrustVerified(record, now)) {
+  if (!isWalletDocumentEligibleForHolderAuthorizedPresentation(record, now)) {
     throw new Error(
-      `Certified SHL document ${record.id} is not active and fully verified for presentation.`,
+      `Certified SHL document ${record.id} has not passed proof, issuer, status, expiry, and holder verification for presentation.`,
     );
   }
   if (record.provenance.sourceKind !== "trustcare_portal") {
@@ -849,6 +846,70 @@ function assertPresentablePortalCredential(input: {
     );
   }
   return { jwt, credentialId, credentialType, issuerDid };
+}
+
+/**
+ * Portal sync verifies the issuer-controlled facts before persistence, while
+ * the Wallet can evaluate recipient/purpose/consent policy only when the
+ * holder creates a concrete sharing event. A pending policy check is therefore
+ * eligible here, but a failed policy (or any failed cryptographic/lifecycle
+ * check) remains fail-closed. The exact event policy is subsequently embedded
+ * in, and signed with, the holder authorization VP.
+ */
+function isWalletDocumentEligibleForHolderAuthorizedPresentation(
+  record: WalletDocumentRecordV2,
+  now: Date,
+): boolean {
+  if (
+    record.trust.state !== "verified" &&
+    record.trust.state !== "issuer_signed_untrusted"
+  ) {
+    return false;
+  }
+  if (
+    [
+      "superseded",
+      "entered_in_error",
+      "expired",
+      "suspended",
+      "revoked",
+    ].includes(record.lifecycle.status)
+  ) {
+    return false;
+  }
+  if (
+    record.lifecycle.expiresAt &&
+    (!Number.isFinite(Date.parse(record.lifecycle.expiresAt)) ||
+      Date.parse(record.lifecycle.expiresAt) <= now.getTime())
+  ) {
+    return false;
+  }
+  const checks = new Map(
+    record.trust.checks.map((check) => [check.key, check] as const),
+  );
+  const issuerControlledChecks = [
+    "proof",
+    "issuer",
+    "status",
+    "expiry",
+    "holder",
+  ] as const;
+  if (
+    !issuerControlledChecks.every((key) => {
+      const check = checks.get(key);
+      const checkedAt = check?.checkedAt
+        ? Date.parse(check.checkedAt)
+        : Number.NaN;
+      return (
+        check?.status === "passed" &&
+        Number.isFinite(checkedAt) &&
+        checkedAt <= now.getTime()
+      );
+    })
+  ) {
+    return false;
+  }
+  return checks.get("policy")?.status !== "failed";
 }
 
 async function assertPreparedIntegrity(

@@ -330,6 +330,8 @@ describe("Wallet Exchange V2 live contracts", () => {
             requestId: "wdr_item123",
             documentType: "medical_certificate",
             status: "converted_to_vc",
+            reasonCode: "credential_issued",
+            nextAction: "sync_credentials",
             updatedAt: "2026-07-11T10:15:00.000Z",
           },
         ],
@@ -429,13 +431,33 @@ describe("Wallet Exchange V2 live contracts", () => {
     ).toMatchObject({ clientAssociationId: "wallet-shl-association-42" });
     expect(
       assertWalletShlAssociation({
-        schema: "trustcare.wallet.shl-association.v1",
+        schema: "trustcare.wallet.shl-association.v2",
         shlId: 42,
+        packageId: "42",
         status: "active",
         trustLevel: "hospital_certified",
+        appId: "trustcare-wallet-production",
         manifestCredentialId: "urn:trustcare:vc:shl:42",
+        manifestHash: HASH,
+        sourceBundleHash: HASH,
         holderPresentationId: "urn:uuid:holder-presentation-42",
+        holderPresentationJwt: JWT,
+        holderPresentationDigest: HASH,
+        holderDid: HOLDER_DID,
+        consentRef: "urn:trustcare:consent:shl:42",
+        context: "opd_visit",
+        purpose: "patient_summary",
+        recipient:
+          "did:web:trustcare-hospital-network-production.up.railway.app:hospital:tcc",
+        audience: `${PORTAL}/api/wallet/v2/shl-associations/42`,
         associatedAt: "2026-07-11T10:10:00.000Z",
+        issuedAt: "2026-07-11T10:10:00.000Z",
+        expiresAt: "2026-07-11T10:20:00.000Z",
+        lifecycle: {
+          status: "active",
+          effectiveAt: "2026-07-11T10:10:00.000Z",
+          reasonCode: null,
+        },
         idempotent: false,
       }),
     ).toMatchObject({ shlId: 42, trustLevel: "hospital_certified" });

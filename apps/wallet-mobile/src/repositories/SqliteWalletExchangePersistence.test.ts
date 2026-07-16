@@ -607,13 +607,32 @@ function shlAssociationResponse(
   pending: WalletExchangeShlAssociationRecord,
 ): NonNullable<WalletExchangeShlAssociationRecord["response"]> {
   return {
-    schema: "trustcare.wallet.shl-association.v1",
+    schema: "trustcare.wallet.shl-association.v2",
     shlId: pending.shlId,
+    packageId: String(pending.shlId),
     status: "active",
     trustLevel: "hospital_certified",
+    appId: "trustcare-wallet-test",
     manifestCredentialId: pending.manifestCredentialId,
+    manifestHash: `sha256:${"a".repeat(64)}`,
+    sourceBundleHash: `sha256:${"b".repeat(64)}`,
     holderPresentationId: pending.holderPresentationId,
+    holderPresentationJwt: pending.holderVpJwt,
+    holderPresentationDigest: `sha256:${"c".repeat(64)}`,
+    holderDid,
+    consentRef: pending.consentRef,
+    context: "opd_visit",
+    purpose: "patient_summary",
+    recipient: "did:web:portal.example.test:issuers:TCC",
+    audience: "https://portal.example.test/api/wallet/v2/shl-associations/42",
     associatedAt: "2026-07-11T11:00:01.000Z",
+    issuedAt: "2026-07-11T11:00:00.000Z",
+    expiresAt: "2026-07-11T12:00:00.000Z",
+    lifecycle: {
+      status: "active",
+      effectiveAt: "2026-07-11T11:00:01.000Z",
+      reasonCode: null,
+    },
     idempotent: false,
   };
 }

@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 import { decodeJwt } from "jose";
 import {
   buildClinicalDocumentGraphPresentation,
+  createHolderSignedDirectVp,
+  createHolderSignedShlAssociationVp,
+  createShlPackageId,
   createWalletClinicalDocumentGraphState,
   credentialRenderModelFromCard,
   listClinicalDocumentGraphArtifacts,
   prepareWalletClinicalDocumentGraphSyncCommit,
+  prepareHolderAttestedShl,
   sandboxHolderIdentityForUser,
   walletCardForDocumentRendering,
   type HolderSigningIdentity,
@@ -33,6 +37,7 @@ import {
 const liveEnabled = process.env.TRUSTCARE_PORTAL_LIVE_BINDING_TEST === "1";
 const negativeLiveEnabled =
   process.env.TRUSTCARE_PORTAL_LIVE_NEGATIVE_TEST === "1";
+const p0LiveEnabled = process.env.TRUSTCARE_PORTAL_LIVE_P0_TEST === "1";
 const portalBaseUrl =
   process.env.TRUSTCARE_PORTAL_BASE_URL ??
   "https://trustcare-hospital-network-production.up.railway.app";
@@ -462,7 +467,19 @@ describe.skipIf(!liveEnabled)("live Portal Wallet binding and sync", () => {
       requestId: exchange.lastResponseTrace?.requestId,
       correlationId: exchange.lastResponseTrace?.correlationId,
     });
-  }, 120_000);
+    if (p0LiveEnabled) {
+      await runPortalP0Completion({
+        username,
+        holder,
+        exchange,
+        contracts,
+        issuers,
+        documents,
+        initialPage: page,
+        graphState,
+      });
+    }
+  }, p0LiveEnabled ? 300_000 : 120_000);
 });
 
 describe.skipIf(!negativeLiveEnabled)(
@@ -526,6 +543,803 @@ describe.skipIf(!negativeLiveEnabled)(
     );
   },
 );
+
+type LiveContracts = Awaited<ReturnType<typeof loadWalletExchangeContracts>>;
+type LiveIssuers = Awaited<
+  ReturnType<typeof resolveAllPortalHospitalIssuers>
+>;
+type LiveSyncPage = Awaited<
+  ReturnType<WalletExchangeV2Client["syncCredentials"]>
+>;
+type LiveGraphState = ReturnType<
+  typeof createWalletClinicalDocumentGraphState
+>;
+
+type PortalStaffSession = {
+  cookie: string;
+  user: {
+    id: number;
+    openId: string;
+    hospitalId: number;
+  };
+};
+
+const staffSessionCache = new Map<string, Promise<PortalStaffSession>>();
+
+async function runPortalP0Completion(input: {
+  username: string;
+  holder: HolderSigningIdentity;
+  exchange: WalletExchangeV2Client;
+  contracts: LiveContracts;
+  issuers: LiveIssuers;
+  documents: WalletDocumentRecordV2[];
+  initialPage: LiveSyncPage;
+  graphState: LiveGraphState;
+}): Promise<void> {
+  const tcc = input.issuers.find((issuer) => issuer.hospitalCode === "TCC");
+  if (!tcc) throw new Error("Portal TCC issuer discovery is unavailable.");
+  const sourceDocument =
+    input.documents.find(
+      (document) =>
+        document.documentType === "medical_certificate" &&
+        !isTerminalDocumentStatus(document.lifecycle.status) &&
+        ["verified", "issuer_signed_untrusted"].includes(
+          document.trust.state,
+        ) &&
+        document.credential.jwt,
+    ) ??
+    input.documents.find(
+      (document) =>
+        !isTerminalDocumentStatus(document.lifecycle.status) &&
+        ["verified", "issuer_signed_untrusted"].includes(
+          document.trust.state,
+        ) &&
+        document.credential.jwt,
+    );
+  if (!sourceDocument) {
+    throw new Error(
+      `No active issuer-signed source document is available for ${input.username}.`,
+    );
+  }
+
+  const runId = `${Date.now()}-${globalThis.crypto.randomUUID()}`;
+  const consentRef = `wallet-consent:p0:${input.username}:${runId}`;
+  const purpose = "continuity_of_care";
+  const knownCredentials = new Map(
+    input.initialPage.changes.flatMap((change) =>
+      change.type === "credential.upsert"
+        ? [[change.credentialId, change.contentHash] as const]
+        : [],
+    ),
+  );
+
+  const credentialRequest = await input.exchange.requestCredential(
+    {
+      clientRequestId: `p0-credential-${input.username}-${runId}`,
+      targetHospitalCode: "TCC",
+      context: "opd_visit",
+      purpose,
+      consentRef,
+      credentialTypes: ["medical_certificate"],
+      notes: "Sandbox P0 Wallet Exchange acceptance run",
+    },
+    `p0-credential-request-${input.username}-${runId}`,
+  );
+  expect(credentialRequest.sandboxRunId).toMatch(/^sandbox:v1:[a-f0-9]{64}$/);
+  let credentialRequestStatus = await input.exchange.getCredentialRequestStatus(
+    credentialRequest.requestId,
+  );
+  if (credentialRequestStatus.nextAction !== "sync_credentials") {
+    const maker = await portalStaffLogin(
+      "demo-nurse-001",
+      "issuer_maker",
+    );
+    const checker = await portalStaffLogin(
+      "demo-doctor-001",
+      "issuer_checker",
+    );
+    expect(maker.user.id).not.toBe(checker.user.id);
+    expect(maker.user.hospitalId).toBe(checker.user.hospitalId);
+    const pending = await portalTrpc<unknown[]>(
+      maker,
+      "credential.pendingWalletCredentialRequests",
+      "query",
+      { hospitalId: maker.user.hospitalId },
+    );
+    const queueItem = findWalletQueueItem({
+      pending,
+      exchangeRequestId: credentialRequest.requestId,
+      itemRequestIds: credentialRequestStatus.items.map((item) => item.requestId),
+    });
+    const claimed = await portalTrpc<Record<string, unknown>>(
+      maker,
+      "credential.claimWalletCredentialRequest",
+      "mutation",
+      {
+        walletDocumentRequestId: queueItem.id,
+        documentData: makerDocumentData(sourceDocument, runId),
+        canonicalReview: {
+          status: "maker_reviewed_wallet_request",
+          requiredBeforeIssue: true,
+          consentRef,
+        },
+      },
+    );
+    const issuanceRequestId = positiveInteger(
+      claimed.id,
+      "Portal issuance request ID",
+    );
+    const approval = await portalTrpc<Record<string, unknown>>(
+      checker,
+      "makerChecker.approve",
+      "mutation",
+      {
+        id: issuanceRequestId,
+        comment: "Independent Checker approval for Wallet P0 acceptance",
+      },
+    );
+    if (approval.success !== true) {
+      throw new Error("Portal Checker did not complete KMS issuance.");
+    }
+    credentialRequestStatus = await pollCredentialRequestReady(
+      input.exchange,
+      credentialRequest.requestId,
+    );
+  }
+  expect(credentialRequestStatus.nextAction).toBe("sync_credentials");
+  expect(
+    credentialRequestStatus.items.every(
+      (item) =>
+        item.status === "converted_to_vc" &&
+        item.reasonCode === "credential_issued" &&
+        item.nextAction === "sync_credentials",
+    ),
+  ).toBe(true);
+
+  const credentialDelta = await syncVerifyAndAck({
+    exchange: input.exchange,
+    contracts: input.contracts,
+    issuers: input.issuers,
+    holderDid: input.holder.did,
+    cursor: input.initialPage.nextCursor,
+    knownCredentials,
+    ackKey: `p0-credential-ack-${input.username}-${runId}`,
+  });
+  const issuedDocument = credentialDelta.documents.find(
+    (document) => document.documentType === "medical_certificate",
+  );
+  if (!issuedDocument?.credential.jwt) {
+    throw new Error(
+      `Portal did not deliver the Maker/Checker medical certificate for ${input.username}.`,
+    );
+  }
+
+  const directVp = await createHolderSignedDirectVp({
+    identity: input.holder,
+    audience: portalBaseUrl,
+    recipient: tcc.issuerDid,
+    context: "opd_visit",
+    purpose,
+    consentRef,
+    credentialJwts: [issuedDocument.credential.jwt],
+  });
+  const submissionRequest = {
+    clientSubmissionId: `p0-submission-${input.username}-${runId}`,
+    context: "opd_visit" as const,
+    purpose,
+    consentRef,
+    transport: directVp.transport,
+  };
+  const submissionKey = `p0-submission-${input.username}-${runId}`;
+  const submission = await input.exchange.submitDocuments(
+    submissionRequest,
+    submissionKey,
+  );
+  const submissionReplay = await input.exchange.submitDocuments(
+    submissionRequest,
+    submissionKey,
+  );
+  expect(submissionReplay).toMatchObject({
+    submissionId: submission.submissionId,
+    idempotent: true,
+  });
+  const submissionStatus = await input.exchange.getSubmissionStatus(
+    submission.submissionId,
+  );
+  expect(["accepted", "needs_review", "partial"]).toContain(
+    submissionStatus.status,
+  );
+  expect(submissionStatus.status).not.toBe("rejected");
+
+  const shlPackageId = createShlPackageId();
+  const shareGateway = input.contracts.discovery.endpoints.shareGateway.replace(
+    /\/$/,
+    "",
+  );
+  const preparedShl = await prepareHolderAttestedShl({
+    identity: input.holder,
+    portalOrigin: portalBaseUrl,
+    publicationId: shlPackageId,
+    manifestUrl: `${shareGateway}/manifests/${shlPackageId}.json`,
+    fileBaseUrl: `${shareGateway}/files/`,
+    documents: [issuedDocument],
+    trustedIssuerDids: input.issuers.map((issuer) => issuer.issuerDid),
+    purpose,
+    recipient: tcc.issuerDid,
+    audience: portalBaseUrl,
+    context: "opd_visit",
+    consentRef,
+    targetHospitalCode: "TCC",
+    expiresAt: new Date(Date.now() + 20 * 60_000),
+    passcodeRequired: false,
+    maxAccessCount: 5,
+  });
+  const shlRequestKey = `p0-shl-certification-${input.username}-${runId}`;
+  const shlRequest = await input.exchange.requestShlCertification(
+    preparedShl.certificationRequest,
+    shlRequestKey,
+  );
+  expect(shlRequest.sandboxRunId).toMatch(/^sandbox:v1:[a-f0-9]{64}$/);
+  let shlRequestStatus = await input.exchange.getCredentialRequestStatus(
+    shlRequest.requestId,
+  );
+  if (shlRequestStatus.nextAction !== "sync_credentials") {
+    const maker = await portalStaffLogin(
+      "demo-nurse-001",
+      "issuer_maker",
+    );
+    const checker = await portalStaffLogin(
+      "demo-doctor-001",
+      "issuer_checker",
+    );
+    const pending = await portalTrpc<unknown[]>(
+      maker,
+      "credential.pendingWalletShlCertificationRequests",
+      "query",
+      { hospitalId: maker.user.hospitalId },
+    );
+    const queueItem = findWalletQueueItem({
+      pending,
+      exchangeRequestId: shlRequest.requestId,
+      itemRequestIds: shlRequestStatus.items.map((item) => item.requestId),
+      shlPackageId,
+    });
+    const claimed = await portalTrpc<Record<string, unknown>>(
+      maker,
+      "credential.claimWalletShlCertificationRequest",
+      "mutation",
+      { walletDocumentRequestId: queueItem.id },
+    );
+    const issuanceRequestId = positiveInteger(
+      claimed.id,
+      "Portal SHL issuance request ID",
+    );
+    const approval = await portalTrpc<Record<string, unknown>>(
+      checker,
+      "makerChecker.approve",
+      "mutation",
+      {
+        id: issuanceRequestId,
+        comment: "Independent Checker approval for certified SHL",
+      },
+    );
+    if (approval.success !== true) {
+      throw new Error("Portal Checker did not issue the Manifest VC.");
+    }
+    shlRequestStatus = await pollCredentialRequestReady(
+      input.exchange,
+      shlRequest.requestId,
+    );
+  }
+  expect(shlRequestStatus.nextAction).toBe("sync_credentials");
+
+  const shlDelta = await syncVerifyAndAck({
+    exchange: input.exchange,
+    contracts: input.contracts,
+    issuers: input.issuers,
+    holderDid: input.holder.did,
+    cursor: credentialDelta.nextCursor,
+    knownCredentials,
+    ackKey: `p0-shl-ack-${input.username}-${runId}`,
+  });
+  const manifestDocument = shlDelta.documents.find(
+    (document) => document.documentType === "shl_manifest",
+  );
+  const manifestCredentialJwt = manifestDocument?.credential.jwt;
+  if (!manifestDocument || !manifestCredentialJwt) {
+    throw new Error(
+      `Portal did not deliver the hospital-signed Manifest VC for ${input.username}.`,
+    );
+  }
+  const manifestPayload = decodeJwt(manifestCredentialJwt);
+  const manifestClaims = record(
+    record(manifestPayload.credentialSubject).data,
+  );
+  const shlId = positiveInteger(
+    manifestClaims.smartHealthLinkId,
+    "Portal SHL ID",
+  );
+  const manifestCredentialId = String(manifestPayload.id ?? "");
+  if (!manifestCredentialId) throw new Error("Manifest VC ID is missing.");
+  expect(manifestClaims.manifestHash).toBe(preparedShl.manifestHash);
+  expect(manifestClaims.sourceBundleHash).toBe(preparedShl.sourceBundleHash);
+
+  const associationAudience = shlAssociationEndpoint(
+    input.contracts.discovery.endpoints.shlAssociations,
+    shlId,
+  );
+  const holderVp = await createHolderSignedShlAssociationVp({
+    identity: input.holder,
+    audience: associationAudience,
+    recipient: tcc.issuerDid,
+    context: "opd_visit",
+    purpose,
+    consentRef,
+    shlId,
+    manifestHash: preparedShl.manifestHash as `sha256:${string}`,
+    sourceBundleHash: preparedShl.sourceBundleHash as `sha256:${string}`,
+    manifestCredentialId,
+    manifestCredentialJwt,
+  });
+  if (input.username === linkedUsernames[0]) {
+    await expectWalletProblem(
+      () =>
+        input.exchange.associateShlPresentation(
+          shlId,
+          {
+            clientAssociationId: `negative-altered-${runId}`,
+            consentRef,
+            holderVpJwt: alterCompactJwt(holderVp.vpJwt),
+          },
+          `negative-altered-${runId}`,
+        ),
+      [409, 422],
+      "altered_holder_vp",
+    );
+    const wrongAudienceVp = await createHolderSignedShlAssociationVp({
+      identity: input.holder,
+      audience: `${portalBaseUrl}/verifier`,
+      recipient: tcc.issuerDid,
+      context: "opd_visit",
+      purpose,
+      consentRef,
+      shlId,
+      manifestHash: preparedShl.manifestHash as `sha256:${string}`,
+      sourceBundleHash: preparedShl.sourceBundleHash as `sha256:${string}`,
+      manifestCredentialId,
+      manifestCredentialJwt,
+    });
+    await expectWalletProblem(
+      () =>
+        input.exchange.associateShlPresentation(
+          shlId,
+          {
+            clientAssociationId: `negative-audience-${runId}`,
+            consentRef,
+            holderVpJwt: wrongAudienceVp.vpJwt,
+          },
+          `negative-audience-${runId}`,
+        ),
+      [422],
+      "wrong_shl_audience",
+    );
+  }
+  const associationRequest = {
+    clientAssociationId: `p0-association-${input.username}-${runId}`,
+    consentRef,
+    holderVpJwt: holderVp.vpJwt,
+  };
+  const associationKey = `p0-association-${input.username}-${runId}`;
+  const associated = await input.exchange.associateShlPresentation(
+    shlId,
+    associationRequest,
+    associationKey,
+  );
+  expect(associated).toMatchObject({
+    status: "active",
+    trustLevel: "hospital_certified",
+    holderPresentationJwt: holderVp.vpJwt,
+    holderDid: input.holder.did,
+    manifestCredentialId,
+    manifestHash: preparedShl.manifestHash,
+    sourceBundleHash: preparedShl.sourceBundleHash,
+  });
+  const associationReplay = await input.exchange.associateShlPresentation(
+    shlId,
+    associationRequest,
+    associationKey,
+  );
+  expect(associationReplay).toMatchObject({
+    holderPresentationJwt: holderVp.vpJwt,
+    idempotent: true,
+  });
+
+  const restartedExchange = new WalletExchangeV2Client({
+    contracts: input.contracts,
+    identity: input.holder,
+    appId,
+    requestedScopes: [
+      "credentials:read",
+      "credentials:request",
+      "credentials:present",
+      "documents:read",
+      "documents:write",
+    ],
+  });
+  await restartedExchange.createSession();
+  const recovered = await restartedExchange.getShlAssociation(shlId);
+  expect(recovered).toMatchObject({
+    shlId,
+    status: "active",
+    holderPresentationJwt: holderVp.vpJwt,
+    holderPresentationDigest: associated.holderPresentationDigest,
+    holderDid: input.holder.did,
+    appId,
+  });
+
+  const graph = await syncGraphToEnd({
+    exchange: restartedExchange,
+    contracts: input.contracts,
+    state: input.graphState,
+  });
+  expect(graph.artifacts.length).toBeGreaterThan(0);
+  expect(graph.presentations).toBe(graph.artifacts.length);
+  console.info("Live Wallet P0 completion", {
+    username: input.username,
+    credentialRequestId: credentialRequest.requestId,
+    credentialStatus: credentialRequestStatus.status,
+    credentialDeltaAccepted: credentialDelta.documents.length,
+    directSubmissionId: submission.submissionId,
+    directSubmissionStatus: submissionStatus.status,
+    shlRequestId: shlRequest.requestId,
+    shlStatus: associated.status,
+    shlId,
+    recoveredExactHolderVp: recovered.holderPresentationJwt === holderVp.vpJwt,
+    graphArtifacts: graph.artifacts.length,
+    graphStages: 8,
+    requestId: restartedExchange.lastResponseTrace?.requestId,
+    correlationId: restartedExchange.lastResponseTrace?.correlationId,
+  });
+}
+
+async function syncVerifyAndAck(input: {
+  exchange: WalletExchangeV2Client;
+  contracts: LiveContracts;
+  issuers: LiveIssuers;
+  holderDid: string;
+  cursor: string;
+  knownCredentials: Map<string, string>;
+  ackKey: string;
+}): Promise<{
+  nextCursor: string;
+  documents: WalletDocumentRecordV2[];
+}> {
+  let cursor = input.cursor;
+  const documents: WalletDocumentRecordV2[] = [];
+  let pageIndex = 0;
+  while (true) {
+    const page = await input.exchange.syncCredentials({
+      cursor,
+      limit: 100,
+      knownCredentials: [...input.knownCredentials].map(
+        ([credentialId, contentHash]) => ({
+          credentialId,
+          contentHash,
+          status: "active" as const,
+        }),
+      ),
+    });
+    const results: Array<{
+      eventId: string;
+      outcome: "applied" | "archived";
+    }> = [];
+    for (const change of page.changes) {
+      if (change.type === "credential.upsert") {
+        const prepared = await prepareWalletExchangeCredential({
+          change,
+          portalBaseUrl,
+          holderDid: input.holderDid,
+          requiredRenderBlocks: input.contracts.renderContract.payload.requiredBlocks,
+          resolvedIssuer: input.issuers.find(
+            (issuer) => issuer.issuerDid === change.credential.issuerDid,
+          ),
+        });
+        if (!prepared.document) {
+          throw new Error(
+            `New Portal credential ${change.credentialId} failed strict Wallet verification.`,
+          );
+        }
+        documents.push(prepared.document);
+        input.knownCredentials.set(change.credentialId, change.contentHash);
+        results.push({ eventId: change.eventId, outcome: "applied" });
+      } else {
+        results.push({ eventId: change.eventId, outcome: "archived" });
+      }
+    }
+    await input.exchange.acknowledgeSync(
+      { syncId: page.syncId, cursor: page.nextCursor, results },
+      `${input.ackKey}-${pageIndex}`,
+    );
+    cursor = page.nextCursor;
+    pageIndex += 1;
+    if (!page.hasMore) break;
+  }
+  return { nextCursor: cursor, documents };
+}
+
+async function syncGraphToEnd(input: {
+  exchange: WalletExchangeV2Client;
+  contracts: LiveContracts;
+  state: LiveGraphState;
+}): Promise<{
+  state: LiveGraphState;
+  artifacts: ReturnType<typeof listClinicalDocumentGraphArtifacts>;
+  presentations: number;
+}> {
+  let state = input.state;
+  while (true) {
+    const page = await input.exchange.syncClinicalDocumentGraph({
+      cursor: state.nextCursor,
+      limit: 1_000,
+    });
+    state = prepareWalletClinicalDocumentGraphSyncCommit({
+      state,
+      page,
+      graphContract: input.contracts.clinicalDocumentGraph.payload,
+    }).state;
+    if (!page.hasMore) break;
+  }
+  const artifacts = listClinicalDocumentGraphArtifacts(state);
+  for (const artifact of artifacts) {
+    const presentation = buildClinicalDocumentGraphPresentation({
+      state,
+      graphContract: input.contracts.clinicalDocumentGraph.payload,
+      selectedArtifactId: artifact.artifactId,
+    });
+    expect(presentation.stages.map((stage) => stage.key)).toEqual([
+      "source",
+      "fhir",
+      "document",
+      "retrieval",
+      "attestation",
+      "vc",
+      "shl",
+      "vp",
+    ]);
+  }
+  return { state, artifacts, presentations: artifacts.length };
+}
+
+async function portalStaffLogin(
+  openId: string,
+  activeRole: "issuer_maker" | "issuer_checker",
+): Promise<PortalStaffSession> {
+  const key = `${openId}:${activeRole}`;
+  const existing = staffSessionCache.get(key);
+  if (existing) return existing;
+  const pending = (async () => {
+    const response = await fetch(`${portalBaseUrl}/api/iam/test-login`, {
+      method: "POST",
+      headers: {
+        accept: "application/json, application/problem+json",
+        "content-type": "application/json",
+        "x-request-id": `wallet-p0-staff-${globalThis.crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({ openId, activeRole }),
+      cache: "no-store",
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw tracedHttpError("Portal staff test login failed", response, payload);
+    }
+    const object = record(payload);
+    const user = record(object.user);
+    const cookieHeader = response.headers.get("set-cookie") ?? "";
+    const cookie = cookieHeader.match(/(?:^|[, ]+)app_session_id=([^;, ]+)/)?.[1];
+    if (!cookie) throw new Error("Portal staff login did not return a session cookie.");
+    return {
+      cookie: `app_session_id=${cookie}`,
+      user: {
+        id: positiveInteger(user.id, "Portal staff user ID"),
+        openId: String(user.openId ?? ""),
+        hospitalId: positiveInteger(user.hospitalId, "Portal staff hospital ID"),
+      },
+    };
+  })();
+  staffSessionCache.set(key, pending);
+  try {
+    return await pending;
+  } catch (reason) {
+    staffSessionCache.delete(key);
+    throw reason;
+  }
+}
+
+async function portalTrpc<T>(
+  session: PortalStaffSession,
+  procedure: string,
+  method: "query" | "mutation",
+  input: unknown,
+): Promise<T> {
+  const endpoint = new URL(`${portalBaseUrl}/api/trpc/${procedure}`);
+  const serialized = JSON.stringify({ json: input });
+  if (method === "query") endpoint.searchParams.set("input", serialized);
+  const response = await fetch(endpoint, {
+    method: method === "query" ? "GET" : "POST",
+    headers: {
+      accept: "application/json, application/problem+json",
+      ...(method === "mutation" ? { "content-type": "application/json" } : {}),
+      cookie: session.cookie,
+      "x-request-id": `wallet-p0-trpc-${globalThis.crypto.randomUUID()}`,
+    },
+    ...(method === "mutation" ? { body: serialized } : {}),
+    cache: "no-store",
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || record(payload).error) {
+    throw tracedHttpError(`Portal tRPC ${procedure} failed`, response, payload);
+  }
+  const result = record(record(payload).result);
+  const data = record(result.data);
+  return data.json as T;
+}
+
+function findWalletQueueItem(input: {
+  pending: unknown[];
+  exchangeRequestId: string;
+  itemRequestIds: string[];
+  shlPackageId?: string;
+}): { id: number } {
+  const itemRequestIds = new Set(input.itemRequestIds);
+  for (const candidate of input.pending) {
+    const row = record(candidate);
+    const metadata = record(row.metadata);
+    if (
+      itemRequestIds.has(String(row.requestId ?? "")) ||
+      metadata.exchangeRequestId === input.exchangeRequestId ||
+      (input.shlPackageId !== undefined &&
+        metadata.shlPackageId === input.shlPackageId)
+    ) {
+      return { id: positiveInteger(row.id, "Wallet queue item ID") };
+    }
+  }
+  throw new Error(
+    `Portal Maker queue does not contain Wallet request ${input.exchangeRequestId}.`,
+  );
+}
+
+function makerDocumentData(
+  source: WalletDocumentRecordV2,
+  runId: string,
+): Record<string, unknown> {
+  const payload = record(source.content.credentialPayload);
+  const subject = record(payload.credentialSubject);
+  const signedData = record(subject.data);
+  const humanDocument = record(signedData.humanDocument);
+  const result: Record<string, unknown> = {
+    schemaVersion: "1.0.0",
+    clinical: signedData.clinical ?? source.content.patientSummary ?? {},
+    fhir: signedData.fhir ?? source.content.fhirDocument ?? {},
+    humanDocument,
+    diagnosisText: "Continuity-of-care assessment completed in sandbox",
+    fitnessForWork: "fit_with_restrictions",
+    recommendations: [
+      "Continue the current treatment plan and attend the scheduled follow-up.",
+    ],
+    validFrom: new Date().toISOString(),
+    validUntil: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+    sourceOfTruth: {
+      system: "hospital_his",
+      sourceCredentialId: source.credential.credentialId,
+      sandboxRunId: runId,
+    },
+  };
+  assertNoPatientId(result);
+  return result;
+}
+
+async function pollCredentialRequestReady(
+  exchange: WalletExchangeV2Client,
+  requestId: string,
+): ReturnType<WalletExchangeV2Client["getCredentialRequestStatus"]> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const status = await exchange.getCredentialRequestStatus(requestId);
+    if (status.nextAction === "sync_credentials") return status;
+    if (status.status === "rejected") {
+      throw new Error(`Portal rejected credential request ${requestId}.`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  throw new Error(`Portal credential request ${requestId} did not become ready.`);
+}
+
+async function expectWalletProblem(
+  operation: () => Promise<unknown>,
+  expectedStatuses: number[],
+  label: string,
+): Promise<void> {
+  let problem: WalletExchangeProblemError | undefined;
+  try {
+    await operation();
+  } catch (reason) {
+    if (reason instanceof WalletExchangeProblemError) problem = reason;
+    else throw reason;
+  }
+  if (!problem || !expectedStatuses.includes(problem.status ?? 0)) {
+    throw new Error(`${label} did not fail with the expected Portal problem.`);
+  }
+  expect(problem.requestId).toEqual(expect.any(String));
+  expect(problem.correlationId).toEqual(expect.any(String));
+  console.info("Live Wallet negative P0 result", {
+    label,
+    status: problem.status,
+    code: problem.code,
+    requestId: problem.requestId,
+    correlationId: problem.correlationId,
+  });
+}
+
+function shlAssociationEndpoint(template: string, shlId: number): string {
+  return template.includes("{shlId}")
+    ? template.replace("{shlId}", String(shlId))
+    : `${template.replace(/\/$/, "")}/${shlId}`;
+}
+
+function alterCompactJwt(jwt: string): string {
+  const replacement = jwt.endsWith("A") ? "B" : "A";
+  return `${jwt.slice(0, -1)}${replacement}`;
+}
+
+function positiveInteger(value: unknown, label: string): number {
+  if (!Number.isInteger(value) || Number(value) < 1) {
+    throw new Error(`${label} must be a positive integer.`);
+  }
+  return Number(value);
+}
+
+function isTerminalDocumentStatus(status: string): boolean {
+  return [
+    "superseded",
+    "entered_in_error",
+    "expired",
+    "suspended",
+    "revoked",
+  ].includes(status);
+}
+
+function assertNoPatientId(value: unknown): void {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    value.forEach(assertNoPatientId);
+    return;
+  }
+  for (const [key, nested] of Object.entries(value)) {
+    if (key.replace(/[-_]/g, "").toLowerCase() === "patientid") {
+      throw new Error("Wallet P0 request must not contain Portal patientId.");
+    }
+    assertNoPatientId(nested);
+  }
+}
+
+function tracedHttpError(
+  label: string,
+  response: Response,
+  payload: unknown,
+): Error {
+  const body = record(payload);
+  const error = record(body.error);
+  const json = record(error.json);
+  return new Error(
+    [
+      label,
+      `status=${response.status}`,
+      `code=${String(body.code ?? json.code ?? "unknown")}`,
+      `detail=${String(body.detail ?? error.message ?? json.message ?? "unknown")}`,
+      `requestId=${response.headers.get("x-request-id") ?? "missing"}`,
+      `correlationId=${response.headers.get("x-correlation-id") ?? "missing"}`,
+    ].join(" "),
+  );
+}
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)

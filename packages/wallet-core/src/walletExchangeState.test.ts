@@ -589,6 +589,55 @@ describe("Wallet Exchange V2 state", () => {
     ]);
   });
 
+  it("preserves a superseded lifecycle without mislabelling it as issuer revocation", () => {
+    const first = commitAndAck(
+      createWalletExchangeState({ portalOrigin, holderDid }),
+      page({
+        syncId: "sync_superseded_initial",
+        changes: [
+          signedUpsert({
+            eventId: "wce_superseded_upsert",
+            credentialId: "credential-superseded",
+            documentId: "document-superseded",
+            version: "1",
+            contentHash: hashA,
+          }),
+        ],
+      }),
+    );
+    const reduced = prepareWalletExchangeSyncCommit(
+      first,
+      page({
+        syncId: "sync_superseded_delta",
+        mode: "delta",
+        requestCursor: cursor("1"),
+        nextCursor: cursor("2"),
+        ackIdempotencyKey: "ack-sync-superseded-delta",
+        changes: [
+          {
+            eventId: "wce_superseded_status",
+            type: "credential.status",
+            credentialId: "credential-superseded",
+            status: "revoked",
+            occurredAt: "2026-07-11T10:02:00.000Z",
+            lifecycle: {
+              effectiveAt: "2026-07-11T10:01:30.000Z",
+              reasonCode: "credential_superseded",
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(reduced.state.documents[0]).toMatchObject({
+      lifecycle: { status: "superseded" },
+      trust: { state: "pending", verifiedAt: undefined },
+    });
+    expect(reduced.state.history[0]).toMatchObject({
+      lifecycleStatus: "superseded",
+    });
+  });
+
   it("requires the previous atomic page to be ACKed and replays its plan safely", () => {
     const syncPage = page({
       syncId: "sync_pending_ack",

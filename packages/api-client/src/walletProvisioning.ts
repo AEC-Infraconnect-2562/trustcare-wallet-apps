@@ -14,13 +14,30 @@ export type WalletProvisioningConfiguration = {
     issuer: string | null;
     audience: string;
     requiredRole: string;
+    flow: "authorization_code";
+    responseType: "code";
+    pkce: { required: true; method: "S256" };
+    discovery: string | null;
+    authorizationEndpoint: string | null;
+    tokenEndpoint: string | null;
+    revocationEndpoint: string | null;
+    endSessionEndpoint: string | null;
     clients: { web: string; mobile: string };
+    clientMetadata: {
+      web: { tokenEndpointAuthMethod: "none" };
+      mobile: {
+        tokenEndpointAuthMethod: "none";
+        redirectUri: string;
+        postLogoutRedirectUri: string;
+      };
+    };
   };
   endpoints: {
     identity: string;
     provisioning: string;
     holderBindingChallenge: string;
     holderBindingCompletionTemplate: string;
+    holderBindingRevocation: string;
     sandboxTestLogin: string | null;
     sandboxTestIdentities: string | null;
     walletExchangeDiscovery: string;
@@ -29,7 +46,27 @@ export type WalletProvisioningConfiguration = {
     didMethod: "did:key";
     algorithms: Array<"EdDSA" | "ES256">;
     privateKeyOwner: "wallet";
+    keyRecovery: {
+      policyVersion: string;
+      restoredKey: string;
+      replacementKey: string;
+      oldBinding: string;
+      crossDeviceSessionRecovery: string;
+    };
   };
+};
+
+export type WalletHolderBindingRevocationReason =
+  | "device_lost"
+  | "key_recovery"
+  | "user_logout"
+  | "security_reset";
+
+export type WalletHolderBindingRevocation = {
+  schema: "trustcare.wallet.holder-binding-revocation.v1";
+  status: "revoked";
+  revokedAt: string;
+  nextAction: "complete_oidc_logout" | "restart_holder_provisioning";
 };
 
 export type WalletProvisioningStatus = {
@@ -114,6 +151,7 @@ export type WalletOidcTokenSet = {
   expiresIn: number;
   refreshToken?: string;
   refreshExpiresIn?: number;
+  idToken?: string;
   scope?: string;
   testOnly?: boolean;
   username?: string;
@@ -307,6 +345,7 @@ export class WalletProvisioningClient {
   async bindHolder(input: {
     oidcAccessToken: string;
     consentRef: string;
+    supersedesHolderDid?: string | null;
   }): Promise<WalletProvisioningStatus> {
     const identity = this.requireIdentity();
     const configuration = await this.loadConfiguration();
@@ -334,6 +373,7 @@ export class WalletProvisioningClient {
           holderDid: identity.did,
           publicJwk: identity.publicJwk,
           consentRef,
+          supersedesHolderDid: input.supersedesHolderDid ?? null,
         }),
       },
     );
@@ -379,6 +419,48 @@ export class WalletProvisioningClient {
       invalid("Portal holder binding completed but provisioning is not ready.");
     }
     return status;
+  }
+
+  async revokeHolderBinding(input: {
+    oidcAccessToken: string;
+    reason: WalletHolderBindingRevocationReason;
+  }): Promise<WalletHolderBindingRevocation> {
+    const identity = this.requireIdentity();
+    const configuration = await this.loadConfiguration();
+    const payload = await this.requestJson(
+      configuration.endpoints.holderBindingRevocation,
+      {
+        method: "POST",
+        headers: {
+          ...bearerHeaders(input.oidcAccessToken),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          appId: this.options.appId,
+          holderDid: identity.did,
+          reason: input.reason,
+        }),
+      },
+    );
+    const object = record(payload, "Wallet holder binding revocation");
+    exactKeys(object, ["schema", "status", "revokedAt", "nextAction"]);
+    requireLiteral(
+      object.schema,
+      "trustcare.wallet.holder-binding-revocation.v1",
+      "Wallet holder binding revocation schema",
+    );
+    requireLiteral(object.status, "revoked", "Wallet holder binding status");
+    requireIsoDate(object.revokedAt, "Wallet holder binding revocation time");
+    const expectedNextAction =
+      input.reason === "user_logout"
+        ? "complete_oidc_logout"
+        : "restart_holder_provisioning";
+    requireLiteral(
+      object.nextAction,
+      expectedNextAction,
+      "Wallet holder binding revocation next action",
+    );
+    return object as WalletHolderBindingRevocation;
   }
 
   private requireIdentity(): HolderSigningIdentity {
@@ -453,14 +535,89 @@ function assertProvisioningConfiguration(
   );
   requirePathSafe(object.appId, "Wallet provisioning appId");
   const oidc = record(object.oidc, "Wallet OIDC configuration");
-  exactKeys(oidc, ["issuer", "audience", "requiredRole", "clients"]);
+  exactKeys(oidc, [
+    "issuer",
+    "audience",
+    "requiredRole",
+    "flow",
+    "responseType",
+    "pkce",
+    "discovery",
+    "authorizationEndpoint",
+    "tokenEndpoint",
+    "revocationEndpoint",
+    "endSessionEndpoint",
+    "clients",
+    "clientMetadata",
+  ]);
   if (oidc.issuer !== null) requireAbsoluteUrl(oidc.issuer, "Wallet OIDC issuer");
   requireString(oidc.audience, "Wallet OIDC audience");
   requireString(oidc.requiredRole, "Wallet OIDC required role");
+  requireLiteral(oidc.flow, "authorization_code", "Wallet OIDC flow");
+  requireLiteral(oidc.responseType, "code", "Wallet OIDC response type");
+  const pkce = record(oidc.pkce, "Wallet OIDC PKCE policy");
+  exactKeys(pkce, ["required", "method"]);
+  if (pkce.required !== true) invalid("Wallet OIDC must require PKCE.");
+  requireLiteral(pkce.method, "S256", "Wallet OIDC PKCE method");
+  const oidcEndpoints = [
+    "discovery",
+    "authorizationEndpoint",
+    "tokenEndpoint",
+    "revocationEndpoint",
+    "endSessionEndpoint",
+  ] as const;
+  for (const key of oidcEndpoints) {
+    if (oidc[key] !== null) {
+      requireAbsoluteUrl(oidc[key], `Wallet OIDC ${key}`);
+      if (!String(oidc[key]).startsWith("https://")) {
+        invalid(`Wallet OIDC ${key} must use HTTPS.`);
+      }
+    }
+  }
+  if (
+    oidc.issuer !== null &&
+    oidcEndpoints.some((key) => oidc[key] === null)
+  ) {
+    invalid("Wallet OIDC issuer requires complete authorization lifecycle endpoints.");
+  }
   const clients = record(oidc.clients, "Wallet OIDC clients");
   exactKeys(clients, ["web", "mobile"]);
   requireString(clients.web, "Wallet OIDC web client");
   requireString(clients.mobile, "Wallet OIDC mobile client");
+  const clientMetadata = record(
+    oidc.clientMetadata,
+    "Wallet OIDC client metadata",
+  );
+  exactKeys(clientMetadata, ["web", "mobile"]);
+  const webClient = record(clientMetadata.web, "Wallet OIDC web metadata");
+  exactKeys(webClient, ["tokenEndpointAuthMethod"]);
+  requireLiteral(
+    webClient.tokenEndpointAuthMethod,
+    "none",
+    "Wallet OIDC web token authentication",
+  );
+  const mobileClient = record(
+    clientMetadata.mobile,
+    "Wallet OIDC mobile metadata",
+  );
+  exactKeys(mobileClient, [
+    "tokenEndpointAuthMethod",
+    "redirectUri",
+    "postLogoutRedirectUri",
+  ]);
+  requireLiteral(
+    mobileClient.tokenEndpointAuthMethod,
+    "none",
+    "Wallet OIDC mobile token authentication",
+  );
+  requireClientRedirectUri(
+    mobileClient.redirectUri,
+    "Wallet OIDC mobile redirect URI",
+  );
+  requireClientRedirectUri(
+    mobileClient.postLogoutRedirectUri,
+    "Wallet OIDC mobile logout URI",
+  );
 
   const endpoints = record(object.endpoints, "Wallet provisioning endpoints");
   exactKeys(endpoints, [
@@ -468,6 +625,7 @@ function assertProvisioningConfiguration(
     "provisioning",
     "holderBindingChallenge",
     "holderBindingCompletionTemplate",
+    "holderBindingRevocation",
     "sandboxTestLogin",
     "sandboxTestIdentities",
     "walletExchangeDiscovery",
@@ -476,6 +634,7 @@ function assertProvisioningConfiguration(
     "identity",
     "provisioning",
     "holderBindingChallenge",
+    "holderBindingRevocation",
     "walletExchangeDiscovery",
   ] as const) {
     requireSameOriginUrl(endpoints[key], portalOrigin, `Wallet endpoint ${key}`);
@@ -499,7 +658,12 @@ function assertProvisioningConfiguration(
   }
 
   const holder = record(object.holder, "Wallet holder configuration");
-  exactKeys(holder, ["didMethod", "algorithms", "privateKeyOwner"]);
+  exactKeys(holder, [
+    "didMethod",
+    "algorithms",
+    "privateKeyOwner",
+    "keyRecovery",
+  ]);
   requireLiteral(holder.didMethod, "did:key", "Wallet holder DID method");
   requireLiteral(holder.privateKeyOwner, "wallet", "Wallet private key owner");
   if (
@@ -508,6 +672,26 @@ function assertProvisioningConfiguration(
     !holder.algorithms.length
   ) {
     invalid("Wallet holder algorithms are invalid.");
+  }
+  const keyRecovery = record(holder.keyRecovery, "Wallet holder key recovery");
+  exactKeys(keyRecovery, [
+    "policyVersion",
+    "restoredKey",
+    "replacementKey",
+    "oldBinding",
+    "crossDeviceSessionRecovery",
+  ]);
+  requireOpaqueVersion(
+    keyRecovery.policyVersion,
+    "Wallet holder key recovery policy version",
+  );
+  for (const key of [
+    "restoredKey",
+    "replacementKey",
+    "oldBinding",
+    "crossDeviceSessionRecovery",
+  ] as const) {
+    requireString(keyRecovery[key], `Wallet holder key recovery ${key}`);
   }
   return value as WalletProvisioningConfiguration;
 }
@@ -910,6 +1094,30 @@ function requireAbsoluteUrl(value: unknown, label: string): URL {
   }
   if (url.protocol !== "https:" && url.hostname !== "localhost") {
     invalid(`${label} must use HTTPS.`);
+  }
+  return url!;
+}
+
+function requireClientRedirectUri(value: unknown, label: string): URL {
+  const text = requireString(value, label);
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    invalid(`${label} is invalid.`);
+  }
+  const customScheme =
+    /^[a-z][a-z0-9+.-]*:$/.test(url!.protocol) &&
+    !["http:", "https:", "javascript:", "data:", "file:"].includes(
+      url!.protocol,
+    );
+  if (
+    (url!.protocol !== "https:" && !customScheme) ||
+    url!.username ||
+    url!.password ||
+    url!.hash
+  ) {
+    invalid(`${label} must be an HTTPS or registered application URI.`);
   }
   return url!;
 }
