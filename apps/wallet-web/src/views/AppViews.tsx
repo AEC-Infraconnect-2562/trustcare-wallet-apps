@@ -122,7 +122,9 @@ import {
 } from "../utils/runtimeUrls";
 import {
   credentialRequestDocumentLabel,
+  credentialRequestItemNextActionLabel,
   credentialRequestNextActionLabel,
+  credentialRequestReasonLabel,
   credentialRequestStatusLabel,
   type WalletCredentialRequestViewModel,
 } from "../walletExchangeCredentialRequest";
@@ -2861,7 +2863,13 @@ export function PrepareView({
                               )}
                             </b>
                             <small>
-                              {credentialRequestStatusLabel(item.status)}
+                              {credentialRequestStatusLabel(item.status)} ·{" "}
+                              {credentialRequestReasonLabel(item.reasonCode)}
+                            </small>
+                            <small>
+                              {credentialRequestItemNextActionLabel(
+                                item.nextAction,
+                              )}
                             </small>
                           </span>
                         ))}

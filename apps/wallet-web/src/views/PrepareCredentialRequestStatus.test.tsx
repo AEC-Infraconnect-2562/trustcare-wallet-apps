@@ -37,6 +37,8 @@ describe("Prepare Wallet Exchange request status", () => {
                 requestId: "item-1",
                 documentType: "PatientIdentityCredential",
                 status: "needs_review",
+                reasonCode: "awaiting_checker_review",
+                nextAction: "wait_for_provider",
                 updatedAt: "2026-07-11T10:01:00.000Z",
               },
             ],
