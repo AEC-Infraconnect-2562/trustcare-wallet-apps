@@ -48,6 +48,7 @@ import {
 } from "./testFixtures/portalDirectCredential";
 import {
   createWalletExchangeV2Client,
+  WalletExchangeProblemError,
   type WalletExchangeV2Client,
 } from "./walletExchangeV2";
 import {
@@ -471,13 +472,32 @@ describe("WalletExchangeWorkflow", () => {
     );
     fake.associateShlPresentation.mockImplementation(
       async (shlId, request): Promise<WalletShlAssociation> => ({
-        schema: "trustcare.wallet.shl-association.v1",
+        schema: "trustcare.wallet.shl-association.v2",
         shlId,
+        packageId: String(shlId),
         status: "active",
         trustLevel: "hospital_certified",
+        appId: "trustcare-wallet-test",
         manifestCredentialId: manifest.credentialId,
+        manifestHash: `sha256:${"1".repeat(64)}`,
+        sourceBundleHash: `sha256:${"2".repeat(64)}`,
         holderPresentationId: decodeJwt(request.holderVpJwt).id as string,
+        holderPresentationJwt: request.holderVpJwt,
+        holderPresentationDigest: await walletContentHash(request.holderVpJwt),
+        holderDid: holder.did,
+        consentRef: request.consentRef,
+        context: "opd_visit",
+        purpose: "patient_summary",
+        recipient: network.issuers.TCC.issuerDid,
+        audience: `${portalOrigin}/api/wallet/v2/shl-associations/${shlId}`,
         associatedAt: now.toISOString(),
+        issuedAt: now.toISOString(),
+        expiresAt: "2026-07-11T12:05:00.000Z",
+        lifecycle: {
+          status: "active",
+          effectiveAt: now.toISOString(),
+          reasonCode: null,
+        },
         idempotent: false,
       }),
     );
@@ -536,6 +556,29 @@ describe("WalletExchangeWorkflow", () => {
     });
     expect(replay).toEqual(response);
     expect(fake.associateShlPresentation).toHaveBeenCalledTimes(1);
+
+    const recoveredPersistence = freshPersistence();
+    fake.getShlAssociation.mockResolvedValue(response);
+    const recoveredWorkflow = createWorkflow({
+      persistence: recoveredPersistence,
+      fake,
+    });
+    await recoveredWorkflow.synchronize();
+    const recovered = await recoveredWorkflow.associatePortalShlManifest({
+      manifestCredentialId: manifest.credentialId,
+      consentRef: "urn:trustcare:consent:ignored-on-recovery",
+    });
+    expect(recovered.holderPresentationJwt).toBe(
+      response.holderPresentationJwt,
+    );
+    expect(fake.associateShlPresentation).toHaveBeenCalledTimes(1);
+    expect(
+      await recoveredPersistence.getShlAssociation(manifest.credentialId),
+    ).toMatchObject({
+      status: "complete",
+      holderVpJwt: response.holderPresentationJwt,
+      response: { holderPresentationJwt: response.holderPresentationJwt },
+    });
   });
 
   it("creates a holder-signed direct VP without changing nested issuer JWT bytes", async () => {
@@ -1125,22 +1168,49 @@ function fakeClient() {
   const associateShlPresentation = vi.fn(
     async (
       shlId: number,
-      _request: {
+      request: {
         clientAssociationId: string;
         consentRef: string;
         holderVpJwt: string;
       },
       _idempotencyKey: string,
     ): Promise<WalletShlAssociation> => ({
-      schema: "trustcare.wallet.shl-association.v1",
+      schema: "trustcare.wallet.shl-association.v2",
       shlId,
+      packageId: String(shlId),
       status: "active",
       trustLevel: "hospital_certified",
+      appId: "trustcare-wallet-test",
       manifestCredentialId: "urn:trustcare:vc:shl:42",
+      manifestHash: `sha256:${"1".repeat(64)}`,
+      sourceBundleHash: `sha256:${"2".repeat(64)}`,
       holderPresentationId: "urn:uuid:holder-presentation-42",
+      holderPresentationJwt: request.holderVpJwt,
+      holderPresentationDigest: await walletContentHash(request.holderVpJwt),
+      holderDid: holder.did,
+      consentRef: request.consentRef,
+      context: "opd_visit",
+      purpose: "patient_summary",
+      recipient: network.issuers.TCC.issuerDid,
+      audience: `${portalOrigin}/api/wallet/v2/shl-associations/${shlId}`,
       associatedAt: now.toISOString(),
+      issuedAt: now.toISOString(),
+      expiresAt: "2026-07-11T12:05:00.000Z",
+      lifecycle: {
+        status: "active",
+        effectiveAt: now.toISOString(),
+        reasonCode: null,
+      },
       idempotent: false,
     }),
+  );
+  const getShlAssociation = vi.fn(
+    async (_shlId: number): Promise<WalletShlAssociation> => {
+      throw new WalletExchangeProblemError(
+        "SHL holder association was not found.",
+        { status: 404, code: "shl_association_not_found" },
+      );
+    },
   );
   return {
     client: {
@@ -1154,6 +1224,7 @@ function fakeClient() {
       getSubmissionStatus,
       requestShlCertification,
       associateShlPresentation,
+      getShlAssociation,
     } as unknown as WalletExchangeV2Client,
     syncCredentials,
     acknowledgeSync,
@@ -1165,6 +1236,7 @@ function fakeClient() {
     getSubmissionStatus,
     requestShlCertification,
     associateShlPresentation,
+    getShlAssociation,
   };
 }
 
@@ -1229,6 +1301,8 @@ function credentialRequestStatus(
         requestId: "request-item-001",
         documentType: "DischargeSummaryCredential",
         status: "requested",
+        reasonCode: "awaiting_provider_action",
+        nextAction: "wait_for_provider",
         updatedAt: "2026-07-11T12:05:00.000Z",
       },
     ],

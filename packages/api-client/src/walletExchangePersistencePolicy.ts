@@ -127,6 +127,8 @@ export class WalletExchangePersistencePolicy {
       "purpose",
       "credentialTypes",
       "documentTypes",
+      "sandboxRunId",
+      "items",
       "shlCertification",
       "createdAt",
       "updatedAt",
@@ -152,6 +154,33 @@ export class WalletExchangePersistencePolicy {
     requireStringList(link.credentialTypes, "credentialTypes");
     if (link.documentTypes !== undefined) {
       requireStringList(link.documentTypes, "documentTypes");
+    }
+    if (
+      link.sandboxRunId !== undefined &&
+      !/^sandbox:v1:[a-f0-9]{64}$/.test(link.sandboxRunId)
+    ) {
+      throw new Error("Wallet Exchange sandbox run id is invalid.");
+    }
+    if (link.items !== undefined) {
+      if (!Array.isArray(link.items)) {
+        throw new Error("Wallet Exchange request items must be an array.");
+      }
+      for (const item of link.items) {
+        assertExactKeys(item, [
+          "requestId",
+          "documentType",
+          "status",
+          "reasonCode",
+          "nextAction",
+          "updatedAt",
+        ]);
+        requireText(item.requestId, "items.requestId");
+        requireText(item.documentType, "items.documentType");
+        requireText(item.status, "items.status");
+        requireText(item.reasonCode, "items.reasonCode");
+        requireText(item.nextAction, "items.nextAction");
+        requireTimestamp(item.updatedAt, "items.updatedAt");
+      }
     }
     if (link.shlCertification !== undefined) {
       const certification = link.shlCertification;

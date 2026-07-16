@@ -441,6 +441,20 @@ export class WalletExchangeV2Client {
     );
   }
 
+  async getShlAssociation(shlId: number): Promise<WalletShlAssociation> {
+    return this.protectedJson(
+      {
+        method: "GET",
+        url: shlAssociationEndpoint(
+          this.options.contracts.discovery.endpoints.shlAssociations,
+          shlId,
+        ),
+        requestId: this.requestIdentifier(),
+      },
+      assertWalletShlAssociation,
+    );
+  }
+
   private async protectedJson<T>(
     request: ProtectedRequest,
     assertResponse: (value: unknown) => T,

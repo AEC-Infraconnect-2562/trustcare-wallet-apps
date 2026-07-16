@@ -107,7 +107,7 @@ export type WalletExchangeCredentialHistoryEntry = {
   causeEventId: string;
   reason: "replaced_by_version" | "lifecycle_status_changed";
   replacedByDocumentId?: string;
-  lifecycleStatus?: WalletSyncStatusChange["status"];
+  lifecycleStatus?: WalletDocumentRecordV2["lifecycle"]["status"];
 };
 
 export type WalletExchangeQuarantineReason =
@@ -788,6 +788,11 @@ function applyStatus(
   page: WalletExchangePreparedSyncPage,
   change: WalletExchangePreparedStatusChange,
 ): ChangeApplication {
+  const lifecycleStatus =
+    change.status === "revoked" &&
+    change.lifecycle.reasonCode === "credential_superseded"
+      ? "superseded"
+      : change.status;
   const lineage = current.lineages.find(
     (candidate) => candidate.credentialId === change.credentialId,
   );
@@ -817,28 +822,28 @@ function applyStatus(
     archivedAt: change.lifecycle.effectiveAt,
     causeEventId: change.eventId,
     reason: "lifecycle_status_changed",
-    lifecycleStatus: change.status,
+    lifecycleStatus,
   };
   const statusCheck = {
     key: "status",
     status: "failed" as const,
-    detail: `${change.status}:${change.lifecycle.reasonCode}`,
+    detail: `${lifecycleStatus}:${change.lifecycle.reasonCode}`,
     checkedAt: change.lifecycle.effectiveAt,
   };
   const updated: WalletDocumentRecordV2 = {
     ...cloneValue(existing),
     lifecycle: {
       ...existing.lifecycle,
-      status: change.status,
+      status: lifecycleStatus,
       versionId: `${existing.lifecycle.versionId}:status:${change.eventId}`,
       updatedAt: change.lifecycle.effectiveAt,
     },
     trust: {
       ...existing.trust,
       state:
-        change.status === "revoked"
+        lifecycleStatus === "revoked"
           ? "revoked"
-          : change.status === "expired"
+          : lifecycleStatus === "expired"
             ? "expired"
             : "pending",
       verifiedAt: undefined,

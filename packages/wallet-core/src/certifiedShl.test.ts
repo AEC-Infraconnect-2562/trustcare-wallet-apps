@@ -567,6 +567,64 @@ describe("Certified SHL trust-layer primitives", () => {
       }),
     ).rejects.toThrow("verification evidence time is invalid");
   });
+
+  it("evaluates a pending sharing policy in the holder-signed SHL event", async () => {
+    const verified = await documentRecord(
+      "document-policy-pending",
+      "credential-policy-pending",
+      holder.did,
+      hospitalPrivateKey,
+    );
+    const policyPending: WalletDocumentRecordV2 = {
+      ...verified,
+      trust: {
+        state: "issuer_signed_untrusted",
+        checks: verified.trust.checks.map((check) =>
+          check.key === "policy"
+            ? {
+                ...check,
+                status: "pending",
+                detail: "Evaluate against the concrete sharing event.",
+              }
+            : check,
+        ),
+      },
+    };
+
+    await expect(prepare([policyPending], holder)).resolves.toMatchObject({
+      trustMode: "holder_attested",
+      manifest: {
+        accessPolicy: {
+          purpose: "OPD registration",
+          consentRef: "consent:receipt:1",
+        },
+      },
+    });
+  });
+
+  it("keeps a failed sharing policy fail-closed", async () => {
+    const verified = await documentRecord(
+      "document-policy-failed",
+      "credential-policy-failed",
+      holder.did,
+      hospitalPrivateKey,
+    );
+    const policyFailed: WalletDocumentRecordV2 = {
+      ...verified,
+      trust: {
+        state: "issuer_signed_untrusted",
+        checks: verified.trust.checks.map((check) =>
+          check.key === "policy"
+            ? { ...check, status: "failed", detail: "Recipient denied." }
+            : check,
+        ),
+      },
+    };
+
+    await expect(prepare([policyFailed], holder)).rejects.toThrow(
+      "has not passed proof, issuer, status, expiry, and holder verification",
+    );
+  });
 });
 
 async function prepare(

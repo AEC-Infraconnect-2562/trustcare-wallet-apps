@@ -307,13 +307,32 @@ describe("Wallet Exchange v2 client", () => {
 
   it("associates an exact holder VP with a Portal-created SHL through DPoP", async () => {
     const response = {
-      schema: "trustcare.wallet.shl-association.v1" as const,
+      schema: "trustcare.wallet.shl-association.v2" as const,
       shlId: 42,
-      status: "active",
+      packageId: "42",
+      status: "active" as const,
       trustLevel: "hospital_certified" as const,
+      appId: "trustcare-wallet-test",
       manifestCredentialId: "urn:trustcare:vc:shl:42",
+      manifestHash: CONTENT_HASH,
+      sourceBundleHash: CONTENT_HASH,
       holderPresentationId: "urn:uuid:holder-presentation-42",
+      holderPresentationJwt: VP_JWT,
+      holderPresentationDigest: CONTENT_HASH,
+      holderDid: "did:key:z6MkholderForWalletExchangeTest",
+      consentRef: "urn:trustcare:consent:shl:42",
+      context: "opd_visit" as const,
+      purpose: "patient_summary",
+      recipient: "did:web:portal.example:hospital:tcc",
+      audience: `${PORTAL_ORIGIN}/api/wallet/v2/shl-associations/42`,
       associatedAt: FIXED_NOW.toISOString(),
+      issuedAt: FIXED_NOW.toISOString(),
+      expiresAt: "2026-07-11T12:10:00.000Z",
+      lifecycle: {
+        status: "active",
+        effectiveAt: FIXED_NOW.toISOString(),
+        reasonCode: null,
+      },
       idempotent: false,
     };
     const harness = await createHarness({
@@ -346,6 +365,19 @@ describe("Wallet Exchange v2 client", () => {
       htm: "POST",
       htu: `${PORTAL_ORIGIN}/api/wallet/v2/shl-associations/42`,
       ath: await calculateDpopAccessTokenHash("wxt_access_token_1"),
+    });
+
+    await expect(harness.client.getShlAssociation(42)).resolves.toEqual(
+      response,
+    );
+    const recoveryRequest = harness.protectedRequests[1]!;
+    expect(recoveryRequest.method).toBe("GET");
+    expect(recoveryRequest.body).toBeUndefined();
+    expect(recoveryRequest.headers.has("idempotency-key")).toBe(false);
+    const recoveryProof = await verifyDpop(recoveryRequest, harness.identity);
+    expect(recoveryProof.claims).toMatchObject({
+      htm: "GET",
+      htu: `${PORTAL_ORIGIN}/api/wallet/v2/shl-associations/42`,
     });
   });
 
@@ -1010,6 +1042,8 @@ function credentialRequestStatus() {
         requestId: "item-001",
         documentType: "PatientIdentityCredential",
         status: "converted_to_vc",
+        reasonCode: "credential_issued",
+        nextAction: "sync_credentials",
         updatedAt: FIXED_NOW.toISOString(),
       },
     ],

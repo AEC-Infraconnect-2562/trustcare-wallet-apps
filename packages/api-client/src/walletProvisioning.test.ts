@@ -269,6 +269,7 @@ describe("WalletProvisioningClient", () => {
       holderDid: identity.did,
       publicJwk: identity.publicJwk,
       consentRef: "wallet-consent:3cf2693d-3d7a-4d98-9f83-96027e3033b8",
+      supersedesHolderDid: null,
     });
     expect(String(calls[1]?.[1]?.body)).not.toContain('"d"');
     const completion = JSON.parse(String(calls[2]?.[1]?.body));
@@ -321,6 +322,44 @@ describe("WalletProvisioningClient", () => {
     };
     expect(forbidden).toHaveProperty("patientId", 42);
   });
+
+  it("revokes only the exact Wallet-owned holder binding without a Portal patient id", async () => {
+    const identity = await generateHolderIdentity({
+      algorithm: "P-256",
+      extractable: true,
+    });
+    const fetchImpl = sequenceFetch([
+      jsonResponse(configuration({ oidcIssuer: OIDC_ISSUER })),
+      jsonResponse({
+        schema: "trustcare.wallet.holder-binding-revocation.v1",
+        status: "revoked",
+        revokedAt: "2026-07-16T01:00:00.000Z",
+        nextAction: "restart_holder_provisioning",
+      }),
+    ]);
+    const client = new WalletProvisioningClient({
+      portalBaseUrl: PORTAL,
+      appId: APP_ID,
+      identity,
+      fetchImpl,
+    });
+
+    const result = await client.revokeHolderBinding({
+      oidcAccessToken: "wallet-oidc-access-token",
+      reason: "security_reset",
+    });
+
+    expect(result.nextAction).toBe("restart_holder_provisioning");
+    const body = JSON.parse(
+      String(vi.mocked(fetchImpl).mock.calls[1]?.[1]?.body),
+    );
+    expect(body).toEqual({
+      appId: APP_ID,
+      holderDid: identity.did,
+      reason: "security_reset",
+    });
+    expect(body).not.toHaveProperty("patientId");
+  });
 });
 
 function configuration(input: {
@@ -333,13 +372,40 @@ function configuration(input: {
       issuer: input.oidcIssuer,
       audience: "trustcare-wallet-api",
       requiredRole: "wallet_access",
+      flow: "authorization_code",
+      responseType: "code",
+      pkce: { required: true, method: "S256" },
+      discovery: input.oidcIssuer
+        ? `${input.oidcIssuer}/.well-known/openid-configuration`
+        : null,
+      authorizationEndpoint: input.oidcIssuer
+        ? `${input.oidcIssuer}/protocol/openid-connect/auth`
+        : null,
+      tokenEndpoint: input.oidcIssuer
+        ? `${input.oidcIssuer}/protocol/openid-connect/token`
+        : null,
+      revocationEndpoint: input.oidcIssuer
+        ? `${input.oidcIssuer}/protocol/openid-connect/revoke`
+        : null,
+      endSessionEndpoint: input.oidcIssuer
+        ? `${input.oidcIssuer}/protocol/openid-connect/logout`
+        : null,
       clients: { web: "trustcare-wallet-web", mobile: "trustcare-wallet-mobile" },
+      clientMetadata: {
+        web: { tokenEndpointAuthMethod: "none" },
+        mobile: {
+          tokenEndpointAuthMethod: "none",
+          redirectUri: "trustcare-wallet://oidc/callback",
+          postLogoutRedirectUri: "trustcare-wallet://oidc/logout",
+        },
+      },
     },
     endpoints: {
       identity: `${PORTAL}/api/wallet/identity`,
       provisioning: `${PORTAL}/api/wallet/provisioning`,
       holderBindingChallenge: `${PORTAL}/api/wallet/keys/challenges`,
       holderBindingCompletionTemplate: `${PORTAL}/api/wallet/keys/challenges/{challengeId}/complete`,
+      holderBindingRevocation: `${PORTAL}/api/wallet/provisioning/revocations`,
       sandboxTestLogin: null,
       sandboxTestIdentities: null,
       walletExchangeDiscovery: `${PORTAL}/api/wallet/v2`,
@@ -348,6 +414,13 @@ function configuration(input: {
       didMethod: "did:key" as const,
       algorithms: ["EdDSA", "ES256"],
       privateKeyOwner: "wallet" as const,
+      keyRecovery: {
+        policyVersion: "2026.07.wallet-holder-key-recovery.v1",
+        restoredKey: "Wallet secure backup only",
+        replacementKey: "OIDC re-authentication and holder proof",
+        oldBinding: "revoked after replacement proof succeeds",
+        crossDeviceSessionRecovery: "DPoP session is recreated",
+      },
     },
   };
 }

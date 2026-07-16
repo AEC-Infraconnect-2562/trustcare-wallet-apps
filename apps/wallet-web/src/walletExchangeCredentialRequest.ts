@@ -129,6 +129,11 @@ export function persistedCredentialRequestViewModel(
     returnChannel: "portal_wallet_exchange_v2",
     trustPolicy: "issuer_signed",
     status: link.lastKnownStatus ?? "received",
+    nextAction:
+      link.lastKnownStatus === "ready" || link.lastKnownStatus === "partial"
+        ? "sync_credentials"
+        : "wait_for_maker_checker",
+    items: link.items?.map((item) => ({ ...item })),
     createdAt: link.createdAt,
     updatedAt: link.updatedAt,
   };
@@ -188,6 +193,30 @@ export function credentialRequestNextActionLabel(
     return "เอกสารพร้อมแล้ว ให้ซิงก์เข้ากระเป๋า";
   }
   return "";
+}
+
+export function credentialRequestReasonLabel(reasonCode?: string): string {
+  const labels: Record<string, string> = {
+    awaiting_provider_action: "โรงพยาบาลกำลังเตรียมเอกสาร",
+    awaiting_maker_review: "รอเจ้าหน้าที่จัดทำเอกสาร",
+    awaiting_checker_review: "รอผู้ตรวจสอบอนุมัติ",
+    awaiting_patient_consent: "รอความยินยอมจากผู้ป่วย",
+    credential_issued: "โรงพยาบาลออกเอกสารแล้ว",
+    provider_rejected: "โรงพยาบาลไม่สามารถออกเอกสารรายการนี้",
+  };
+  return labels[String(reasonCode ?? "")] ?? "กำลังดำเนินการตามขั้นตอนของโรงพยาบาล";
+}
+
+export function credentialRequestItemNextActionLabel(
+  nextAction?: NonNullable<WalletCredentialRequestViewModel["items"]>[number]["nextAction"],
+): string {
+  const labels = {
+    wait_for_provider: "รอโรงพยาบาลดำเนินการ",
+    complete_consent: "กรุณาตรวจและยืนยันความยินยอม",
+    sync_credentials: "พร้อมซิงก์เข้ากระเป๋า",
+    review_provider_outcome: "กรุณาตรวจผลจากโรงพยาบาล",
+  } as const;
+  return nextAction ? labels[nextAction] : "";
 }
 
 function secureRandomUuid(): string {

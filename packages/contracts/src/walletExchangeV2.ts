@@ -274,6 +274,7 @@ export type WalletCredentialRequest = {
   credentialTypes: string[];
   statusUrl: string;
   nextAction: "wait_for_maker_checker";
+  sandboxRunId?: string;
   createdAt: string;
   idempotent: boolean;
 };
@@ -297,9 +298,16 @@ export type WalletCredentialRequestStatus = {
     requestId: string;
     documentType: string;
     status: WalletCredentialRequestItemState;
+    reasonCode: string;
+    nextAction:
+      | "wait_for_provider"
+      | "complete_consent"
+      | "sync_credentials"
+      | "review_provider_outcome";
     updatedAt: string;
   }>;
   nextAction: "wait_for_maker_checker" | "sync_credentials";
+  sandboxRunId?: string;
   updatedAt: string;
 };
 
@@ -367,13 +375,38 @@ export type WalletShlAssociationRequest = {
 };
 
 export type WalletShlAssociation = {
-  schema: "trustcare.wallet.shl-association.v1";
+  schema: "trustcare.wallet.shl-association.v2";
   shlId: number;
-  status: string;
+  packageId: string;
+  status:
+    | "pending_hospital_certification"
+    | "pending_holder_presentation"
+    | "active"
+    | "suspended"
+    | "revoked"
+    | "expired";
   trustLevel: "hospital_certified" | "pending";
+  appId: string | null;
   manifestCredentialId: string | null;
+  manifestHash: string | null;
+  sourceBundleHash: string | null;
   holderPresentationId: string;
+  holderPresentationJwt: string;
+  holderPresentationDigest: string;
+  holderDid: string;
+  consentRef: string | null;
+  context: WalletExchangeServiceContext | null;
+  purpose: string | null;
+  recipient: string | null;
+  audience: string | null;
   associatedAt: string;
+  issuedAt: string;
+  expiresAt: string | null;
+  lifecycle: {
+    status: string;
+    effectiveAt: string;
+    reasonCode: string | null;
+  };
   idempotent: boolean;
 };
 
@@ -581,7 +614,7 @@ export function assertWalletCredentialRequest(value: unknown): WalletCredentialR
   const contract = "WalletCredentialRequest";
   const issues: TrustCareValidationIssue[] = [];
   const object = rootObject(value, contract);
-  exactKeys(object, ["schema", "requestId", "clientRequestId", "status", "credentialTypes", "statusUrl", "nextAction", "createdAt", "idempotent"], "$", issues);
+  exactKeys(object, ["schema", "requestId", "clientRequestId", "status", "credentialTypes", "statusUrl", "nextAction", "sandboxRunId", "createdAt", "idempotent"], "$", issues);
   literalString(object, "schema", "trustcare.wallet.credential-request.v1", "$", issues);
   pathSafeString(object, "requestId", "$", issues, 1, 100);
   pathSafeString(object, "clientRequestId", "$", issues, 1, 100);
@@ -589,6 +622,7 @@ export function assertWalletCredentialRequest(value: unknown): WalletCredentialR
   stringArray(object.credentialTypes, "$.credentialTypes", issues, 1, 24, 1, 100);
   absoluteUrlString(object, "statusUrl", "$", issues);
   literalString(object, "nextAction", "wait_for_maker_checker", "$", issues);
+  optionalSandboxRunId(object, "sandboxRunId", "$", issues);
   isoDateString(object, "createdAt", "$", issues);
   booleanValue(object, "idempotent", "$", issues);
   return finish(contract, value, issues);
@@ -598,7 +632,7 @@ export function assertWalletCredentialRequestStatus(value: unknown): WalletCrede
   const contract = "WalletCredentialRequestStatus";
   const issues: TrustCareValidationIssue[] = [];
   const object = rootObject(value, contract);
-  exactKeys(object, ["schema", "requestId", "clientRequestId", "status", "items", "nextAction", "updatedAt"], "$", issues);
+  exactKeys(object, ["schema", "requestId", "clientRequestId", "status", "items", "nextAction", "sandboxRunId", "updatedAt"], "$", issues);
   literalString(object, "schema", "trustcare.wallet.credential-request-status.v1", "$", issues);
   pathSafeString(object, "requestId", "$", issues, 1, 100);
   pathSafeString(object, "clientRequestId", "$", issues, 1, 100);
@@ -612,6 +646,7 @@ export function assertWalletCredentialRequestStatus(value: unknown): WalletCrede
   if (object.status !== "ready" && object.status !== "partial" && object.nextAction !== "wait_for_maker_checker") {
     issue(issues, "$.nextAction", "must wait for Maker/Checker until credentials are ready");
   }
+  optionalSandboxRunId(object, "sandboxRunId", "$", issues);
   isoDateString(object, "updatedAt", "$", issues);
   return finish(contract, value, issues);
 }
@@ -679,11 +714,26 @@ export function assertWalletShlAssociation(
     [
       "schema",
       "shlId",
+      "packageId",
       "status",
       "trustLevel",
+      "appId",
       "manifestCredentialId",
+      "manifestHash",
+      "sourceBundleHash",
       "holderPresentationId",
+      "holderPresentationJwt",
+      "holderPresentationDigest",
+      "holderDid",
+      "consentRef",
+      "context",
+      "purpose",
+      "recipient",
+      "audience",
       "associatedAt",
+      "issuedAt",
+      "expiresAt",
+      "lifecycle",
       "idempotent",
     ],
     "$",
@@ -692,12 +742,26 @@ export function assertWalletShlAssociation(
   literalString(
     object,
     "schema",
-    "trustcare.wallet.shl-association.v1",
+    "trustcare.wallet.shl-association.v2",
     "$",
     issues,
   );
   integer(object, "shlId", "$", issues, 1);
-  nonEmptyString(object, "status", "$", issues, 1, 80);
+  nonEmptyString(object, "packageId", "$", issues, 1, 255);
+  enumString(
+    object,
+    "status",
+    [
+      "pending_hospital_certification",
+      "pending_holder_presentation",
+      "active",
+      "suspended",
+      "revoked",
+      "expired",
+    ],
+    "$",
+    issues,
+  );
   enumString(
     object,
     "trustLevel",
@@ -705,9 +769,45 @@ export function assertWalletShlAssociation(
     "$",
     issues,
   );
+  nullableString(object, "appId", "$", issues, 1, 128);
   nullableString(object, "manifestCredentialId", "$", issues, 1, 500);
+  nullableSha256String(object, "manifestHash", "$", issues);
+  nullableSha256String(object, "sourceBundleHash", "$", issues);
   nonEmptyString(object, "holderPresentationId", "$", issues, 1, 255);
+  compactJwtString(object, "holderPresentationJwt", "$", issues, 80, 1_500_000);
+  sha256String(object, "holderPresentationDigest", "$", issues);
+  didKeyString(object, "holderDid", "$", issues, 700);
+  nullableString(object, "consentRef", "$", issues, 1, 255);
+  if (object.context !== null) {
+    enumString(object, "context", WALLET_EXCHANGE_V2_CONTEXTS, "$", issues);
+  }
+  nullableString(object, "purpose", "$", issues, 1, 500);
+  nullableString(object, "recipient", "$", issues, 1, 700);
+  nullableAbsoluteUrlString(object, "audience", "$", issues);
   isoDateString(object, "associatedAt", "$", issues);
+  isoDateString(object, "issuedAt", "$", issues);
+  nullableIsoDateString(object, "expiresAt", "$", issues);
+  const lifecycle = nestedObject(object.lifecycle, "$.lifecycle", issues);
+  if (lifecycle) {
+    exactKeys(
+      lifecycle,
+      ["status", "effectiveAt", "reasonCode"],
+      "$.lifecycle",
+      issues,
+    );
+    nonEmptyString(lifecycle, "status", "$.lifecycle", issues, 1, 80);
+    isoDateString(lifecycle, "effectiveAt", "$.lifecycle", issues);
+    nullableString(lifecycle, "reasonCode", "$.lifecycle", issues, 1, 100);
+    if (lifecycle.status !== object.status) {
+      issue(issues, "$.lifecycle.status", "must equal the SHL status");
+    }
+  }
+  if (
+    (object.status === "active") !==
+    (object.trustLevel === "hospital_certified")
+  ) {
+    issue(issues, "$.trustLevel", "must reflect the active SHL lifecycle");
+  }
   booleanValue(object, "idempotent", "$", issues);
   return finish(contract, value, issues);
 }
@@ -932,10 +1032,23 @@ function validateCredentialProof(value: unknown, path: string, issues: TrustCare
 function validateCredentialRequestItem(value: unknown, path: string, issues: TrustCareValidationIssue[]) {
   const object = nestedObject(value, path, issues);
   if (!object) return;
-  exactKeys(object, ["requestId", "documentType", "status", "updatedAt"], path, issues);
+  exactKeys(object, ["requestId", "documentType", "status", "reasonCode", "nextAction", "updatedAt"], path, issues);
   pathSafeString(object, "requestId", path, issues, 1, 100);
   nonEmptyString(object, "documentType", path, issues, 1, 100);
   enumString(object, "status", ["draft", "pending_consent", "requested", "imported", "needs_review", "converted_to_vc", "rejected", "cancelled"], path, issues);
+  nonEmptyString(object, "reasonCode", path, issues, 1, 100);
+  enumString(
+    object,
+    "nextAction",
+    [
+      "wait_for_provider",
+      "complete_consent",
+      "sync_credentials",
+      "review_provider_outcome",
+    ],
+    path,
+    issues,
+  );
   isoDateString(object, "updatedAt", path, issues);
 }
 
@@ -1115,6 +1228,41 @@ function regexString(object: Record<string, unknown>, key: string, pattern: RegE
 
 function sha256String(object: Record<string, unknown>, key: string, path: string, issues: TrustCareValidationIssue[]) {
   regexString(object, key, /^sha256:[a-f0-9]{64}$/, path, issues, "must be a lowercase sha256: digest");
+}
+
+function nullableSha256String(
+  object: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: TrustCareValidationIssue[],
+) {
+  if (object[key] !== null) sha256String(object, key, path, issues);
+}
+
+function optionalSandboxRunId(
+  object: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: TrustCareValidationIssue[],
+) {
+  if (object[key] === undefined) return;
+  regexString(
+    object,
+    key,
+    /^sandbox:v1:[a-f0-9]{64}$/,
+    path,
+    issues,
+    "must be an opaque sandbox:v1 namespace",
+  );
+}
+
+function nullableAbsoluteUrlString(
+  object: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: TrustCareValidationIssue[],
+) {
+  if (object[key] !== null) absoluteUrlString(object, key, path, issues, 2_000);
 }
 
 function gitCommitString(object: Record<string, unknown>, key: string, path: string, issues: TrustCareValidationIssue[]) {
