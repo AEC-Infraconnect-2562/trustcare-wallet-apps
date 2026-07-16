@@ -3,6 +3,7 @@ import {
   assertTrustCareDirectPresentation,
   buildClinicalDocumentGraphPresentation,
   createHolderSignedDirectVp,
+  createHolderSignedShlAssociationVp,
   durableShlCertificationBinding,
   finalizeCertifiedShl,
   finalizeShlCertificationAssociation,
@@ -26,16 +27,18 @@ import {
   type WalletClinicalDocumentGraphState,
   type WalletClinicalDocumentGraphSyncReduction,
 } from "@trustcare/wallet-core";
-import type {
-  ClinicalDocumentGraphPresentation,
-  WalletCredentialRequest,
-  WalletCredentialRequestInput,
-  WalletCredentialRequestStatus,
-  WalletExchangeHospitalCode,
-  WalletExchangeServiceContext,
-  WalletShareGatewayBinding,
-  WalletSubmission,
-  WalletSubmissionRequest,
+import {
+  WALLET_EXCHANGE_V2_CONTEXTS,
+  type ClinicalDocumentGraphPresentation,
+  type WalletCredentialRequest,
+  type WalletCredentialRequestInput,
+  type WalletCredentialRequestStatus,
+  type WalletExchangeHospitalCode,
+  type WalletExchangeServiceContext,
+  type WalletShlAssociation,
+  type WalletShareGatewayBinding,
+  type WalletSubmission,
+  type WalletSubmissionRequest,
 } from "@trustcare/contracts";
 import {
   decodeJwt,
@@ -135,6 +138,22 @@ export type WalletExchangePendingSubmissionDraft = {
   createdAt: string;
 };
 
+export type WalletExchangeShlAssociationRecord = {
+  schema: "trustcare.wallet.shl-association-outbox.v1";
+  manifestCredentialId: string;
+  shlId: number;
+  clientAssociationId: string;
+  consentRef: string;
+  idempotencyKey: string;
+  holderPresentationId: string;
+  holderVpJwt: string;
+  requestDigest: `sha256:${string}`;
+  status: "pending" | "complete";
+  response?: WalletShlAssociation;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export interface WalletExchangePersistencePort {
   readonly partition: WalletExchangePartition;
   configureTrustedIssuers(issuerDids: readonly string[]): void;
@@ -172,6 +191,16 @@ export interface WalletExchangePersistencePort {
   completePendingSubmission(
     draft: WalletExchangePendingSubmissionDraft,
     link: WalletExchangeSubmissionLink,
+  ): Promise<void>;
+  savePendingShlAssociation(
+    record: WalletExchangeShlAssociationRecord,
+  ): Promise<void>;
+  getShlAssociation(
+    manifestCredentialId: string,
+  ): Promise<WalletExchangeShlAssociationRecord | null>;
+  completeShlAssociation(
+    pending: WalletExchangeShlAssociationRecord,
+    response: WalletShlAssociation,
   ): Promise<void>;
 }
 
@@ -212,6 +241,15 @@ export type WalletMissingCredentialRequestInput = {
   consentRef: string;
   documentTypes: string[];
   notes?: string;
+};
+
+export type PortalShlAssociationInput = {
+  /** Exact Portal-issued Manifest VC id already present in the verified store. */
+  manifestCredentialId: string;
+  /** Consent receipt created only after the holder confirms this association. */
+  consentRef: string;
+  clientAssociationId?: string;
+  presentationId?: string;
 };
 
 const allScopes = [
@@ -634,6 +672,8 @@ export class WalletExchangeWorkflow {
         ...page,
         requestCursor,
         ackIdempotencyKey,
+        requestId: client.lastResponseTrace?.requestId,
+        correlationId: client.lastResponseTrace?.correlationId,
         changes,
       });
       await this.options.persistence.commitSyncReduction(reduction);
@@ -719,6 +759,169 @@ export class WalletExchangeWorkflow {
       graphContract: contracts.clinicalDocumentGraph.payload,
       selectedArtifactId,
       now: this.options.now?.(),
+    });
+  }
+
+  async associatePortalShlManifest(
+    input: PortalShlAssociationInput,
+  ): Promise<WalletShlAssociation> {
+    rejectPatientId(input);
+    const [contracts, state, issuers] = await Promise.all([
+      this.contracts(),
+      this.options.persistence.loadOrCreateState(),
+      this.issuers(),
+    ]);
+    const document = state.documents.find(
+      (candidate) =>
+        candidate.credential.credentialId === input.manifestCredentialId,
+    );
+    if (
+      !document ||
+      document.documentType !== "shl_manifest" ||
+      !document.credential.jwt ||
+      document.owner.id !== this.options.identity.did ||
+      !isVerifiedManifestAssociationSource(document)
+    ) {
+      throw new TrustCareApiError(
+        "A verified Portal Manifest Credential for this holder is required.",
+        { code: "shl_manifest_credential_unavailable" },
+      );
+    }
+
+    const payload = decodeJwt(document.credential.jwt);
+    const issuerDid = trustCareCredentialIssuerDid(payload.issuer);
+    const issuer = issuers.find(
+      (candidate) => candidate.issuerDid === issuerDid,
+    );
+    if (!issuer) {
+      throw new TrustCareApiError(
+        "Manifest Credential issuer is not in the live Portal trust registry.",
+        { code: "shl_manifest_issuer_unresolved" },
+      );
+    }
+    const verification = await verifyPortalHospitalCredentialJwt({
+      jwt: document.credential.jwt,
+      issuer,
+      expectedHolderDid: this.options.identity.did,
+      profile: "shl_manifest_credential",
+      now: this.options.now?.(),
+      fetchImpl: this.options.fetchImpl,
+    });
+    if (!verification.verified || verification.status !== "active") {
+      throw new TrustCareApiError(
+        verification.errors.join(", ") ||
+          "Manifest Credential verification failed.",
+        { code: "shl_manifest_credential_invalid" },
+      );
+    }
+
+    const subject = isRecord(payload.credentialSubject)
+      ? payload.credentialSubject
+      : undefined;
+    const claims = isRecord(subject?.data) ? subject.data : undefined;
+    const shlId = Number(claims?.smartHealthLinkId);
+    const context = claims?.context;
+    const purpose = claims?.purpose;
+    const manifestHash = claims?.manifestHash;
+    const sourceBundleHash = claims?.sourceBundleHash;
+    if (
+      !Number.isInteger(shlId) ||
+      shlId < 1 ||
+      typeof context !== "string" ||
+      !WALLET_EXCHANGE_V2_CONTEXTS.includes(
+        context as WalletExchangeServiceContext,
+      ) ||
+      typeof purpose !== "string" ||
+      !purpose.trim() ||
+      typeof manifestHash !== "string" ||
+      !/^sha256:[0-9a-f]{64}$/.test(manifestHash) ||
+      typeof sourceBundleHash !== "string" ||
+      !/^sha256:[0-9a-f]{64}$/.test(sourceBundleHash)
+    ) {
+      throw new TrustCareApiError(
+        "Manifest Credential is missing the signed SHL association binding.",
+        { code: "shl_manifest_binding_invalid" },
+      );
+    }
+
+    const endpoint = shlAssociationEndpoint(
+      contracts.discovery.endpoints.shlAssociations,
+      shlId,
+    );
+    const existing = await this.options.persistence.getShlAssociation(
+      input.manifestCredentialId,
+    );
+    if (existing) {
+      if (
+        existing.shlId !== shlId ||
+        existing.manifestCredentialId !== input.manifestCredentialId
+      ) {
+        throw new TrustCareApiError(
+          "Stored SHL association belongs to different signed objects.",
+          { code: "shl_association_outbox_conflict" },
+        );
+      }
+      if (existing.status === "complete" && existing.response) {
+        return existing.response;
+      }
+      return this.sendPendingShlAssociation(existing, {
+        manifestCredentialJwt: document.credential.jwt,
+        recipient: issuerDid,
+        context: context as WalletExchangeServiceContext,
+        purpose,
+        manifestHash: manifestHash as `sha256:${string}`,
+        sourceBundleHash: sourceBundleHash as `sha256:${string}`,
+      });
+    }
+    const clientAssociationId =
+      input.clientAssociationId ?? `wallet-shl-association-${shlId}`;
+    const presentation = await createHolderSignedShlAssociationVp({
+      identity: this.options.identity,
+      audience: endpoint,
+      recipient: issuerDid,
+      context: context as WalletExchangeServiceContext,
+      purpose,
+      consentRef: input.consentRef,
+      shlId,
+      manifestHash: manifestHash as `sha256:${string}`,
+      sourceBundleHash: sourceBundleHash as `sha256:${string}`,
+      manifestCredentialId: input.manifestCredentialId,
+      manifestCredentialJwt: document.credential.jwt,
+      presentationId: input.presentationId,
+      now: this.options.now?.(),
+    });
+    const idempotencyKey = await deterministicIdempotencyKey(
+      "shl-association",
+      `${this.options.identity.did}\u0000${clientAssociationId}\u0000${input.manifestCredentialId}\u0000${input.consentRef}`,
+    );
+    const requestBody = JSON.stringify({
+      clientAssociationId,
+      consentRef: input.consentRef,
+      holderVpJwt: presentation.vpJwt,
+    });
+    const createdAt = (this.options.now?.() ?? new Date()).toISOString();
+    const pending: WalletExchangeShlAssociationRecord = {
+      schema: "trustcare.wallet.shl-association-outbox.v1",
+      manifestCredentialId: input.manifestCredentialId,
+      shlId,
+      clientAssociationId,
+      consentRef: input.consentRef,
+      idempotencyKey,
+      holderPresentationId: presentation.payload.id,
+      holderVpJwt: presentation.vpJwt,
+      requestDigest: await sha256Digest(requestBody),
+      status: "pending",
+      createdAt,
+      updatedAt: createdAt,
+    };
+    await this.options.persistence.savePendingShlAssociation(pending);
+    return this.sendPendingShlAssociation(pending, {
+      manifestCredentialJwt: document.credential.jwt,
+      recipient: issuerDid,
+      context: context as WalletExchangeServiceContext,
+      purpose,
+      manifestHash: manifestHash as `sha256:${string}`,
+      sourceBundleHash: sourceBundleHash as `sha256:${string}`,
     });
   }
 
@@ -1144,6 +1347,137 @@ export class WalletExchangeWorkflow {
     return response;
   }
 
+  private async sendPendingShlAssociation(
+    pending: WalletExchangeShlAssociationRecord,
+    binding: {
+      manifestCredentialJwt: string;
+      recipient: string;
+      context: WalletExchangeServiceContext;
+      purpose: string;
+      manifestHash: `sha256:${string}`;
+      sourceBundleHash: `sha256:${string}`;
+    },
+  ): Promise<WalletShlAssociation> {
+    const request = {
+      clientAssociationId: pending.clientAssociationId,
+      consentRef: pending.consentRef,
+      holderVpJwt: pending.holderVpJwt,
+    };
+    if ((await sha256Digest(JSON.stringify(request))) !== pending.requestDigest) {
+      throw new TrustCareApiError(
+        "Durable SHL association request no longer matches its signed bytes.",
+        { code: "shl_association_outbox_invalid" },
+      );
+    }
+    await this.assertPendingShlAssociation(pending, binding);
+    const response = await (
+      await this.client()
+    ).associateShlPresentation(
+      pending.shlId,
+      request,
+      pending.idempotencyKey,
+    );
+    if (
+      response.shlId !== pending.shlId ||
+      response.manifestCredentialId !== pending.manifestCredentialId ||
+      response.holderPresentationId !== pending.holderPresentationId
+    ) {
+      throw new TrustCareApiError(
+        "Portal returned an SHL association for different signed objects.",
+        { code: "shl_association_response_invalid" },
+      );
+    }
+    await this.options.persistence.completeShlAssociation(pending, response);
+    return response;
+  }
+
+  private async assertPendingShlAssociation(
+    pending: WalletExchangeShlAssociationRecord,
+    binding: {
+      manifestCredentialJwt: string;
+      recipient: string;
+      context: WalletExchangeServiceContext;
+      purpose: string;
+      manifestHash: `sha256:${string}`;
+      sourceBundleHash: `sha256:${string}`;
+    },
+  ): Promise<void> {
+    const contracts = await this.contracts();
+    const audience = shlAssociationEndpoint(
+      contracts.discovery.endpoints.shlAssociations,
+      pending.shlId,
+    );
+    const header = decodeProtectedHeader(pending.holderVpJwt);
+    const key = await importJWK(
+      this.options.identity.publicJwk,
+      this.options.identity.jwsAlgorithm,
+    );
+    let payload: Record<string, unknown>;
+    try {
+      const verified = await compactVerify(pending.holderVpJwt, key, {
+        algorithms: [this.options.identity.jwsAlgorithm],
+      });
+      payload = JSON.parse(new TextDecoder().decode(verified.payload));
+    } catch {
+      throw new TrustCareApiError(
+        "Durable SHL association no longer contains a valid holder-signed VP.",
+        { code: "shl_association_outbox_invalid" },
+      );
+    }
+
+    let direct: ReturnType<typeof assertTrustCareDirectPresentation>;
+    try {
+      direct = assertTrustCareDirectPresentation({
+        payload,
+        expectedHolderDid: this.options.identity.did,
+        expectedAudience: audience,
+        expectedRecipient: binding.recipient,
+        expectedPurpose: binding.purpose,
+        expectedConsentRef: pending.consentRef,
+        now: this.options.now?.(),
+      });
+    } catch {
+      throw new TrustCareApiError(
+        "Durable SHL association holder binding is invalid or expired.",
+        { code: "shl_association_outbox_invalid" },
+      );
+    }
+
+    const shl = isRecord(direct.trustcare.shl)
+      ? direct.trustcare.shl
+      : undefined;
+    if (
+      header.typ !== "vp+jwt" ||
+      header.cty !== "vp" ||
+      header.kid !== this.options.identity.kid ||
+      direct.presentationId !== pending.holderPresentationId ||
+      !Array.isArray(payload.type) ||
+      !payload.type.includes("TrustcareShlAssociationPresentation") ||
+      direct.trustcare.context !== binding.context ||
+      shl?.packageId !== String(pending.shlId) ||
+      shl?.manifestCredentialId !== pending.manifestCredentialId ||
+      shl?.manifestHash !== binding.manifestHash ||
+      shl?.sourceBundleHash !== binding.sourceBundleHash ||
+      direct.credentialJwts.length !== 1 ||
+      direct.credentialJwts[0] !== binding.manifestCredentialJwt
+    ) {
+      throw new TrustCareApiError(
+        "Durable SHL association does not match its signed Manifest Credential.",
+        { code: "shl_association_outbox_invalid" },
+      );
+    }
+    const manifest = decodeJwt(direct.credentialJwts[0]);
+    if (
+      manifest.id !== pending.manifestCredentialId ||
+      trustCareCredentialIssuerDid(manifest.issuer) !== binding.recipient
+    ) {
+      throw new TrustCareApiError(
+        "Durable SHL association contains a different Manifest Credential.",
+        { code: "shl_association_outbox_invalid" },
+      );
+    }
+  }
+
   private async assertPendingDirectPresentation(
     draft: WalletExchangePendingSubmissionDraft,
   ): Promise<void> {
@@ -1374,6 +1708,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && Boolean(value.trim());
+}
+
+function shlAssociationEndpoint(template: string, shlId: number): string {
+  const encoded = String(shlId);
+  return template.includes("{shlId}")
+    ? template.replace("{shlId}", encoded)
+    : `${template.replace(/\/+$/, "")}/${encoded}`;
+}
+
+function isVerifiedManifestAssociationSource(
+  document: WalletExchangeState["documents"][number],
+): boolean {
+  if (
+    document.trust.state !== "verified" &&
+    document.trust.state !== "issuer_signed_untrusted"
+  ) {
+    return false;
+  }
+  const checks = new Map(
+    document.trust.checks.map((check) => [check.key, check.status] as const),
+  );
+  return (
+    ["proof", "issuer", "status", "expiry", "holder"].every(
+      (key) => checks.get(key) === "passed",
+    ) && checks.get("policy") !== "failed"
+  );
 }
 
 async function deterministicIdempotencyKey(

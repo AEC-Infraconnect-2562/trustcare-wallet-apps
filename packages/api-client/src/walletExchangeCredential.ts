@@ -125,13 +125,11 @@ export async function verifyWalletExchangeContentHash(
   change: WalletSyncUpsertChange,
 ): Promise<boolean> {
   if (!/^sha256:[a-f0-9]{64}$/.test(change.contentHash)) return false;
-  const digest = await sha256Hex(
-    canonicalJson({
-      credentialData: change.credential.credentialData,
-      proofJwt: change.credential.proof?.jwt ?? null,
-      status: change.status,
-    }),
-  );
+  const compactJws = change.credential.proof?.jwt;
+  if (!compactJws || compactJws.split(".").length !== 3) return false;
+  // Wallet Exchange v2.1 defines contentHash over the exact UTF-8 bytes of
+  // the compact JWS. Do not parse, normalize, or reserialize the signed VC.
+  const digest = await sha256Hex(compactJws);
   return (
     change.contentHash === `sha256:${digest}` &&
     change.credential.contentHash === change.contentHash
@@ -262,9 +260,32 @@ function hasCanonicalRenderBlocks(
   const humanDocument = objectRecord(data.humanDocument);
   if (Object.keys(humanDocument).length === 0) return false;
   const renderData = objectRecord(humanDocument.renderData);
-  const content = Object.keys(renderData).length > 0 ? renderData : humanDocument;
-  return requiredBlocks.every(
-    (block) => Object.keys(objectRecord(content[block])).length > 0,
+  return requiredBlocks.every((block) =>
+    hasRequiredRenderBlock(block, humanDocument, renderData),
+  );
+}
+
+function hasRequiredRenderBlock(
+  block: string,
+  humanDocument: Record<string, unknown>,
+  renderData: Record<string, unknown>,
+): boolean {
+  if (
+    Object.keys(objectRecord(humanDocument[block])).length > 0 ||
+    Object.keys(objectRecord(renderData[block])).length > 0
+  ) {
+    return true;
+  }
+  const flattened =
+    Object.keys(renderData).length > 0 ? renderData : humanDocument;
+  // Portal Wallet contract v4 publishes its logical `document` block as a
+  // flattened, signed renderData document. Accept only the complete known
+  // shape; never invent a title/layout or accept an arbitrary object.
+  return (
+    block === "document" &&
+    Boolean(stringValue(flattened.titleTh) || stringValue(flattened.titleEn)) &&
+    Boolean(stringValue(flattened.layout)) &&
+    Boolean(stringValue(flattened.rendererVersion))
   );
 }
 
@@ -298,6 +319,12 @@ function signedCredentialTypeMatches(
 
 function documentTypeFromCredentialType(value: string): string | null {
   const withoutSuffix = value.replace(/Credential$/i, "");
+  // The certified SHL profile has a TrustCare namespace in its W3C type.
+  // Keep this wire-profile alias here instead of broadening the canonical
+  // document aliases with an issuer-specific credential class name.
+  if (/^TrustCareShlManifest$/i.test(withoutSuffix)) {
+    return "shl_manifest";
+  }
   const snakeCase = withoutSuffix.replace(/([a-z0-9])([A-Z])/g, "$1_$2");
   return normalizeDocumentType(snakeCase);
 }
@@ -310,10 +337,20 @@ function signedDocumentTitle(
   const data = objectRecord(subject.data);
   const humanDocument = objectRecord(data.humanDocument);
   const renderData = objectRecord(humanDocument.renderData);
-  const document = objectRecord(renderData.document);
+  const document = {
+    ...objectRecord(humanDocument.document),
+    ...objectRecord(renderData.document),
+  };
   return {
-    th: stringValue(document.titleTh) ?? fallback,
-    en: stringValue(document.titleEn),
+    th:
+      stringValue(renderData.titleTh) ??
+      stringValue(humanDocument.titleTh) ??
+      stringValue(document.titleTh) ??
+      fallback,
+    en:
+      stringValue(renderData.titleEn) ??
+      stringValue(humanDocument.titleEn) ??
+      stringValue(document.titleEn),
   };
 }
 
@@ -340,19 +377,4 @@ async function sha256Hex(value: string): Promise<string> {
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(
     "",
   );
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .filter((key) => record[key] !== undefined)
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
 }

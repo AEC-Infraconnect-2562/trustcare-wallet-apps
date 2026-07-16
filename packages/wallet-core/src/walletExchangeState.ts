@@ -57,6 +57,9 @@ export type WalletExchangePreparedSyncPage = Omit<WalletSyncPage, "changes"> & {
   requestCursor?: string;
   /** Stable across retries, including retries after a renewed session. */
   ackIdempotencyKey: string;
+  /** Transport trace retained for audit/quarantine without affecting wire data. */
+  requestId?: string;
+  correlationId?: string;
   changes: WalletExchangePreparedChange[];
 };
 
@@ -139,6 +142,8 @@ export type WalletExchangeQuarantineEntry = {
   holderDid?: string;
   lineageKey?: string;
   document?: WalletDocumentRecordV2;
+  requestId?: string;
+  correlationId?: string;
 };
 
 export type WalletExchangeLineage = {
@@ -703,6 +708,12 @@ function applyUpsert(
     const sameVersion =
       existing.lifecycle.versionId === document.lifecycle.versionId;
     if (sameVersion) {
+      // The compact JWS hash is the signed object identity. Repeated outbox
+      // events can legitimately carry a later transport occurredAt value,
+      // which changes normalized provenance but not the credential itself.
+      if (lineage?.contentHash === change.contentHash) {
+        return unchangedApplication(current, "already_current");
+      }
       if (stableJson(existing) === stableJson(document)) {
         return unchangedApplication(current, "already_current");
       }
@@ -1042,6 +1053,8 @@ function quarantineEntry(
     holderDid: upsert?.credential.holderDid,
     lineageKey: upsert?.credential.lineageKey,
     document: upsert?.document ? cloneValue(upsert.document) : undefined,
+    requestId: page.requestId,
+    correlationId: page.correlationId,
   };
 }
 

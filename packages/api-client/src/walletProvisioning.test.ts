@@ -1,16 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   generateHolderIdentity,
+  sandboxHolderIdentityForUser,
   type HolderSigningIdentity,
 } from "@trustcare/wallet-core";
 import {
   WalletProvisioningClient,
   WalletProvisioningProblemError,
+  type WalletProvisioningConfiguration,
 } from "./walletProvisioning";
 
 const PORTAL =
   "https://trustcare-hospital-network-production.up.railway.app";
 const APP_ID = "trustcare-wallet-production";
+const OIDC_ISSUER = "https://iam.example/realms/trustcare-wallet";
+const NOW = new Date("2026-07-16T01:00:00.000Z");
 
 describe("WalletProvisioningClient", () => {
   it("reloads the live configuration without cache or invented sandbox endpoints", async () => {
@@ -67,6 +71,151 @@ describe("WalletProvisioningClient", () => {
     await expect(client.sandboxTestLogin("demo-patient-001")).rejects.toBeInstanceOf(
       WalletProvisioningProblemError,
     );
+  });
+
+  it("accepts an opaque sandbox catalog generation after schema validation", async () => {
+    const holder = await sandboxHolderIdentityForUser({
+      userId: "demo-patient-004",
+      sandboxRuntime: true,
+    });
+    expect(holder).toBeDefined();
+    const config = configuration({ oidcIssuer: null });
+    config.endpoints.sandboxTestIdentities = `${PORTAL}/api/wallet/test-identities`;
+    const linked = linkedCatalogIdentity(holder!);
+    const client = new WalletProvisioningClient({
+      portalBaseUrl: PORTAL,
+      appId: APP_ID,
+      fetchImpl: sequenceFetch([
+        jsonResponse(config),
+        jsonResponse({
+          schema: "trustcare.wallet.test-identities.v1",
+          catalogVersion: "2026.07.test-identities.v7",
+          identities: [{ ...linked, futureOptionalLabel: "preserved" }],
+          futureCatalogMetadata: { optional: true },
+        }),
+      ]),
+    });
+
+    const catalog = await client.loadSandboxTestIdentityCatalog();
+
+    expect(catalog.catalogVersion).toBe("2026.07.test-identities.v7");
+    expect(catalog.extensions).toEqual({
+      futureCatalogMetadata: { optional: true },
+    });
+    expect(catalog.identities[0]).toMatchObject({
+      walletUserId: "demo-patient-004",
+      portraitUrl: `${PORTAL}/seed-avatars/patient-004.jpg`,
+      holder: {
+        did: holder!.did,
+        publicJwk: holder!.publicJwk,
+        privateKeyOwner: "wallet",
+      },
+      extensions: { futureOptionalLabel: "preserved" },
+    });
+  });
+
+  it("validates every required sandbox OIDC access-token claim", async () => {
+    const config = configuration({ oidcIssuer: OIDC_ISSUER });
+    config.endpoints.sandboxTestLogin = `${PORTAL}/api/wallet/test-login`;
+    const client = new WalletProvisioningClient({
+      portalBaseUrl: PORTAL,
+      appId: APP_ID,
+      fetchImpl: sequenceFetch([
+        jsonResponse(config),
+        jsonResponse(sandboxTokenResponse(sandboxTokenClaims())),
+      ]),
+      now: () => NOW,
+    });
+
+    const token = await client.sandboxTestLogin("demo-patient-001");
+
+    expect(token).toMatchObject({
+      tokenType: "Bearer",
+      testOnly: true,
+      username: "demo-patient-001",
+    });
+  });
+
+  it.each([
+    ["issuer", (claims: Record<string, any>) => (claims.iss = "https://attacker.example")],
+    ["audience", (claims: Record<string, any>) => (claims.aud = ["wrong-api"])],
+    ["authorized party", (claims: Record<string, any>) => (claims.azp = "unknown-client")],
+    ["subject", (claims: Record<string, any>) => delete claims.sub],
+    ["expiry", (claims: Record<string, any>) => (claims.exp = 1)],
+    ["wallet role", (claims: Record<string, any>) => (claims.realm_access.roles = ["patient"])],
+  ])("rejects a sandbox OIDC token with wrong %s", async (_label, mutate) => {
+    const claims = sandboxTokenClaims();
+    mutate(claims);
+    const config = configuration({ oidcIssuer: OIDC_ISSUER });
+    config.endpoints.sandboxTestLogin = `${PORTAL}/api/wallet/test-login`;
+    const client = new WalletProvisioningClient({
+      portalBaseUrl: PORTAL,
+      appId: APP_ID,
+      fetchImpl: sequenceFetch([
+        jsonResponse(config),
+        jsonResponse(sandboxTokenResponse(claims)),
+      ]),
+      now: () => NOW,
+    });
+
+    await expect(client.sandboxTestLogin("demo-patient-001")).rejects.toMatchObject({
+      code: "wallet_provisioning_contract_invalid",
+    });
+  });
+
+  it("rejects a catalog holder DID that is not derived from its public JWK", async () => {
+    const holder = await sandboxHolderIdentityForUser({
+      userId: "demo-patient-004",
+      sandboxRuntime: true,
+    });
+    const config = configuration({ oidcIssuer: null });
+    config.endpoints.sandboxTestIdentities = `${PORTAL}/api/wallet/test-identities`;
+    const linked = linkedCatalogIdentity(holder!);
+    linked.holder.did = "did:key:z6MkWrongCatalogHolder";
+    const client = new WalletProvisioningClient({
+      portalBaseUrl: PORTAL,
+      appId: APP_ID,
+      fetchImpl: sequenceFetch([
+        jsonResponse(config),
+        jsonResponse({
+          schema: "trustcare.wallet.test-identities.v1",
+          catalogVersion: "2026.07.test-identities.v4",
+          identities: [linked],
+        }),
+      ]),
+    });
+
+    await expect(client.listSandboxTestIdentities()).rejects.toMatchObject({
+      code: "wallet_provisioning_contract_invalid",
+    });
+  });
+
+  it("keeps request and correlation identifiers separate on Portal failures", async () => {
+    const config = configuration({ oidcIssuer: null });
+    config.endpoints.sandboxTestLogin = `${PORTAL}/api/wallet/test-login`;
+    const client = new WalletProvisioningClient({
+      portalBaseUrl: PORTAL,
+      appId: APP_ID,
+      fetchImpl: sequenceFetch([
+        jsonResponse(config),
+        jsonResponse(
+          { error: "wallet_identity_not_linked", message: "Identity is not linked." },
+          {
+            status: 409,
+            headers: {
+              "x-request-id": "request-001",
+              "x-correlation-id": "correlation-001",
+            },
+          },
+        ),
+      ]),
+    });
+
+    await expect(client.sandboxTestLogin("demo-patient-001")).rejects.toMatchObject({
+      code: "wallet_identity_not_linked",
+      requestId: "request-001",
+      correlationId: "correlation-001",
+    });
   });
 
   it("signs the exact holder challenge and requires ready provisioning before exchange", async () => {
@@ -174,7 +323,9 @@ describe("WalletProvisioningClient", () => {
   });
 });
 
-function configuration(input: { oidcIssuer: string | null }) {
+function configuration(input: {
+  oidcIssuer: string | null;
+}): WalletProvisioningConfiguration {
   return {
     schema: "trustcare.wallet.provisioning-configuration.v1" as const,
     appId: APP_ID,
@@ -195,7 +346,7 @@ function configuration(input: { oidcIssuer: string | null }) {
     },
     holder: {
       didMethod: "did:key" as const,
-      algorithms: ["EdDSA", "ES256"] as const,
+      algorithms: ["EdDSA", "ES256"],
       privateKeyOwner: "wallet" as const,
     },
   };
@@ -219,6 +370,37 @@ function holderChallenge(identity: HolderSigningIdentity) {
       exp: 1783937100,
     },
     expiresAt: "2026-07-13T10:05:00.000Z",
+  };
+}
+
+function linkedCatalogIdentity(identity: HolderSigningIdentity) {
+  return {
+    walletUserId: "demo-patient-004",
+    username: "demo-patient-004",
+    name: "นางสาวฮารุกะ ทานากะ",
+    nameEn: "Ms. Haruka Tanaka",
+    email: "haruka@example.test",
+    phone: null,
+    birthDate: "1992-04-18",
+    gender: "female",
+    nationality: "JPN",
+    preferredLocale: "ja-JP",
+    scenario: "cross_border_missing_documents",
+    homeHospitalCode: "TCM",
+    connectedHospitalCodes: ["TCM"],
+    useCases: ["cross_border"],
+    expectedCredentialTypes: ["patient_identity"],
+    expectedObjectTypes: ["credential:patient_identity"],
+    expectedFlowStates: ["holder_binding_required"],
+    portraitUrl: `${PORTAL}/seed-avatars/patient-004.jpg`,
+    holder: {
+      did: identity.did,
+      algorithm: "EdDSA",
+      publicJwk: identity.publicJwk,
+      privateKeyOwner: "wallet",
+    },
+    expectedProvisioningState: "holder_binding_required",
+    patientReferenceProvisioned: true,
   };
 }
 
@@ -263,4 +445,31 @@ function jsonResponse(value: unknown, init: ResponseInit = {}): Response {
     status: init.status ?? 200,
     headers: { "content-type": "application/json", ...(init.headers ?? {}) },
   });
+}
+
+function sandboxTokenClaims(): Record<string, any> {
+  return {
+    iss: OIDC_ISSUER,
+    aud: ["trustcare-wallet-api"],
+    azp: "trustcare-wallet-test-broker",
+    sub: "sandbox-oidc-subject-001",
+    exp: Math.floor(NOW.getTime() / 1_000) + 300,
+    realm_access: { roles: ["wallet_access", "patient"] },
+  };
+}
+
+function sandboxTokenResponse(claims: Record<string, any>) {
+  return {
+    testOnly: true,
+    username: "demo-patient-001",
+    token_type: "Bearer",
+    access_token: compactJwt(claims),
+    expires_in: 300,
+  };
+}
+
+function compactJwt(claims: Record<string, unknown>): string {
+  const encode = (value: unknown) =>
+    Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "RS256", typ: "JWT" })}.${encode(claims)}.test-signature`;
 }

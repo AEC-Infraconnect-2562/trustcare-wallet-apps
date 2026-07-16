@@ -5,6 +5,7 @@ import {
   prepareWalletExchangeCredentialReverification,
   holderIdentityFromPublicKey,
   assertWalletClinicalDocumentGraphState,
+  walletAvatarBindingKey,
   type HolderSigningIdentity,
   type WalletDocumentRecordV2,
   type WalletExchangePartition,
@@ -12,6 +13,8 @@ import {
   type WalletExchangeSyncReduction,
   type WalletClinicalDocumentGraphState,
   type WalletClinicalDocumentGraphSyncReduction,
+  type WalletAvatarAssetRecord,
+  type WalletAvatarIdentityBinding,
 } from "@trustcare/wallet-core";
 import {
   createWalletExchangePersistencePolicy,
@@ -20,14 +23,15 @@ import {
 import type {
   WalletExchangeCredentialRequestLink,
   WalletExchangePendingSubmissionDraft,
+  WalletExchangeShlAssociationRecord,
   WalletExchangeSubmissionLink,
 } from "@trustcare/api-client/walletExchangeWorkflow";
 
 export const INDEXED_DB_WALLET_EXCHANGE_SCHEMA =
-  "wallet-exchange-v2@2" as const;
+  "wallet-exchange-v2@3" as const;
 // Keep the database namespace stable so the IndexedDB version upgrade preserves
 // holder keys and previously acknowledged Wallet Exchange state.
-export const INDEXED_DB_WALLET_EXCHANGE_VERSION = 3 as const;
+export const INDEXED_DB_WALLET_EXCHANGE_VERSION = 5 as const;
 
 export type IndexedDbWalletExchangeStoreName =
   | "exchange_state"
@@ -36,12 +40,15 @@ export type IndexedDbWalletExchangeStoreName =
   | "request_links"
   | "submission_links"
   | "submission_outbox"
+  | "shl_associations"
   | "clinical_graph_objects"
   | "clinical_graph_edges"
   | "clinical_bundle_members"
   | "clinical_graph_changes"
   | "clinical_graph_cursors"
-  | "clinical_graph_quarantine";
+  | "clinical_graph_quarantine"
+  | "avatar_current"
+  | "avatar_history";
 
 export type IndexedDbWalletExchangeTransactionMode = "readonly" | "readwrite";
 
@@ -315,6 +322,86 @@ export class IndexedDbWalletExchangePersistence {
             return cloneValue(record.value);
           })
           .sort((left, right) => left.id.localeCompare(right.id));
+      },
+    );
+  }
+
+  async loadAvatarAsset(
+    binding: WalletAvatarIdentityBinding,
+  ): Promise<WalletAvatarAssetRecord | null> {
+    const key = this.avatarItemKey(binding);
+    return this.storage.transaction(
+      ["avatar_current"],
+      "readonly",
+      async (transaction) => {
+        const record = await transaction.get<PartitionRecord<WalletAvatarAssetRecord>>(
+          "avatar_current",
+          key,
+        );
+        if (!record) return null;
+        this.assertPartitionRecord(record, "avatar asset");
+        this.assertAvatarAsset(record.value, binding);
+        return cloneValue(record.value);
+      },
+    );
+  }
+
+  async listAvatarHistory(
+    binding: WalletAvatarIdentityBinding,
+  ): Promise<WalletAvatarAssetRecord[]> {
+    return this.storage.transaction(
+      ["avatar_history"],
+      "readonly",
+      async (transaction) => {
+        const records =
+          await transaction.getAll<PartitionRecord<WalletAvatarAssetRecord>>(
+            "avatar_history",
+          );
+        return records
+          .filter(
+            (record) =>
+              record.partitionKey === this.partition.key &&
+              walletAvatarBindingKey(record.value.binding) ===
+                walletAvatarBindingKey(binding),
+          )
+          .map((record) => {
+            this.assertAvatarAsset(record.value, binding);
+            return cloneValue(record.value);
+          })
+          .sort((left, right) => left.fetchedAt.localeCompare(right.fetchedAt));
+      },
+    );
+  }
+
+  /** Atomically replaces the current avatar and archives only changed bytes/source. */
+  async saveAvatarAsset(asset: WalletAvatarAssetRecord): Promise<void> {
+    this.assertAvatarAsset(asset, asset.binding);
+    const key = this.avatarItemKey(asset.binding);
+    await this.storage.transaction(
+      ["avatar_current", "avatar_history"],
+      "readwrite",
+      async (transaction) => {
+        const existing = await transaction.get<
+          PartitionRecord<WalletAvatarAssetRecord>
+        >("avatar_current", key);
+        if (existing) {
+          this.assertPartitionRecord(existing, "avatar asset");
+          this.assertAvatarAsset(existing.value, asset.binding);
+          if (sameAvatarVersion(existing.value, asset)) return;
+          const historyKey = [
+            key,
+            existing.value.fetchedAt,
+            existing.value.localSha256 ?? existing.value.errorCode ?? "unknown",
+          ].join("\u0000");
+          transaction.put("avatar_history", historyKey, {
+            partitionKey: this.partition.key,
+            value: cloneValue(existing.value),
+          } satisfies PartitionRecord<WalletAvatarAssetRecord>);
+        }
+        transaction.put("avatar_current", key, {
+          partitionKey: this.partition.key,
+          value: cloneValue(asset),
+        } satisfies PartitionRecord<WalletAvatarAssetRecord>);
       },
     );
   }
@@ -763,6 +850,100 @@ export class IndexedDbWalletExchangePersistence {
     );
   }
 
+  async savePendingShlAssociation(
+    record: WalletExchangeShlAssociationRecord,
+  ): Promise<void> {
+    this.assertShlAssociationRecord(record);
+    if (record.status !== "pending" || record.response) {
+      throw new Error("Only a pending SHL association may enter the outbox.");
+    }
+    const key = this.graphItemKey(record.manifestCredentialId);
+    await this.storage.transaction(
+      ["shl_associations"],
+      "readwrite",
+      async (transaction) => {
+        const existing = await transaction.get<
+          PartitionRecord<WalletExchangeShlAssociationRecord>
+        >("shl_associations", key);
+        if (existing) {
+          this.assertPartitionRecord(existing, "SHL association");
+          this.assertShlAssociationRecord(existing.value);
+          if (JSON.stringify(existing.value) !== JSON.stringify(record)) {
+            throw new Error(
+              "Wallet SHL association conflicts with immutable signed request bytes.",
+            );
+          }
+          return;
+        }
+        transaction.put("shl_associations", key, {
+          partitionKey: this.partition.key,
+          value: cloneValue(record),
+        } satisfies PartitionRecord<WalletExchangeShlAssociationRecord>);
+      },
+    );
+  }
+
+  async getShlAssociation(
+    manifestCredentialId: string,
+  ): Promise<WalletExchangeShlAssociationRecord | null> {
+    const key = this.graphItemKey(
+      requireText(manifestCredentialId, "manifestCredentialId"),
+    );
+    return this.storage.transaction(
+      ["shl_associations"],
+      "readonly",
+      async (transaction) => {
+        const record = await transaction.get<
+          PartitionRecord<WalletExchangeShlAssociationRecord>
+        >("shl_associations", key);
+        if (!record) return null;
+        this.assertPartitionRecord(record, "SHL association");
+        this.assertShlAssociationRecord(record.value);
+        return cloneValue(record.value);
+      },
+    );
+  }
+
+  async completeShlAssociation(
+    pending: WalletExchangeShlAssociationRecord,
+    response: NonNullable<WalletExchangeShlAssociationRecord["response"]>,
+  ): Promise<void> {
+    this.assertShlAssociationRecord(pending);
+    const key = this.graphItemKey(pending.manifestCredentialId);
+    await this.storage.transaction(
+      ["shl_associations"],
+      "readwrite",
+      async (transaction) => {
+        const existing = await transaction.get<
+          PartitionRecord<WalletExchangeShlAssociationRecord>
+        >("shl_associations", key);
+        if (!existing) throw new Error("SHL association outbox entry is missing.");
+        this.assertPartitionRecord(existing, "SHL association");
+        this.assertShlAssociationRecord(existing.value);
+        if (
+          existing.value.status === "complete" &&
+          JSON.stringify(existing.value.response) === JSON.stringify(response)
+        ) {
+          return;
+        }
+        if (JSON.stringify(existing.value) !== JSON.stringify(pending)) {
+          throw new Error("SHL association changed before completion.");
+        }
+        const complete: WalletExchangeShlAssociationRecord = {
+          ...pending,
+          status: "complete",
+          response: cloneValue(response),
+          updatedAt: response.associatedAt,
+        };
+        this.assertShlAssociationRecord(complete);
+        transaction.put("shl_associations", key, {
+          partitionKey: this.partition.key,
+          value: complete,
+        } satisfies PartitionRecord<WalletExchangeShlAssociationRecord>);
+      },
+    );
+  }
+
   private async saveLink<T>(
     store: "request_links" | "submission_links",
     key: string,
@@ -827,6 +1008,36 @@ export class IndexedDbWalletExchangePersistence {
           });
       },
     );
+  }
+
+  private assertShlAssociationRecord(
+    record: WalletExchangeShlAssociationRecord,
+  ): void {
+    if (
+      record.schema !== "trustcare.wallet.shl-association-outbox.v1" ||
+      !Number.isInteger(record.shlId) ||
+      record.shlId < 1 ||
+      !record.manifestCredentialId ||
+      !record.clientAssociationId ||
+      !record.consentRef ||
+      !record.idempotencyKey ||
+      !record.holderPresentationId ||
+      record.holderVpJwt.split(".").length !== 3 ||
+      !/^sha256:[a-f0-9]{64}$/.test(record.requestDigest) ||
+      !Number.isFinite(Date.parse(record.createdAt)) ||
+      !Number.isFinite(Date.parse(record.updatedAt)) ||
+      (record.status === "complete") !== Boolean(record.response)
+    ) {
+      throw new Error("Wallet SHL association outbox record is invalid.");
+    }
+    if (
+      record.response &&
+      (record.response.shlId !== record.shlId ||
+        record.response.manifestCredentialId !== record.manifestCredentialId ||
+        record.response.holderPresentationId !== record.holderPresentationId)
+    ) {
+      throw new Error("Wallet SHL association response binding is invalid.");
+    }
   }
 
   private async assertHolderIdentity(
@@ -938,6 +1149,36 @@ export class IndexedDbWalletExchangePersistence {
     return `${this.partition.key}\u0000${identifier}`;
   }
 
+  private avatarItemKey(binding: WalletAvatarIdentityBinding): string {
+    if (binding.holderDid !== this.partition.holderDid) {
+      throw new Error("Wallet avatar holder partition boundary violation.");
+    }
+    return `${this.partition.key}\u0000${walletAvatarBindingKey(binding)}`;
+  }
+
+  private assertAvatarAsset(
+    asset: WalletAvatarAssetRecord,
+    binding: WalletAvatarIdentityBinding,
+  ): void {
+    if (
+      asset.schema !== "trustcare.wallet.avatar.v1" ||
+      walletAvatarBindingKey(asset.binding) !== walletAvatarBindingKey(binding) ||
+      asset.binding.holderDid !== this.partition.holderDid ||
+      !Number.isFinite(Date.parse(asset.fetchedAt))
+    ) {
+      throw new Error("Wallet avatar asset violates its identity binding.");
+    }
+    if (
+      asset.status === "ready" &&
+      (!asset.sourceUrl?.startsWith("https://") ||
+        !asset.mediaType?.startsWith("image/") ||
+        !/^sha256:[a-f0-9]{64}$/.test(asset.localSha256 ?? "") ||
+        !asset.contentBase64)
+    ) {
+      throw new Error("Ready Wallet avatar asset is incomplete.");
+    }
+  }
+
   private assertPartitionRecord<T>(
     record: PartitionRecord<T>,
     label: string,
@@ -1030,12 +1271,15 @@ class BrowserIndexedDbWalletExchangeStorage implements IndexedDbWalletExchangeSt
           "request_links",
           "submission_links",
           "submission_outbox",
+          "shl_associations",
           "clinical_graph_objects",
           "clinical_graph_edges",
           "clinical_bundle_members",
           "clinical_graph_changes",
           "clinical_graph_cursors",
           "clinical_graph_quarantine",
+          "avatar_current",
+          "avatar_history",
         ] satisfies IndexedDbWalletExchangeStoreName[]) {
           if (!database.objectStoreNames.contains(store)) {
             database.createObjectStore(store);
@@ -1077,6 +1321,24 @@ function transactionComplete(transaction: IDBTransaction): Promise<void> {
     transaction.onabort = () =>
       reject(transaction.error ?? new Error("IndexedDB transaction aborted."));
   });
+}
+
+function sameAvatarVersion(
+  left: WalletAvatarAssetRecord,
+  right: WalletAvatarAssetRecord,
+): boolean {
+  return (
+    walletAvatarBindingKey(left.binding) === walletAvatarBindingKey(right.binding) &&
+    left.status === right.status &&
+    left.sourceUrl === right.sourceUrl &&
+    left.sourceCredentialId === right.sourceCredentialId &&
+    left.sourceDocumentId === right.sourceDocumentId &&
+    left.mediaType === right.mediaType &&
+    left.localSha256 === right.localSha256 &&
+    left.signedDigest === right.signedDigest &&
+    left.proofScope === right.proofScope &&
+    left.errorCode === right.errorCode
+  );
 }
 
 function isJwk(value: unknown): value is Record<string, unknown> {

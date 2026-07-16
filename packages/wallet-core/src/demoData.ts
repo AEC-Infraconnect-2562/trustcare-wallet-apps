@@ -72,6 +72,7 @@ export type WalletDemoUser = {
   issuerDid: string;
   avatarUrl: string;
   avatarSource: "trustcare_portal" | "wallet_generated";
+  avatarState?: "ready" | "unavailable" | "validation_failed";
   persona: string;
   tags: string[];
   conditions: string[];
@@ -640,15 +641,64 @@ export const walletTestLoginUsers = walletDemoUsers.filter(
  * are deliberately omitted instead of being presented as compatible logins.
  */
 export function walletTestLoginUsersForPortalCatalog(
-  identities: readonly Readonly<{ username: string }>[],
+  identities: readonly Readonly<{
+    walletUserId?: string;
+    username: string;
+    name?: string;
+    nameEn?: string | null;
+    email?: string;
+    phone?: string | null;
+    birthDate?: string | null;
+    gender?: string | null;
+    homeHospitalCode?: string | null;
+    useCases?: readonly string[];
+    portraitUrl?: string | null;
+    holder?: Readonly<{ did: string }> | null;
+  }>[],
 ): WalletDemoUser[] {
   const byUsername = new Map(
     walletTestLoginUsers.map((user) => [user.id, user] as const),
   );
   return identities.flatMap((identity) => {
     const user = byUsername.get(identity.username);
-    return user ? [user] : [];
+    if (!user) return [];
+    const hospitalCode = isTrustCareHospitalCode(identity.homeHospitalCode)
+      ? identity.homeHospitalCode
+      : user.hospitalCode;
+    return [
+      {
+        ...user,
+        id: identity.walletUserId ?? identity.username,
+        portalOpenId: identity.username,
+        hospitalCode,
+        nameTh: identity.name ?? user.nameTh,
+        nameEn: identity.nameEn ?? identity.name ?? user.nameEn,
+        initials: displayInitial(identity.name ?? user.nameTh, user.initials),
+        gender:
+          identity.gender === "male" || identity.gender === "female"
+            ? identity.gender
+            : user.gender,
+        birthDate: identity.birthDate ?? user.birthDate,
+        email: identity.email ?? user.email,
+        phone: identity.phone ?? user.phone,
+        holderDid: identity.holder?.did ?? "",
+        avatarUrl: identity.portraitUrl ?? "",
+        avatarSource: "trustcare_portal",
+        tags: identity.useCases?.length ? [...identity.useCases] : user.tags,
+      },
+    ];
   });
+}
+
+function isTrustCareHospitalCode(
+  value: string | null | undefined,
+): value is "TCC" | "TCP" | "TCM" {
+  return value === "TCC" || value === "TCP" || value === "TCM";
+}
+
+function displayInitial(value: string, fallback: string): string {
+  const normalized = value.trim().replace(/^(Mr\.|Ms\.|Mrs\.|Miss)\s+/i, "");
+  return Array.from(normalized)[0] ?? fallback;
 }
 
 export function getDemoUser(userId?: string | number): WalletDemoUser {

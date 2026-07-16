@@ -8,12 +8,16 @@ const harness = vi.hoisted(() => ({
   persistenceOptions: [] as Array<Record<string, unknown>>,
   workflowOptions: [] as Array<Record<string, unknown>>,
   generateHolderIdentity: vi.fn(),
+  sandboxHolderIdentityForUser: vi.fn(),
   loadHolderIdentity: vi.fn(),
   saveHolderIdentity: vi.fn(),
   loadOrCreateState: vi.fn(),
   listCredentialRequestLinks: vi.fn(),
   listPendingSubmissionDrafts: vi.fn(),
   loadOrCreateClinicalDocumentGraphState: vi.fn(),
+  loadAvatarAsset: vi.fn(),
+  saveAvatarAsset: vi.fn(),
+  synchronizeWalletAvatar: vi.fn(),
   synchronize: vi.fn(),
   synchronizeClinicalDocumentGraph: vi.fn(),
   clinicalDocumentGraphPresentation: vi.fn(),
@@ -57,8 +61,22 @@ vi.mock("@trustcare/api-client/walletContractLoader", () => ({
 
 vi.mock("@trustcare/api-client/walletExchangeV2", () => ({
   WalletExchangeProblemError: class WalletExchangeProblemError extends Error {
+    code?: string;
     correlationId?: string;
+
+    constructor(
+      message: string,
+      options: { code?: string; correlationId?: string } = {},
+    ) {
+      super(message);
+      this.code = options.code;
+      this.correlationId = options.correlationId;
+    }
   },
+}));
+
+vi.mock("@trustcare/api-client/walletAvatarSync", () => ({
+  synchronizeWalletAvatar: harness.synchronizeWalletAvatar,
 }));
 
 vi.mock("@trustcare/api-client/walletProvisioning", () => ({
@@ -100,6 +118,8 @@ vi.mock("@trustcare/api-client/walletExchangeWorkflow", () => ({
 
 vi.mock("@trustcare/wallet-core", () => ({
   generateHolderIdentity: harness.generateHolderIdentity,
+  sandboxHolderIdentityForUser: harness.sandboxHolderIdentityForUser,
+  walletAvatarDataUrl: () => undefined,
   listClinicalDocumentGraphArtifacts: (state: { nodes?: unknown[] }) =>
     state.nodes ?? [],
 }));
@@ -133,6 +153,14 @@ vi.mock("../repositories", () => ({
     loadOrCreateClinicalDocumentGraphState() {
       return harness.loadOrCreateClinicalDocumentGraphState();
     }
+
+    loadAvatarAsset(binding: unknown) {
+      return harness.loadAvatarAsset(binding);
+    }
+
+    saveAvatarAsset(asset: unknown) {
+      return harness.saveAvatarAsset(asset);
+    }
   },
 }));
 
@@ -140,6 +168,7 @@ import {
   useWalletExchange,
   type UseWalletExchangeOptions,
 } from "./useWalletExchange";
+import { WalletExchangeProblemError } from "@trustcare/api-client/walletExchangeV2";
 
 const holderDid = "did:key:zDnaeTrustCareWalletHolder";
 const identity = {
@@ -160,11 +189,15 @@ describe("useWalletExchange lifecycle", () => {
     harness.persistenceOptions = [];
     harness.workflowOptions = [];
     harness.generateHolderIdentity.mockReset();
+    harness.sandboxHolderIdentityForUser.mockReset();
     harness.loadHolderIdentity.mockReset();
     harness.saveHolderIdentity.mockReset();
     harness.loadOrCreateState.mockReset();
     harness.listPendingSubmissionDrafts.mockReset();
     harness.loadOrCreateClinicalDocumentGraphState.mockReset();
+    harness.loadAvatarAsset.mockReset();
+    harness.saveAvatarAsset.mockReset();
+    harness.synchronizeWalletAvatar.mockReset();
     harness.synchronize.mockReset();
     harness.synchronizeClinicalDocumentGraph.mockReset();
     harness.clinicalDocumentGraphPresentation.mockReset();
@@ -174,6 +207,7 @@ describe("useWalletExchange lifecycle", () => {
     harness.getWalletIdentity.mockReset();
     harness.bindHolder.mockReset();
     harness.generateHolderIdentity.mockResolvedValue(identity);
+    harness.sandboxHolderIdentityForUser.mockResolvedValue(undefined);
     harness.saveHolderIdentity.mockResolvedValue(undefined);
     harness.loadOrCreateState.mockResolvedValue({ documents: [] });
     harness.listCredentialRequestLinks.mockResolvedValue([]);
@@ -245,6 +279,67 @@ describe("useWalletExchange lifecycle", () => {
       extractable: false,
     });
     expect(harness.saveHolderIdentity).toHaveBeenCalledWith(identity);
+  });
+
+  it("uses the Wallet-owned non-exportable key that exactly matches the live sandbox catalog", async () => {
+    const catalogIdentity = {
+      ...identity,
+      did: "did:key:z6MkCatalogHolder",
+      kid: "did:key:z6MkCatalogHolder#z6MkCatalogHolder",
+      jwsAlgorithm: "EdDSA",
+      publicJwk: { kty: "OKP", crv: "Ed25519", x: "catalog-public-x" },
+      privateKey: { type: "private", extractable: false },
+    };
+    harness.sandboxHolderIdentityForUser.mockResolvedValue(catalogIdentity);
+    const sandboxIdentity = {
+      walletUserId: "demo-patient-004",
+      username: "demo-patient-004",
+      name: "Sandbox Patient",
+      nameEn: "Sandbox Patient",
+      email: "patient@example.test",
+      phone: null,
+      birthDate: "1992-04-18",
+      gender: "female",
+      nationality: "JPN",
+      preferredLocale: "ja-JP",
+      scenario: "cross_border_missing_documents",
+      homeHospitalCode: "TCM",
+      connectedHospitalCodes: ["TCM"],
+      useCases: ["cross_border"],
+      expectedCredentialTypes: ["patient_identity"],
+      expectedObjectTypes: ["credential:patient_identity"],
+      expectedFlowStates: ["holder_binding_required"],
+      portraitUrl: "https://portal.example/avatar.jpg",
+      holder: {
+        did: catalogIdentity.did,
+        algorithm: "EdDSA" as const,
+        publicJwk: catalogIdentity.publicJwk,
+        privateKeyOwner: "wallet" as const,
+      },
+      expectedProvisioningState: "holder_binding_required" as const,
+      patientReferenceProvisioned: true,
+      extensions: {},
+    };
+
+    renderHook({ ...options("demo-patient-004"), sandboxIdentity });
+    harness.effects[0]?.();
+    await settlePromises();
+
+    expect(harness.generateHolderIdentity).not.toHaveBeenCalled();
+    expect(harness.sandboxHolderIdentityForUser).toHaveBeenCalledWith({
+      userId: "demo-patient-004",
+      sandboxRuntime: true,
+    });
+    harness.loadAvatarAsset.mockResolvedValue(null);
+    harness.saveAvatarAsset.mockResolvedValue(undefined);
+    expect(harness.saveHolderIdentity).toHaveBeenCalledWith(catalogIdentity);
+    expect(localStorage.setItem).toHaveBeenCalledWith(
+      expect.any(String),
+      JSON.stringify({
+        schema: "trustcare.wallet.holder-locator.v1",
+        holderDid: catalogIdentity.did,
+      }),
+    );
   });
 
   it("does not generate a DID when durable locator storage is unavailable", async () => {
@@ -358,6 +453,57 @@ describe("useWalletExchange lifecycle", () => {
     expect(harness.getProvisioningStatus).toHaveBeenCalledWith(
       "wallet-oidc-access-token",
     );
+  });
+
+  it("recovers a stale Portal holder-key row through binding without rotating the local DID", async () => {
+    harness.getProvisioningStatus.mockResolvedValue({
+      schema: "trustcare.wallet.provisioning.v1",
+      identityLinked: true,
+      portalSession: false,
+      app: {
+        appId: "trustcare-wallet-production",
+        status: "active",
+        trustLevel: "verified",
+        scopes: ["credentials:read"],
+        oidcClientAllowed: true,
+      },
+      holder: {
+        holderDid,
+        bound: true,
+        proofVerifiedAt: "2026-07-13T10:00:00.000Z",
+      },
+      ready: true,
+      nextAction: "create_exchange_session",
+    });
+    const readyOptions = {
+      ...options("patient-a"),
+      portalAccessToken: "wallet-oidc-access-token",
+    };
+    renderHook(readyOptions);
+    harness.effects[0]?.();
+    await settlePromises();
+    renderHook(readyOptions);
+    harness.effects[1]?.();
+    await settlePromises();
+    const ready = renderHook(readyOptions);
+    harness.synchronize.mockRejectedValue(
+      new WalletExchangeProblemError("holder binding unavailable", {
+        code: "wallet_binding_unavailable",
+        correlationId: "correlation-binding-001",
+      }),
+    );
+
+    await expect(ready.synchronize()).rejects.toThrow(
+      "holder binding unavailable",
+    );
+
+    const connectionSetter = harness.stateSetters.at(-4);
+    expect(connectionSetter).toHaveBeenCalledWith({
+      partitionKey: expect.any(String),
+      status: "holder_binding_required",
+      message: "Portal ต้องยืนยัน holder DID เดิมอีกครั้งก่อนซิงก์ข้อมูล",
+    });
+    expect(harness.generateHolderIdentity).toHaveBeenCalledTimes(1);
   });
 });
 

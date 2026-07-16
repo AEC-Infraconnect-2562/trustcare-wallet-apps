@@ -4,8 +4,10 @@ import {
   WalletProvisioningProblemError,
   createWalletProvisioningClient,
   type WalletProvisioningStatus,
+  type WalletTestIdentity,
 } from "@trustcare/api-client/walletProvisioning";
 import { normalizePortalOrigin } from "@trustcare/api-client/walletContractLoader";
+import { synchronizeWalletAvatar } from "@trustcare/api-client/walletAvatarSync";
 import {
   WalletExchangeWorkflow,
   type WalletExchangeCredentialRequestLink,
@@ -14,8 +16,11 @@ import {
 import {
   generateHolderIdentity,
   listClinicalDocumentGraphArtifacts,
+  sandboxHolderIdentityForUser,
+  walletAvatarDataUrl,
   type HolderSigningIdentity,
   type RuntimeEnvironment,
+  type WalletAvatarAssetRecord,
   type WalletClinicalDocumentGraphState,
   type WalletDocumentRecordV2,
 } from "@trustcare/wallet-core";
@@ -81,6 +86,13 @@ export type UseWalletExchangeOptions = {
   localUserKey: string;
   /** Short-lived Wallet OIDC bearer held by the web session in memory only. */
   portalAccessToken?: string;
+  /** Live Portal catalog metadata; accepted only by the sandbox runtime. */
+  sandboxIdentity?: WalletTestIdentity;
+};
+
+type WalletExchangeAvatarState = {
+  partitionKey?: string;
+  record?: WalletAvatarAssetRecord;
 };
 
 export function useWalletExchange(options: UseWalletExchangeOptions) {
@@ -101,6 +113,7 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     useState<WalletExchangePendingSubmissionState>({ records: [] });
   const [clinicalGraphState, setClinicalGraphState] =
     useState<WalletExchangeClinicalGraphState>({});
+  const [avatarState, setAvatarState] = useState<WalletExchangeAvatarState>({});
   const currentPartitionKey = holderLocatorKey(options);
   const activeRuntime =
     options.enabled !== false && runtime?.partitionKey === currentPartitionKey
@@ -129,6 +142,10 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
   const graphArtifacts = clinicalDocumentGraph
     ? listClinicalDocumentGraphArtifacts(clinicalDocumentGraph)
     : [];
+  const avatar =
+    options.enabled !== false && avatarState.partitionKey === currentPartitionKey
+      ? avatarState.record
+      : undefined;
   const connection =
     options.enabled !== false &&
     connectionState.partitionKey === currentPartitionKey
@@ -148,6 +165,7 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
       setRequestLinkState({ records: [] });
       setPendingSubmissionState({ records: [] });
       setClinicalGraphState({});
+      setAvatarState({});
       setError("");
       setConnectionState({
         status: "loading",
@@ -166,14 +184,22 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     setRequestLinkState({ records: [] });
     setPendingSubmissionState({ records: [] });
     setClinicalGraphState({});
+    setAvatarState({});
     void initializeRuntime(options)
       .then(async (next) => {
-        const [state, links, pendingSubmissions, graphState] =
+        const avatarBinding = {
+          walletUserId:
+            options.sandboxIdentity?.walletUserId ?? options.localUserKey,
+          holderDid: next.holderDid,
+          credentialSubjectId: next.holderDid,
+        };
+        const [state, links, pendingSubmissions, graphState, avatarRecord] =
           await Promise.all([
             next.persistence.loadOrCreateState(),
             next.persistence.listCredentialRequestLinks(),
             next.persistence.listPendingSubmissionDrafts(),
             next.persistence.loadOrCreateClinicalDocumentGraphState(),
+            next.persistence.loadAvatarAsset(avatarBinding),
           ]);
         if (!active) return;
         setRuntime(next);
@@ -193,6 +219,10 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
           partitionKey: next.partitionKey,
           state: graphState,
         });
+        setAvatarState({
+          partitionKey: next.partitionKey,
+          record: avatarRecord ?? undefined,
+        });
       })
       .catch((reason: unknown) => {
         if (!active) return;
@@ -210,6 +240,9 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     options.localUserKey,
     options.portalBaseUrl,
     options.runtimeEnvironment,
+    options.sandboxIdentity?.holder?.did,
+    options.sandboxIdentity?.portraitUrl,
+    options.sandboxIdentity?.walletUserId,
     options.walletVersion,
   ]);
 
@@ -302,6 +335,14 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
       });
       const graphResult =
         await activeRuntime.workflow.synchronizeClinicalDocumentGraph();
+      const avatarRecord = await synchronizeWalletAvatar({
+        walletUserId:
+          options.sandboxIdentity?.walletUserId ?? options.localUserKey,
+        holderDid: activeRuntime.holderDid,
+        documents: result.state.documents,
+        expectedSandboxPortraitUrl: options.sandboxIdentity?.portraitUrl,
+      });
+      await activeRuntime.persistence.saveAvatarAsset(avatarRecord);
       const links =
         await activeRuntime.persistence.listCredentialRequestLinks();
       setRequestLinkState({
@@ -312,23 +353,55 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
         partitionKey: activeRuntime.partitionKey,
         state: graphResult.state,
       });
+      setAvatarState({
+        partitionKey: activeRuntime.partitionKey,
+        record: avatarRecord,
+      });
       return { ...result, clinicalDocumentGraph: graphResult };
     } catch (reason) {
       const message = walletExchangeErrorMessage(reason);
       setError(message);
+      if (
+        reason instanceof WalletExchangeProblemError &&
+        reason.code === "wallet_binding_unavailable"
+      ) {
+        // Provisioning can outlive the active Portal holder-key row after a
+        // sandbox reseed. Recover through the normal holder challenge flow;
+        // never rotate the local key or substitute a different DID.
+        setConnectionState({
+          partitionKey: activeRuntime.partitionKey,
+          status: "holder_binding_required",
+          message: "Portal ต้องยืนยัน holder DID เดิมอีกครั้งก่อนซิงก์ข้อมูล",
+        });
+      }
       throw reason;
     } finally {
       setSyncing(false);
     }
-  }, [activeRuntime, connection.message, error, provisioningReady]);
+  }, [
+    activeRuntime,
+    connection.message,
+    error,
+    options.localUserKey,
+    options.sandboxIdentity?.portraitUrl,
+    options.sandboxIdentity?.walletUserId,
+    provisioningReady,
+  ]);
 
   const reload = useCallback(async () => {
     if (!activeRuntime) return;
-    const [state, links, pendingSubmissions, graphState] = await Promise.all([
+    const [state, links, pendingSubmissions, graphState, avatarRecord] =
+      await Promise.all([
       activeRuntime.persistence.loadOrCreateState(),
       activeRuntime.persistence.listCredentialRequestLinks(),
       activeRuntime.persistence.listPendingSubmissionDrafts(),
       activeRuntime.persistence.loadOrCreateClinicalDocumentGraphState(),
+      activeRuntime.persistence.loadAvatarAsset({
+        walletUserId:
+          options.sandboxIdentity?.walletUserId ?? options.localUserKey,
+        holderDid: activeRuntime.holderDid,
+        credentialSubjectId: activeRuntime.holderDid,
+      }),
     ]);
     setDocumentState({
       partitionKey: activeRuntime.partitionKey,
@@ -346,7 +419,11 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
       partitionKey: activeRuntime.partitionKey,
       state: graphState,
     });
-  }, [activeRuntime]);
+    setAvatarState({
+      partitionKey: activeRuntime.partitionKey,
+      record: avatarRecord ?? undefined,
+    });
+  }, [activeRuntime, options.localUserKey, options.sandboxIdentity?.walletUserId]);
 
   const graphPresentation = useCallback(
     async (
@@ -362,6 +439,39 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
       return activeRuntime.workflow.clinicalDocumentGraphPresentation(
         selectedArtifactId,
       );
+    },
+    [activeRuntime, connection.message, error, provisioningReady],
+  );
+
+  const associatePortalShl = useCallback(
+    async (input: {
+      manifestCredentialId: string;
+      consentRef: string;
+      clientAssociationId?: string;
+    }) => {
+      if (!activeRuntime || !provisioningReady) {
+        throw new Error(
+          connection.message || error || "Wallet Exchange is not ready.",
+        );
+      }
+      setSyncing(true);
+      setError("");
+      try {
+        const association =
+          await activeRuntime.workflow.associatePortalShlManifest(input);
+        const graphResult =
+          await activeRuntime.workflow.synchronizeClinicalDocumentGraph();
+        setClinicalGraphState({
+          partitionKey: activeRuntime.partitionKey,
+          state: graphResult.state,
+        });
+        return { association, clinicalDocumentGraph: graphResult };
+      } catch (reason) {
+        setError(walletExchangeErrorMessage(reason));
+        throw reason;
+      } finally {
+        setSyncing(false);
+      }
     },
     [activeRuntime, connection.message, error, provisioningReady],
   );
@@ -442,6 +552,8 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     pendingSubmissions,
     clinicalDocumentGraph,
     graphArtifacts,
+    avatar,
+    avatarUrl: walletAvatarDataUrl(avatar),
     initializing,
     syncing,
     error,
@@ -449,6 +561,7 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     completeHolderBinding,
     synchronize,
     graphPresentation,
+    associatePortalShl,
     recoverPendingSubmissions,
     reload,
   };
@@ -512,18 +625,47 @@ async function initializeRuntimeOnce(
   options: UseWalletExchangeOptions,
   locatorKey: string,
 ): Promise<WalletExchangeRuntime> {
+  const expectedSandboxIdentity = options.sandboxIdentity;
+  if (expectedSandboxIdentity && options.runtimeEnvironment !== "sandbox") {
+    throw new Error("Portal sandbox identity metadata is not allowed outside sandbox mode.");
+  }
+  if (expectedSandboxIdentity && !expectedSandboxIdentity.patientReferenceProvisioned) {
+    throw new Error(
+      "บัญชีทดสอบนี้ยังไม่ผ่านการเชื่อมโยงผู้ป่วย จึงไม่สามารถสร้างหรือผูก holder key ได้",
+    );
+  }
+  const expectedHolder = expectedSandboxIdentity?.holder;
   const locatedDid = readHolderLocator(locatorKey);
-  if (locatedDid) {
+  if (locatedDid && expectedHolder && locatedDid !== expectedHolder.did) {
+    // Sandbox catalog v3 is authoritative after reseed. Keep the retired
+    // partition untouched as evidence, but hard-cut the active locator so it
+    // can never be used as a compatibility fallback.
+    writeHolderLocator(locatorKey, expectedHolder.did);
+  }
+  const activeLocatedDid = expectedHolder?.did ?? locatedDid;
+  if (!locatedDid && expectedHolder) {
+    writeHolderLocator(locatorKey, expectedHolder.did);
+  }
+  if (activeLocatedDid) {
     const persistence = new IndexedDbWalletExchangePersistence({
       portalOrigin: options.portalBaseUrl,
-      holderDid: locatedDid,
+      holderDid: activeLocatedDid,
     });
-    const identity = await persistence.loadHolderIdentity();
+    let identity: HolderSigningIdentity | undefined =
+      (await persistence.loadHolderIdentity()) ?? undefined;
+    if (!identity && expectedHolder) {
+      identity = await sandboxHolderIdentityForUser({
+        userId: expectedSandboxIdentity!.walletUserId,
+        sandboxRuntime: true,
+      });
+      if (identity) await persistence.saveHolderIdentity(identity);
+    }
     if (!identity) {
       throw new Error(
         "พบ holder DID แต่ไม่พบ private key ในอุปกรณ์ กรุณากู้คืนหรือผูกกุญแจใหม่โดยไม่ใช้ข้อมูลเดิมเป็น fallback",
       );
     }
+    assertCatalogHolderIdentity(identity, expectedHolder);
     return {
       partitionKey: locatorKey,
       holderDid: identity.did,
@@ -537,10 +679,19 @@ async function initializeRuntimeOnce(
     };
   }
 
-  const identity = await generateHolderIdentity({
-    algorithm: "P-256",
-    extractable: false,
-  });
+  const identity = expectedHolder
+    ? await sandboxHolderIdentityForUser({
+        userId: expectedSandboxIdentity!.walletUserId,
+        sandboxRuntime: true,
+      })
+    : await generateHolderIdentity({
+        algorithm: "P-256",
+        extractable: false,
+      });
+  if (!identity) {
+    throw new Error("Wallet sandbox holder fixture is unavailable for this catalog identity.");
+  }
+  assertCatalogHolderIdentity(identity, expectedHolder);
   const persistence = new IndexedDbWalletExchangePersistence({
     portalOrigin: options.portalBaseUrl,
     holderDid: identity.did,
@@ -560,6 +711,33 @@ async function initializeRuntimeOnce(
       persistence,
     }),
   };
+}
+
+function assertCatalogHolderIdentity(
+  identity: HolderSigningIdentity,
+  expected: WalletTestIdentity["holder"] | undefined,
+): void {
+  if (!expected) return;
+  if (
+    identity.did !== expected.did ||
+    identity.jwsAlgorithm !== expected.algorithm ||
+    !samePublicJwk(identity.publicJwk, expected.publicJwk)
+  ) {
+    throw new Error(
+      "holder key ในอุปกรณ์ไม่ตรงกับ Portal sandbox catalog ระบบจะไม่แก้ subject หรือใช้ DID อื่นแทน",
+    );
+  }
+}
+
+function samePublicJwk(
+  actual: object,
+  expected: object,
+): boolean {
+  const actualRecord = actual as Record<string, unknown>;
+  const expectedRecord = expected as Record<string, unknown>;
+  return ["kty", "crv", "x", "y"].every(
+    (key) => (actualRecord[key] ?? null) === (expectedRecord[key] ?? null),
+  );
 }
 
 function holderLocatorKey(options: UseWalletExchangeOptions): string {

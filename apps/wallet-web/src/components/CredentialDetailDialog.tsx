@@ -15,7 +15,10 @@ import {
   ClinicalDocumentGraphPresentation,
   CredentialDocument,
 } from "@trustcare/ui-web";
-import type { ClinicalDocumentGraphPresentation as ClinicalDocumentGraphPresentationModel } from "@trustcare/contracts";
+import type {
+  ClinicalDocumentGraphPresentation as ClinicalDocumentGraphPresentationModel,
+  WalletShlAssociation,
+} from "@trustcare/contracts";
 import {
   credentialRenderModelFromCard,
   walletDocumentRecordV2FromCard,
@@ -23,12 +26,14 @@ import {
   type CredentialRenderField,
   type WalletCard,
 } from "@trustcare/wallet-core";
+import { ShlAssociationConsent } from "./ShlAssociationConsent";
 
 export function CredentialDetailDialog({
   card,
   open,
   onClose,
   onShare,
+  onAssociateShl,
   graphArtifactId,
   loadGraphPresentation,
 }: {
@@ -36,6 +41,7 @@ export function CredentialDetailDialog({
   open: boolean;
   onClose: () => void;
   onShare: (card: WalletCard) => void;
+  onAssociateShl?: (card: WalletCard) => Promise<WalletShlAssociation>;
   graphArtifactId?: string;
   loadGraphPresentation?: (
     artifactId: string,
@@ -337,6 +343,13 @@ export function CredentialDetailDialog({
             <ExternalLink size={16} />
             {documentExpanded ? "ย่อเอกสาร" : "เปิดเอกสารเต็ม"}
           </button>
+        ) : null}
+
+        {card.cardType === "shl_manifest" && onAssociateShl ? (
+          <ShlAssociationConsent
+            associationKey={String(card.credentialId ?? card.id)}
+            onAssociate={() => onAssociateShl(card)}
+          />
         ) : null}
 
         {details.length ? (

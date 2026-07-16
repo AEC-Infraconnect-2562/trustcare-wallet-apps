@@ -57,4 +57,22 @@ describe("credential inspector", () => {
       ),
     ).toBe(1210);
   });
+
+  it("requires explicit holder consent before a Portal SHL association can run", () => {
+    const card = cards.find((item) => item.cardType === "shl_manifest")!;
+    const html = renderToStaticMarkup(
+      <CredentialDetailDialog
+        card={card}
+        open
+        onClose={vi.fn()}
+        onShare={vi.fn()}
+        onAssociateShl={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('data-testid="shl-holder-association"');
+    expect(html).toContain("ฉันยืนยันการผูกลิงก์นี้กับ Wallet ของฉัน");
+    expect(html).toContain("ลงนามและยืนยันลิงก์");
+    expect(html).toContain("disabled");
+  });
 });

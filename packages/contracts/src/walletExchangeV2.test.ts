@@ -12,6 +12,8 @@ import {
   assertWalletSessionChallenge,
   assertWalletSessionChallengeRequest,
   assertWalletSessionCompletionRequest,
+  assertWalletShlAssociation,
+  assertWalletShlAssociationRequest,
   assertWalletSubmission,
   assertWalletSubmissionRequest,
   assertWalletSubmissionStatus,
@@ -417,6 +419,36 @@ describe("Wallet Exchange V2 live contracts", () => {
     });
   });
 
+  it("validates the strict holder VP association request and response", () => {
+    expect(
+      assertWalletShlAssociationRequest({
+        clientAssociationId: "wallet-shl-association-42",
+        consentRef: "urn:trustcare:consent:shl:42",
+        holderVpJwt: JWT,
+      }),
+    ).toMatchObject({ clientAssociationId: "wallet-shl-association-42" });
+    expect(
+      assertWalletShlAssociation({
+        schema: "trustcare.wallet.shl-association.v1",
+        shlId: 42,
+        status: "active",
+        trustLevel: "hospital_certified",
+        manifestCredentialId: "urn:trustcare:vc:shl:42",
+        holderPresentationId: "urn:uuid:holder-presentation-42",
+        associatedAt: "2026-07-11T10:10:00.000Z",
+        idempotent: false,
+      }),
+    ).toMatchObject({ shlId: 42, trustLevel: "hospital_certified" });
+    expect(() =>
+      assertWalletShlAssociationRequest({
+        clientAssociationId: "wallet-shl-association-42",
+        consentRef: "urn:trustcare:consent:shl:42",
+        holderVpJwt: JWT,
+        issuerDid: "did:web:portal.example:hospital:tcc",
+      }),
+    ).toThrow(/issuerDid/);
+  });
+
   it("validates RFC 9457 Wallet problem details", () => {
     expect(
       assertWalletProblemDetails({
@@ -476,6 +508,15 @@ describe("Wallet Exchange V2 live contracts", () => {
           purpose: "Prepare follow-up documents",
           consentRef: "urn:trustcare:consent:test",
           transport: { mode: "direct_vp", vpJwt: JWT },
+        },
+      ],
+      [
+        "SHL association",
+        assertWalletShlAssociationRequest,
+        {
+          clientAssociationId: "wallet-shl-association-42",
+          consentRef: "urn:trustcare:consent:shl:42",
+          holderVpJwt: JWT,
         },
       ],
     ];

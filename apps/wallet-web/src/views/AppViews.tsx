@@ -404,6 +404,9 @@ export function HomeView({
               <button
                 key={card.id}
                 type="button"
+                data-testid={`home-important-card-${card.id}`}
+                data-document-type={card.cardType}
+                data-credential-id={String(card.credentialId ?? "")}
                 className="clinical-document-pass"
                 onClick={() => onOpenCard(card)}
               >
@@ -461,6 +464,7 @@ export function HomeView({
           {canSyncPortalWallet ? (
             <button
               type="button"
+              data-testid="home-portal-sync"
               className="clinical-sync-action"
               onClick={onSyncPortal}
               disabled={portalSyncBusy}
@@ -480,6 +484,9 @@ export function HomeView({
               <button
                 key={card.id}
                 type="button"
+                data-testid={`home-recent-card-${card.id}`}
+                data-document-type={card.cardType}
+                data-credential-id={String(card.credentialId ?? "")}
                 onClick={() => onOpenCard(card)}
               >
                 <span className="clinical-list-icon" aria-hidden="true">

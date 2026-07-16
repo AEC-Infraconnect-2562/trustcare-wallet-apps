@@ -83,4 +83,38 @@ describe("Wallet sandbox test-user profiles", () => {
       false,
     );
   });
+
+  it("hydrates stale 004-009 display shells from the live Portal identity catalog", () => {
+    const portraitUrl =
+      "https://trustcare-hospital-network-production.up.railway.app/api/wallet/test-avatars/demo-patient-004";
+    const holderDid = "did:key:z6MkCatalogHolder004";
+    const [user] = walletTestLoginUsersForPortalCatalog([
+      {
+        walletUserId: "demo-patient-004",
+        username: "demo-patient-004",
+        name: "นางสาวผู้ป่วยแซนด์บ็อกซ์ 004",
+        nameEn: "Sandbox Patient 004",
+        email: "demo-patient-004@example.test",
+        phone: "+66900000004",
+        birthDate: "1990-04-04",
+        gender: "female",
+        homeHospitalCode: "TCP",
+        useCases: ["cross_border", "graph_v2"],
+        portraitUrl,
+        holder: { did: holderDid },
+      },
+    ]);
+
+    expect(user).toMatchObject({
+      id: "demo-patient-004",
+      portalOpenId: "demo-patient-004",
+      nameEn: "Sandbox Patient 004",
+      email: "demo-patient-004@example.test",
+      holderDid,
+      avatarUrl: portraitUrl,
+      avatarSource: "trustcare_portal",
+      hospitalCode: "TCP",
+      tags: ["cross_border", "graph_v2"],
+    });
+  });
 });

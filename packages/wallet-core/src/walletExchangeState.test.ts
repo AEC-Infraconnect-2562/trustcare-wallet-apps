@@ -193,6 +193,55 @@ describe("Wallet Exchange V2 state", () => {
     });
   });
 
+  it("treats a repeated exact signed object as current when only transport provenance changed", () => {
+    const firstChange = signedUpsert({
+      eventId: "wce_transport_repeat_1",
+      credentialId: "credential-transport-repeat",
+      documentId: "document-transport-repeat",
+      lineageKey: "lineage-transport-repeat",
+      version: "1@sha256:exact-object",
+      contentHash: hashA,
+    });
+    const initial = commitAndAck(
+      createWalletExchangeState({ portalOrigin, holderDid }),
+      page({ syncId: "sync_transport_repeat_1", changes: [firstChange] }),
+    );
+    const repeated = signedUpsert({
+      eventId: "wce_transport_repeat_2",
+      credentialId: "credential-transport-repeat",
+      documentId: "document-transport-repeat",
+      lineageKey: "lineage-transport-repeat",
+      version: "1@sha256:exact-object",
+      contentHash: hashA,
+    });
+    repeated.document = {
+      ...repeated.document!,
+      provenance: {
+        ...repeated.document!.provenance,
+        receivedAt: "2026-07-11T10:02:00.000Z",
+      },
+    };
+    const result = prepareWalletExchangeSyncCommit(
+      initial,
+      page({
+        syncId: "sync_transport_repeat_2",
+        mode: "delta",
+        requestCursor: cursor("1"),
+        nextCursor: cursor("2"),
+        changes: [repeated],
+      }),
+    );
+
+    expect(result.plan.pendingAck.results).toEqual([
+      {
+        eventId: "wce_transport_repeat_2",
+        outcome: "already_current",
+      },
+    ]);
+    expect(result.state.documents).toEqual(initial.documents);
+    expect(result.state.quarantine).toEqual([]);
+  });
+
   it("preserves response order while deduplicating an already applied event", () => {
     const initial = commitAndAck(
       createWalletExchangeState({ portalOrigin, holderDid }),

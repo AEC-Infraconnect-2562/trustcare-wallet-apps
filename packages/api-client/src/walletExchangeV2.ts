@@ -9,6 +9,8 @@ import {
   assertWalletSessionChallenge,
   assertWalletSessionChallengeRequest,
   assertWalletSessionCompletionRequest,
+  assertWalletShlAssociation,
+  assertWalletShlAssociationRequest,
   assertWalletSubmission,
   assertWalletSubmissionRequest,
   assertWalletSubmissionStatus,
@@ -23,6 +25,8 @@ import {
   type WalletProblemDetails,
   type WalletSession,
   type WalletSessionChallenge,
+  type WalletShlAssociation,
+  type WalletShlAssociationRequest,
   type WalletSubmission,
   type WalletSubmissionRequest,
   type WalletSyncAck,
@@ -71,6 +75,7 @@ export type WalletExchangeV2ClientOptions = {
 };
 
 export class WalletExchangeProblemError extends TrustCareApiError {
+  readonly requestId?: string;
   readonly correlationId?: string;
   readonly retryable?: boolean;
   readonly problem?: WalletProblemDetails;
@@ -80,6 +85,7 @@ export class WalletExchangeProblemError extends TrustCareApiError {
     options: {
       status?: number;
       code?: string;
+      requestId?: string;
       correlationId?: string;
       retryable?: boolean;
       problem?: WalletProblemDetails;
@@ -87,6 +93,7 @@ export class WalletExchangeProblemError extends TrustCareApiError {
   ) {
     super(message, { status: options.status, code: options.code });
     this.name = "WalletExchangeProblemError";
+    this.requestId = options.requestId;
     this.correlationId = options.correlationId;
     this.retryable = options.retryable;
     this.problem = options.problem;
@@ -100,6 +107,11 @@ type ProtectedRequest = {
   accept?: string;
   idempotencyKey?: string;
   requestId: string;
+};
+
+export type WalletExchangeResponseTrace = {
+  requestId: string;
+  correlationId?: string;
 };
 
 const SESSION_EXPIRY_SAFETY_SECONDS = 30;
@@ -120,6 +132,7 @@ export class WalletExchangeV2Client {
   private readonly randomUUID: () => string;
   private session?: WalletExchangeSessionState;
   private clockOffsetSeconds = 0;
+  private responseTrace?: WalletExchangeResponseTrace;
 
   constructor(private readonly options: WalletExchangeV2ClientOptions) {
     this.fetcher = resolveWalletExchangeFetch(options.fetchImpl);
@@ -156,6 +169,10 @@ export class WalletExchangeV2Client {
       : undefined;
   }
 
+  get lastResponseTrace(): WalletExchangeResponseTrace | undefined {
+    return this.responseTrace ? { ...this.responseTrace } : undefined;
+  }
+
   clearSession(): void {
     this.session = undefined;
   }
@@ -168,16 +185,21 @@ export class WalletExchangeV2Client {
     });
     const challengeEndpoint =
       this.options.contracts.discovery.authorization.challengeEndpoint;
+    const challengeRequestId = this.requestIdentifier();
     const challengeResponse = await this.fetcher(challengeEndpoint, {
       method: "POST",
-      headers: jsonHeaders(this.requestIdentifier()),
+      headers: jsonHeaders(challengeRequestId),
       body: JSON.stringify(challengeRequest),
       cache: "no-store",
     });
     this.updateClockOffset(challengeResponse);
-    const challengePayload = await readResponseJson(challengeResponse);
+    this.responseTrace = responseTrace(challengeResponse, challengeRequestId);
+    const challengePayload = await readResponseJson(
+      challengeResponse,
+      this.responseTrace,
+    );
     if (!challengeResponse.ok) {
-      throw problemError(challengeResponse, challengePayload);
+      throw problemError(challengeResponse, challengePayload, challengeRequestId);
     }
     const challenge = assertWalletSessionChallenge(challengePayload);
     this.assertChallenge(challenge);
@@ -193,16 +215,21 @@ export class WalletExchangeV2Client {
     });
     const sessionEndpoint =
       this.options.contracts.discovery.authorization.sessionEndpoint;
+    const sessionRequestId = this.requestIdentifier();
     const sessionResponse = await this.fetcher(sessionEndpoint, {
       method: "POST",
-      headers: jsonHeaders(this.requestIdentifier()),
+      headers: jsonHeaders(sessionRequestId),
       body: JSON.stringify(completion),
       cache: "no-store",
     });
     this.updateClockOffset(sessionResponse);
-    const sessionPayload = await readResponseJson(sessionResponse);
+    this.responseTrace = responseTrace(sessionResponse, sessionRequestId);
+    const sessionPayload = await readResponseJson(
+      sessionResponse,
+      this.responseTrace,
+    );
     if (!sessionResponse.ok) {
-      throw problemError(sessionResponse, sessionPayload);
+      throw problemError(sessionResponse, sessionPayload, sessionRequestId);
     }
     const wireSession = assertWalletSession(sessionPayload);
     const state = this.acceptSession(wireSession);
@@ -392,6 +419,28 @@ export class WalletExchangeV2Client {
     );
   }
 
+  async associateShlPresentation(
+    shlId: number,
+    input: WalletShlAssociationRequest,
+    idempotencyKey: string,
+  ): Promise<WalletShlAssociation> {
+    const endpoint = shlAssociationEndpoint(
+      this.options.contracts.discovery.endpoints.shlAssociations,
+      shlId,
+    );
+    const request = assertWalletShlAssociationRequest(input);
+    return this.protectedJson(
+      {
+        method: "POST",
+        url: endpoint,
+        body: JSON.stringify(request),
+        idempotencyKey: requireIdempotencyKey(idempotencyKey),
+        requestId: this.requestIdentifier(),
+      },
+      assertWalletShlAssociation,
+    );
+  }
+
   private async protectedJson<T>(
     request: ProtectedRequest,
     assertResponse: (value: unknown) => T,
@@ -429,10 +478,11 @@ export class WalletExchangeV2Client {
           cache: "no-store",
         });
         this.updateClockOffset(response);
-        const payload = await readResponseJson(response);
+        this.responseTrace = responseTrace(response, request.requestId);
+        const payload = await readResponseJson(response, this.responseTrace);
         if (response.ok) return assertResponse(payload);
 
-        const error = problemError(response, payload);
+        const error = problemError(response, payload, request.requestId);
         lastError = error;
         if (response.status === 401 && !sessionRenewed) {
           this.clearSession();
@@ -627,6 +677,20 @@ function childEndpoint(base: string, id: string): string {
   return `${base.replace(/\/+$/, "")}/${encodeURIComponent(normalized)}`;
 }
 
+function shlAssociationEndpoint(template: string, shlId: number): string {
+  if (!Number.isInteger(shlId) || shlId < 1) {
+    throw new TrustCareApiError(
+      "SHL association id must be a positive integer.",
+      { code: "shl_association_id_invalid" },
+    );
+  }
+  const encoded = String(shlId);
+  if (template.includes("{shlId}")) {
+    return template.replace("{shlId}", encoded);
+  }
+  return childEndpoint(template, encoded);
+}
+
 function requireIdempotencyKey(value: string): string {
   const normalized = value.trim();
   if (!/^[A-Za-z0-9._:-]{8,200}$/.test(normalized)) {
@@ -645,20 +709,33 @@ function jsonHeaders(requestId: string): Record<string, string> {
   };
 }
 
-async function readResponseJson(response: Response): Promise<unknown> {
+async function readResponseJson(
+  response: Response,
+  trace?: WalletExchangeResponseTrace,
+): Promise<unknown> {
   const contentType = response.headers.get("content-type") ?? "";
   const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
   if (mediaType !== "application/json" && !mediaType.endsWith("+json")) {
     if (!response.ok) return null;
     throw new WalletExchangeProblemError(
       "Wallet Exchange response is not JSON.",
-      { status: response.status, code: "wallet_response_content_type_invalid" },
+      {
+        status: response.status,
+        code: "wallet_response_content_type_invalid",
+        requestId: trace?.requestId,
+        correlationId: trace?.correlationId,
+      },
     );
   }
   return response.json().catch(() => {
     throw new WalletExchangeProblemError(
       "Wallet Exchange response JSON is malformed.",
-      { status: response.status, code: "wallet_response_json_invalid" },
+      {
+        status: response.status,
+        code: "wallet_response_json_invalid",
+        requestId: trace?.requestId,
+        correlationId: trace?.correlationId,
+      },
     );
   });
 }
@@ -666,6 +743,7 @@ async function readResponseJson(response: Response): Promise<unknown> {
 function problemError(
   response: Response,
   payload: unknown,
+  fallbackRequestId?: string,
 ): WalletExchangeProblemError {
   let problem: WalletProblemDetails | undefined;
   try {
@@ -674,9 +752,10 @@ function problemError(
     problem = undefined;
   }
   const record = objectRecord(payload);
+  const requestId = response.headers.get("x-request-id") ?? fallbackRequestId;
   const correlationId =
     problem?.correlationId ??
-    response.headers.get("x-request-id") ??
+    response.headers.get("x-correlation-id") ??
     stringValue(record.correlationId);
   return new WalletExchangeProblemError(
     problem?.detail ??
@@ -686,11 +765,22 @@ function problemError(
     {
       status: response.status,
       code: problem?.code ?? stringValue(record.code),
+      requestId,
       correlationId,
       retryable: problem?.retryable,
       problem,
     },
   );
+}
+
+function responseTrace(
+  response: Response,
+  fallbackRequestId: string,
+): WalletExchangeResponseTrace {
+  return {
+    requestId: response.headers.get("x-request-id") ?? fallbackRequestId,
+    correlationId: response.headers.get("x-correlation-id") ?? undefined,
+  };
 }
 
 function isRetryableResponse(

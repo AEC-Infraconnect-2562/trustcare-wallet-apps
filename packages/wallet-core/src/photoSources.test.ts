@@ -84,6 +84,32 @@ describe("photoSources", () => {
     ).not.toContain("legacy-owner.jpg");
   });
 
+  it("reads a portrait from the signed flattened humanDocument contract", () => {
+    const candidates = photoCandidatesForCard({
+      ...baseCard,
+      sourceSystem: "trustcare_portal",
+      credentialData: {
+        credentialSubject: {
+          data: {
+            humanDocument: {
+              patient: {
+                portraitUrl: `${portalOrigin}/seed-avatars/patient-signed.jpg`,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(candidates).toEqual([
+      {
+        label:
+          "credentialSubject.data.humanDocument.patient.portraitUrl",
+        url: `${portalOrigin}/seed-avatars/patient-signed.jpg`,
+      },
+    ]);
+  });
+
   it("does not cross-fallback from a staff credential to a patient portrait", () => {
     const candidates = photoCandidatesForCard({
       ...baseCard,

@@ -3,7 +3,7 @@ import {
   WalletProvisioningProblemError,
   createWalletProvisioningClient,
   type WalletProvisioningConfiguration,
-  type WalletTestIdentity,
+  type WalletTestIdentityCatalog,
 } from "@trustcare/api-client/walletProvisioning";
 
 export type PortalWalletSessionState =
@@ -38,7 +38,8 @@ export function usePortalWalletSession(input: {
   );
   const [configuration, setConfiguration] =
     useState<WalletProvisioningConfiguration | null>(null);
-  const [testIdentities, setTestIdentities] = useState<WalletTestIdentity[]>([]);
+  const [testIdentityCatalog, setTestIdentityCatalog] =
+    useState<WalletTestIdentityCatalog | null>(null);
   const [accessToken, setAccessToken] = useState<string>();
   const [state, setState] = useState<PortalWalletSessionState>("loading");
   const [error, setError] = useState("");
@@ -47,20 +48,26 @@ export function usePortalWalletSession(input: {
     let active = true;
     setState("loading");
     setError("");
+    setConfiguration(null);
+    setTestIdentityCatalog(null);
     void client
       .reloadConfiguration()
       .then(async (next) => {
-        if (!active) return;
         if (next.appId !== input.appId) {
           throw new Error(
             `Portal ประกาศ Wallet appId ${next.appId} แต่ Wallet ตั้งค่าเป็น ${input.appId}`,
           );
         }
+        const nextCatalog = next.endpoints.sandboxTestIdentities
+          ? await client.loadSandboxTestIdentityCatalog()
+          : null;
+        if (!active) return;
+        // Configuration and the fully validated catalog become visible in one
+        // commit boundary. An opaque catalogVersion change therefore replaces
+        // the prior in-memory generation without exposing a partially parsed list.
         setConfiguration(next);
+        setTestIdentityCatalog(nextCatalog);
         if (next.endpoints.sandboxTestIdentities) {
-          const identities = await client.listSandboxTestIdentities();
-          if (!active) return;
-          setTestIdentities(identities);
           setState("sandbox_login_available");
           return;
         }
@@ -144,7 +151,8 @@ export function usePortalWalletSession(input: {
   return {
     state,
     configuration,
-    testIdentities,
+    testIdentities: testIdentityCatalog?.identities ?? [],
+    testIdentityCatalogVersion: testIdentityCatalog?.catalogVersion,
     accessToken,
     error,
     loginSandboxIdentity,

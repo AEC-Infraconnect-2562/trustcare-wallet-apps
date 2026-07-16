@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { WalletExchangeShlAssociationRecord } from "@trustcare/api-client/walletExchangeWorkflow";
 import {
   applyWalletExchangeAckReceipt,
   enqueueWalletExchangeRetry,
@@ -12,6 +13,7 @@ import {
   type WalletExchangePreparedUpsertChange,
   type WalletClinicalDocumentGraphState,
   type WalletClinicalDocumentGraphSyncReduction,
+  type WalletAvatarAssetRecord,
 } from "@trustcare/wallet-core";
 import {
   INDEXED_DB_WALLET_EXCHANGE_SCHEMA,
@@ -54,8 +56,8 @@ describe("IndexedDbWalletExchangePersistence", () => {
   });
 
   it("uses a versioned database namespace partitioned by normalized Portal origin and holder", () => {
-    expect(INDEXED_DB_WALLET_EXCHANGE_SCHEMA).toBe("wallet-exchange-v2@2");
-    expect(INDEXED_DB_WALLET_EXCHANGE_VERSION).toBe(3);
+    expect(INDEXED_DB_WALLET_EXCHANGE_SCHEMA).toBe("wallet-exchange-v2@3");
+    expect(INDEXED_DB_WALLET_EXCHANGE_VERSION).toBe(5);
     const name = createIndexedDbWalletExchangeDatabaseName({
       portalOrigin,
       holderDid,
@@ -76,6 +78,39 @@ describe("IndexedDbWalletExchangePersistence", () => {
         holderDid,
       }),
     ).toThrow("origin cannot contain credentials, query, or fragment");
+  });
+
+  it("atomically replaces avatar bytes, archives changes, and ignores replay duplicates", async () => {
+    const storage = new MemoryWalletExchangeStorage();
+    const persistence = repository(storage);
+    const first = avatarAsset({
+      fetchedAt: "2026-07-14T10:00:00.000Z",
+      hash: `sha256:${"1".repeat(64)}`,
+      sourceUrl: "https://portal.example/avatar-v1.jpg",
+    });
+    await persistence.saveAvatarAsset(first);
+    await persistence.saveAvatarAsset({
+      ...first,
+      fetchedAt: "2026-07-14T10:05:00.000Z",
+    });
+    expect(await persistence.listAvatarHistory(first.binding)).toEqual([]);
+    expect(await persistence.loadAvatarAsset(first.binding)).toEqual(first);
+
+    const second = avatarAsset({
+      fetchedAt: "2026-07-14T11:00:00.000Z",
+      hash: `sha256:${"2".repeat(64)}`,
+      sourceUrl: "https://portal.example/avatar-v2.jpg",
+    });
+    storage.failNextPut("avatar_current");
+    await expect(persistence.saveAvatarAsset(second)).rejects.toThrow(
+      "injected avatar_current put failure",
+    );
+    expect(await persistence.loadAvatarAsset(first.binding)).toEqual(first);
+    expect(await persistence.listAvatarHistory(first.binding)).toEqual([]);
+
+    await persistence.saveAvatarAsset(second);
+    expect(await persistence.loadAvatarAsset(first.binding)).toEqual(second);
+    expect(await persistence.listAvatarHistory(first.binding)).toEqual([first]);
   });
 
   it("migrates in place and commits graph objects plus cursor atomically", async () => {
@@ -361,6 +396,43 @@ describe("IndexedDbWalletExchangePersistence", () => {
     ).resolves.toEqual(link);
   });
 
+  it("retains exact holder VP bytes and completes an SHL association atomically", async () => {
+    const storage = new MemoryWalletExchangeStorage();
+    const first = repository(storage);
+    const pending = shlAssociationRecord();
+    await first.savePendingShlAssociation(pending);
+
+    const restarted = repository(storage);
+    await expect(
+      restarted.getShlAssociation(pending.manifestCredentialId),
+    ).resolves.toEqual(pending);
+    await expect(
+      restarted.savePendingShlAssociation({
+        ...pending,
+        holderVpJwt: `${pending.holderVpJwt}changed`,
+      }),
+    ).rejects.toThrow("immutable signed request bytes");
+
+    const response = shlAssociationResponse(pending);
+    storage.failNextPut("shl_associations");
+    await expect(
+      restarted.completeShlAssociation(pending, response),
+    ).rejects.toThrow("injected shl_associations put failure");
+    await expect(
+      restarted.getShlAssociation(pending.manifestCredentialId),
+    ).resolves.toEqual(pending);
+
+    await restarted.completeShlAssociation(pending, response);
+    await expect(
+      restarted.getShlAssociation(pending.manifestCredentialId),
+    ).resolves.toEqual({
+      ...pending,
+      status: "complete",
+      response,
+      updatedAt: response.associatedAt,
+    });
+  });
+
   it("rejects patientId and token material in direct-submission outbox records", async () => {
     const persistence = repository(new MemoryWalletExchangeStorage());
     const draft = await pendingSubmissionDraft();
@@ -568,6 +640,63 @@ function document(input: {
   };
 }
 
+function shlAssociationRecord(): WalletExchangeShlAssociationRecord {
+  return {
+    schema: "trustcare.wallet.shl-association-outbox.v1",
+    manifestCredentialId: "urn:credential:manifest:42",
+    shlId: 42,
+    clientAssociationId: "wallet-shl-association-42",
+    consentRef: "urn:consent:shl:42",
+    idempotencyKey: "shl-association-idempotency-42",
+    holderPresentationId: "urn:uuid:holder-presentation-42",
+    holderVpJwt: "eyJhbGciOiJFUzI1NiJ9.eyJ2cCI6MX0.signature",
+    requestDigest: `sha256:${"f".repeat(64)}`,
+    status: "pending",
+    createdAt: "2026-07-11T11:00:00.000Z",
+    updatedAt: "2026-07-11T11:00:00.000Z",
+  };
+}
+
+function shlAssociationResponse(
+  pending: WalletExchangeShlAssociationRecord,
+): NonNullable<WalletExchangeShlAssociationRecord["response"]> {
+  return {
+    schema: "trustcare.wallet.shl-association.v1",
+    shlId: pending.shlId,
+    status: "active",
+    trustLevel: "hospital_certified",
+    manifestCredentialId: pending.manifestCredentialId,
+    holderPresentationId: pending.holderPresentationId,
+    associatedAt: "2026-07-11T11:00:01.000Z",
+    idempotent: false,
+  };
+}
+
+function avatarAsset(input: {
+  fetchedAt: string;
+  hash: `sha256:${string}`;
+  sourceUrl: string;
+}): WalletAvatarAssetRecord {
+  return {
+    schema: "trustcare.wallet.avatar.v1",
+    binding: {
+      walletUserId: "demo-patient-001",
+      holderDid,
+      credentialSubjectId: holderDid,
+    },
+    status: "ready",
+    sourceUrl: input.sourceUrl,
+    sourceCredentialId: "credential-1",
+    sourceDocumentId: "document-1",
+    mediaType: "image/jpeg",
+    httpStatus: 200,
+    fetchedAt: input.fetchedAt,
+    localSha256: input.hash,
+    proofScope: "cache_integrity_only",
+    contentBase64: "AQID",
+  };
+}
+
 function graphReduction(
   initial: WalletClinicalDocumentGraphState,
 ): WalletClinicalDocumentGraphSyncReduction {
@@ -687,12 +816,15 @@ function createStores(): Map<
       "request_links",
       "submission_links",
       "submission_outbox",
+      "shl_associations",
       "clinical_graph_objects",
       "clinical_graph_edges",
       "clinical_bundle_members",
       "clinical_graph_changes",
       "clinical_graph_cursors",
       "clinical_graph_quarantine",
+      "avatar_current",
+      "avatar_history",
     ].map((name) => [name, new Map<string, unknown>()]),
   ) as Map<IndexedDbWalletExchangeStoreName, Map<string, unknown>>;
 }

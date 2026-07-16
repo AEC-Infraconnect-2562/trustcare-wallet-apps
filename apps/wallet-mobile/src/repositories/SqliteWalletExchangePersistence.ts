@@ -6,6 +6,7 @@ import type {
   WalletExchangeCredentialRequestLink,
   WalletExchangePendingSubmissionDraft,
   WalletExchangePersistencePort,
+  WalletExchangeShlAssociationRecord,
   WalletExchangeSubmissionLink,
 } from "@trustcare/api-client/walletExchangeWorkflow";
 import {
@@ -14,6 +15,7 @@ import {
   createWalletClinicalDocumentGraphState,
   prepareWalletExchangeCredentialReverification,
   assertWalletClinicalDocumentGraphState,
+  walletAvatarBindingKey,
   type HolderSigningIdentity,
   type WalletDocumentRecordV2,
   type WalletExchangePartition,
@@ -21,6 +23,8 @@ import {
   type WalletExchangeSyncReduction,
   type WalletClinicalDocumentGraphState,
   type WalletClinicalDocumentGraphSyncReduction,
+  type WalletAvatarAssetRecord,
+  type WalletAvatarIdentityBinding,
 } from "@trustcare/wallet-core";
 import type * as SQLite from "expo-sqlite";
 import { createRetryableAsyncLoader } from "../utils/retryableAsyncLoader";
@@ -39,12 +43,15 @@ export type MobileWalletExchangeStoreName =
   | "request_links"
   | "submission_links"
   | "submission_outbox"
+  | "shl_associations"
   | "clinical_graph_objects"
   | "clinical_graph_edges"
   | "clinical_bundle_members"
   | "clinical_graph_changes"
   | "clinical_graph_cursors"
-  | "clinical_graph_quarantine";
+  | "clinical_graph_quarantine"
+  | "avatar_current"
+  | "avatar_history";
 
 export type MobileWalletExchangeTransactionMode = "readonly" | "readwrite";
 
@@ -289,6 +296,68 @@ export class SqliteWalletExchangePersistence implements WalletExchangePersistenc
           return cloneJson(record.value);
         })
         .sort((left, right) => left.id.localeCompare(right.id));
+    });
+  }
+
+  async loadAvatarAsset(
+    binding: WalletAvatarIdentityBinding,
+  ): Promise<WalletAvatarAssetRecord | null> {
+    return this.storage.transaction("readonly", async (transaction) => {
+      const record = await transaction.get<
+        PartitionRecord<WalletAvatarAssetRecord>
+      >("avatar_current", this.avatarItemKey(binding));
+      if (!record) return null;
+      this.assertPartitionRecord(record, "avatar asset");
+      this.assertAvatarAsset(record.value, binding);
+      return cloneJson(record.value);
+    });
+  }
+
+  async listAvatarHistory(
+    binding: WalletAvatarIdentityBinding,
+  ): Promise<WalletAvatarAssetRecord[]> {
+    return this.storage.transaction("readonly", async (transaction) => {
+      const records = await transaction.getAll<
+        PartitionRecord<WalletAvatarAssetRecord>
+      >("avatar_history", this.partition.key);
+      return records
+        .filter(
+          (record) =>
+            walletAvatarBindingKey(record.value.binding) ===
+            walletAvatarBindingKey(binding),
+        )
+        .map((record) => {
+          this.assertPartitionRecord(record, "avatar history");
+          this.assertAvatarAsset(record.value, binding);
+          return cloneJson(record.value);
+        })
+        .sort((left, right) => left.fetchedAt.localeCompare(right.fetchedAt));
+    });
+  }
+
+  async saveAvatarAsset(asset: WalletAvatarAssetRecord): Promise<void> {
+    this.assertAvatarAsset(asset, asset.binding);
+    const key = this.avatarItemKey(asset.binding);
+    await this.storage.transaction("readwrite", async (transaction) => {
+      const existing = await transaction.get<
+        PartitionRecord<WalletAvatarAssetRecord>
+      >("avatar_current", key);
+      if (existing) {
+        this.assertPartitionRecord(existing, "avatar asset");
+        this.assertAvatarAsset(existing.value, asset.binding);
+        if (sameAvatarVersion(existing.value, asset)) return;
+        const historyKey = [
+          key,
+          existing.value.fetchedAt,
+          existing.value.localSha256 ?? existing.value.errorCode ?? "unknown",
+        ].join("\u0000");
+        await transaction.put(
+          "avatar_history",
+          historyKey,
+          this.record(existing.value),
+        );
+      }
+      await transaction.put("avatar_current", key, this.record(asset));
     });
   }
 
@@ -615,6 +684,82 @@ export class SqliteWalletExchangePersistence implements WalletExchangePersistenc
     });
   }
 
+  async savePendingShlAssociation(
+    record: WalletExchangeShlAssociationRecord,
+  ): Promise<void> {
+    this.assertShlAssociationRecord(record);
+    if (record.status !== "pending" || record.response) {
+      throw new Error("Only a pending SHL association may enter the outbox.");
+    }
+    const key = this.graphItemKey(record.manifestCredentialId);
+    await this.storage.transaction("readwrite", async (transaction) => {
+      const existing = await transaction.get<
+        PartitionRecord<WalletExchangeShlAssociationRecord>
+      >("shl_associations", key);
+      if (existing) {
+        this.assertPartitionRecord(existing, "SHL association");
+        this.assertShlAssociationRecord(existing.value);
+        if (JSON.stringify(existing.value) !== JSON.stringify(record)) {
+          throw new Error(
+            "Wallet SHL association conflicts with immutable signed request bytes.",
+          );
+        }
+        return;
+      }
+      await transaction.put("shl_associations", key, this.record(record));
+    });
+  }
+
+  async getShlAssociation(
+    manifestCredentialId: string,
+  ): Promise<WalletExchangeShlAssociationRecord | null> {
+    const key = this.graphItemKey(
+      requireText(manifestCredentialId, "manifestCredentialId"),
+    );
+    return this.storage.transaction("readonly", async (transaction) => {
+      const record = await transaction.get<
+        PartitionRecord<WalletExchangeShlAssociationRecord>
+      >("shl_associations", key);
+      if (!record) return null;
+      this.assertPartitionRecord(record, "SHL association");
+      this.assertShlAssociationRecord(record.value);
+      return cloneJson(record.value);
+    });
+  }
+
+  async completeShlAssociation(
+    pending: WalletExchangeShlAssociationRecord,
+    response: NonNullable<WalletExchangeShlAssociationRecord["response"]>,
+  ): Promise<void> {
+    this.assertShlAssociationRecord(pending);
+    const key = this.graphItemKey(pending.manifestCredentialId);
+    await this.storage.transaction("readwrite", async (transaction) => {
+      const existing = await transaction.get<
+        PartitionRecord<WalletExchangeShlAssociationRecord>
+      >("shl_associations", key);
+      if (!existing) throw new Error("SHL association outbox entry is missing.");
+      this.assertPartitionRecord(existing, "SHL association");
+      this.assertShlAssociationRecord(existing.value);
+      if (
+        existing.value.status === "complete" &&
+        JSON.stringify(existing.value.response) === JSON.stringify(response)
+      ) {
+        return;
+      }
+      if (JSON.stringify(existing.value) !== JSON.stringify(pending)) {
+        throw new Error("SHL association changed before completion.");
+      }
+      const complete: WalletExchangeShlAssociationRecord = {
+        ...pending,
+        status: "complete",
+        response: cloneJson(response),
+        updatedAt: response.associatedAt,
+      };
+      this.assertShlAssociationRecord(complete);
+      await transaction.put("shl_associations", key, this.record(complete));
+    });
+  }
+
   /**
    * Deliberate fail-closed boundary. SecureStore accepts strings, so using it
    * here would require exporting the holder private key as JWK/PKCS8.
@@ -626,6 +771,36 @@ export class SqliteWalletExchangePersistence implements WalletExchangePersistenc
   /** Never returns null, because doing so could trigger silent DID rotation. */
   async loadHolderIdentity(): Promise<never> {
     throw mobileHolderKeyUnavailableError();
+  }
+
+  private assertShlAssociationRecord(
+    record: WalletExchangeShlAssociationRecord,
+  ): void {
+    if (
+      record.schema !== "trustcare.wallet.shl-association-outbox.v1" ||
+      !Number.isInteger(record.shlId) ||
+      record.shlId < 1 ||
+      !record.manifestCredentialId ||
+      !record.clientAssociationId ||
+      !record.consentRef ||
+      !record.idempotencyKey ||
+      !record.holderPresentationId ||
+      record.holderVpJwt.split(".").length !== 3 ||
+      !/^sha256:[a-f0-9]{64}$/.test(record.requestDigest) ||
+      !Number.isFinite(Date.parse(record.createdAt)) ||
+      !Number.isFinite(Date.parse(record.updatedAt)) ||
+      (record.status === "complete") !== Boolean(record.response)
+    ) {
+      throw new Error("Wallet SHL association outbox record is invalid.");
+    }
+    if (
+      record.response &&
+      (record.response.shlId !== record.shlId ||
+        record.response.manifestCredentialId !== record.manifestCredentialId ||
+        record.response.holderPresentationId !== record.holderPresentationId)
+    ) {
+      throw new Error("Wallet SHL association response binding is invalid.");
+    }
   }
 
   private async saveLink<T>(
@@ -758,6 +933,36 @@ export class SqliteWalletExchangePersistence implements WalletExchangePersistenc
 
   private graphItemKey(identifier: string): string {
     return `${this.partition.key}\u0000${identifier}`;
+  }
+
+  private avatarItemKey(binding: WalletAvatarIdentityBinding): string {
+    if (binding.holderDid !== this.partition.holderDid) {
+      throw new Error("Wallet avatar holder partition boundary violation.");
+    }
+    return `${this.partition.key}\u0000${walletAvatarBindingKey(binding)}`;
+  }
+
+  private assertAvatarAsset(
+    asset: WalletAvatarAssetRecord,
+    binding: WalletAvatarIdentityBinding,
+  ): void {
+    if (
+      asset.schema !== "trustcare.wallet.avatar.v1" ||
+      walletAvatarBindingKey(asset.binding) !== walletAvatarBindingKey(binding) ||
+      asset.binding.holderDid !== this.partition.holderDid ||
+      !Number.isFinite(Date.parse(asset.fetchedAt))
+    ) {
+      throw new Error("Wallet avatar asset violates its identity binding.");
+    }
+    if (
+      asset.status === "ready" &&
+      (!asset.sourceUrl?.startsWith("https://") ||
+        !asset.mediaType?.startsWith("image/") ||
+        !/^sha256:[a-f0-9]{64}$/.test(asset.localSha256 ?? "") ||
+        !asset.contentBase64)
+    ) {
+      throw new Error("Ready Wallet avatar asset is incomplete.");
+    }
   }
 
   private assertPartitionRecord<T>(
@@ -1055,4 +1260,22 @@ function stableValue(value: unknown): string {
       .join(",")}}`;
   }
   return JSON.stringify(value);
+}
+
+function sameAvatarVersion(
+  left: WalletAvatarAssetRecord,
+  right: WalletAvatarAssetRecord,
+): boolean {
+  return (
+    walletAvatarBindingKey(left.binding) === walletAvatarBindingKey(right.binding) &&
+    left.status === right.status &&
+    left.sourceUrl === right.sourceUrl &&
+    left.sourceCredentialId === right.sourceCredentialId &&
+    left.sourceDocumentId === right.sourceDocumentId &&
+    left.mediaType === right.mediaType &&
+    left.localSha256 === right.localSha256 &&
+    left.signedDigest === right.signedDigest &&
+    left.proofScope === right.proofScope &&
+    left.errorCode === right.errorCode
+  );
 }

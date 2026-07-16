@@ -13,10 +13,13 @@
     "build:web": "pnpm --filter wallet-web build",
     "check": "pnpm -r check",
     "test": "pnpm -r test && pnpm test:gateway",
+    "test:e2e": "playwright test",
+    "test:e2e:live": "playwright test --config=playwright.config.ts",
     "test:gateway": "node --test scripts/portal-hospital-issuer.test.mjs scripts/share-gateway-policy.test.mjs scripts/share-gateway-signing.test.mjs scripts/share-gateway-store.test.mjs scripts/share-gateway-verification.test.mjs",
     "format": "prettier --write ."
   },
   "devDependencies": {
+    "@playwright/test": "1.55.0",
     "@types/node": "^22.13.10",
     "prettier": "^3.5.3",
     "typescript": "^5.8.3",
