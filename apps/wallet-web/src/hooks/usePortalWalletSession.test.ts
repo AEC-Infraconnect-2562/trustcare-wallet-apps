@@ -5,7 +5,7 @@ const harness = vi.hoisted(() => ({
   stateCursor: 0,
   stateValues: [] as unknown[],
   reloadConfiguration: vi.fn(),
-  listSandboxTestIdentities: vi.fn(),
+  loadSandboxTestIdentityCatalog: vi.fn(),
   sandboxTestLogin: vi.fn(),
 }));
 
@@ -42,7 +42,7 @@ vi.mock("@trustcare/api-client/walletProvisioning", () => ({
   },
   createWalletProvisioningClient: () => ({
     reloadConfiguration: harness.reloadConfiguration,
-    listSandboxTestIdentities: harness.listSandboxTestIdentities,
+    loadSandboxTestIdentityCatalog: harness.loadSandboxTestIdentityCatalog,
     sandboxTestLogin: harness.sandboxTestLogin,
   }),
 }));
@@ -55,10 +55,15 @@ describe("usePortalWalletSession sandbox restore", () => {
     harness.stateCursor = 0;
     harness.stateValues = [];
     harness.reloadConfiguration.mockReset();
-    harness.listSandboxTestIdentities.mockReset();
+    harness.loadSandboxTestIdentityCatalog.mockReset();
     harness.sandboxTestLogin.mockReset();
     harness.reloadConfiguration.mockResolvedValue(configuration());
-    harness.listSandboxTestIdentities.mockResolvedValue([]);
+    harness.loadSandboxTestIdentityCatalog.mockResolvedValue({
+      schema: "trustcare.wallet.test-identities.v1",
+      catalogVersion: "opaque-generation-v7",
+      identities: [],
+      extensions: {},
+    });
     harness.sandboxTestLogin.mockResolvedValue({
       accessToken: "fresh-short-lived-token",
       testOnly: true,

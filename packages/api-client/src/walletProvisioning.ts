@@ -3,6 +3,7 @@ import {
   signHolderCompactJws,
   type HolderSigningIdentity,
 } from "@trustcare/wallet-core";
+import { decodeJwt } from "jose";
 import { TrustCareApiError } from "./errors";
 import { normalizePortalOrigin } from "./walletContractLoader";
 
@@ -107,9 +108,6 @@ export type WalletTestIdentityCatalog = {
   extensions: Readonly<Record<string, unknown>>;
 };
 
-export const TRUSTCARE_TEST_IDENTITY_CATALOG_VERSION =
-  "2026.07.test-identities.v4";
-
 export type WalletOidcTokenSet = {
   tokenType: string;
   accessToken: string;
@@ -204,9 +202,8 @@ export class WalletProvisioningClient {
       "trustcare.wallet.test-identities.v1",
       "Wallet test identity catalog schema",
     );
-    requireLiteral(
+    const catalogVersion = requireOpaqueVersion(
       object.catalogVersion,
-      TRUSTCARE_TEST_IDENTITY_CATALOG_VERSION,
       "Wallet test catalog version",
     );
     if (!Array.isArray(object.identities)) {
@@ -214,7 +211,7 @@ export class WalletProvisioningClient {
     }
     return {
       schema: "trustcare.wallet.test-identities.v1",
-      catalogVersion: object.catalogVersion as string,
+      catalogVersion,
       identities: object.identities.map(assertTestIdentity),
       extensions: optionalExtensions(object, knownKeys),
     };
@@ -242,7 +239,13 @@ export class WalletProvisioningClient {
     if (object.testOnly !== true || object.username !== normalized) {
       invalid("Wallet sandbox token response is not bound to the selected identity.");
     }
-    return assertTokenSet(object);
+    const tokenSet = assertTokenSet(object);
+    assertSandboxOidcTokenClaims({
+      tokenSet,
+      configuration,
+      now: this.clock(),
+    });
+    return tokenSet;
   }
 
   async getProvisioningStatus(
@@ -769,6 +772,42 @@ function assertTokenSet(object: Record<string, unknown>): WalletOidcTokenSet {
   };
 }
 
+function assertSandboxOidcTokenClaims(input: {
+  tokenSet: WalletOidcTokenSet;
+  configuration: WalletProvisioningConfiguration;
+  now: Date;
+}): void {
+  if (input.tokenSet.tokenType.toLowerCase() !== "bearer") {
+    invalid("Wallet sandbox OIDC token type is invalid.");
+  }
+  const issuer = input.configuration.oidc.issuer;
+  if (!issuer) {
+    invalid("Wallet sandbox OIDC issuer is not configured.");
+  }
+  let claims: Record<string, unknown>;
+  try {
+    claims = decodeJwt(input.tokenSet.accessToken) as Record<string, unknown>;
+  } catch {
+    invalid("Wallet sandbox OIDC access token is not a compact JWT.");
+  }
+  const audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+  const authorizedParty = stringValue(claims.azp) ?? stringValue(claims.client_id);
+  const realmAccess = recordOrEmpty(claims.realm_access);
+  const roles = Array.isArray(realmAccess.roles) ? realmAccess.roles : [];
+  const nowSeconds = Math.floor(input.now.getTime() / 1_000);
+  if (
+    claims.iss !== issuer ||
+    !audience.includes(input.configuration.oidc.audience) ||
+    authorizedParty !== "trustcare-wallet-test-broker" ||
+    !stringValue(claims.sub) ||
+    !Number.isInteger(claims.exp) ||
+    Number(claims.exp) <= nowSeconds - 60 ||
+    !roles.includes(input.configuration.oidc.requiredRole)
+  ) {
+    invalid("Wallet sandbox OIDC access token claims are incompatible.");
+  }
+}
+
 function bearerHeaders(token: string): Record<string, string> {
   const normalized = token.trim();
   if (!normalized || /\s/.test(normalized)) {
@@ -802,6 +841,14 @@ function requireLiteral(value: unknown, expected: string, label: string): void {
 function requireString(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim()) invalid(`${label} is invalid.`);
   return value;
+}
+
+function requireOpaqueVersion(value: unknown, label: string): string {
+  const text = requireString(value, label);
+  if (text.length > 200 || /[\u0000-\u001f\u007f]/.test(text)) {
+    invalid(`${label} is invalid.`);
+  }
+  return text;
 }
 
 function stringValue(value: unknown): string | undefined {

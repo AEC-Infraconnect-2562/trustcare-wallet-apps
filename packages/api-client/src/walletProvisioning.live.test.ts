@@ -63,8 +63,15 @@ describe.skipIf(!liveEnabled)("live Portal Wallet binding and sync", () => {
     expect(configuration.endpoints.sandboxTestLogin).toContain(
       "/api/wallet/test-login",
     );
-    const catalog = await provisioning.listSandboxTestIdentities();
-    const catalogIdentity = catalog.find((entry) => entry.username === username);
+    const catalog = await provisioning.loadSandboxTestIdentityCatalog();
+    expect(catalog).toMatchObject({
+      schema: "trustcare.wallet.test-identities.v1",
+      catalogVersion: expect.any(String),
+    });
+    expect(catalog.identities).toHaveLength(12);
+    const catalogIdentity = catalog.identities.find(
+      (entry) => entry.username === username,
+    );
     expect(catalogIdentity).toMatchObject({
       walletUserId: username,
       holder: {
@@ -76,6 +83,23 @@ describe.skipIf(!liveEnabled)("live Portal Wallet binding and sync", () => {
 
     const oidc = await provisioning.sandboxTestLogin(username);
     expect(oidc.testOnly).toBe(true);
+    const oidcClaims = decodeJwt(oidc.accessToken);
+    const oidcAudience = Array.isArray(oidcClaims.aud)
+      ? oidcClaims.aud
+      : [oidcClaims.aud];
+    const realmAccess = oidcClaims.realm_access as
+      | { roles?: unknown[] }
+      | undefined;
+    expect(oidcClaims).toMatchObject({
+      iss: configuration.oidc.issuer,
+      azp: "trustcare-wallet-test-broker",
+    });
+    expect(oidcAudience).toContain(configuration.oidc.audience);
+    expect(oidcClaims.sub).toEqual(expect.any(String));
+    expect(Number(oidcClaims.exp)).toBeGreaterThan(
+      Math.floor(Date.now() / 1_000),
+    );
+    expect(realmAccess?.roles).toContain(configuration.oidc.requiredRole);
     let walletIdentity;
     try {
       walletIdentity = await provisioning.getWalletIdentity(oidc.accessToken);
