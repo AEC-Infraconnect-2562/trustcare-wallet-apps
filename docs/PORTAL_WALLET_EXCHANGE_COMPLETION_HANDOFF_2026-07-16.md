@@ -85,7 +85,7 @@ Current evidence:
   `demo-patient-001` through `demo-patient-009`;
 - all nine identity-bound portraits returned HTTP 200 and rendered without a
   wrong-person fallback;
-- 101 graph artifacts were applied and every selected artifact produced all
+- 105 graph artifacts were applied and every selected artifact produced all
   eight stages;
 - the three negative onboarding identities returned deterministic HTTP 422
   `wallet_onboarding_required` problems;
@@ -101,7 +101,7 @@ Do not rebuild or replace the working session, DPoP, sync, persistence,
 ### P0.0 Live retest blockers at revision 797025f
 
 The Wallet reran the P0 flow against Railway on 2026-07-16 without weakening
-the holder, JOSE, renderer, lifecycle, or policy gates. Two Portal-side
+the holder, JOSE, renderer, lifecycle, or policy gates. Three Portal-side
 contract conflicts currently prevent the complete acceptance path.
 
 #### Newly KMS-issued medical certificate cannot enter the delta feed
