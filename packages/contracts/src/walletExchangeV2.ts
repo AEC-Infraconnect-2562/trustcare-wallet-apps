@@ -39,7 +39,7 @@ export type WalletExchangeHospitalCode =
 
 export type WalletExchangeDiscovery = {
   name: "TrustCare Portal Wallet Exchange API";
-  version: "2.0.0";
+  version: "2.0.1";
   contractVersion: typeof WALLET_EXCHANGE_V2_CONTRACT_VERSION;
   authorization: {
     challengeEndpoint: string;
@@ -65,6 +65,8 @@ export type WalletExchangeDiscovery = {
     credentialLifecycle: string;
     presentation: string;
     certifiedShl: string;
+    manifestUrl: "HTTPS, maximum 2048 characters, configured Portal origin and canonical Share Gateway route only";
+    compactJwsDigest: "SHA-256 over the exact UTF-8 bytes of the compact JWS string";
     documentMetadata: string;
     errors: "RFC 9457 problem details";
   };
@@ -427,7 +429,7 @@ export function assertWalletExchangeDiscovery(value: unknown): WalletExchangeDis
   const object = rootObject(value, contract);
   exactKeys(object, ["name", "version", "contractVersion", "authorization", "endpoints", "protocols", "ownership", "renderer"], "$", issues);
   literalString(object, "name", "TrustCare Portal Wallet Exchange API", "$", issues);
-  literalString(object, "version", "2.0.0", "$", issues);
+  literalString(object, "version", "2.0.1", "$", issues);
   literalString(object, "contractVersion", WALLET_EXCHANGE_V2_CONTRACT_VERSION, "$", issues);
 
   validateDiscoveryAuthorization(object.authorization, issues);
@@ -906,10 +908,24 @@ function validateDiscoveryProtocols(value: unknown, issues: TrustCareValidationI
   const path = "$.protocols";
   const object = nestedObject(value, path, issues);
   if (!object) return;
-  exactKeys(object, ["credentialLifecycle", "presentation", "certifiedShl", "documentMetadata", "errors"], path, issues);
+  exactKeys(object, ["credentialLifecycle", "presentation", "certifiedShl", "manifestUrl", "compactJwsDigest", "documentMetadata", "errors"], path, issues);
   nonEmptyString(object, "credentialLifecycle", path, issues, 1, 300);
   nonEmptyString(object, "presentation", path, issues, 1, 300);
   nonEmptyString(object, "certifiedShl", path, issues, 1, 300);
+  literalString(
+    object,
+    "manifestUrl",
+    "HTTPS, maximum 2048 characters, configured Portal origin and canonical Share Gateway route only",
+    path,
+    issues,
+  );
+  literalString(
+    object,
+    "compactJwsDigest",
+    "SHA-256 over the exact UTF-8 bytes of the compact JWS string",
+    path,
+    issues,
+  );
   nonEmptyString(object, "documentMetadata", path, issues, 1, 300);
   literalString(object, "errors", "RFC 9457 problem details", path, issues);
 }

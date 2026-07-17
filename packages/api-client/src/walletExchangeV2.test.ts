@@ -854,7 +854,7 @@ function makeChallenge(
 function contractSet(): WalletExchangeContractSet {
   const discovery = {
     name: "TrustCare Portal Wallet Exchange API" as const,
-    version: "2.0.0" as const,
+    version: "2.0.1" as const,
     contractVersion: WALLET_EXCHANGE_V2_CONTRACT_VERSION,
     authorization: {
       challengeEndpoint: `${PORTAL_ORIGIN}/api/wallet/v2/session-challenges`,
@@ -880,6 +880,10 @@ function contractSet(): WalletExchangeContractSet {
       credentialLifecycle: "Wallet Exchange lifecycle v2",
       presentation: "W3C Verifiable Presentation",
       certifiedShl: "Portal KMS manifest VC and holder VP association",
+      manifestUrl:
+        "HTTPS, maximum 2048 characters, configured Portal origin and canonical Share Gateway route only" as const,
+      compactJwsDigest:
+        "SHA-256 over the exact UTF-8 bytes of the compact JWS string" as const,
       documentMetadata: "FHIR DocumentReference",
       errors: "RFC 9457 problem details" as const,
     },

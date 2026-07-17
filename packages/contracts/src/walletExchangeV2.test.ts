@@ -33,7 +33,7 @@ const CURSOR = "opaque.cursor.signature.1234567890";
 function discoveryFixture() {
   return {
     name: "TrustCare Portal Wallet Exchange API",
-    version: "2.0.0",
+    version: "2.0.1",
     contractVersion: WALLET_EXCHANGE_V2_CONTRACT_VERSION,
     authorization: {
       challengeEndpoint: `${PORTAL}/api/wallet/v2/session-challenges`,
@@ -67,6 +67,10 @@ function discoveryFixture() {
         "Wallet-created VP JWT or Certified SHL/Manifest VP reference",
       certifiedShl:
         "Portal KMS Manifest VC plus Wallet holder authorization and manifest VP",
+      manifestUrl:
+        "HTTPS, maximum 2048 characters, configured Portal origin and canonical Share Gateway route only",
+      compactJwsDigest:
+        "SHA-256 over the exact UTF-8 bytes of the compact JWS string",
       documentMetadata:
         "FHIR R4 DocumentReference; IHE MHD ITI-65 compatible intake mapping",
       errors: "RFC 9457 problem details",
@@ -180,6 +184,21 @@ describe("Wallet Exchange V2 live contracts", () => {
     expect(() =>
       assertWalletExchangeDiscovery({ ...discoveryFixture(), patientId: 42 }),
     ).toThrow(/patientId/);
+    expect(() =>
+      assertWalletExchangeDiscovery({
+        ...discoveryFixture(),
+        version: "2.0.0",
+      }),
+    ).toThrow(/version must equal 2.0.1/);
+    expect(() =>
+      assertWalletExchangeDiscovery({
+        ...discoveryFixture(),
+        protocols: {
+          ...discoveryFixture().protocols,
+          compactJwsDigest: "SHA-256 over decoded JSON",
+        },
+      }),
+    ).toThrow(/compactJwsDigest/);
     expect(() =>
       assertWalletExchangeDiscovery({
         ...discoveryFixture(),

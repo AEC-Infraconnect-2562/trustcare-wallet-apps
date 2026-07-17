@@ -1496,7 +1496,9 @@ function normalizeHttpsUrl(value: string, label: string): string {
   ) {
     throw new Error(`${label} must be an absolute HTTPS URL.`);
   }
-  return parsed.toString();
+  return parsed.pathname === "/" && !parsed.search && !parsed.hash
+    ? parsed.origin
+    : parsed.toString();
 }
 
 function ensureTrailingSlash(value: string): string {

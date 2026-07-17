@@ -53,6 +53,24 @@ describe("Certified SHL trust-layer primitives", () => {
     expect(second).not.toBe(first);
   });
 
+  it("preserves a canonical Portal origin audience without adding a trailing slash", async () => {
+    const document = await documentRecord(
+      "document-origin-audience",
+      "credential-origin-audience",
+      holder.did,
+      hospitalPrivateKey,
+    );
+    const prepared = await prepare([document], holder, {
+      audience: PORTAL_ORIGIN,
+    });
+    const presentation = decodeJwt(prepared.holderPresentationJwt);
+
+    expect(prepared.manifest.accessPolicy.audience).toBe(PORTAL_ORIGIN);
+    expect(
+      (presentation.trustcare as Record<string, unknown>).audience,
+    ).toBe(PORTAL_ORIGIN);
+  });
+
   it("encrypts exact issuer JWTs with a random A256GCM key and fresh IVs", async () => {
     const documents = await Promise.all([
       documentRecord(
@@ -630,6 +648,7 @@ describe("Certified SHL trust-layer primitives", () => {
 async function prepare(
   documents: readonly WalletDocumentRecordV2[],
   identity: GeneratedHolderIdentity,
+  options: { audience?: string } = {},
 ) {
   const publicationId = "A".repeat(43);
   return prepareHolderAttestedShl({
@@ -642,7 +661,8 @@ async function prepare(
     trustedIssuerDids: [TCC_ISSUER],
     purpose: "OPD registration",
     recipient: "TrustCare TCC registration desk",
-    audience: `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,
+    audience:
+      options.audience ?? `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,
     context: "opd_visit",
     consentRef: "consent:receipt:1",
     targetHospitalCode: "TCC",
