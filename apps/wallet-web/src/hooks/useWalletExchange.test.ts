@@ -20,6 +20,7 @@ const harness = vi.hoisted(() => ({
   synchronizeWalletAvatar: vi.fn(),
   synchronize: vi.fn(),
   synchronizeClinicalDocumentGraph: vi.fn(),
+  initializePersistenceTrust: vi.fn(),
   clinicalDocumentGraphPresentation: vi.fn(),
   recoverPendingDirectSubmissions: vi.fn(),
   loadProvisioningConfiguration: vi.fn(),
@@ -105,6 +106,10 @@ vi.mock("@trustcare/api-client/walletExchangeWorkflow", () => ({
 
     synchronizeClinicalDocumentGraph() {
       return harness.synchronizeClinicalDocumentGraph();
+    }
+
+    initializePersistenceTrust() {
+      return harness.initializePersistenceTrust();
     }
 
     clinicalDocumentGraphPresentation(artifactId: string) {
@@ -201,6 +206,7 @@ describe("useWalletExchange lifecycle", () => {
     harness.synchronizeWalletAvatar.mockReset();
     harness.synchronize.mockReset();
     harness.synchronizeClinicalDocumentGraph.mockReset();
+    harness.initializePersistenceTrust.mockReset();
     harness.clinicalDocumentGraphPresentation.mockReset();
     harness.recoverPendingDirectSubmissions.mockReset();
     harness.loadProvisioningConfiguration.mockReset();
@@ -253,7 +259,11 @@ describe("useWalletExchange lifecycle", () => {
       extractable: false,
     });
     expect(harness.saveHolderIdentity).toHaveBeenCalledWith(identity);
+    expect(harness.initializePersistenceTrust).toHaveBeenCalledTimes(1);
     expect(harness.loadOrCreateState).toHaveBeenCalledTimes(1);
+    expect(
+      harness.initializePersistenceTrust.mock.invocationCallOrder[0],
+    ).toBeLessThan(harness.loadOrCreateState.mock.invocationCallOrder[0]!);
     expect(harness.synchronize).not.toHaveBeenCalled();
     expect(localStorage.setItem).toHaveBeenCalledTimes(1);
 

@@ -84,6 +84,27 @@ describe("Wallet Exchange discovery routing", () => {
       `${portalOrigin}/api/share-gateway`,
     );
   });
+
+  it("installs live Portal issuers before durable state is validated", async () => {
+    const fake = fakeClient();
+    const persistence = freshPersistence();
+    const configureTrustedIssuers = vi.spyOn(
+      persistence,
+      "configureTrustedIssuers",
+    );
+    const workflow = createWorkflow({ persistence, fake });
+
+    await workflow.initializePersistenceTrust();
+
+    expect(configureTrustedIssuers).toHaveBeenCalledOnce();
+    expect(configureTrustedIssuers).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        network.issuers.TCC.issuerDid,
+        network.issuers.TCP.issuerDid,
+        network.issuers.TCM.issuerDid,
+      ]),
+    );
+  });
 });
 
 describe("credentialTypesForDocumentRequest", () => {
