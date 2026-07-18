@@ -1,7 +1,11 @@
 import { darkColors, lightColors, trustBadge } from "./colors";
 import { radius } from "./radius";
 import { typography } from "./typography";
-import { gradientForCardType, walletCardGradients } from "./gradients";
+import {
+  accentForCardType,
+  gradientForCardType,
+  walletCardGradients,
+} from "./gradients";
 
 export const nativeTheme = {
   light: lightColors,
@@ -11,4 +15,5 @@ export const nativeTheme = {
   trustBadge,
   gradients: walletCardGradients,
   gradientForCardType,
+  accentForCardType,
 } as const;

@@ -11,23 +11,32 @@
  *     rendering discontinuity on /prepare)
  */
 
+/*
+ * Per-type identity colors mirror packages/design-tokens gradients.ts
+ * (accentForCardType): the gradient start color is the type's identity on
+ * both platforms; soft = same hue at 14% alpha.
+ */
 :root {
-  --doc-identity: #1d4ed8;
-  --doc-identity-soft: #dbeafe;
-  --doc-coverage: #0f766e;
-  --doc-coverage-soft: #ccfbf1;
-  --doc-medication: #7c3aed;
-  --doc-medication-soft: #ede9fe;
-  --doc-allergy: #b91c1c;
-  --doc-allergy-soft: #fee2e2;
-  --doc-appointment: #c2410c;
-  --doc-appointment-soft: #ffedd5;
-  --doc-lab: #0e7490;
-  --doc-lab-soft: #cffafe;
-  --doc-summary: #334155;
-  --doc-summary-soft: #e2e8f0;
-  --doc-referral: #a16207;
-  --doc-referral-soft: #fef9c3;
+  --doc-identity: #4f67f2;
+  --doc-identity-soft: rgba(79, 103, 242, 0.14);
+  --doc-coverage: #059669;
+  --doc-coverage-soft: rgba(5, 150, 105, 0.14);
+  --doc-medication: #3b82f6;
+  --doc-medication-soft: rgba(59, 130, 246, 0.14);
+  --doc-prescription: #0284c7;
+  --doc-prescription-soft: rgba(2, 132, 199, 0.14);
+  --doc-allergy: #ef4444;
+  --doc-allergy-soft: rgba(239, 68, 68, 0.14);
+  --doc-appointment: #9333ea;
+  --doc-appointment-soft: rgba(147, 51, 234, 0.14);
+  --doc-lab: #65a30d;
+  --doc-lab-soft: rgba(101, 163, 13, 0.14);
+  --doc-summary: #475569;
+  --doc-summary-soft: rgba(71, 85, 105, 0.14);
+  --doc-referral: #06b6d4;
+  --doc-referral-soft: rgba(6, 182, 212, 0.14);
+  --doc-certificate: #0d9488;
+  --doc-certificate-soft: rgba(13, 148, 136, 0.14);
 }
 
 /* ------------------------------------------------------------------ */
@@ -100,10 +109,15 @@
   --doc-accent-soft: var(--doc-coverage-soft);
 }
 
-[data-document-type="prescription"],
-[data-document-type*="medication"] {
+[data-document-type*="medication"],
+[data-document-type*="pharmacy"] {
   --doc-accent: var(--doc-medication);
   --doc-accent-soft: var(--doc-medication-soft);
+}
+
+[data-document-type="prescription"] {
+  --doc-accent: var(--doc-prescription);
+  --doc-accent-soft: var(--doc-prescription-soft);
 }
 
 [data-document-type*="allergy"] {
@@ -123,10 +137,15 @@
   --doc-accent-soft: var(--doc-lab-soft);
 }
 
-[data-document-type*="referral"],
-[data-document-type*="certificate"] {
+[data-document-type*="referral"] {
   --doc-accent: var(--doc-referral);
   --doc-accent-soft: var(--doc-referral-soft);
+}
+
+[data-document-type*="certificate"],
+[data-document-type*="discharge"] {
+  --doc-accent: var(--doc-certificate);
+  --doc-accent-soft: var(--doc-certificate-soft);
 }
 
 /* icon tiles pick up the accent */
@@ -433,6 +452,79 @@
 .settings-advanced .test-session-details {
   font-size: 12.5px;
   word-break: break-all;
+}
+
+/* ------------------------------------------------------------------ */
+/* 5c. Share steps read as one sheet (EUDI request-screen feel)        */
+/* ------------------------------------------------------------------ */
+
+.premium-share-flow .share-step,
+.premium-share-flow .share-result-card {
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
+  border-top: 1px solid var(--border-soft, rgba(100, 116, 139, 0.16));
+  padding-inline: 4px;
+}
+
+.premium-share-flow .share-form-column > .share-step:first-child {
+  border-top: none;
+}
+
+.premium-share-flow .step-number {
+  width: 24px;
+  height: 24px;
+  font-size: 12.5px;
+}
+
+.premium-share-flow .share-live-panel .timeline-panel {
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  border-top: 1px solid var(--border-soft, rgba(100, 116, 139, 0.16));
+  border-radius: 0;
+  padding-inline: 4px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 5d. Empty states                                                    */
+/* ------------------------------------------------------------------ */
+
+.empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 44px 24px;
+}
+
+.empty-state-icon {
+  display: grid;
+  place-items: center;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: var(--doc-summary-soft);
+  color: var(--doc-summary);
+  margin-bottom: 4px;
+}
+
+.empty-state h3 {
+  margin: 0;
+  font-size: 16.5px;
+}
+
+.empty-state p {
+  margin: 0;
+  max-width: 420px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-muted, #64748b);
+}
+
+.empty-state-action {
+  margin-top: 8px;
 }
 
 /* ------------------------------------------------------------------ */

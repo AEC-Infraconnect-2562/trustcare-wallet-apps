@@ -108,6 +108,7 @@ import {
 } from "@trustcare/wallet-core";
 import { AcquisitionPlanner } from "../components/acquisition/AcquisitionPlanner";
 import { DisabledReason } from "../components/common/DisabledReason";
+import { EmptyState } from "../components/common/EmptyState";
 import { ImportHub } from "../components/import/ImportHub";
 import { MissingDocumentCard } from "../components/prepare/MissingDocumentCard";
 import { PayerOrchestrationPanel } from "../components/payer/PayerOrchestrationPanel";
@@ -999,10 +1000,10 @@ export function ShareView({
   );
   const shareCopyLabel =
     packageProtocol === "vp"
-      ? "คัดลอก VP"
+      ? "คัดลอกชุดข้อมูลที่แชร์"
       : packageProtocol === "shl"
-        ? "คัดลอก SHL"
-        : "คัดลอก SHL + Manifest VP";
+        ? "คัดลอกลิงก์สุขภาพ"
+        : "คัดลอกลิงก์สุขภาพพร้อมใบรับรอง";
 
   const toggleSelectedCard = (cardId: number) => {
     setSelectedCardIds((previous) =>
@@ -1799,14 +1800,14 @@ export function ShareView({
                   className={timeAnchor === "record" ? "active" : ""}
                   onClick={() => setTimeAnchor("record")}
                 >
-                  Record time
+                  เรียงตามวันที่ในเอกสาร
                 </button>
                 <button
                   type="button"
                   className={timeAnchor === "package" ? "active" : ""}
                   onClick={() => setTimeAnchor("package")}
                 >
-                  Package time
+                  เรียงตามวันที่จัดชุด
                 </button>
               </div>
               <div className="biometric-note">
@@ -1921,11 +1922,11 @@ export function ShareView({
             </div>
             <div className="timeline-panel share-timeline-panel">
               <div>
-                <span className="eyebrow">Timeline ที่จะส่ง</span>
+                <span className="eyebrow">ลำดับเอกสารที่จะส่ง</span>
                 <strong>
                   {timeAnchor === "record"
-                    ? "ยึดเวลาของ record"
-                    : "ยึดเวลาที่จัด package"}
+                    ? "เรียงตามวันที่ในเอกสาร"
+                    : "เรียงตามวันที่จัดชุด"}
                 </strong>
               </div>
               <div className="timeline-list">
@@ -1937,13 +1938,13 @@ export function ShareView({
                     <span>{item.displayDate}</span>
                     <strong>{item.title}</strong>
                     <small>
-                      {item.source} · record {item.recordDate} · package{" "}
+                      วันที่ในเอกสาร {item.recordDate} · จัดชุดเมื่อ{" "}
                       {item.packageDate}
                     </small>
                   </div>
                 ))}
                 {!selectedTimeline.length && (
-                  <p className="muted">เลือกเอกสารเพื่อดู timeline ก่อนแชร์</p>
+                  <p className="muted">เลือกเอกสารเพื่อดูลำดับก่อนแชร์</p>
                 )}
               </div>
             </div>
@@ -3061,6 +3062,13 @@ export function StoreView({
         </div>
       </Surface>
 
+      {objects.length === 0 && (
+        <EmptyState
+          icon={<FileJson size={30} />}
+          title="คลังพกพายังว่าง"
+          description="เอกสาร ลิงก์สุขภาพ และหลักฐานการแชร์ที่รับเข้ามาจะเก็บไว้ที่นี่ เริ่มจากการสแกน QR หรือวางลิงก์ในหน้ารับเอกสาร"
+        />
+      )}
       <div className="store-grid">
         {objects.map((object) => (
           <Surface key={object.id} className="store-object">

@@ -138,6 +138,15 @@ brand guidelines
 | ตัดแผงสรุป SharePacketComposer/PacketRecommendation ที่ซ้ำกับ step 1 และ 3 ออกจากหน้าแชร์ (ข้อมูลเดิมแสดงในขั้นตอนอยู่แล้ว) | `AppViews.tsx` | ลดการทวนซ้ำ 3 จุดเหลือจุดเดียว |
 | QR เต็มจอแบบ boarding pass: กด QR ในขั้นที่ 4 เพื่อเปิดเต็มจอ พร้อมชื่อผู้รับ วัตถุประสงค์ และอายุการใช้งาน | `AppViews.tsx`, `ux-refresh.css` | ปุ่ม `share-qr-fullscreen-open` |
 
+## 5c. สิ่งที่ปรับเพิ่มในรอบสาม (Implemented)
+
+| การเปลี่ยนแปลง | ไฟล์ | Benchmark ที่อ้าง |
+|----------------|------|-------------------|
+| สีประจำประเภทเอกสารเป็นระบบเดียวทั้งสองแพลตฟอร์ม: เพิ่ม `accentForCardType` ใน design-tokens (derive จาก gradient เดิม) ใช้ใน mobile list row (แถบสี + ไอคอน tile) และปรับ palette ฝั่ง web ให้ตรงกับ token | `design-tokens/gradients.ts`, `WalletDocumentListItem.tsx`, `ux-refresh.css` | Google Wallet, NFT gallery |
+| หน้าแชร์อ่านเป็น sheet เดียว: ตัดกรอบการ์ดของแต่ละขั้น เหลือเส้นแบ่งบาง ๆ ในแผ่นเดียว | `ux-refresh.css` | EUDI Request screen |
+| แปลศัพท์ timeline เป็นภาษาผู้ป่วย: "Record/Package time" → "เรียงตามวันที่ในเอกสาร/วันที่จัดชุด", ตัดชื่อ fixture ภายในออกจากรายการ, "คัดลอก VP/SHL" → "คัดลอกชุดข้อมูลที่แชร์/ลิงก์สุขภาพ" | `AppViews.tsx` | เป๋าตัง/หมอพร้อม |
+| Empty states: คลังพกพาและหน้ากิจกรรม แสดงไอคอน + คำอธิบาย + ทางไปต่อ แทนพื้นที่ว่าง | `EmptyState.tsx`, `SecondaryViews.tsx`, `AppViews.tsx` | ทุก benchmark |
+
 ## 6. Roadmap รอบถัดไป
 
 1. **Share flow → single sheet เต็มรูปแบบ**: ยุบ 4 ขั้นเหลือ sheet เดียวแบบ EUDI Request

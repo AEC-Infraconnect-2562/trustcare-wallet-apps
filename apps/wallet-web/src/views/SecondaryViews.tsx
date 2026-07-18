@@ -16,6 +16,7 @@ import type {
   WalletDemoUser,
   WalletTestUserProfile,
 } from "@trustcare/wallet-core";
+import { EmptyState } from "../components/common/EmptyState";
 import type { SandboxTestSession } from "../sandbox/sandboxTestSessionStore";
 import type { useWebAuthn } from "../hooks/useWebAuthn";
 import type { ScanOutcome } from "./appViewModel";
@@ -28,6 +29,15 @@ export function HistoryView({
   history: PresentationHistoryItem[];
   scanHistory: ScanOutcome[];
 }) {
+  if (!history.length && !scanHistory.length) {
+    return (
+      <EmptyState
+        icon={<HistoryIcon size={30} />}
+        title="ยังไม่มีกิจกรรม"
+        description="เมื่อคุณรับเอกสาร แชร์ หรือสแกน QR ประวัติการใช้งานจะแสดงที่นี่ เพื่อให้ตรวจย้อนหลังได้ว่าข้อมูลถูกเปิดเมื่อไรและกับใคร"
+      />
+    );
+  }
   return (
     <div className="history-list large">
       {scanHistory.map((item) => (

@@ -46,3 +46,28 @@ export function gradientForCardType(
     ] ?? walletCardGradients.identity
   );
 }
+
+export type DocumentTypeAccent = {
+  /** Solid identity color for icons, borders, and emphasis. */
+  accent: string;
+  /** Soft tint for icon tiles and chips (light surfaces). */
+  soft: string;
+};
+
+/**
+ * Flat per-document-type identity color, derived from the same gradient
+ * palette so list rows, icon tiles, and hero cards stay one visual system
+ * across wallet-web and wallet-mobile.
+ */
+export function accentForCardType(cardType: string): DocumentTypeAccent {
+  const [start] = gradientForCardType(cardType);
+  return { accent: start, soft: hexToRgba(start, 0.14) };
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const value = hex.replace("#", "");
+  const red = parseInt(value.slice(0, 2), 16);
+  const green = parseInt(value.slice(2, 4), 16);
+  const blue = parseInt(value.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}

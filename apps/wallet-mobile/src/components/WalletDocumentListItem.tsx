@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ChevronRight, FileText, Pin } from "lucide-react-native";
+import { accentForCardType } from "@trustcare/design-tokens";
 import type { WalletDocumentRecordV2 } from "@trustcare/wallet-core";
 import {
   documentDisplayDate,
@@ -17,6 +18,7 @@ export function WalletDocumentListItem({
   onPress: () => void;
 }) {
   const trust = patientTrustPresentation(document);
+  const accent = accentForCardType(document.documentType);
   const source =
     document.clinicalContext.facility?.name ??
     document.provenance.issuerName ??
@@ -26,10 +28,14 @@ export function WalletDocumentListItem({
       accessibilityRole="button"
       accessibilityLabel={`${document.title.th}, ${source}, ${trust.label}`}
       onPress={onPress}
-      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.card,
+        { borderLeftWidth: 3, borderLeftColor: accent.accent },
+        pressed && styles.pressed,
+      ]}
     >
-      <View style={styles.icon}>
-        <FileText color="#365f91" size={22} />
+      <View style={[styles.icon, { backgroundColor: accent.soft }]}>
+        <FileText color={accent.accent} size={22} />
       </View>
       <View style={styles.body}>
         <View style={styles.titleRow}>
