@@ -267,6 +267,15 @@ export type PortalShlAssociationInput = {
   presentationId?: string;
 };
 
+export type WalletHolderPresentationBinding = {
+  /** Portal verifier audience used in the signed TrustCare VP policy binding. */
+  audience: string;
+  /** Live hospital issuer DID resolved from Portal Trust Registry. */
+  recipient: string;
+  /** Versioned TrustCare JSON-LD context controlled by the live Portal. */
+  credentialContext: string;
+};
+
 const allScopes = [
   "credentials:read",
   "credentials:request",
@@ -334,6 +343,25 @@ export class WalletExchangeWorkflow {
       );
     }
     return issuer.issuerDid;
+  }
+
+  /**
+   * Resolves every security-sensitive VP routing value from the same validated
+   * Portal contract set. UI labels must never be copied into signed recipient
+   * fields and Wallet code must not retain a legacy hospital DID fallback.
+   */
+  async holderPresentationBindingForHospital(
+    hospitalCode: WalletExchangeHospitalCode,
+  ): Promise<WalletHolderPresentationBinding> {
+    const [contracts, recipient] = await Promise.all([
+      this.contracts(),
+      this.issuerDidForHospital(hospitalCode),
+    ]);
+    return {
+      audience: `${contracts.portalOrigin}/verifier`,
+      recipient,
+      credentialContext: `${contracts.portalOrigin}/contexts/trustcare-credentials-v1.jsonld`,
+    };
   }
 
   async prepareHolderAttestedShl(

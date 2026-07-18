@@ -59,6 +59,7 @@ import {
   createShareDraftFromPrepare,
   createShlPackageId,
   createHolderSignedDirectVp,
+  assertProductionCrossDeviceQrPayload,
   createSharePolicy,
   createShlViewerUrl,
   credentialCompactSummaryRows,
@@ -1294,12 +1295,30 @@ export function ShareView({
           selectedCards.find((card) => card.cardType === "consent_receipt")
             ?.credentialId ??
           `urn:trustcare:consent:share-event:${result.presentation.presentationId}`;
+        if (!walletExchangeWorkflow) {
+          throw new Error(
+            "ต้องโหลด Portal discovery และ Trust Registry ก่อนสร้าง VP สำหรับสแกนข้ามเครื่อง",
+          );
+        }
+        const hospitalCode = user.hospitalCode.trim().toUpperCase();
+        if (
+          !(hospitalCode === "TCC" || hospitalCode === "TCP" || hospitalCode === "TCM")
+        ) {
+          throw new Error(
+            "โรงพยาบาลปลายทางยังไม่อยู่ใน Portal Trust Registry สำหรับรับ VP",
+          );
+        }
+        const presentationBinding =
+          await walletExchangeWorkflow.holderPresentationBindingForHospital(
+            hospitalCode,
+          );
         const holderPresentation = await createHolderSignedDirectVp({
           identity: holderIdentity,
           holderDid: holderIdentity.did,
           presentationId: result.presentation.presentationId,
-          audience: "https://trustcare.network/verifier",
-          recipient,
+          audience: presentationBinding.audience,
+          recipient: presentationBinding.recipient,
+          credentialContext: presentationBinding.credentialContext,
           context: purpose,
           purpose: readinessContextLabels[purpose].th,
           consentRef: String(consentRef),
@@ -1314,13 +1333,14 @@ export function ShareView({
           holderDid: holderIdentity.did,
           purpose,
           purposeLabel: readinessContextLabels[purpose].th,
-          recipient,
+          recipient: presentationBinding.recipient,
           expiresAt,
         });
         if (!publication.qrPayload) {
           throw new Error("Share Gateway ไม่ได้ส่ง VP resolver URL กลับมา");
         }
         const webScanPayload = createScannableWebUrl(publication.qrPayload);
+        assertProductionCrossDeviceQrPayload(webScanPayload);
         setSharePayload(webScanPayload);
         setShareExportPayload(exportPayload);
         setShareQrDataUrl(await toQrDataUrl(webScanPayload, { width: 320 }));

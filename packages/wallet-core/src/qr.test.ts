@@ -7,9 +7,35 @@ import {
   parseTrustCareQr,
   presentationQrInlineMaxLength,
 } from "./qr";
-import { classifyQrPayload } from "./qrContracts";
+import {
+  assertProductionCrossDeviceQrPayload,
+  classifyQrPayload,
+} from "./qrContracts";
 
 describe("presentation QR payloads", () => {
+  it("accepts a public HTTPS verifier wrapper around a production VP resolver", () => {
+    const resolver =
+      "https://wallet.example/api/share-gateway/presentations/vp_123.jwt";
+    const wrapper = `https://wallet.example/verify#scan=${encodeURIComponent(resolver)}`;
+
+    expect(classifyQrPayload(wrapper)).toMatchObject({
+      kind: "vp_resolver",
+      verifierResolvable: true,
+      productionResolvable: true,
+    });
+    expect(() => assertProductionCrossDeviceQrPayload(wrapper)).not.toThrow();
+  });
+
+  it("rejects inline health JWTs and non-HTTPS links as production cross-device QR payloads", () => {
+    expect(() =>
+      assertProductionCrossDeviceQrPayload("eyJhbGciOiJFUzI1NiJ9.eyJ0eXBlIjpbIlZlcmlmaWFibGVQcmVzZW50YXRpb24iXX0.signature"),
+    ).toThrow(/HTTPS URL/);
+    expect(() =>
+      assertProductionCrossDeviceQrPayload(
+        "http://wallet.example/presentations/vp_123.jwt",
+      ),
+    ).toThrow(/HTTPS URL/);
+  });
   it("keeps short direct payloads inline", () => {
     expect(
       createPresentationQrPayload({

@@ -22,6 +22,8 @@ export type HolderSignedDirectVpInput = {
   holderDid?: string;
   audience: string;
   recipient: string;
+  /** Live versioned TrustCare JSON-LD context from validated Portal discovery. */
+  credentialContext?: string;
   context: WalletExchangeServiceContext;
   purpose: string;
   consentRef: string;
@@ -134,6 +136,10 @@ export async function createHolderSignedDirectVp(
 
   const audience = requireAudience(input.audience);
   const recipient = requireText(input.recipient, "VP recipient", 500);
+  const credentialContext = requireCredentialContext(
+    input.credentialContext ??
+      `${new URL(audience).origin}/contexts/trustcare-credentials-v1.jsonld`,
+  );
   const purpose = requireText(input.purpose, "VP purpose", 128);
   const consentRef = requireText(input.consentRef, "VP consent reference", 255);
   if (!WALLET_EXCHANGE_V2_CONTEXTS.includes(input.context)) {
@@ -161,7 +167,7 @@ export async function createHolderSignedDirectVp(
   const payload: HolderSignedDirectVpPayload = {
     "@context": [
       "https://www.w3.org/ns/credentials/v2",
-      `${new URL(audience).origin}/contexts/trustcare-credentials-v1.jsonld`,
+      credentialContext,
     ],
     id: presentationId,
     type: ["VerifiablePresentation", "TrustcarePatientPresentation"],
@@ -311,6 +317,29 @@ function assertHolderIdentity(
   if (assertedHolderDid !== undefined && assertedHolderDid !== identity.did) {
     throw new Error("Holder VP signer does not match the asserted holder DID.");
   }
+}
+
+function requireCredentialContext(value: string): string {
+  const context = requireText(value, "TrustCare credential context", 500);
+  const parsed = new URL(context);
+  if (
+    (parsed.protocol !== "https:" && !isLoopbackHost(parsed.hostname)) ||
+    !parsed.pathname.endsWith("/contexts/trustcare-credentials-v1.jsonld")
+  ) {
+    throw new Error(
+      "Holder VP requires the versioned HTTPS TrustCare credential context.",
+    );
+  }
+  return parsed.toString();
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]" ||
+    hostname === "::1"
+  );
 }
 function assertIssuerSignedCredentialJwt(
   value: unknown,
