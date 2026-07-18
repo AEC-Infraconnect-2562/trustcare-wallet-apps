@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { Buffer } from "node:buffer";
-import { SignJWT } from "jose";
+import { SignJWT, importJWK } from "jose";
 import {
   createDemoResolverUrl,
   createDataIntegrityProof,
   createEphemeralEs256SigningKey,
+  createHolderSignedDirectVp,
   extractCredentialJwt,
+  generateHolderIdentity,
   parseJwtPayload,
   publicJwksForSigningKey,
   sha256Hex,
@@ -40,6 +42,87 @@ const unsignedVp = {
 };
 
 describe("verifyQr VP resolver behavior", () => {
+  it("verifies a holder did:key VP and TrustCare binding without a JWKS lookup", async () => {
+    const holder = await generateHolderIdentity({ algorithm: "Ed25519" });
+    const hospitalKey = await createEphemeralEs256SigningKey({
+      issuerDid: PORTAL_TCC_DID,
+      kidPrefix: PORTAL_TCC_DID,
+    });
+    const credentialJwt = await new SignJWT({
+        "@context": ["https://www.w3.org/ns/credentials/v2"],
+        id: "urn:trustcare:test:holder-vp-source",
+        type: ["VerifiableCredential", "PatientIdentityCredential"],
+        issuer: PORTAL_TCC_DID,
+        validFrom: new Date(Date.now() - 60_000).toISOString(),
+        validUntil: new Date(Date.now() + 600_000).toISOString(),
+        credentialSubject: { id: holder.did, data: {} },
+        credentialStatus: {
+          id: `${PORTAL_ORIGIN}/status/test#0`,
+          type: "BitstringStatusListEntry",
+          statusPurpose: "revocation",
+          statusListIndex: "0",
+          statusListCredential: `${PORTAL_ORIGIN}/status/test`,
+        },
+        credentialSchema: {
+          id: `${PORTAL_ORIGIN}/api/public/wallet-contracts/schema`,
+          type: "JsonSchema",
+        },
+      })
+      .setProtectedHeader({
+        alg: "ES256",
+        typ: "vc+jwt",
+        cty: "vc",
+        kid: hospitalKey.kid,
+      })
+      .setIssuer(PORTAL_TCC_DID)
+      .sign(await importJWK(hospitalKey.privateJwk, "ES256"));
+    const presentation = await createHolderSignedDirectVp({
+      identity: holder,
+      audience: PORTAL_ORIGIN,
+      recipient: PORTAL_TCC_DID,
+      credentialContext: `${PORTAL_ORIGIN}/contexts/trustcare-credentials-v1.jsonld`,
+      context: "opd_visit",
+      purpose: "care-entry",
+      consentRef: "consent:test:holder-vp",
+      credentialJwts: [credentialJwt],
+    });
+    const presentationUrl =
+      "https://wallet.example/api/share-gateway/presentations/holder-vp.jwt";
+    let unexpectedHolderKeyFetch = false;
+    const result = await verifyQr(
+      {
+        url: "https://trustcare.example.com/trpc",
+        verificationEvidenceProvider: completeEvidenceProvider,
+        fetchImpl: async (input) => {
+          const url = String(input);
+          if (url === presentationUrl) {
+            return new Response(presentation.vpJwt, {
+              headers: { "content-type": "application/vp+jwt" },
+            });
+          }
+          if (url.endsWith("/hospital/tcc/did/jwks.json")) {
+            return new Response(JSON.stringify(publicJwksForSigningKey(hospitalKey)), {
+              headers: { "content-type": "application/json" },
+            });
+          }
+          if (url.includes(holder.did)) unexpectedHolderKeyFetch = true;
+          return new Response("not found", { status: 404 });
+        },
+      },
+      presentationUrl,
+    );
+
+    expect(unexpectedHolderKeyFetch).toBe(false);
+    expect(result.verified, JSON.stringify(result)).toBe(true);
+    expect(result.trustLevel).toBe("green");
+    expect(result.holderDid).toBe(holder.did);
+    expect(result.verificationPayload).toMatchObject({
+      recipient: PORTAL_TCC_DID,
+      audience: PORTAL_ORIGIN,
+      purpose: "care-entry",
+    });
+  });
+
   it("never promotes an internal SHL planning JSON object to verified", async () => {
     const result = await verifyQr(
       {
