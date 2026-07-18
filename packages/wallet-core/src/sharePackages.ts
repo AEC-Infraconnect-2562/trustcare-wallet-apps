@@ -52,7 +52,7 @@ export type DirectVpSharePackage = {
 };
 
 export type ShlSharePackage = {
-  mode: "StandardSHL" | "CertifiedSHLManifestPackage";
+  mode: "StandardSHL" | "CertifiedSHLPackage";
   shl: CheckinQrResponse;
   payload: Record<string, unknown>;
 };
@@ -81,7 +81,7 @@ export function buildSharePackage(
     input.expiresAt ?? new Date(Date.now() + 10 * 60_000).toISOString();
   if (
     input.mode === "StandardSHL" ||
-    input.mode === "CertifiedSHLManifestPackage"
+    input.mode === "CertifiedSHLPackage"
   ) {
     const publication = createTrustCareShlGatewayPublication({
       context: input.context,
@@ -96,7 +96,7 @@ export function buildSharePackage(
       gatewayBaseUrl: input.gatewayBaseUrl,
       viewerBaseUrl: input.viewerBaseUrl,
       requestHospitalCertification:
-        input.mode === "CertifiedSHLManifestPackage",
+        input.mode === "CertifiedSHLPackage",
       policy: {
         expiresAt,
         passcodeRequired: input.shlPolicy?.passcodeRequired,

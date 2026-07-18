@@ -29,12 +29,7 @@ export function shareGatewayArtifactPath(
     case "vp":
       return `/presentations/${encoded}.jwt`;
     case "standard_shl_manifest":
-    case "certified_shl_manifest":
-      return `/manifests/${encoded}.json`;
-    case "manifest_vp":
-      return `/manifest-vps/${encoded}.jwt`;
-    case "manifest_credential":
-      return `/manifest-credentials/${encoded}.jwt`;
+      return `/s/${encoded}`;
     case "shl_file":
       return `/files/${encoded}`;
   }

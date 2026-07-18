@@ -225,7 +225,7 @@ export interface MhdDocumentRepositoryClient {
 export type PublishVpRequest = ShareGatewayPublicationRequest & { kind: "vp" };
 
 export type PublishShlRequest = ShareGatewayPublicationRequest & {
-  kind: "standard_shl_manifest" | "certified_shl_manifest";
+  kind: "standard_shl_manifest";
 };
 
 export type PublishedShareArtifact = ShareGatewayPublicationResponse;

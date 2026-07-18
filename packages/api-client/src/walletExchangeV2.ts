@@ -406,7 +406,10 @@ export class WalletExchangeV2Client {
   ): Promise<WalletCredentialRequest> {
     const endpoint =
       this.options.contracts.discovery.endpoints.shlCertificationRequests;
-    const request = assertShlCertificationRequest(input);
+    const request = assertShlCertificationRequest(
+      input,
+      this.options.contracts.portalOrigin,
+    );
     return this.protectedJson(
       {
         method: "POST",

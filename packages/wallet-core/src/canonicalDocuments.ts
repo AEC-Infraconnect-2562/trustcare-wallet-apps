@@ -120,7 +120,7 @@ export type WalletDocumentRecord = {
 };
 
 export type SharePackageMode =
-  "DirectVP" | "PurposeVP" | "StandardSHL" | "CertifiedSHLManifestPackage";
+  "DirectVP" | "PurposeVP" | "StandardSHL" | "CertifiedSHLPackage";
 
 export type CanonicalServiceProfile = {
   context: ReadinessContext;
@@ -425,8 +425,8 @@ export const canonicalServiceProfiles: Record<
     label: "ส่งต่อผู้ป่วย",
     labelEn: "Referral readiness",
     purpose: "รวมใบส่งต่อและข้อมูลประกอบสำหรับโรงพยาบาลปลายทาง",
-    defaultSharePackage: "CertifiedSHLManifestPackage",
-    recommendedWhenLarge: "CertifiedSHLManifestPackage",
+    defaultSharePackage: "CertifiedSHLPackage",
+    recommendedWhenLarge: "CertifiedSHLPackage",
     requirements: [
       requirement(
         "identity",
@@ -486,8 +486,8 @@ export const canonicalServiceProfiles: Record<
     labelEn: "Cross-network readiness",
     purpose:
       "เตรียมเอกสารสองภาษาและหลักฐานที่ verifier ต่างเครือข่ายตรวจสอบได้",
-    defaultSharePackage: "CertifiedSHLManifestPackage",
-    recommendedWhenLarge: "CertifiedSHLManifestPackage",
+    defaultSharePackage: "CertifiedSHLPackage",
+    recommendedWhenLarge: "CertifiedSHLPackage",
     requirements: [
       requirement(
         "identity",
@@ -547,8 +547,8 @@ export const canonicalServiceProfiles: Record<
     labelEn: "Prepare care abroad",
     purpose:
       "เตรียมตัวตน เอกสารเดินทาง การเงิน และข้อมูลคลินิกสำหรับ pre-review",
-    defaultSharePackage: "CertifiedSHLManifestPackage",
-    recommendedWhenLarge: "CertifiedSHLManifestPackage",
+    defaultSharePackage: "CertifiedSHLPackage",
+    recommendedWhenLarge: "CertifiedSHLPackage",
     requirements: [
       requirement(
         "identity",
@@ -608,8 +608,8 @@ export const canonicalServiceProfiles: Record<
     labelEn: "Insurance claim readiness",
     purpose:
       "เตรียมสิทธิประกัน ข้อมูลคลินิก และเอกสารประกอบเคลมสำหรับผู้จ่ายเงิน",
-    defaultSharePackage: "CertifiedSHLManifestPackage",
-    recommendedWhenLarge: "CertifiedSHLManifestPackage",
+    defaultSharePackage: "CertifiedSHLPackage",
+    recommendedWhenLarge: "CertifiedSHLPackage",
     requirements: [
       requirement(
         "identity",

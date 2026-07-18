@@ -65,7 +65,7 @@ describe("Certified SHL trust-layer primitives", () => {
     });
     const presentation = decodeJwt(prepared.holderPresentationJwt);
 
-    expect(prepared.manifest.accessPolicy.audience).toBe(PORTAL_ORIGIN);
+    expect(prepared.packageBinding.accessPolicy.audience).toBe(PORTAL_ORIGIN);
     expect(
       (presentation.trustcare as Record<string, unknown>).audience,
     ).toBe(PORTAL_ORIGIN);
@@ -98,11 +98,11 @@ describe("Certified SHL trust-layer primitives", () => {
     expect(prepared.files[0].jwe.split(".")[2]).not.toBe(
       prepared.files[1].jwe.split(".")[2],
     );
-    expect(prepared.manifest.documents[0].encryption).toEqual({
+    expect(prepared.packageBinding.documents[0].encryption).toEqual({
       alg: "dir",
       enc: "A256GCM",
     });
-    expect(Object.isFrozen(prepared.manifest.documents)).toBe(true);
+    expect(Object.isFrozen(prepared.packageBinding.documents)).toBe(true);
     expect(prepared.manifestJson).not.toContain(prepared.shlContentKey);
     expect(prepared.manifestJson).not.toContain(documents[0].credential.jwt);
     expect(prepared.trustMode).toBe("holder_attested");
@@ -122,7 +122,7 @@ describe("Certified SHL trust-layer primitives", () => {
     expect(holderClaims.verifiableCredential).toHaveLength(2);
     expect(prepared.certificationRequest).toMatchObject({
       targetHospitalCode: "TCC",
-      shlPackageId: prepared.manifest.publicationId,
+      shlPackageId: prepared.packageBinding.publicationId,
       holderAuthorizationVpJwt: prepared.holderPresentationJwt,
       manifestHash: prepared.manifestHash,
       sourceBundleHash: prepared.sourceBundleHash,
@@ -190,7 +190,7 @@ describe("Certified SHL trust-layer primitives", () => {
       prepared.manifestHash,
     );
     expect(publication.objectLinks).toMatchObject({
-      shlPackageId: prepared.manifest.publicationId,
+      shlPackageId: prepared.packageBinding.publicationId,
       manifestHash: prepared.manifestHash,
       manifestCredentialJwt,
       holderPresentationId: prepared.holderPresentationId,
@@ -224,7 +224,7 @@ describe("Certified SHL trust-layer primitives", () => {
     });
 
     expect(association.objectLinks).toMatchObject({
-      shlPackageId: prepared.manifest.publicationId,
+      shlPackageId: prepared.packageBinding.publicationId,
       manifestHash: prepared.manifestHash,
       holderPresentationId: prepared.holderPresentationId,
       sourceCredentials: [
@@ -611,7 +611,7 @@ describe("Certified SHL trust-layer primitives", () => {
 
     await expect(prepare([policyPending], holder)).resolves.toMatchObject({
       trustMode: "holder_attested",
-      manifest: {
+      packageBinding: {
         accessPolicy: {
           purpose: "OPD registration",
           consentRef: "consent:receipt:1",
@@ -655,7 +655,7 @@ async function prepare(
     identity,
     portalOrigin: PORTAL_ORIGIN,
     publicationId,
-    manifestUrl: `https://share.example/shl/${publicationId}/manifest`,
+    manifestUrl: `${PORTAL_ORIGIN}/s/${publicationId}`,
     fileBaseUrl: `https://share.example/shl/${publicationId}/files/`,
     documents,
     trustedIssuerDids: [TCC_ISSUER],
@@ -773,7 +773,7 @@ async function signManifestCredential(
   const expected = binding as Record<string, unknown>;
   const directClaims = {
     "@context": ["https://www.w3.org/ns/credentials/v2"],
-    id: `urn:trustcare:vc:shl-manifest:${prepared.manifest.publicationId}`,
+    id: `urn:trustcare:vc:shl-manifest:${prepared.packageBinding.publicationId}`,
     type: ["VerifiableCredential", "ShlManifestCredential"],
     issuer,
     validFrom: NOW.toISOString(),
@@ -806,7 +806,7 @@ async function signManifestCredential(
     ],
     trustcare: {
       intendedAudience:
-        options.audience ?? prepared.manifest.manifestUrl,
+        options.audience ?? prepared.packageBinding.manifestUrl,
     },
   };
   return new SignJWT(

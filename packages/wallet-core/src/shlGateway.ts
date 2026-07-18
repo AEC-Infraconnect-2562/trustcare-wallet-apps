@@ -82,7 +82,7 @@ export type TrustCareShlGatewayManifest = {
   trustcare: {
     gatewayMode: TrustCareShlGatewayMode;
     storageProvider: TrustCareShlStorageProvider;
-    manifestEndpointMethod: "POST" | "GET" | "BOTH";
+    manifestEndpointMethod: "POST";
     trustLayerStatus: TrustCareShlGatewayTransportStatus;
     makerCheckerStatus: "not_required" | "pending_maker_checker" | "approved";
     contractHubVersion: string;
@@ -220,7 +220,7 @@ export function createTrustCareShlGatewayPublication(
     ? (input.policy?.accessCodeDelivery ?? "separate_channel")
     : "not_required";
   const maxAccessCount = input.policy?.maxAccessCount ?? 5;
-  const initialManifestUrl = `${gatewayBaseUrl}/manifests/${publicationId}.json`;
+  const initialManifestUrl = `${new URL(gatewayBaseUrl).origin}/s/${publicationId}`;
   const trustLayerStatus: TrustCareShlTrustLayerStatus =
     input.requestHospitalCertification
       ? "pending_hospital_certification"
@@ -262,7 +262,7 @@ export function createTrustCareShlGatewayPublication(
     checkId: `chk_${publicationId}`,
     shlId: publicationId,
     shlUrl: canonicalShlUrl,
-    qrPayload: webViewerUrl,
+    qrPayload: canonicalShlUrl,
     manifestUrl,
     viewerUrl: webViewerUrl,
     canonicalShlUrl,
@@ -279,7 +279,7 @@ export function createTrustCareShlGatewayPublication(
     gatewayPublicationId: publicationId,
     gatewayBaseUrl,
     storageProvider,
-    manifestEndpointMethod: passcodeRequired ? "POST" : "BOTH",
+    manifestEndpointMethod: "POST",
     trustLayerStatus,
     manifest,
     warnings,
@@ -348,7 +348,7 @@ export function buildTrustCareShlGatewayManifest(input: {
     trustcare: {
       gatewayMode: input.gatewayMode,
       storageProvider: input.storageProvider,
-      manifestEndpointMethod: input.passcodeRequired ? "POST" : "BOTH",
+      manifestEndpointMethod: "POST",
       trustLayerStatus: input.trustLayerStatus,
       makerCheckerStatus: input.requestHospitalCertification
         ? "pending_maker_checker"
@@ -440,15 +440,10 @@ function filterSelectedCards(
 }
 
 function buildPublicationId(
-  input: TrustCareShlGatewayCreateRequest,
-  selectedCards: WalletCard[],
+  _input: TrustCareShlGatewayCreateRequest,
+  _selectedCards: WalletCard[],
 ): string {
-  const subject = input.ownerUserId ?? "wallet";
-  const cards = selectedCards.length
-    ? selectedCards.map((card) => card.id).join(".")
-    : (input.selectedCardIds ?? ["all"]).join(".");
-  const seed = `${input.context}:${subject}:${cards}:${input.policy?.expiresAt ?? ""}:${input.policy?.maxAccessCount ?? ""}`;
-  return `shl-${input.context}-${stableHash(seed).slice(0, 12)}`;
+  return createShlContentKey();
 }
 
 function buildGatewayWarnings(

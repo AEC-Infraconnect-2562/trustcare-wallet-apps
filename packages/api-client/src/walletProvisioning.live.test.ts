@@ -760,7 +760,7 @@ async function runPortalP0Completion(input: {
     identity: input.holder,
     portalOrigin: portalBaseUrl,
     publicationId: shlPackageId,
-    manifestUrl: `${shareGateway}/manifests/${shlPackageId}.json`,
+    manifestUrl: `${new URL(shareGateway).origin}/s/${shlPackageId}`,
     fileBaseUrl: `${shareGateway}/files/`,
     documents: [issuedDocument],
     trustedIssuerDids: input.issuers.map((issuer) => issuer.issuerDid),

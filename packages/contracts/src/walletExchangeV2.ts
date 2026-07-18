@@ -63,9 +63,10 @@ export type WalletExchangeDiscovery = {
   };
   protocols: {
     credentialLifecycle: string;
-    presentation: string;
+    presentation: "Wallet-created VP JWT or Certified SHL package association with a separate Holder VP";
     certifiedShl: string;
-    manifestUrl: "HTTPS, maximum 2048 characters, configured Portal origin and canonical Share Gateway route only";
+    manifestUrl: "Plain SHL HTTPS /s/{256-bit-token} URL, maximum 128 characters; no alternate manifest route is accepted";
+    plainShlManifestUrlMaxLength: 128;
     compactJwsDigest: "SHA-256 over the exact UTF-8 bytes of the compact JWS string";
     documentMetadata: string;
     errors: "RFC 9457 problem details";
@@ -386,7 +387,9 @@ export type WalletShlAssociation = {
     | "active"
     | "suspended"
     | "revoked"
-    | "expired";
+    | "expired"
+    | "disabled"
+    | "max_accessed";
   trustLevel: "hospital_certified" | "pending";
   appId: string | null;
   manifestCredentialId: string | null;
@@ -404,10 +407,12 @@ export type WalletShlAssociation = {
   associatedAt: string;
   issuedAt: string;
   expiresAt: string | null;
+  holderPresentationExpiresAt: string | null;
   lifecycle: {
     status: string;
     effectiveAt: string;
     reasonCode: string | null;
+    holderPresentationStatus: "verified_at_association" | "proof_expired";
   };
   idempotent: boolean;
 };
@@ -735,6 +740,7 @@ export function assertWalletShlAssociation(
       "associatedAt",
       "issuedAt",
       "expiresAt",
+      "holderPresentationExpiresAt",
       "lifecycle",
       "idempotent",
     ],
@@ -760,6 +766,8 @@ export function assertWalletShlAssociation(
       "suspended",
       "revoked",
       "expired",
+      "disabled",
+      "max_accessed",
     ],
     "$",
     issues,
@@ -789,17 +797,30 @@ export function assertWalletShlAssociation(
   isoDateString(object, "associatedAt", "$", issues);
   isoDateString(object, "issuedAt", "$", issues);
   nullableIsoDateString(object, "expiresAt", "$", issues);
+  nullableIsoDateString(object, "holderPresentationExpiresAt", "$", issues);
   const lifecycle = nestedObject(object.lifecycle, "$.lifecycle", issues);
   if (lifecycle) {
     exactKeys(
       lifecycle,
-      ["status", "effectiveAt", "reasonCode"],
+      [
+        "status",
+        "effectiveAt",
+        "reasonCode",
+        "holderPresentationStatus",
+      ],
       "$.lifecycle",
       issues,
     );
     nonEmptyString(lifecycle, "status", "$.lifecycle", issues, 1, 80);
     isoDateString(lifecycle, "effectiveAt", "$.lifecycle", issues);
     nullableString(lifecycle, "reasonCode", "$.lifecycle", issues, 1, 100);
+    enumString(
+      lifecycle,
+      "holderPresentationStatus",
+      ["verified_at_association", "proof_expired"],
+      "$.lifecycle",
+      issues,
+    );
     if (lifecycle.status !== object.status) {
       issue(issues, "$.lifecycle.status", "must equal the SHL status");
     }
@@ -908,17 +929,24 @@ function validateDiscoveryProtocols(value: unknown, issues: TrustCareValidationI
   const path = "$.protocols";
   const object = nestedObject(value, path, issues);
   if (!object) return;
-  exactKeys(object, ["credentialLifecycle", "presentation", "certifiedShl", "manifestUrl", "compactJwsDigest", "documentMetadata", "errors"], path, issues);
+  exactKeys(object, ["credentialLifecycle", "presentation", "certifiedShl", "manifestUrl", "plainShlManifestUrlMaxLength", "compactJwsDigest", "documentMetadata", "errors"], path, issues);
   nonEmptyString(object, "credentialLifecycle", path, issues, 1, 300);
-  nonEmptyString(object, "presentation", path, issues, 1, 300);
+  literalString(
+    object,
+    "presentation",
+    "Wallet-created VP JWT or Certified SHL package association with a separate Holder VP",
+    path,
+    issues,
+  );
   nonEmptyString(object, "certifiedShl", path, issues, 1, 300);
   literalString(
     object,
     "manifestUrl",
-    "HTTPS, maximum 2048 characters, configured Portal origin and canonical Share Gateway route only",
+    "Plain SHL HTTPS /s/{256-bit-token} URL, maximum 128 characters; no alternate manifest route is accepted",
     path,
     issues,
   );
+  literalNumber(object, "plainShlManifestUrlMaxLength", 128, path, issues);
   literalString(
     object,
     "compactJwsDigest",
@@ -1175,6 +1203,10 @@ function nullableString(object: Record<string, unknown>, key: string, path: stri
 }
 
 function literalString(object: Record<string, unknown>, key: string, expected: string, path: string, issues: TrustCareValidationIssue[]) {
+  if (object[key] !== expected) issue(issues, `${path}.${key}`, `must equal ${expected}`);
+}
+
+function literalNumber(object: Record<string, unknown>, key: string, expected: number, path: string, issues: TrustCareValidationIssue[]) {
   if (object[key] !== expected) issue(issues, `${path}.${key}`, `must equal ${expected}`);
 }
 

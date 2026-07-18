@@ -91,7 +91,7 @@ describe("Wallet Exchange shared persistence policy", () => {
           schema: "trustcare.wallet.shl-certification-binding.v1" as const,
           shlPackageId,
           holderDid,
-          manifestUrl: `https://portal.example/api/share-gateway/manifests/${shlPackageId}.json`,
+          manifestUrl: `https://portal.example/s/${shlPackageId}`,
           manifestHash: `sha256:${"a".repeat(64)}`,
           sourceBundleHash: `sha256:${"b".repeat(64)}`,
           fileHashes: [`sha256:${"c".repeat(64)}`],

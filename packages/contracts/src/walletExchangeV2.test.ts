@@ -64,11 +64,12 @@ function discoveryFixture() {
     protocols: {
       credentialLifecycle: "TrustCare durable cursor sync v2",
       presentation:
-        "Wallet-created VP JWT or Certified SHL/Manifest VP reference",
+        "Wallet-created VP JWT or Certified SHL package association with a separate Holder VP",
       certifiedShl:
         "Portal KMS Manifest VC plus Wallet holder authorization and manifest VP",
       manifestUrl:
-        "HTTPS, maximum 2048 characters, configured Portal origin and canonical Share Gateway route only",
+        "Plain SHL HTTPS /s/{256-bit-token} URL, maximum 128 characters; no alternate manifest route is accepted",
+      plainShlManifestUrlMaxLength: 128,
       compactJwsDigest:
         "SHA-256 over the exact UTF-8 bytes of the compact JWS string",
       documentMetadata:
@@ -199,6 +200,15 @@ describe("Wallet Exchange V2 live contracts", () => {
         },
       }),
     ).toThrow(/compactJwsDigest/);
+    expect(() =>
+      assertWalletExchangeDiscovery({
+        ...discoveryFixture(),
+        protocols: {
+          ...discoveryFixture().protocols,
+          plainShlManifestUrlMaxLength: 2_048,
+        },
+      }),
+    ).toThrow(/plainShlManifestUrlMaxLength/);
     expect(() =>
       assertWalletExchangeDiscovery({
         ...discoveryFixture(),
@@ -472,10 +482,12 @@ describe("Wallet Exchange V2 live contracts", () => {
         associatedAt: "2026-07-11T10:10:00.000Z",
         issuedAt: "2026-07-11T10:10:00.000Z",
         expiresAt: "2026-07-11T10:20:00.000Z",
+        holderPresentationExpiresAt: "2026-07-11T10:15:00.000Z",
         lifecycle: {
           status: "active",
           effectiveAt: "2026-07-11T10:10:00.000Z",
           reasonCode: null,
+          holderPresentationStatus: "verified_at_association",
         },
         idempotent: false,
       }),

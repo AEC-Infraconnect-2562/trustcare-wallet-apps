@@ -234,13 +234,13 @@ export function shareModePatientDescription(mode: SharePackageMode): string {
 }
 
 export function modeRequiresShl(mode: SharePackageMode): boolean {
-  return mode === "StandardSHL" || mode === "CertifiedSHLManifestPackage";
+  return mode === "StandardSHL" || mode === "CertifiedSHLPackage";
 }
 
 export function modeRequiresVp(mode: SharePackageMode): boolean {
   return (
     mode === "DirectVP" ||
     mode === "PurposeVP" ||
-    mode === "CertifiedSHLManifestPackage"
+    mode === "CertifiedSHLPackage"
   );
 }

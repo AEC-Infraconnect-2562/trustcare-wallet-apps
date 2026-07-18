@@ -339,7 +339,7 @@ export class WalletExchangeWorkflow {
       ...input,
       identity: this.options.identity,
       portalOrigin: contracts.portalOrigin,
-      manifestUrl: `${shareGateway}/manifests/${encodedPackageId}.json`,
+      manifestUrl: `${contracts.portalOrigin}/s/${encodedPackageId}`,
       fileBaseUrl: `${shareGateway}/files/`,
       trustedIssuerDids: issuers.map((issuer) => issuer.issuerDid),
       recipient: targetIssuer.issuerDid,
@@ -941,7 +941,11 @@ export class WalletExchangeWorkflow {
       manifestHash: source.manifestHash,
       sourceBundleHash: source.sourceBundleHash,
     };
-    await this.assertPendingShlAssociation(recovered, binding);
+    await this.assertPendingShlAssociation(
+      recovered,
+      binding,
+      new Date(response.associatedAt),
+    );
     await this.assertShlAssociationResponse(recovered, binding, response);
 
     const existing = await this.options.persistence.getShlAssociation(
@@ -1540,6 +1544,14 @@ export class WalletExchangeWorkflow {
       pending.shlId,
     );
     const currentTime = this.options.now?.() ?? new Date();
+    const holderProofExpiry = response.holderPresentationExpiresAt
+      ? Date.parse(response.holderPresentationExpiresAt)
+      : Number.NaN;
+    const expectedHolderProofStatus =
+      Number.isFinite(holderProofExpiry) &&
+      holderProofExpiry <= currentTime.getTime()
+        ? "proof_expired"
+        : "verified_at_association";
     if (
       response.shlId !== pending.shlId ||
       response.packageId !== String(pending.shlId) ||
@@ -1561,7 +1573,9 @@ export class WalletExchangeWorkflow {
       response.recipient !== binding.recipient ||
       response.audience !== expectedAudience ||
       !response.expiresAt ||
-      Date.parse(response.expiresAt) <= currentTime.getTime()
+      Date.parse(response.expiresAt) <= currentTime.getTime() ||
+      !Number.isFinite(holderProofExpiry) ||
+      response.lifecycle.holderPresentationStatus !== expectedHolderProofStatus
     ) {
       throw new TrustCareApiError(
         "Portal returned an SHL association for different or expired signed objects.",
@@ -1580,6 +1594,7 @@ export class WalletExchangeWorkflow {
       manifestHash: `sha256:${string}`;
       sourceBundleHash: `sha256:${string}`;
     },
+    verificationTime = this.options.now?.() ?? new Date(),
   ): Promise<void> {
     const contracts = await this.contracts();
     const audience = shlAssociationEndpoint(
@@ -1613,7 +1628,7 @@ export class WalletExchangeWorkflow {
         expectedRecipient: binding.recipient,
         expectedPurpose: binding.purpose,
         expectedConsentRef: pending.consentRef,
-        now: this.options.now?.(),
+        now: verificationTime,
       });
     } catch {
       throw new TrustCareApiError(

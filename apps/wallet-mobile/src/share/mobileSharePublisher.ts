@@ -110,7 +110,7 @@ export async function publishMobileSharePackage(input: {
   }
   if (
     input.mode === "StandardSHL" ||
-    input.mode === "CertifiedSHLManifestPackage"
+    input.mode === "CertifiedSHLPackage"
   ) {
     throw new Error(
       "รอการเชื่อมต่อกุญแจ Holder และเอกสาร Portal บน Mobile ก่อนสร้าง SHL; ระบบจะไม่สร้างเอกสารรับรองทดแทนหรือแสดงว่าโรงพยาบาลรับรองแล้ว",

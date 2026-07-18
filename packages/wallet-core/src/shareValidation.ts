@@ -174,7 +174,7 @@ export function validateShareDraft(
         ),
       );
     }
-    if (policy.mode === "CertifiedSHLManifestPackage") {
+    if (policy.mode === "CertifiedSHLPackage") {
       const unverified = selected.filter(
         (document) => document.trustStatus === "patient_provided_unverified",
       );

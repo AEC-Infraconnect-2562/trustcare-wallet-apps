@@ -134,7 +134,7 @@ const formatCopy: Record<DocumentRequestFormat, UxCopy> = {
     description: "เหมาะกับข้อมูลชุดใหญ่และยังใช้ร่วมกับระบบภายนอกได้",
     tone: "blue",
   },
-  certified_shl_manifest: {
+  certified_shl_package: {
     label: "SHL พร้อม TrustCare Manifest",
     description: "เหมาะกับชุดเอกสารที่ต้องตรวจแหล่งที่มาในระบบ TrustCare",
     tone: "green",
@@ -203,7 +203,7 @@ const packageCopy: Record<SharePackageMode, UxCopy> = {
       "เหมาะกับข้อมูลขนาดใหญ่หรือข้อมูลต่อเนื่อง และยังเข้ากับระบบภายนอก",
     tone: "blue",
   },
-  CertifiedSHLManifestPackage: {
+  CertifiedSHLPackage: {
     label: "ลิงก์สุขภาพที่ตรวจแหล่งที่มา",
     description:
       "เหมาะกับการส่งต่อ เคลม หรือข้ามเครือข่ายที่ต้องตรวจ trust layer",

@@ -1,6 +1,30 @@
 import type { ShlPackage, WalletExportResult } from "./models";
 import type { TrustCareTone } from "./statusTone";
 
+export const PLAIN_SHL_MANIFEST_URL_MAX_LENGTH = 128;
+export const PLAIN_SHL_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+export const PLAIN_SHL_CONTENT_TYPES = [
+  "application/fhir+json",
+  "application/fhir+json;fhirVersion=4.0.1",
+  "application/smart-health-card",
+  "application/smart-api-access",
+] as const;
+
+export type PlainShlContentType = (typeof PLAIN_SHL_CONTENT_TYPES)[number];
+
+export type PlainShlManifestFile = Readonly<{
+  contentType: PlainShlContentType;
+  location?: string;
+  embedded?: string;
+  lastUpdated?: string;
+}>;
+
+export type PlainShlManifest = Readonly<{
+  status?: "finalized" | "can-change" | "no-longer-valid";
+  list?: Readonly<Record<string, unknown> & { resourceType: "List" }>;
+  files: readonly PlainShlManifestFile[];
+}>;
+
 export type ParsedShlLink = {
   kind: "shl";
   raw: string;
@@ -17,11 +41,11 @@ export type ParsedShlLink = {
 export type ShlManifestFetchResult = {
   ok: boolean;
   shl: ParsedShlLink;
-  manifest?: Record<string, unknown>;
+  manifest?: PlainShlManifest;
   fileCount: number;
   resolvedFiles: ShlResolvedFile[];
   decryptedFileCount: number;
-  requestMethod?: "POST" | "GET";
+  requestMethod?: "POST";
   warnings: string[];
   errors: string[];
 };
@@ -163,15 +187,161 @@ export function parseShlLink(raw: string): ParsedShlLink | null {
   }
 }
 
+export function assertPortalPlainShlManifestUrl(
+  value: string,
+  expectedPortalOrigin: string,
+): string {
+  if (
+    typeof value !== "string" ||
+    value.length > PLAIN_SHL_MANIFEST_URL_MAX_LENGTH
+  ) {
+    throw new Error(
+      `Plain SHL manifest URL must not exceed ${PLAIN_SHL_MANIFEST_URL_MAX_LENGTH} characters.`,
+    );
+  }
+  let url: URL;
+  let portal: URL;
+  try {
+    url = new URL(value);
+    portal = new URL(expectedPortalOrigin);
+  } catch {
+    throw new Error("Plain SHL manifest URL must be an absolute HTTPS URL.");
+  }
+  if (
+    url.protocol !== "https:" ||
+    portal.protocol !== "https:" ||
+    url.origin !== portal.origin ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error(
+      "Plain SHL manifest URL must use the configured Portal HTTPS origin without user info, query, or fragment.",
+    );
+  }
+  const match = url.pathname.match(/^\/s\/([A-Za-z0-9_-]{43})$/);
+  if (!match || !PLAIN_SHL_TOKEN_PATTERN.test(match[1])) {
+    throw new Error(
+      "Plain SHL manifest URL must use /s/{43-character-base64url-token}.",
+    );
+  }
+  return url.toString();
+}
+
+export function assertPlainShlManifest(value: unknown): PlainShlManifest {
+  const manifest = strictObject(value, "Plain SHL manifest");
+  assertExactKeys(manifest, ["status", "list", "files"], "Plain SHL manifest");
+  if (
+    manifest.status !== undefined &&
+    !["finalized", "can-change", "no-longer-valid"].includes(
+      String(manifest.status),
+    )
+  ) {
+    throw new Error("Plain SHL manifest status is invalid.");
+  }
+  if (manifest.list !== undefined) {
+    const list = strictObject(manifest.list, "Plain SHL FHIR List");
+    if (list.resourceType !== "List") {
+      throw new Error("Plain SHL list must be a FHIR List resource.");
+    }
+  }
+  if (!Array.isArray(manifest.files)) {
+    throw new Error("Plain SHL manifest files must be an array.");
+  }
+  const files = manifest.files.map((entry, index) => {
+    const label = `Plain SHL manifest file ${index + 1}`;
+    const file = strictObject(entry, label);
+    assertExactKeys(
+      file,
+      ["contentType", "location", "embedded", "lastUpdated"],
+      label,
+    );
+    if (
+      typeof file.contentType !== "string" ||
+      !PLAIN_SHL_CONTENT_TYPES.includes(file.contentType as PlainShlContentType)
+    ) {
+      throw new Error(`${label} contentType is invalid.`);
+    }
+    const hasLocation =
+      typeof file.location === "string" && file.location.length > 0;
+    const hasEmbedded =
+      typeof file.embedded === "string" && file.embedded.length > 0;
+    if (hasLocation === hasEmbedded) {
+      throw new Error(
+        `${label} must contain exactly one of location or embedded.`,
+      );
+    }
+    if (hasLocation) {
+      let location: URL;
+      try {
+        location = new URL(String(file.location));
+      } catch {
+        throw new Error(`${label} location is invalid.`);
+      }
+      if (location.protocol !== "https:") {
+        throw new Error(`${label} location must use HTTPS.`);
+      }
+    }
+    if (
+      file.lastUpdated !== undefined &&
+      (typeof file.lastUpdated !== "string" ||
+        Number.isNaN(Date.parse(file.lastUpdated)))
+    ) {
+      throw new Error(`${label} lastUpdated is invalid.`);
+    }
+    return Object.freeze({
+      contentType: file.contentType as PlainShlContentType,
+      ...(hasLocation ? { location: String(file.location) } : {}),
+      ...(hasEmbedded ? { embedded: String(file.embedded) } : {}),
+      ...(typeof file.lastUpdated === "string"
+        ? { lastUpdated: file.lastUpdated }
+        : {}),
+    });
+  });
+  return Object.freeze({
+    ...(manifest.status === undefined
+      ? {}
+      : { status: manifest.status as PlainShlManifest["status"] }),
+    ...(manifest.list === undefined
+      ? {}
+      : { list: manifest.list as PlainShlManifest["list"] }),
+    files: Object.freeze(files),
+  });
+}
+
 export function createShlLinkPayload(input: {
   url: string;
-  key?: string;
+  key: string;
   label?: string;
   flag?: string;
   passcodeRequired?: boolean;
   expiresAt?: string | Date | null;
   version?: number;
 }): string {
+  if (input.url.length > PLAIN_SHL_MANIFEST_URL_MAX_LENGTH) {
+    throw new Error(
+      `SHL manifest URL must not exceed ${PLAIN_SHL_MANIFEST_URL_MAX_LENGTH} characters.`,
+    );
+  }
+  const manifestUrl = new URL(input.url);
+  if (
+    manifestUrl.protocol !== "https:" ||
+    manifestUrl.username ||
+    manifestUrl.password ||
+    manifestUrl.search ||
+    manifestUrl.hash ||
+    !/^\/s\/[A-Za-z0-9_-]{43}$/.test(manifestUrl.pathname)
+  ) {
+    throw new Error(
+      "SHL manifest URL must use HTTPS and /s/{43-character-base64url-token} without user info, query, or fragment.",
+    );
+  }
+  if (!PLAIN_SHL_TOKEN_PATTERN.test(input.key)) {
+    throw new Error(
+      "SHL key must be exactly 32 bytes encoded as 43 unpadded base64url characters.",
+    );
+  }
   const flag = normalizeShlFlags(input.flag, input.passcodeRequired);
   const expiresAt = input.expiresAt ? new Date(input.expiresAt) : undefined;
   const payload = {
@@ -234,6 +404,8 @@ export async function fetchShlManifest(
     fetcher?: typeof fetch;
     passcode?: string;
     recipient?: string;
+    embeddedLengthMax?: number;
+    expectedManifestOrigin?: string;
     resolveLocationFiles?: boolean;
     signal?: AbortSignal;
   } = {},
@@ -262,6 +434,25 @@ export async function fetchShlManifest(
       ],
       errors: [],
     };
+  }
+  if (options.expectedManifestOrigin) {
+    try {
+      assertPortalPlainShlManifestUrl(shl.url, options.expectedManifestOrigin);
+    } catch (error) {
+      return {
+        ok: false,
+        shl,
+        fileCount: 0,
+        resolvedFiles: [],
+        decryptedFileCount: 0,
+        warnings: [],
+        errors: [
+          error instanceof Error
+            ? error.message
+            : "Plain SHL manifest URL is invalid.",
+        ],
+      };
+    }
   }
   const policy = evaluateShlAccessPolicy({
     status: "active",
@@ -297,6 +488,7 @@ export async function fetchShlManifest(
   const body = removeUndefined({
     recipient: options.recipient ?? "TrustCare Wallet",
     passcode: shl.passcodeRequired ? options.passcode : undefined,
+    embeddedLengthMax: options.embeddedLengthMax,
   });
   const warnings: string[] = [];
   try {
@@ -310,7 +502,25 @@ export async function fetchShlManifest(
       signal: options.signal,
     });
     if (postResponse.ok) {
-      const manifest = (await postResponse.json()) as Record<string, unknown>;
+      let manifest: PlainShlManifest;
+      try {
+        manifest = assertPlainShlManifest(await postResponse.json());
+      } catch (error) {
+        return {
+          ok: false,
+          shl,
+          fileCount: 0,
+          resolvedFiles: [],
+          decryptedFileCount: 0,
+          requestMethod: "POST",
+          warnings,
+          errors: [
+            error instanceof Error
+              ? error.message
+              : "Plain SHL manifest is invalid.",
+          ],
+        };
+      }
       return finalizeShlManifestResult({
         ok: true,
         shl,
@@ -358,54 +568,17 @@ export async function fetchShlManifest(
     }
   }
 
-  try {
-    const getResponse = await fetcher(shl.url, {
-      method: "GET",
-      headers: { accept: "application/json" },
-      signal: options.signal,
-    });
-    if (getResponse.ok) {
-      const manifest = (await getResponse.json()) as Record<string, unknown>;
-      return finalizeShlManifestResult({
-        ok: true,
-        shl,
-        manifest,
-        requestMethod: "GET",
-        options,
-        warnings,
-        errors: [],
-      });
-    }
-    warnings.push(
-      `Manifest endpoint ตอบกลับ HTTP ${getResponse.status} จากคำขอ GET.`,
-    );
-    return {
-      ok: false,
-      shl,
-      fileCount: 0,
-      resolvedFiles: [],
-      decryptedFileCount: 0,
-      requestMethod: "GET",
-      warnings,
-      errors: ["Manifest endpoint ไม่ได้ส่ง JSON manifest ที่อ่านได้กลับมา."],
-    };
-  } catch (error) {
-    warnings.push(
-      error instanceof Error
-        ? `Manifest GET ไม่สำเร็จ: ${error.message}`
-        : "Manifest GET ไม่สำเร็จ.",
-    );
-    return {
-      ok: false,
-      shl,
-      fileCount: 0,
-      resolvedFiles: [],
-      decryptedFileCount: 0,
-      requestMethod: "GET",
-      warnings,
-      errors: ["Browser นี้ยังเชื่อมต่อ manifest endpoint ไม่สำเร็จ."],
-    };
-  }
+  return {
+    ok: false,
+    shl,
+    fileCount: 0,
+    resolvedFiles: [],
+    decryptedFileCount: 0,
+    requestMethod: "POST",
+    warnings,
+    errors: ["Plain SHL manifest retrieval failed; GET fallback is prohibited."],
+  };
+
 }
 
 export async function decryptShlCompactJwe(
@@ -424,8 +597,15 @@ export async function decryptShlCompactJwe(
     throw new Error("SHL compact JWE must use direct encryption.");
   }
   const header = parseProtectedHeader(protectedHeader);
-  if (header.alg !== "dir" || header.enc !== "A256GCM") {
-    throw new Error("SHL compact JWE must use alg=dir and enc=A256GCM.");
+  if (
+    header.alg !== "dir" ||
+    header.enc !== "A256GCM" ||
+    typeof header.cty !== "string" ||
+    !PLAIN_SHL_CONTENT_TYPES.includes(header.cty as PlainShlContentType)
+  ) {
+    throw new Error(
+      "SHL compact JWE must use alg=dir, enc=A256GCM, and an allowed cty.",
+    );
   }
   const keyBytes = base64UrlToBytes(key);
   if (keyBytes.byteLength !== 32) {
@@ -459,8 +639,8 @@ export async function decryptShlCompactJwe(
 async function finalizeShlManifestResult(input: {
   ok: boolean;
   shl: ParsedShlLink;
-  manifest: Record<string, unknown>;
-  requestMethod: "POST" | "GET";
+  manifest: PlainShlManifest;
+  requestMethod: "POST";
   options: {
     fetcher?: typeof fetch;
     passcode?: string;
@@ -471,6 +651,19 @@ async function finalizeShlManifestResult(input: {
   warnings: string[];
   errors: string[];
 }): Promise<ShlManifestFetchResult> {
+  if (input.manifest.status === "no-longer-valid") {
+    return {
+      ok: false,
+      shl: input.shl,
+      manifest: input.manifest,
+      fileCount: input.manifest.files.length,
+      resolvedFiles: [],
+      decryptedFileCount: 0,
+      requestMethod: input.requestMethod,
+      warnings: input.warnings,
+      errors: ["Plain SHL manifest is no longer valid."],
+    };
+  }
   const resolvedFiles = await resolveShlManifestFiles(
     input.manifest,
     input.shl,
@@ -498,7 +691,7 @@ async function finalizeShlManifestResult(input: {
 }
 
 async function resolveShlManifestFiles(
-  manifest: Record<string, unknown>,
+  manifest: PlainShlManifest,
   shl: ParsedShlLink,
   options: {
     fetcher?: typeof fetch;
@@ -548,10 +741,9 @@ async function resolveEmbeddedFile(
         typeof file.contentType === "string" ? file.contentType : undefined,
       source: "embedded",
       encrypted: false,
-      ok: true,
-      payload: embedded,
+      ok: false,
       warnings: [],
-      errors: [],
+      errors: ["Plain SHL embedded files must contain compact JWE."],
     };
   }
   try {
@@ -659,11 +851,10 @@ async function resolveFetchedLocationFile(
     return {
       ...base,
       encrypted: false,
-      ok: true,
-      payload: parsed,
+      ok: false,
       raw,
       warnings: [],
-      errors: [],
+      errors: ["Plain SHL location files must contain compact JWE."],
     };
   }
   try {
@@ -693,17 +884,10 @@ async function resolveFetchedLocationFile(
 }
 
 function manifestFileEntries(
-  manifest: Record<string, unknown>,
+  manifest: PlainShlManifest,
 ): Record<string, unknown>[] {
   const files = manifest.files;
   if (Array.isArray(files)) return files.map(objectValue);
-  const embedded = manifest.embedded;
-  if (Array.isArray(embedded)) {
-    return embedded.map((entry, index) => ({
-      id: `embedded-${index + 1}`,
-      embedded: entry,
-    }));
-  }
   return [];
 }
 
@@ -765,41 +949,51 @@ function objectValue(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function strictObject(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be a JSON object.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function assertExactKeys(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  label: string,
+): void {
+  const allowedKeys = new Set(allowed);
+  const unknown = Object.keys(value).filter((key) => !allowedKeys.has(key));
+  if (unknown.length) {
+    throw new Error(
+      `${label} contains prohibited TrustCare or unknown fields: ${unknown.join(", ")}.`,
+    );
+  }
+}
+
 function normalizeShlFlags(
   flag: string | undefined,
   passcodeRequired: boolean | undefined,
 ): string | undefined {
+  if (flag !== undefined && !/^[A-Z]*$/.test(flag)) {
+    throw new Error("SHL flags must contain uppercase ASCII characters only.");
+  }
   const flags = new Set((flag ?? "").split("").filter(Boolean));
   if (passcodeRequired) {
+    if (flags.has("U")) {
+      throw new Error("SHL U and P flags cannot be combined.");
+    }
     flags.add("P");
-    flags.delete("U");
   }
   if (!flags.size) return undefined;
-  return [
-    "L",
-    "P",
-    "U",
-    ...[...flags].filter((item) => !["L", "P", "U"].includes(item)),
-  ]
-    .filter((item) => flags.has(item))
-    .join("");
+  return [...flags].sort().join("");
 }
 
-function countManifestFiles(manifest: Record<string, unknown>): number {
+function countManifestFiles(manifest: PlainShlManifest): number {
   return manifestFileEntries(manifest).length;
 }
 
 export function exportShlPackage(shl: ShlPackage): WalletExportResult {
-  const qrPayload =
-    shl.qrPayload ??
-    shl.shlUrl ??
-    (shl.viewerUrl
-      ? createShlLinkPayload({
-          url: shl.viewerUrl,
-          label: shl.label ?? undefined,
-          passcodeRequired: shl.passcodeRequired,
-        })
-      : undefined);
+  const qrPayload = shl.qrPayload ?? shl.shlUrl ?? undefined;
 
   return {
     ok: Boolean(qrPayload),

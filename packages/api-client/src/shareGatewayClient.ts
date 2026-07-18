@@ -1,8 +1,8 @@
 import { assertShareGatewayPublicationResponse } from "@trustcare/contracts";
 import {
   createShareGatewayPublicationRequest,
+  assertPlainShlManifest,
   createShlLinkPayload,
-  createShlViewerUrl,
   normalizeShareGatewayBaseUrl,
   readinessContextLabels,
   type BuiltSharePackage,
@@ -19,7 +19,6 @@ export type PublishedHolderAttestedShl = {
   manifestUrl: string;
   canonicalShlUrl: string;
   qrPayload: string;
-  holderPresentationUrl: string;
   warnings: string[];
 };
 
@@ -27,8 +26,6 @@ export type PublishedHospitalCertifiedShl = {
   trustMode: "hospital_certified";
   shlPackageId: string;
   manifestUrl: string;
-  holderPresentationUrl?: string;
-  manifestCredentialUrl?: string;
   warnings: string[];
 };
 
@@ -163,14 +160,20 @@ export async function publishShlSharePackage(
     shl.gatewayPublicationId ?? shl.shlId ?? input.result.payload.shlUrl,
   );
   const certified = shl.trustLayerStatus === "hospital_certified";
+  if (certified) {
+    throw new Error(
+      "Certified SHL trust artifacts must be associated through Wallet Exchange v2, not the generic Share Gateway.",
+    );
+  }
+  const plainManifest = assertPlainShlManifest(manifest);
   const manifestPublication = await publishShareArtifact({
     gatewayBaseUrl: input.gatewayBaseUrl,
     fetchImpl: input.fetchImpl,
     request: {
       artifactId: publicationId,
-      kind: certified ? "certified_shl_manifest" : "standard_shl_manifest",
+      kind: "standard_shl_manifest",
       contentType: "application/json",
-      payload: manifest,
+      payload: plainManifest,
       ownerUserId: input.userId,
       holderDid: input.holderDid,
       context: input.purpose,
@@ -192,103 +195,19 @@ export async function publishShlSharePackage(
     },
   });
 
-  const trustcare = recordValue(manifest.trustcare);
-  const supportPublications = certified
-    ? await publishCertifiedShlTrustArtifacts({
-        gatewayBaseUrl: input.gatewayBaseUrl,
-        fetchImpl: input.fetchImpl,
-        publicationId,
-        trustcare,
-        userId: input.userId,
-        holderDid: input.holderDid,
-        purpose: input.purpose,
-        purposeLabel: input.purposeLabel,
-        recipient: input.recipient,
-        expiresAt: input.expiresAt,
-      })
-    : [];
-
   return {
     ...manifestPublication,
     publicUrl: manifestPublication.publicUrl ?? shl.manifestUrl,
     qrPayload: shl.qrPayload,
     warnings: [
       ...(manifestPublication.warnings ?? []),
-      ...supportPublications.flatMap(
-        (publication) => publication.warnings ?? [],
-      ),
       ...(shl.warnings ?? []),
     ],
   };
 }
 
-export async function publishCertifiedShlTrustArtifacts(input: {
-  gatewayBaseUrl: string;
-  fetchImpl?: ShareGatewayFetch;
-  publicationId: string;
-  trustcare: Record<string, unknown> | null;
-  userId: string | number;
-  holderDid: string;
-  purpose: ReadinessContext;
-  purposeLabel?: string;
-  recipient: string;
-  expiresAt: string;
-}): Promise<ShareGatewayPublicationResponse[]> {
-  if (!input.trustcare) {
-    throw new Error(
-      "Hospital-certified SHL requires verified holder VP and Manifest VC JWT artifacts.",
-    );
-  }
-  const artifactInputs: Array<{
-    key: "holderPresentationJwt" | "manifestCredentialJwt";
-    kind: "manifest_vp" | "manifest_credential";
-    contentType: string;
-  }> = [
-    {
-      key: "holderPresentationJwt",
-      kind: "manifest_vp",
-      contentType: "application/vp+jwt",
-    },
-    {
-      key: "manifestCredentialJwt",
-      kind: "manifest_credential",
-      contentType: "application/vc+jwt",
-    },
-  ];
-
-  const publications: ShareGatewayPublicationResponse[] = [];
-  for (const artifact of artifactInputs) {
-    const payload = input.trustcare[artifact.key];
-    if (typeof payload !== "string" || !looksLikeCompactJwt(payload)) {
-      throw new Error(
-        `Hospital-certified SHL ${artifact.key} must be a signed compact JWT.`,
-      );
-    }
-    publications.push(
-      await publishShareArtifact({
-        gatewayBaseUrl: input.gatewayBaseUrl,
-        fetchImpl: input.fetchImpl,
-        request: {
-          artifactId: input.publicationId,
-          kind: artifact.kind,
-          contentType: artifact.contentType,
-          payload,
-          ownerUserId: input.userId,
-          holderDid: input.holderDid,
-          context: input.purpose,
-          purpose: purposeLabel(input.purpose, input.purposeLabel),
-          recipient: input.recipient,
-          expiresAt: input.expiresAt,
-        },
-      }),
-    );
-  }
-  return publications;
-}
-
 export async function publishHolderAttestedShl(input: {
   gatewayBaseUrl: string;
-  viewerBaseUrl: string;
   prepared: PreparedHolderAttestedShl;
   userId: string | number;
   holderDid: string;
@@ -299,7 +218,7 @@ export async function publishHolderAttestedShl(input: {
 }): Promise<PublishedHolderAttestedShl> {
   if (
     input.prepared.trustMode !== "holder_attested" ||
-    input.prepared.manifest.holderDid !== input.holderDid
+    input.prepared.packageBinding.holderDid !== input.holderDid
   ) {
     throw new Error(
       "Holder-attested SHL publication does not match the Wallet holder key.",
@@ -323,92 +242,50 @@ export async function publishHolderAttestedShl(input: {
           context: input.purpose,
           purpose: purposeLabel(input.purpose, input.purposeLabel),
           recipient: input.recipient,
-          expiresAt: input.prepared.manifest.expiresAt,
+          expiresAt: input.prepared.packageBinding.expiresAt,
         },
       }),
     ),
   );
-  const holderPresentation = await publishShareArtifact({
-    ...common,
-    request: {
-      artifactId: input.prepared.manifest.publicationId,
-      kind: "manifest_vp",
-      contentType: "application/vp+jwt",
-      payload: input.prepared.holderPresentationJwt,
-      ownerUserId: input.userId,
-      holderDid: input.holderDid,
-      context: input.purpose,
-      purpose: purposeLabel(input.purpose, input.purposeLabel),
-      recipient: input.recipient,
-      expiresAt: input.prepared.manifest.expiresAt,
-    },
-  });
-  const manifestPayload = {
-    resourceType: "TrustCareShlManifest",
-    manifestVersion: 2,
-    ...input.prepared.manifest,
-    files: input.prepared.manifest.documents.map((document) => ({
-      id: document.id,
-      contentType: "application/jose",
-      location: document.location,
-      hash: document.jweSha256,
-      plaintextHash: document.plaintextSha256,
-    })),
-    trustcare: {
-      trustLayerStatus: "holder_attested",
-      makerCheckerStatus: "not_required",
-      shlPackageId: input.prepared.manifest.publicationId,
-      manifestHash: input.prepared.manifestHash,
-      fileHashes:
-        input.prepared.expectedManifestCredentialBinding.fileHashes,
-      holderPresentationId: input.prepared.holderPresentationId,
-      holderPresentationJwt: input.prepared.holderPresentationJwt,
-      holderPresentationUrl: holderPresentation.publicUrl,
-      purpose: input.prepared.manifest.accessPolicy.purpose,
-      recipient: input.prepared.manifest.accessPolicy.recipient,
-      audience: input.prepared.manifest.accessPolicy.audience,
-      consentRef: input.prepared.manifest.accessPolicy.consentRef,
-    },
-  };
   const manifestPublication = await publishShareArtifact({
     ...common,
     request: {
-      artifactId: input.prepared.manifest.publicationId,
+      artifactId: input.prepared.packageBinding.publicationId,
       kind: "standard_shl_manifest",
       contentType: "application/json",
-      payload: manifestPayload,
+      payload: input.prepared.manifest,
       ownerUserId: input.userId,
       holderDid: input.holderDid,
       context: input.purpose,
       purpose: purposeLabel(input.purpose, input.purposeLabel),
       recipient: input.recipient,
-      expiresAt: input.prepared.manifest.expiresAt,
+      expiresAt: input.prepared.packageBinding.expiresAt,
     },
   });
-  const manifestUrl =
-    manifestPublication.publicUrl ?? input.prepared.manifest.manifestUrl;
+  const manifestUrl = manifestPublication.publicUrl;
+  if (!manifestUrl || manifestUrl !== input.prepared.packageBinding.manifestUrl) {
+    throw new Error(
+      "Share Gateway did not return the exact canonical Plain SHL manifest URL.",
+    );
+  }
   const canonicalShlUrl = createShlLinkPayload({
     url: manifestUrl,
     key: input.prepared.shlContentKey,
-    label: input.prepared.manifest.accessPolicy.purpose,
+    label: input.prepared.packageBinding.accessPolicy.purpose,
     flag: "L",
     passcodeRequired:
-      input.prepared.manifest.accessPolicy.passcodeRequired,
-    expiresAt: input.prepared.manifest.expiresAt,
+      input.prepared.packageBinding.accessPolicy.passcodeRequired,
+    expiresAt: input.prepared.packageBinding.expiresAt,
     version: 1,
   });
   return {
     trustMode: "holder_attested",
-    shlPackageId: input.prepared.manifest.publicationId,
+    shlPackageId: input.prepared.packageBinding.publicationId,
     manifestUrl,
     canonicalShlUrl,
-    qrPayload: createShlViewerUrl(input.viewerBaseUrl, canonicalShlUrl),
-    holderPresentationUrl:
-      holderPresentation.publicUrl ??
-      `${normalizeShareGatewayBaseUrl(input.gatewayBaseUrl)}/manifest-vps/${encodeURIComponent(input.prepared.manifest.publicationId)}.jwt`,
+    qrPayload: canonicalShlUrl,
     warnings: [
       ...filePublications.flatMap((publication) => publication.warnings ?? []),
-      ...(holderPresentation.warnings ?? []),
       ...(manifestPublication.warnings ?? []),
     ],
   };
@@ -426,52 +303,21 @@ export async function publishHospitalCertifiedShl(input: {
 }): Promise<PublishedHospitalCertifiedShl> {
   if (
     input.publication.trustMode !== "hospital_certified" ||
-    input.publication.manifest.holderDid !== input.holderDid
+    input.publication.packageBinding.holderDid !== input.holderDid
   ) {
     throw new Error(
       "Hospital-certified SHL publication does not match the Wallet holder.",
     );
   }
-  const support = await publishCertifiedShlTrustArtifacts({
-    gatewayBaseUrl: input.gatewayBaseUrl,
-    fetchImpl: input.fetchImpl,
-    publicationId: input.publication.manifest.publicationId,
-    trustcare: {
-      holderPresentationJwt: input.publication.holderPresentationJwt,
-      manifestCredentialJwt: input.publication.manifestCredentialJwt,
-    },
-    userId: input.userId,
-    holderDid: input.holderDid,
-    purpose: input.purpose,
-    purposeLabel: input.purposeLabel,
-    recipient: input.recipient,
-    expiresAt: input.publication.manifest.expiresAt,
-  });
   return {
     trustMode: "hospital_certified",
-    shlPackageId: input.publication.manifest.publicationId,
+    shlPackageId: input.publication.packageBinding.publicationId,
     // The immutable Standard SHL manifest remains Wallet-owned transport.
     // Hospital certification is the separately signed Manifest VC below; a
     // browser caller must never publish a self-asserted certified manifest.
-    manifestUrl: input.publication.manifest.manifestUrl,
-    holderPresentationUrl: support.find(
-      (artifact) => artifact.kind === "manifest_vp",
-    )?.publicUrl,
-    manifestCredentialUrl: support.find(
-      (artifact) => artifact.kind === "manifest_credential",
-    )?.publicUrl,
-    warnings: [
-      ...support.flatMap((artifact) => artifact.warnings ?? []),
-    ],
+    manifestUrl: input.publication.packageBinding.manifestUrl,
+    warnings: [],
   };
-}
-
-function looksLikeCompactJwt(value: string): boolean {
-  const parts = value.split(".");
-  return (
-    parts.length === 3 &&
-    parts.every((part) => Boolean(part) && /^[A-Za-z0-9_-]+$/.test(part))
-  );
 }
 
 export async function publishShareArtifact(input: {

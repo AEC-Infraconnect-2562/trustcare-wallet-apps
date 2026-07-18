@@ -121,9 +121,9 @@ describe("payer orchestration foundation", () => {
     expect(packageResult.documentTypes).toContain("claim_package");
     expect(packageResult.consentReceiptId).toBe("consent_claim_001");
     expect(packageResult.recommendedPackageMode).toBe(
-      "CertifiedSHLManifestPackage",
+      "CertifiedSHLPackage",
     );
-    expect(recommendation.mode).toBe("CertifiedSHLManifestPackage");
+    expect(recommendation.mode).toBe("CertifiedSHLPackage");
   });
 
   it("normalizes payer document aliases through the canonical document layer", () => {
@@ -289,9 +289,9 @@ describe("payer orchestration foundation", () => {
     });
 
     expect(readiness.criticalReady).toBe(true);
-    expect(sharePackage.mode).toBe("CertifiedSHLManifestPackage");
+    expect(sharePackage.mode).toBe("CertifiedSHLPackage");
     expect(sharePackage.payload).toMatchObject({
-      type: "CertifiedSHLManifestPackage",
+      type: "CertifiedSHLPackage",
     });
   });
 

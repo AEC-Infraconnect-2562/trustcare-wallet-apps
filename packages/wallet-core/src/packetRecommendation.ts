@@ -45,8 +45,8 @@ export function recommendSharePacket(
     input.selectedDocumentTypes.some((type) => largeDocumentTypes.has(type)) ||
     selectedCount > 3;
   const wantsCertified =
-    profile.defaultSharePackage === "CertifiedSHLManifestPackage" ||
-    profile.recommendedWhenLarge === "CertifiedSHLManifestPackage";
+    profile.defaultSharePackage === "CertifiedSHLPackage" ||
+    profile.recommendedWhenLarge === "CertifiedSHLPackage";
 
   let mode: SharePackageMode;
   const warnings: string[] = [];
@@ -58,7 +58,7 @@ export function recommendSharePacket(
   } else if (!hasLarge && !wantsCertified) {
     mode = "PurposeVP";
   } else if (wantsCertified && input.trustcareCertificationAvailable) {
-    mode = "CertifiedSHLManifestPackage";
+    mode = "CertifiedSHLPackage";
   } else if (input.recipientSupportsShl !== false) {
     mode = "StandardSHL";
     if (wantsCertified) {
@@ -117,10 +117,10 @@ function buildRecommendationReason(
   if (mode === "PurposeVP") {
     return `${serviceLabel} ใช้เอกสารจำนวนไม่มาก ระบบจึงจัดเป็น QR ชุดเอกสารตามวัตถุประสงค์`;
   }
-  if (mode === "CertifiedSHLManifestPackage") {
+  if (mode === "CertifiedSHLPackage") {
     return hasLarge
-      ? "ชุดข้อมูลมีหลายรายการหรือข้อมูลต่อเนื่อง จึงใช้ SHL เป็น transport และใช้ Manifest VP เป็น trust layer"
-      : `${serviceLabel} ต้องตรวจแหล่งที่มาใน TrustCare ecosystem จึงแนะนำ SHL + Manifest VP`;
+      ? "ชุดข้อมูลมีหลายรายการหรือข้อมูลต่อเนื่อง จึงใช้ SHL เป็น transport พร้อม Manifest VC ของโรงพยาบาลและ Holder VP ของ Wallet เป็น trust layers แยกกัน"
+      : `${serviceLabel} ต้องตรวจแหล่งที่มาใน TrustCare ecosystem จึงแนะนำ SHL ที่โรงพยาบาลรับรอง`;
   }
   return "ชุดข้อมูลมีหลายรายการหรือใช้ต่อเนื่อง จึงเหมาะกับ SMART Health Link มาตรฐาน";
 }

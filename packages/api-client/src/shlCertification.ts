@@ -1,4 +1,7 @@
-import type { ShlCertificationRequest } from "@trustcare/wallet-core";
+import {
+  assertPortalPlainShlManifestUrl,
+  type ShlCertificationRequest,
+} from "@trustcare/wallet-core";
 import { TrustCareApiError } from "./errors";
 
 export type ShlCertificationState =
@@ -21,8 +24,16 @@ export type ShlCertificationAvailability =
 
 export function assertShlCertificationRequest(
   value: ShlCertificationRequest,
+  expectedPortalOrigin: string,
 ): ShlCertificationRequest {
   assertNoPatientId(value);
+  try {
+    assertPortalPlainShlManifestUrl(value.manifestUrl, expectedPortalOrigin);
+  } catch {
+    throw new TrustCareApiError("SHL certification request is invalid.", {
+      code: "shl_certification_request_invalid",
+    });
+  }
   const allowedHospitals = new Set(["TCC", "TCP", "TCM"]);
   if (
     !value.clientRequestId ||
@@ -31,8 +42,6 @@ export function assertShlCertificationRequest(
     !value.context ||
     !value.purpose ||
     !value.consentRef ||
-    !isHttpsUrl(value.manifestUrl) ||
-    value.manifestUrl.length > 2_048 ||
     !isSha256Digest(value.manifestHash) ||
     !isSha256Digest(value.sourceBundleHash) ||
     !value.fileHashes.length ||
@@ -74,15 +83,6 @@ function looksLikeCompactJwt(value: unknown): value is string {
     parts.length === 3 &&
     parts.every((part) => Boolean(part) && /^[A-Za-z0-9_-]+$/.test(part))
   );
-}
-
-function isHttpsUrl(value: unknown): value is string {
-  if (typeof value !== "string") return false;
-  try {
-    return new URL(value).protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 function isIsoDate(value: unknown): value is string {

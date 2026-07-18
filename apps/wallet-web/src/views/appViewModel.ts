@@ -1,4 +1,4 @@
-﻿import {
+import {
   readinessContextLabels,
   type ReadinessContext,
   type ReadinessRequirement,
@@ -284,7 +284,7 @@ export const protocolProfiles: Record<
     badge: "SHL",
   },
   hybrid: {
-    label: "SHL + Manifest VP",
+    label: "SHL ที่โรงพยาบาลรับรอง",
     description:
       "ใช้ SHL เป็น transport และใช้ VC/VP เป็นชั้นความน่าเชื่อถือสำหรับ TrustCare verifier",
     badge: "Certified SHL",
@@ -386,7 +386,7 @@ export function sharePackageModeForUi(
   selectedCount: number,
 ): SharePackageMode {
   if (protocol === "shl") return "StandardSHL";
-  if (protocol === "hybrid") return "CertifiedSHLManifestPackage";
+  if (protocol === "hybrid") return "CertifiedSHLPackage";
   return disclosureMode === "full" && selectedCount <= 1
     ? "DirectVP"
     : "PurposeVP";

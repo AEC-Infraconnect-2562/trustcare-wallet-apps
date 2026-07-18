@@ -31,7 +31,7 @@ export type PortablePresentationMode =
   | "DirectVP"
   | "PurposeVP"
   | "StandardSHL"
-  | "CertifiedSHLManifestPackage"
+  | "CertifiedSHLPackage"
   | "SmartApiAccess";
 
 export type PortableTrustStatus =
@@ -191,7 +191,7 @@ export const PORTABLE_PRESENTATION_ENVELOPE_SCHEMA = {
         "DirectVP",
         "PurposeVP",
         "StandardSHL",
-        "CertifiedSHLManifestPackage",
+        "CertifiedSHLPackage",
         "SmartApiAccess",
       ],
     },
@@ -1068,7 +1068,7 @@ function coercePresentationMode(value: string): PortablePresentationMode {
     value === "DirectVP" ||
     value === "PurposeVP" ||
     value === "StandardSHL" ||
-    value === "CertifiedSHLManifestPackage" ||
+    value === "CertifiedSHLPackage" ||
     value === "SmartApiAccess"
   )
     return value;

@@ -21,7 +21,7 @@ The wallet can export:
 - Individual VC as `application/vc+json`.
 - DirectVP or PurposeVP as `application/vp+json`.
 - StandardSHL package JSON with SMART Health Links payload when available.
-- CertifiedSHLManifestPackage with SHL transport, original holder VP, and Portal/KMS-signed Manifest Credential.
+- CertifiedSHLPackage with SHL transport, original holder VP, and Portal/KMS-signed Manifest Credential.
 - Whole wallet JSON bundle for backup or transfer.
 
 ## Prepare for Service

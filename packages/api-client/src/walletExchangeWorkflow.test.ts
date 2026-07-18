@@ -379,10 +379,11 @@ describe("WalletExchangeWorkflow", () => {
     });
     const workflow = createWorkflow({ persistence, fake });
     const prepared = {
-      manifest: {
+      manifest: { status: "finalized", files: [] },
+      packageBinding: {
         publicationId: shlPackageId,
         holderDid: holder.did,
-        manifestUrl: "https://share.example/manifest-001",
+        manifestUrl: `${portalOrigin}/s/${shlPackageId}`,
         accessPolicy: {
           purpose: "OPD registration",
           recipient: network.issuers.TCC.issuerDid,
@@ -412,7 +413,7 @@ describe("WalletExchangeWorkflow", () => {
         context: "opd_visit",
         purpose: "OPD registration",
         consentRef: "urn:trustcare:consent:shl:001",
-        manifestUrl: "https://share.example/manifest-001",
+        manifestUrl: `${portalOrigin}/s/${shlPackageId}`,
         manifestHash: `sha256:${"a".repeat(64)}`,
         sourceBundleHash: `sha256:${"b".repeat(64)}`,
         fileHashes: [`sha256:${"c".repeat(64)}`],
@@ -493,10 +494,12 @@ describe("WalletExchangeWorkflow", () => {
         associatedAt: now.toISOString(),
         issuedAt: now.toISOString(),
         expiresAt: "2026-07-11T12:05:00.000Z",
+        holderPresentationExpiresAt: "2026-07-11T12:04:00.000Z",
         lifecycle: {
           status: "active",
           effectiveAt: now.toISOString(),
           reasonCode: null,
+          holderPresentationStatus: "verified_at_association",
         },
         idempotent: false,
       }),
@@ -1196,10 +1199,12 @@ function fakeClient() {
       associatedAt: now.toISOString(),
       issuedAt: now.toISOString(),
       expiresAt: "2026-07-11T12:05:00.000Z",
+      holderPresentationExpiresAt: "2026-07-11T12:04:00.000Z",
       lifecycle: {
         status: "active",
         effectiveAt: now.toISOString(),
         reasonCode: null,
+        holderPresentationStatus: "verified_at_association",
       },
       idempotent: false,
     }),
@@ -1740,10 +1745,12 @@ async function contractResponses(): Promise<Map<string, Response>> {
     },
     protocols: {
       credentialLifecycle: "Wallet Exchange lifecycle v2",
-      presentation: "W3C Verifiable Presentation",
+      presentation:
+        "Wallet-created VP JWT or Certified SHL package association with a separate Holder VP",
       certifiedShl: "Portal KMS manifest VC and holder VP association",
       manifestUrl:
-        "HTTPS, maximum 2048 characters, configured Portal origin and canonical Share Gateway route only",
+        "Plain SHL HTTPS /s/{256-bit-token} URL, maximum 128 characters; no alternate manifest route is accepted",
+      plainShlManifestUrlMaxLength: 128,
       compactJwsDigest:
         "SHA-256 over the exact UTF-8 bytes of the compact JWS string",
       documentMetadata: "FHIR DocumentReference",

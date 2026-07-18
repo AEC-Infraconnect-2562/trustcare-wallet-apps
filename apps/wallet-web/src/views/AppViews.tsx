@@ -1117,7 +1117,6 @@ export function ShareView({
         });
         const published = await shareGatewayApi.publishHolderAttestedShl({
           gatewayBaseUrl: shareGatewayBaseUrl,
-          viewerBaseUrl: currentAppBaseUrl(),
           prepared,
           userId: user.id,
           holderDid: holderIdentity.did,
@@ -2445,7 +2444,7 @@ export function DocumentFlowControls({
           <strong>TrustCare Certification</strong>
           <p>
             ต้องมี holder VP, Manifest Credential และ issuer attestation ที่
-            verifier ตรวจสอบได้ก่อน SHL จึงจะกลายเป็น Certified SHL+Manifest VP
+            verifier ตรวจ Manifest VC ของโรงพยาบาลและ Holder VP ของ Wallet ผ่านก่อน จึงจะแสดงว่า SHL ได้รับการรับรอง
           </p>
         </div>
       )}

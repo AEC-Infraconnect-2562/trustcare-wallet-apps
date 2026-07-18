@@ -9,7 +9,6 @@ import {
 import {
   createShareGatewayClient,
   issuePayerCredentialWithShareGateway,
-  publishCertifiedShlTrustArtifacts,
   publishHospitalCertifiedShl,
   publishHolderAttestedShl,
   publishShareArtifact,
@@ -97,22 +96,14 @@ describe("shareGatewayClient", () => {
   });
 
   it("keeps a certification request pending without publishing unsigned trust artifacts", async () => {
-    const packageResult = buildSharePackage({
-      mode: "CertifiedSHLManifestPackage",
-      context: "cross_border",
-      cards,
-      selectedCardIds: cards.map((card) => card.id),
-      holderDid: "did:key:holder",
-      recipient: "Verifier",
-      purpose: "ส่งต่อข้ามเครือข่าย/ข้ามแดน",
-      expiresAt: "2026-07-08T09:00:00.000Z",
-      gatewayBaseUrl,
-      viewerBaseUrl: "https://wallet.example/trustcare-wallet-apps/",
-      shlPolicy: { maxAccessCount: 3, accessCodeDelivery: "not_required" },
-    });
-    if (!("shl" in packageResult)) {
-      throw new Error("Expected SHL package.");
-    }
+    const packageResult = {
+      mode: "CertifiedSHLPackage",
+      shl: {
+        trustLayerStatus: "hospital_certified",
+        manifest: { status: "finalized", files: [] },
+      },
+      payload: { purpose: "cross_border" },
+    } as never;
     const bodies: Record<string, unknown>[] = [];
     const fetchImpl = async (_url: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as Record<
@@ -125,8 +116,8 @@ describe("shareGatewayClient", () => {
         mode: "portal_backend",
         artifactId: String(body.artifactId),
         kind: body.kind as ShareGatewayArtifactKind,
-        publicUrl: `${gatewayBaseUrl}/manifests/${body.artifactId}.json`,
-        qrPayload: `${gatewayBaseUrl}/manifests/${body.artifactId}.json`,
+        publicUrl: `${gatewayBaseUrl}/artifacts/${body.artifactId}`,
+        qrPayload: `${gatewayBaseUrl}/artifacts/${body.artifactId}`,
         warnings: [],
         errors: [],
       });
@@ -136,23 +127,17 @@ describe("shareGatewayClient", () => {
       fetchImpl: fetchImpl as typeof fetch,
     });
 
-    const response = await client.publishShl({
-      result: packageResult,
-      userId: "demo-patient-complete-001",
-      holderDid: "did:key:holder",
-      purpose: "cross_border",
-      recipient: "Verifier",
-      expiresAt: "2026-07-08T09:00:00.000Z",
-    });
-
-    expect(response.ok).toBe(true);
-    expect(bodies.map((body) => body.kind)).toEqual([
-      "standard_shl_manifest",
-    ]);
-    expect(bodies[0]?.accessPolicy).toMatchObject({
-      maxAccessCount: 3,
-      accessCodeDelivery: "not_required",
-    });
+    await expect(
+      client.publishShl({
+        result: packageResult,
+        userId: "demo-patient-complete-001",
+        holderDid: "did:key:holder",
+        purpose: "cross_border",
+        recipient: "Verifier",
+        expiresAt: "2026-07-08T09:00:00.000Z",
+      }),
+    ).rejects.toThrow("Wallet Exchange v2");
+    expect(bodies).toEqual([]);
   });
 
   it("exposes resolver and JWKS helpers for platform clients", async () => {
@@ -258,49 +243,15 @@ describe("shareGatewayClient", () => {
     );
   });
 
-  it("can publish certified trust artifacts directly for focused tests", async () => {
-    const kinds: unknown[] = [];
-    const fetchImpl = async (_url: RequestInfo | URL, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body ?? "{}")) as Record<
-        string,
-        unknown
-      >;
-      kinds.push(body.kind);
-      return jsonResponse({
-        ok: true,
-        mode: "portal_backend",
-        artifactId: String(body.artifactId),
-        kind: body.kind as ShareGatewayArtifactKind,
-        warnings: [],
-        errors: [],
-      });
-    };
-
-    await publishCertifiedShlTrustArtifacts({
-      gatewayBaseUrl,
-      fetchImpl: fetchImpl as typeof fetch,
-      publicationId: "shl_123",
-      trustcare: {
-        holderPresentationJwt: "eyJoIjp0cnVlfQ.eyJ2cCI6e319.c2ln",
-        manifestCredentialJwt: "eyJoIjp0cnVlfQ.eyJ2YyI6e319.c2ln",
-      },
-      userId: "demo",
-      holderDid: "did:key:holder",
-      purpose: "referral",
-      recipient: "Verifier",
-      expiresAt: "2026-07-08T09:00:00.000Z",
-    });
-
-    expect(kinds).toEqual(["manifest_vp", "manifest_credential"]);
-  });
-
-  it("publishes only signed certification artifacts and never self-asserts a certified manifest", async () => {
+  it("keeps certified trust artifacts on Wallet Exchange and never sends them to the generic gateway", async () => {
     const bodies: Record<string, unknown>[] = [];
-    const standardManifestUrl = `${gatewayBaseUrl}/manifests/shl-certified-1.json`;
+    const packageId = "C".repeat(43);
+    const standardManifestUrl = `https://portal.example/s/${packageId}`;
     const publication = {
       trustMode: "hospital_certified",
-      manifest: {
-        publicationId: "shl-certified-1",
+      manifest: { status: "finalized", files: [] },
+      packageBinding: {
+        publicationId: packageId,
         holderDid: "did:key:holder",
         manifestUrl: standardManifestUrl,
         expiresAt: "2026-07-13T09:00:00.000Z",
@@ -333,16 +284,14 @@ describe("shareGatewayClient", () => {
       }) as typeof fetch,
     });
 
-    expect(bodies.map((body) => body.kind)).toEqual([
-      "manifest_vp",
-      "manifest_credential",
-    ]);
+    expect(bodies).toEqual([]);
     expect(result.manifestUrl).toBe(standardManifestUrl);
-    expect(JSON.stringify(bodies)).not.toContain("certified_shl_manifest");
   });
 
-  it("publishes holder-attested SHL files, holder VP, and manifest without a fake hospital credential", async () => {
+  it("publishes holder-attested SHL files and a strict standard manifest only", async () => {
     const holderDid = "did:key:zHolder";
+    const packageId = "H".repeat(43);
+    const manifestUrl = `https://portal.example/s/${packageId}`;
     const holderPresentationJwt =
       "eyJhbGciOiJFUzI1NiJ9.eyJ2cCI6e319.c2ln";
     const requests: Record<string, unknown>[] = [];
@@ -352,18 +301,15 @@ describe("shareGatewayClient", () => {
         unknown
       >;
       requests.push(body);
-      const suffix =
-        body.kind === "manifest_vp"
-          ? ".jwt"
-          : body.kind === "standard_shl_manifest"
-            ? ".json"
-            : "";
       return jsonResponse({
         ok: true,
         mode: "portal_backend",
         artifactId: String(body.artifactId),
         kind: body.kind as ShareGatewayArtifactKind,
-        publicUrl: `${gatewayBaseUrl}/${String(body.kind)}/${String(body.artifactId)}${suffix}`,
+        publicUrl:
+          body.kind === "standard_shl_manifest"
+            ? manifestUrl
+            : `${gatewayBaseUrl}/files/${String(body.artifactId)}`,
         warnings: [],
         errors: [],
       });
@@ -371,10 +317,18 @@ describe("shareGatewayClient", () => {
     const prepared = {
       trustMode: "holder_attested",
       manifest: {
-        schema: "trustcare.certified-shl.manifest.v1",
-        publicationId: "shl-holder-1",
+        status: "finalized",
+        files: [
+          {
+            contentType: "application/smart-health-card",
+            location: `${gatewayBaseUrl}/files/${packageId}%3Afile%3A1.jwe`,
+          },
+        ],
+      },
+      packageBinding: {
+        publicationId: packageId,
         holderDid,
-        manifestUrl: `${gatewayBaseUrl}/manifests/shl-holder-1.json`,
+        manifestUrl,
         createdAt: "2026-07-12T00:00:00.000Z",
         expiresAt: "2026-07-12T00:30:00.000Z",
         accessPolicy: {
@@ -390,7 +344,7 @@ describe("shareGatewayClient", () => {
         },
         documents: [
           {
-            id: "shl-holder-1:file:1",
+            id: `${packageId}:file:1`,
             documentId: "document-1",
             credentialId: "credential-1",
             credentialType: "PatientIdentityCredential",
@@ -399,7 +353,7 @@ describe("shareGatewayClient", () => {
             holderDid,
             contentType: "application/vc+jwt",
             encryption: { alg: "dir", enc: "A256GCM" },
-            location: `${gatewayBaseUrl}/files/shl-holder-1%3Afile%3A1.jwe`,
+            location: `${gatewayBaseUrl}/files/${packageId}%3Afile%3A1.jwe`,
             plaintextSha256: `sha256:${"a".repeat(64)}`,
             jweSha256: `sha256:${"b".repeat(64)}`,
           },
@@ -418,8 +372,13 @@ describe("shareGatewayClient", () => {
       },
       files: [
         {
-          id: "shl-holder-1:file:1",
+          id: `${packageId}:file:1`,
+          location: `${gatewayBaseUrl}/files/${packageId}%3Afile%3A1.jwe`,
+          contentType: "application/jose",
+          documentId: "document-1",
           jwe: "protected.iv.ciphertext.tag",
+          plaintextSha256: `sha256:${"a".repeat(64)}`,
+          jweSha256: `sha256:${"b".repeat(64)}`,
         },
       ],
       shlContentKey: "A".repeat(43),
@@ -429,7 +388,6 @@ describe("shareGatewayClient", () => {
 
     const publication = await publishHolderAttestedShl({
       gatewayBaseUrl,
-      viewerBaseUrl: "https://wallet.example/",
       prepared,
       userId: "demo",
       holderDid,
@@ -441,15 +399,10 @@ describe("shareGatewayClient", () => {
     expect(publication.trustMode).toBe("holder_attested");
     expect(requests.map((request) => request.kind)).toEqual([
       "shl_file",
-      "manifest_vp",
       "standard_shl_manifest",
     ]);
     expect(requests[0]?.payload).toBe("protected.iv.ciphertext.tag");
     expect(requests[1]).toMatchObject({
-      contentType: "application/vp+jwt",
-      payload: holderPresentationJwt,
-    });
-    expect(requests[2]).toMatchObject({
       kind: "standard_shl_manifest",
       contentType: "application/json",
     });
@@ -457,29 +410,6 @@ describe("shareGatewayClient", () => {
     expect(publication.canonicalShlUrl).toMatch(/^shlink:\//);
   });
 
-  it("rejects raw JSON objects as certified trust artifacts", async () => {
-    const kinds: unknown[] = [];
-    await expect(
-      publishCertifiedShlTrustArtifacts({
-        gatewayBaseUrl,
-        fetchImpl: (async (_url: RequestInfo | URL, init?: RequestInit) => {
-          kinds.push(JSON.parse(String(init?.body ?? "{}")).kind);
-          return jsonResponse({ ok: true, mode: "portal_backend" });
-        }) as typeof fetch,
-        publicationId: "shl_raw",
-        trustcare: {
-          holderPresentationJwt: { type: "unsigned-vp" },
-          manifestCredentialJwt: { type: "unsigned-vc" },
-        },
-        userId: "demo",
-        holderDid: "did:key:holder",
-        purpose: "referral",
-        recipient: "Verifier",
-        expiresAt: "2026-07-08T09:00:00.000Z",
-      }),
-    ).rejects.toThrow("signed compact JWT");
-    expect(kinds).toEqual([]);
-  });
 });
 
 function jsonResponse(

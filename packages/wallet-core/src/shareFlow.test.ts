@@ -109,7 +109,7 @@ describe("premium share flow policy and validation", () => {
       certifiedShlReady: true,
     });
 
-    expect(recommendation.mode).toBe("CertifiedSHLManifestPackage");
+    expect(recommendation.mode).toBe("CertifiedSHLPackage");
     expect(validation.ok).toBe(true);
   });
 
@@ -181,7 +181,7 @@ describe("premium share flow policy and validation", () => {
     const validation = validateShareDraft(
       draft,
       createSharePolicy({
-        mode: "CertifiedSHLManifestPackage",
+        mode: "CertifiedSHLPackage",
         shl: {
           passcodeRequired: true,
           passcode: "1973",
@@ -308,7 +308,7 @@ describe("premium share flow policy and validation", () => {
     const validation = validateShareDraft(
       draft,
       createSharePolicy({
-        mode: "CertifiedSHLManifestPackage",
+        mode: "CertifiedSHLPackage",
         shl: {
           passcodeRequired: true,
           passcode: "1973",
@@ -439,12 +439,12 @@ describe("premium share flow policy and validation", () => {
     ).toThrow("Holder DID is required");
   });
 
-  it("does not fabricate a holder DID for Certified SHL Manifest VP packages", () => {
+  it("does not fabricate a holder DID for Certified SHL packages", () => {
     const cards = [withoutHolderDid(card(1, "patient_identity"))];
 
     expect(() =>
       buildSharePackage({
-        mode: "CertifiedSHLManifestPackage",
+        mode: "CertifiedSHLPackage",
         context: "referral",
         cards,
         selectedCardIds: cards.map((item) => item.id),

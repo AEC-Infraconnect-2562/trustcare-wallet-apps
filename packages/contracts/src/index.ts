@@ -14,9 +14,6 @@ export type ShareGatewayMode =
 export type ShareGatewayArtifactKind =
   | "vp"
   | "standard_shl_manifest"
-  | "certified_shl_manifest"
-  | "manifest_vp"
-  | "manifest_credential"
   | "shl_file";
 
 export type ShareGatewayAccessPolicyContract = {
@@ -121,9 +118,6 @@ export function assertShareGatewayPublicationRequest(
     [
       "vp",
       "standard_shl_manifest",
-      "certified_shl_manifest",
-      "manifest_vp",
-      "manifest_credential",
       "shl_file",
     ],
     issues,
@@ -167,9 +161,6 @@ export function assertShareGatewayPublicationResponse(
     [
       "vp",
       "standard_shl_manifest",
-      "certified_shl_manifest",
-      "manifest_vp",
-      "manifest_credential",
       "shl_file",
     ],
     issues,

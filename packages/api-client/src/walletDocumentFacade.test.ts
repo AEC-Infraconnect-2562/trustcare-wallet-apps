@@ -71,12 +71,12 @@ describe("wallet API document facade", () => {
     }
 
     const certifiedShl = await walletApi.createSharePackage(options, {
-      mode: "CertifiedSHLManifestPackage",
+      mode: "CertifiedSHLPackage",
       context: "referral",
       selectedCardIds,
       recipient: "TrustCare referral verifier",
     });
-    expect(certifiedShl.mode).toBe("CertifiedSHLManifestPackage");
+    expect(certifiedShl.mode).toBe("CertifiedSHLPackage");
     if ("shl" in certifiedShl) {
       expect(certifiedShl.shl.gatewayMode).toBe("portal_backend");
       expect(certifiedShl.shl.gatewayBaseUrl).toBe(

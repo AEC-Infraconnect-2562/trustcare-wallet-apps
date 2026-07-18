@@ -18,7 +18,7 @@ export type DocumentRequestFormat =
   | "fhir_document_reference"
   | "fhir_bundle"
   | "standard_shl"
-  | "certified_shl_manifest"
+  | "certified_shl_package"
   | "pdf_image";
 
 export type DocumentRequestReturnChannel =
@@ -169,8 +169,8 @@ const formatLabels: Record<
     description:
       "ลิงก์สุขภาพตาม SMART Health Links สำหรับชุดข้อมูลขนาดใหญ่หรือข้อมูลต่อเนื่อง",
   },
-  certified_shl_manifest: {
-    label: "SHL + Manifest VP",
+  certified_shl_package: {
+    label: "SHL ที่โรงพยาบาลรับรอง",
     description:
       "ใช้ SHL เป็น transport พร้อม holder VP และขอ Manifest Credential จากโรงพยาบาลเมื่อจำเป็น",
   },
@@ -472,7 +472,7 @@ function chooseDefaultFormat(
 ): DocumentRequestFormat {
   if (source === "patient_upload") return "pdf_image";
   if (scope === "document_bundle" && source === "trustcare_portal")
-    return "certified_shl_manifest";
+    return "certified_shl_package";
   if (scope === "document_bundle" && source !== "payer") return "standard_shl";
   if (source === "connected_fhir") {
     return scope === "document_bundle" ||
@@ -553,12 +553,12 @@ function formatDisabledReason(
       ? "ไฟล์นำเข้าเองควรถูกเก็บเป็น DocumentReference ก่อน"
       : "เอกสารยืนยันตัวตนเดี่ยวควรใช้ VC/VP หรือ OID4VCI";
   }
-  if (format === "certified_shl_manifest") {
+  if (format === "certified_shl_package") {
     if (source !== "trustcare_portal") {
       return "Certified SHL ต้องมี Manifest Credential ที่ TrustCare Portal ออกด้วยกุญแจโรงพยาบาลและ Wallet ตรวจผ่าน";
     }
     if (scope !== "document_bundle") {
-      return "Manifest VP เหมาะกับชุดเอกสารหลายรายการ";
+      return "SHL ที่มี Manifest VC และ Holder VP เหมาะกับชุดเอกสารหลายรายการ";
     }
   }
   if (format === "pdf_image" && source !== "patient_upload") {
@@ -584,7 +584,7 @@ function buildReturnChannelOptions(
         (source === "payer" && id === "payer_exchange") ||
         (format === "oid4vci_offer" && id === "oid4vci_offer") ||
         (format === "standard_shl" && id === "shl_link") ||
-        (format === "certified_shl_manifest" && id === "shl_link") ||
+        (format === "certified_shl_package" && id === "shl_link") ||
         (format.startsWith("fhir") && id === "fhir_pull") ||
         (source === "patient_upload" && id === "manual_upload") ||
         (source === "external_wallet" && id === "external_wallet"),
@@ -606,7 +606,7 @@ function returnChannelEnabled(
   if (channel === "fhir_pull")
     return format === "fhir_document_reference" || format === "fhir_bundle";
   if (channel === "shl_link")
-    return format === "standard_shl" || format === "certified_shl_manifest";
+    return format === "standard_shl" || format === "certified_shl_package";
   if (channel === "manual_upload")
     return source === "patient_upload" || format === "pdf_image";
   if (channel === "external_wallet") return source === "external_wallet";
@@ -622,9 +622,9 @@ function buildControlState(
     fhirEndpoint:
       format === "fhir_document_reference" || format === "fhir_bundle",
     shlAccessPolicy:
-      format === "standard_shl" || format === "certified_shl_manifest",
+      format === "standard_shl" || format === "certified_shl_package",
     trustCareCertification:
-      source === "trustcare_portal" && format === "certified_shl_manifest",
+      source === "trustcare_portal" && format === "certified_shl_package",
     manualFileUpload: source === "patient_upload" || format === "pdf_image",
   };
 }
@@ -635,7 +635,7 @@ function buildTrustPolicy(
 ): DocumentRequestPlan["trustPolicy"] {
   if (source === "patient_upload" || format === "pdf_image")
     return "patient_provided_unverified";
-  if (format === "certified_shl_manifest") return "trustcare_certified";
+  if (format === "certified_shl_package") return "trustcare_certified";
   return "issuer_signed";
 }
 
@@ -655,7 +655,7 @@ function buildWarnings(
       "Standard SHL ใช้ร่วมกับระบบภายนอกได้ แต่ยังไม่ถือว่าโรงพยาบาลรับรองจนกว่าจะมี Manifest Credential ที่ตรวจผ่าน",
     );
   }
-  if (format === "certified_shl_manifest") {
+  if (format === "certified_shl_package") {
     warnings.push(
       "Certified SHL ต้องเก็บ holder VP, Manifest Credential และ source/file hashes ไว้ให้ verifier ตรวจสอบได้",
     );
@@ -679,7 +679,7 @@ function buildNextSteps(
       "สถานะเป็นยังไม่ยืนยันจนกว่า issuer จะลงนาม",
     ];
   }
-  if (format === "certified_shl_manifest") {
+  if (format === "certified_shl_package") {
     return [
       "ส่งคำขอไป TrustCare Portal",
       "Wallet สร้าง SHL manifest และ holder VP; Portal ออก Manifest Credential หลังอนุมัติ",

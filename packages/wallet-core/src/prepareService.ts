@@ -426,9 +426,9 @@ export function createDemoCheckinQr(
     >
   > = {},
 ): CheckinQrResponse {
-  const shlId = `shl_${context}_${Date.now().toString(36)}`;
+  const shlId = createShlContentKey();
   const manifestUrl =
-    policy.manifestUrl ?? `https://trustcare.example.com/shl-manifest/${shlId}`;
+    policy.manifestUrl ?? `https://trustcare.example.com/s/${shlId}`;
   const expiresAt =
     policy.expiresAt ?? new Date(Date.now() + 4 * 60 * 60_000).toISOString();
   const shlUrl = createShlLinkPayload({
@@ -448,7 +448,7 @@ export function createDemoCheckinQr(
     checkId: `chk_${Date.now().toString(36)}`,
     shlId,
     shlUrl,
-    qrPayload: webViewerUrl,
+    qrPayload: shlUrl,
     manifestUrl,
     viewerUrl: webViewerUrl,
     canonicalShlUrl: shlUrl,
