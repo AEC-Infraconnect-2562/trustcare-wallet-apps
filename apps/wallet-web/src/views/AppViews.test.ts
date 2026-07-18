@@ -38,6 +38,15 @@ describe("scan URL payload parsing", () => {
     expect(extractScannablePayload(webScanUrl)).toBe(resolverUrl);
     expect(createScannableWebUrl(webScanUrl)).toBe(webScanUrl);
   });
+
+  it("uses the standard SHL viewer-prefix form for cross-device web scanning", () => {
+    const canonical = "shlink:/eyJ1cmwiOiJodHRwczovL2V4YW1wbGUub3JnL3MifQ";
+    const webScanUrl = createScannableWebUrl(canonical);
+
+    expect(webScanUrl).toBe(`https://trustcare.example.com/#${canonical}`);
+    expect(extractScannablePayload(webScanUrl)).toBe(canonical);
+    expect(createScannableWebUrl(webScanUrl)).toBe(webScanUrl);
+  });
 });
 
 describe("share gateway URL resolution", () => {

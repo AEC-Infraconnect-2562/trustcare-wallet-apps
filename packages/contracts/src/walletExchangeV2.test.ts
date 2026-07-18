@@ -167,7 +167,7 @@ describe("Wallet Exchange V2 live contracts", () => {
     expect(WALLET_EXCHANGE_V2_CONTRACT_VERSION).toBe(
       "2026.07.wallet-exchange.v2.1.strict-w3c",
     );
-    expect(PORTAL_WALLET_V2_CONTRACT_VERSION).toBe("2026.07.portal-wallet.v4");
+    expect(PORTAL_WALLET_V2_CONTRACT_VERSION).toBe("2026.07.portal-wallet.v5");
   });
 
   it("validates discovery and rejects incompatible or expanded responses", () => {

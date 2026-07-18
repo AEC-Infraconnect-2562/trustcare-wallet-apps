@@ -1052,7 +1052,28 @@ export function ShareView({
     const expiresAt = protocolRequiresShl(packageProtocol)
       ? shlPolicyExpiry(shlPolicy)
       : new Date(Date.now() + expiryMinutes * 60_000).toISOString();
-    const shareGatewayBaseUrl = currentShareGatewayBaseUrl();
+    let shareGatewayBaseUrl = currentShareGatewayBaseUrl();
+    if (walletExchangeWorkflow) {
+      try {
+        shareGatewayBaseUrl =
+          await walletExchangeWorkflow.shareGatewayBaseUrl();
+      } catch (error) {
+        setSharePayload("");
+        setShareExportPayload("");
+        setShareQrDataUrl("");
+        setSharePublication({
+          state: "blocked",
+          message:
+            error instanceof Error
+              ? error.message
+              : "โหลด Share Gateway จาก Portal discovery ไม่สำเร็จ",
+          warnings: [
+            "Wallet จะไม่เดา Share Gateway หรือ fallback ไป endpoint อื่นเมื่อ live discovery ใช้งานไม่ได้",
+          ],
+        });
+        return;
+      }
+    }
     if (packageProtocol === "vp" && !shareGatewayBaseUrl) {
       setSharePayload("");
       setShareExportPayload("");
@@ -1130,6 +1151,9 @@ export function ShareView({
                 prepared,
               )
             : null;
+        const scannableShlUrl = createScannableWebUrl(
+          published.canonicalShlUrl,
+        );
         const exportPayload = JSON.stringify(
           {
             type: "HolderAttestedSHL",
@@ -1137,6 +1161,7 @@ export function ShareView({
             shlPackageId: published.shlPackageId,
             manifestUrl: published.manifestUrl,
             canonicalShlUrl: published.canonicalShlUrl,
+            viewerUrl: scannableShlUrl,
             holderPresentationId: prepared.holderPresentationId,
             manifestHash: prepared.manifestHash,
             fileHashes: prepared.expectedManifestCredentialBinding.fileHashes,
@@ -1152,10 +1177,10 @@ export function ShareView({
           null,
           2,
         );
-        setSharePayload(published.qrPayload);
+        setSharePayload(scannableShlUrl);
         setShareExportPayload(exportPayload);
         setShareQrDataUrl(
-          await toQrDataUrl(published.qrPayload, { margin: 1, width: 240 }),
+          await toQrDataUrl(scannableShlUrl, { width: 320 }),
         );
         setSharePublication({
           state: "published",
@@ -1286,9 +1311,7 @@ export function ShareView({
         const webScanPayload = createScannableWebUrl(publication.qrPayload);
         setSharePayload(webScanPayload);
         setShareExportPayload(exportPayload);
-        setShareQrDataUrl(
-          await toQrDataUrl(webScanPayload, { margin: 1, width: 240 }),
-        );
+        setShareQrDataUrl(await toQrDataUrl(webScanPayload, { width: 320 }));
         setSharePublication({
           state: "published",
           message:
@@ -1323,12 +1346,12 @@ export function ShareView({
             expiresAt,
           })
         : null;
-      const shlQrPayload = shlPublication?.qrPayload ?? result.shl.qrPayload;
+      const canonicalShlPayload =
+        shlPublication?.qrPayload ?? result.shl.qrPayload;
+      const shlQrPayload = createScannableWebUrl(canonicalShlPayload);
       setSharePayload(shlQrPayload);
       setShareExportPayload(exportPayload);
-      setShareQrDataUrl(
-        await toQrDataUrl(shlQrPayload, { margin: 1, width: 240 }),
-      );
+      setShareQrDataUrl(await toQrDataUrl(shlQrPayload, { width: 320 }));
       setSharePublication({
         state: "published",
         message: shlPublication
@@ -4418,9 +4441,11 @@ export function getObjectScanPayload(object: WalletStoredObject): string {
         ? payload.qrPayload
         : typeof payload?.shlUrl === "string"
           ? payload.shlUrl
-          : typeof payload?.viewerUrl === "string"
-            ? payload.viewerUrl
-            : "";
+          : typeof payload?.canonicalShlUrl === "string"
+            ? payload.canonicalShlUrl
+            : typeof payload?.viewerUrl === "string"
+              ? payload.viewerUrl
+              : "";
     if (directShlPayload) return createScannableWebUrl(directShlPayload);
   }
   if (payload?.bundleId && payload?.contractId) {

@@ -278,6 +278,18 @@ const allScopes = [
 /** Shared Web/Mobile workflow. Platform code supplies only secure persistence. */
 export class WalletExchangeWorkflow {
   private contractsPromise?: Promise<WalletExchangeContractSet>;
+
+  /**
+   * Returns the Share Gateway selected by the validated live discovery
+   * document. UI callers must use this value instead of deriving a gateway
+   * from the Wallet or Portal origin.
+   */
+  async shareGatewayBaseUrl(): Promise<string> {
+    return (await this.contracts()).discovery.endpoints.shareGateway.replace(
+      /\/$/,
+      "",
+    );
+  }
   private clientPromise?: Promise<WalletExchangeV2Client>;
   private issuersPromise?: Promise<ResolvedPortalHospitalIssuer[]>;
 
