@@ -199,6 +199,7 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     setAvatarState({});
     void initializeRuntime(options)
       .then(async (next) => {
+        await next.workflow.initializePersistenceTrust();
         const avatarBinding = {
           walletUserId:
             options.sandboxIdentity?.walletUserId ?? options.localUserKey,
@@ -402,6 +403,7 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
 
   const reload = useCallback(async () => {
     if (!activeRuntime) return;
+    await activeRuntime.workflow.initializePersistenceTrust();
     const [state, links, pendingSubmissions, graphState, avatarRecord] =
       await Promise.all([
       activeRuntime.persistence.loadOrCreateState(),

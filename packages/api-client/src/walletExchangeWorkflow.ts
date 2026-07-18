@@ -290,6 +290,16 @@ export class WalletExchangeWorkflow {
       "",
     );
   }
+
+  /**
+   * Resolve the live Portal issuer registry before durable Exchange state is
+   * read. Persistence is deliberately fail-closed, so a cold application
+   * start must install the current trusted issuer set before validating
+   * records accepted during an earlier session.
+   */
+  async initializePersistenceTrust(): Promise<void> {
+    await this.issuers();
+  }
   private clientPromise?: Promise<WalletExchangeV2Client>;
   private issuersPromise?: Promise<ResolvedPortalHospitalIssuer[]>;
 

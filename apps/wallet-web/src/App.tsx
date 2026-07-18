@@ -1449,7 +1449,33 @@ export default function App() {
   const loginAs = useCallback(
     async (userId: string) => {
       setPortalLoginMessage("");
-      if (
+      if (env.runtimeEnvironment !== "demo") {
+        if (!portalWalletSession.configuration) {
+          setPortalLoginMessage(
+            "กำลังโหลดการตั้งค่าการเชื่อมต่อ TrustCare Portal กรุณาลองอีกครั้ง",
+          );
+          return;
+        }
+        let portalAuthenticated = Boolean(portalWalletSession.accessToken);
+        if (
+          portalWalletSession.configuration.endpoints.sandboxTestLogin &&
+          portalWalletSession.state !== "authenticated"
+        ) {
+          try {
+            await portalWalletSession.loginSandboxIdentity(userId);
+            portalAuthenticated = true;
+          } catch (error) {
+            setPortalLoginMessage(friendlyPortalSyncError(error));
+            return;
+          }
+        }
+        if (!portalAuthenticated) {
+          setPortalLoginMessage(
+            "Portal ยังไม่เปิด Wallet OIDC หรือ sandbox test login สำหรับระบบนี้",
+          );
+          return;
+        }
+      } else if (
         portalWalletSession.configuration?.endpoints.sandboxTestLogin &&
         portalWalletSession.state !== "authenticated"
       ) {
