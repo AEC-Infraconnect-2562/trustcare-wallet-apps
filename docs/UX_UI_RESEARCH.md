@@ -129,18 +129,24 @@ brand guidelines
 | หน้า Login: ไม่แสดง error การเชื่อม Portal เมื่อระบบ login สาธิตพร้อมใช้งาน; แสดงเป็นหมายเหตุเบา ๆ แทน | `App.tsx`, `IdentityViews.tsx` | หลัก error-only-when-actionable |
 | แบนเนอร์สภาพแวดล้อม (ข้อมูลสาธิต) ย่อเป็นแถบบางบรรทัดเดียว | `ux-refresh.css` | Apple Wallet chrome discipline |
 
-## 6. Roadmap รอบถัดไป (ยังไม่ทำในรอบนี้ — ต้องแตะโครงสร้าง flow)
+## 5b. สิ่งที่ปรับเพิ่มในรอบสอง (Implemented)
 
-1. **Share flow → single sheet** (สำคัญที่สุด): ยุบ 4 ขั้น + timeline เหลือ sheet เดียวแบบ
-   EUDI Request screen: ผู้รับ → รายการข้อมูล (ติ๊กราย attribute) → ปุ่มยืนยัน → QR เต็มจอ
-   พร้อมนับถอยหลังหมดอายุแบบ Apple Wallet boarding pass
+| การเปลี่ยนแปลง | ไฟล์ | หมายเหตุ |
+|----------------|------|----------|
+| แก้บั๊ก "Maximum update depth exceeded" (render loop ทุกหน้า): fallback `[]`/`{}` ที่สร้างใหม่ทุก render ใน `useWalletExchange` ทำให้ `allCards` เปลี่ยน identity ตลอดจน effect readiness ยิง setState วนไม่จบ — เปลี่ยนเป็นค่าคงที่ระดับโมดูล + memoize `graphArtifacts` | `useWalletExchange.ts` | ตรวจซ้ำแล้ว 0 error ทั้ง 8 route |
+| /prepare และ /share เป็น flow คอลัมน์เดียวต่อเนื่อง แก้อาการ "การแสดงผลไม่ต่อเนื่อง": ตัด nested scroll, sticky panel และ grid สูงไม่เท่ากัน | `ux-refresh.css` | ตามที่ผู้ใช้รายงาน |
+| ตัดแผงสรุป SharePacketComposer/PacketRecommendation ที่ซ้ำกับ step 1 และ 3 ออกจากหน้าแชร์ (ข้อมูลเดิมแสดงในขั้นตอนอยู่แล้ว) | `AppViews.tsx` | ลดการทวนซ้ำ 3 จุดเหลือจุดเดียว |
+| QR เต็มจอแบบ boarding pass: กด QR ในขั้นที่ 4 เพื่อเปิดเต็มจอ พร้อมชื่อผู้รับ วัตถุประสงค์ และอายุการใช้งาน | `AppViews.tsx`, `ux-refresh.css` | ปุ่ม `share-qr-fullscreen-open` |
+
+## 6. Roadmap รอบถัดไป
+
+1. **Share flow → single sheet เต็มรูปแบบ**: ยุบ 4 ขั้นเหลือ sheet เดียวแบบ EUDI Request
+   screen (ติ๊กราย attribute → ยืนยัน → QR) พร้อมนับถอยหลังหมดอายุ
 2. **Prepare → checklist เดียว**: การ์ดเลือกบริการเป็น horizontal chips,
    เหลือ 1 checklist + 1 CTA ("พร้อมแล้ว ไปสร้าง QR")
-3. **QR เต็มจอ ("boarding pass moment")**: ปุ่มแสดง QR จากการ์ดเอกสารโดยตรง
-   สว่างหน้าจออัตโนมัติ ใช้ในโรงพยาบาลได้ในก้าวเดียว
-4. **แก้บั๊ก "Maximum update depth exceeded"** ใน effect chain ของ readiness/offline cards
-5. **Mobile app (Expo)**: นำระบบสีประจำประเภทเดียวกันไปใช้ใน `ui-mobile`
-6. **Empty states**: ทุกหน้า (เอกสารว่าง, ประวัติว่าง) ให้มีภาพ + คำอธิบาย + CTA เดียว
+3. **Mobile app (Expo)**: นำระบบสีประจำประเภทเดียวกันไปใช้ใน `ui-mobile`
+4. **Empty states**: ทุกหน้า (เอกสารว่าง, ประวัติว่าง) ให้มีภาพ + คำอธิบาย + CTA เดียว
+5. **Timeline/Record time ในหน้าแชร์**: แปลงเป็นภาษาผู้ป่วยหรือย้ายไปโหมดนักพัฒนา
 
 ## 7. แหล่งอ้างอิง
 

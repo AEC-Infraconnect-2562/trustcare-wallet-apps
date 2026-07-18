@@ -52,6 +52,7 @@ vi.mock("react", async (importOriginal) => {
       harness.effects.push(effect);
     },
     useCallback: <Callback>(callback: Callback) => callback,
+    useMemo: <Value>(factory: () => Value) => factory(),
   };
 });
 

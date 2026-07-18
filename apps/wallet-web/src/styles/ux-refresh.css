@@ -436,6 +436,83 @@
 }
 
 /* ------------------------------------------------------------------ */
+/* 6b. Full-screen QR ("boarding pass moment")                         */
+/* ------------------------------------------------------------------ */
+
+.share-qr-open {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+  padding: 0;
+}
+
+.share-qr-open img {
+  display: block;
+}
+
+.share-qr-open > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+}
+
+.qr-fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+.qr-fullscreen-card {
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+  width: min(440px, 94vw);
+  padding: 26px 24px;
+  border-radius: 22px;
+  background: #fff;
+  color: #0f172a;
+  text-align: center;
+  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.45);
+}
+
+.qr-fullscreen-card header {
+  display: grid;
+  gap: 2px;
+}
+
+.qr-fullscreen-card header strong {
+  font-size: 18px;
+}
+
+.qr-fullscreen-card header span {
+  font-size: 13.5px;
+  color: #475569;
+}
+
+.qr-fullscreen-card img {
+  width: min(78vw, 340px);
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.qr-fullscreen-card p {
+  margin: 0;
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+/* ------------------------------------------------------------------ */
 /* 7. Evidence alert on Home: caution, not alarm                       */
 /* ------------------------------------------------------------------ */
 

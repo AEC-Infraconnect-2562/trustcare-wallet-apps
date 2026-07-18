@@ -22,6 +22,7 @@ import {
   Link2,
   ListChecks,
   LockKeyhole,
+  Maximize2,
   Network,
   Pill,
   Printer,
@@ -33,6 +34,7 @@ import {
   Upload,
   UserCheck,
   Wallet,
+  X,
 } from "lucide-react";
 import * as shareGatewayApi from "@trustcare/api-client/shareGatewayClient";
 import type { WalletExchangeWorkflow } from "@trustcare/api-client/walletExchangeWorkflow";
@@ -73,7 +75,6 @@ import {
   walletCardForCredentialRendering,
   readinessContextLabels,
   readinessContextValues,
-  recommendPolicyForDraft,
   resolveShareDisclosureIntent,
   shareModePatientDescription,
   shareModePatientLabel,
@@ -112,7 +113,6 @@ import { MissingDocumentCard } from "../components/prepare/MissingDocumentCard";
 import { PayerOrchestrationPanel } from "../components/payer/PayerOrchestrationPanel";
 import { PurposePickerCard } from "../components/prepare/PurposePickerCard";
 import { ReadinessSummaryCard } from "../components/prepare/ReadinessSummaryCard";
-import { SharePacketComposer } from "../components/share/SharePacketComposer";
 import { TrustChecklist } from "../components/trust/TrustChecklist";
 import { toQrDataUrl } from "../utils/qrCode";
 import {
@@ -820,6 +820,7 @@ export function ShareView({
   );
   const [timeAnchor, setTimeAnchor] = useState<TimeAnchor>("record");
   const [shareQrDataUrl, setShareQrDataUrl] = useState("");
+  const [qrFullscreen, setQrFullscreen] = useState(false);
   const [sharePayload, setSharePayload] = useState("");
   const [shareExportPayload, setShareExportPayload] = useState("");
   const [sharePublication, setSharePublication] =
@@ -972,14 +973,6 @@ export function ShareView({
       user.holderDid,
       user.id,
     ],
-  );
-  const packetRecommendation = useMemo(
-    () =>
-      recommendPolicyForDraft(shareDraft, {
-        recipientSupportsShl: true,
-        trustcareCertificationAvailable: shareGatewayReady,
-      }),
-    [shareDraft, shareGatewayReady],
   );
   const shareValidation = useMemo<ShareValidationResult>(
     () =>
@@ -1436,19 +1429,6 @@ export function ShareView({
   return (
     <div className="view-stack">
       {scanOutcome && <ScanOutcomePanel outcome={scanOutcome} />}
-      <SharePacketComposer
-        purpose={purpose}
-        recipient={recipient}
-        readiness={purposeReadiness}
-        selectedCount={selectedCards.length}
-        biometricRequired={shareProfile.biometricRequired}
-        biometricReady={biometricEnabled}
-        recommendation={packetRecommendation}
-        mode={sharePackageMode}
-        modeLabel={shareModePatientLabel(sharePackageMode)}
-        modeDescription={shareModePatientDescription(sharePackageMode)}
-        validation={shareValidation}
-      />
       <Surface className="share-flow premium-share-flow">
         <div className="section-title-row">
           <div>
@@ -1887,7 +1867,18 @@ export function ShareView({
                 </div>
               )}
               {shareQrDataUrl ? (
-                <img src={shareQrDataUrl} alt="Share package QR" />
+                <button
+                  type="button"
+                  className="share-qr-open"
+                  data-testid="share-qr-fullscreen-open"
+                  title="แตะเพื่อแสดง QR เต็มจอ"
+                  onClick={() => setQrFullscreen(true)}
+                >
+                  <img src={shareQrDataUrl} alt="Share package QR" />
+                  <span>
+                    <Maximize2 size={15} /> แสดงเต็มจอสำหรับให้เจ้าหน้าที่สแกน
+                  </span>
+                </button>
               ) : (
                 <div className="qr-placeholder">
                   <QrCode size={54} />
@@ -2131,6 +2122,34 @@ export function ShareView({
           })}
         </section>
       </details>
+      {qrFullscreen && shareQrDataUrl ? (
+        <div
+          className="qr-fullscreen-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="QR สำหรับให้เจ้าหน้าที่สแกน"
+          data-testid="share-qr-fullscreen"
+          onClick={() => setQrFullscreen(false)}
+        >
+          <div
+            className="qr-fullscreen-card"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header>
+              <strong>{recipient || "ผู้รับปลายทาง"}</strong>
+              <span>{readinessContextLabels[purpose].th}</span>
+            </header>
+            <img src={shareQrDataUrl} alt="Share package QR ขนาดใหญ่" />
+            <p>
+              ใช้ได้ {expiryMinutes} นาทีนับจากสร้าง ·
+              ปิดหน้านี้เมื่อเจ้าหน้าที่สแกนเสร็จ
+            </p>
+            <Button onClick={() => setQrFullscreen(false)}>
+              <X size={18} /> ปิด
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
