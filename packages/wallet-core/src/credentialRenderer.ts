@@ -613,13 +613,13 @@ export function walletCardForDocumentRendering(
       };
 
   return {
-    id: 0,
+    id: stableLegacyCardId(record),
     cardType: record.documentType,
     displayName: record.title.th || record.title.en || record.documentType,
     displayNameEn: record.title.en,
     documentCategory: record.category,
     credentialId,
-    credentialStatus: record.lifecycle.status,
+    credentialStatus: legacyCredentialStatus(record.lifecycle.status),
     credentialData: renderPayload,
     credentialJwt: record.credential.jwt,
     credentialProof:
@@ -638,6 +638,34 @@ export function walletCardForDocumentRendering(
     createdAt: record.provenance.receivedAt,
     pinned: record.local.pinned,
   };
+}
+
+function stableLegacyCardId(record: WalletDocumentRecordV2): number {
+  const source = record.credential.credentialId || record.id;
+  let hash = 2_166_136_261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619) >>> 0;
+  }
+  const positiveSafeId = hash & 0x7fff_ffff;
+  return positiveSafeId || 1;
+}
+
+function legacyCredentialStatus(
+  status: WalletDocumentRecordV2["lifecycle"]["status"],
+): string {
+  switch (status) {
+    case "final":
+    case "amended":
+    case "corrected":
+      return "active";
+    case "preliminary":
+      return "pending";
+    case "entered_in_error":
+      return "invalid";
+    default:
+      return status;
+  }
 }
 
 export function credentialPaperModelFromCard(

@@ -69,6 +69,7 @@ import {
   exportWalletObjects,
   buildPortalInteroperabilityFixtures,
   getValueAtPath,
+  isWalletDocumentEligibleForHolderAuthorizedPresentation,
   parseShlLink,
   walletDocumentRecordV2FromCard,
   walletDocumentTrustPresentation,
@@ -796,10 +797,21 @@ export function ShareView({
   const [requestType, setRequestType] = useState("PatientSummaryCredential");
   const [requestQrDataUrl, setRequestQrDataUrl] = useState("");
   const [requestPayload, setRequestPayload] = useState("");
-  const shareableCards = useMemo(
-    () => cards.filter((card) => card.credentialStatus === "active"),
-    [cards],
-  );
+  const shareableCards = useMemo(() => {
+    const eligibleExchangeCredentialIds = new Set(
+      exchangeDocuments
+        .filter((document) =>
+          isWalletDocumentEligibleForHolderAuthorizedPresentation(document),
+        )
+        .map((document) => String(document.credential.credentialId)),
+    );
+    return cards.filter(
+      (card) =>
+        card.credentialStatus === "active" &&
+        (!exchangeDocuments.length ||
+          eligibleExchangeCredentialIds.has(String(card.credentialId))),
+    );
+  }, [cards, exchangeDocuments]);
   const [selectedCardIds, setSelectedCardIds] = useState<number[]>([]);
   const [purpose, setPurpose] = useState<ReadinessContext>(
     initialPurpose ?? "opd_visit",
