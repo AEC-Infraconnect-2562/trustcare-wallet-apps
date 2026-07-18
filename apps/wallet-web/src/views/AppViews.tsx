@@ -211,6 +211,7 @@ export function DialogLoadingFallback() {
 
 export function HomeView({
   cards,
+  exchangeDocuments = [],
   user,
   offlineOnline,
   onOpenCard,
@@ -223,6 +224,7 @@ export function HomeView({
   onPrepareContext,
 }: {
   cards: WalletCard[];
+  exchangeDocuments?: WalletDocumentRecordV2[];
   user: WalletDemoUser;
   offlineOnline: boolean;
   onOpenCard: (card: WalletCard) => void;
@@ -307,10 +309,10 @@ export function HomeView({
   const evidenceReviewCards = useMemo(
     () =>
       activeCards.filter((card) => {
-        const trust = homeCardTrust(card);
+        const trust = homeCardTrust(card, exchangeDocuments);
         return trust.tone === "yellow" || trust.tone === "red";
       }),
-    [activeCards],
+    [activeCards, exchangeDocuments],
   );
   const appointmentStart = nextAppointment
     ? appointmentStartFromCard(nextAppointment)
@@ -403,7 +405,7 @@ export function HomeView({
         </div>
         <div className="clinical-important-grid">
           {importantCardItems.map(({ card, summaryRows }) => {
-            const trust = homeCardTrust(card);
+            const trust = homeCardTrust(card, exchangeDocuments);
             const isIdentity = card.cardType === "patient_identity";
             return (
               <button
@@ -484,7 +486,7 @@ export function HomeView({
         </div>
         <div className="clinical-recent-list">
           {recentCards.map((card) => {
-            const trust = homeCardTrust(card);
+            const trust = homeCardTrust(card, exchangeDocuments);
             return (
               <button
                 key={card.id}
@@ -524,10 +526,10 @@ export function HomeView({
         <section className="clinical-evidence-alert" role="status">
           <AlertTriangle aria-hidden="true" />
           <span>
-            <strong>รอโรงพยาบาลรับรอง {evidenceReviewCards.length} รายการ</strong>
+            <strong>มีเอกสารต้องตรวจสอบเพิ่ม {evidenceReviewCards.length} รายการ</strong>
             <small>
-              เอกสารเหล่านี้ยังใช้แชร์แบบรับรองไม่ได้
-              จนกว่าโรงพยาบาลผู้ออกเอกสารจะยืนยันความถูกต้อง
+              เปิดดูรายละเอียดเพื่อทราบว่าขาด proof, issuer, status,
+              expiry, holder หรือ policy ข้อใด
             </small>
           </span>
           <button
@@ -4292,14 +4294,44 @@ export function buildTimelineItems(
     );
 }
 
-function homeCardTrust(card: WalletCard): {
+function homeCardTrust(
+  card: WalletCard,
+  exchangeDocuments: readonly WalletDocumentRecordV2[] = [],
+): {
   label: string;
   tone: "neutral" | "green" | "yellow" | "red" | "blue";
 } {
+  const record = exchangeDocuments.find(
+    (candidate) =>
+      String(candidate.credential.credentialId ?? "") ===
+      String(card.credentialId ?? ""),
+  );
+  if (record && isSharePolicyOnlyPending(record)) {
+    return {
+      label: "ตรวจที่มาแล้ว · ตรวจนโยบายเมื่อแชร์",
+      tone: "blue",
+    };
+  }
   const presentation = walletDocumentTrustPresentation(
-    walletDocumentRecordV2FromCard(card),
+    record ?? walletDocumentRecordV2FromCard(card),
   );
   return { label: presentation.labelTh, tone: presentation.tone };
+}
+
+function isSharePolicyOnlyPending(record: WalletDocumentRecordV2): boolean {
+  if (record.trust.state !== "issuer_signed_untrusted") return false;
+  const policy = record.trust.checks.find((check) => check.key === "policy");
+  if (
+    policy?.status !== "pending" ||
+    policy.detail !== "public_issuer_status_policy_unavailable"
+  ) {
+    return false;
+  }
+  return ["proof", "issuer", "status", "expiry", "holder"].every((key) =>
+    record.trust.checks.some(
+      (check) => check.key === key && check.status === "passed",
+    ),
+  );
 }
 
 function credentialRequestTone(
