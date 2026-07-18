@@ -7,6 +7,7 @@ import { routerBasename } from "./routing/appRoutes";
 import "./styles/index.css";
 import "./styles/credential-paper.css";
 import "./styles/premium-wallet.css";
+import "./styles/ux-refresh.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

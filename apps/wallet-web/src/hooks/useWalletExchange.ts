@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { WalletExchangeProblemError } from "@trustcare/api-client/walletExchangeV2";
 import {
   WalletProvisioningProblemError,
@@ -77,6 +77,17 @@ const pendingRuntimeInitializations = new Map<
   Promise<WalletExchangeRuntime>
 >();
 
+// Stable fallbacks: fresh [] / {} literals per render change the identity of
+// downstream useMemo/useEffect dependencies and can drive render loops
+// ("Maximum update depth exceeded") when the exchange partition is inactive.
+const emptyDocuments: WalletDocumentRecordV2[] = [];
+const emptyRequestLinks: WalletExchangeCredentialRequestLink[] = [];
+const emptyPendingSubmissions: WalletExchangePendingSubmissionDraft[] = [];
+const loadingConnection: WalletPortalConnectionState = {
+  status: "loading",
+  message: "กำลังเตรียม holder key และตรวจ Portal provisioning",
+};
+
 export type UseWalletExchangeOptions = {
   enabled?: boolean;
   portalBaseUrl: string;
@@ -123,25 +134,29 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     options.enabled !== false &&
     documentState.partitionKey === currentPartitionKey
       ? documentState.records
-      : [];
+      : emptyDocuments;
   const requestLinks =
     options.enabled !== false &&
     requestLinkState.partitionKey === currentPartitionKey
       ? requestLinkState.records
-      : [];
+      : emptyRequestLinks;
   const pendingSubmissions =
     options.enabled !== false &&
     pendingSubmissionState.partitionKey === currentPartitionKey
       ? pendingSubmissionState.records
-      : [];
+      : emptyPendingSubmissions;
   const clinicalDocumentGraph =
     options.enabled !== false &&
     clinicalGraphState.partitionKey === currentPartitionKey
       ? clinicalGraphState.state
       : undefined;
-  const graphArtifacts = clinicalDocumentGraph
-    ? listClinicalDocumentGraphArtifacts(clinicalDocumentGraph)
-    : [];
+  const graphArtifacts = useMemo(
+    () =>
+      clinicalDocumentGraph
+        ? listClinicalDocumentGraphArtifacts(clinicalDocumentGraph)
+        : [],
+    [clinicalDocumentGraph],
+  );
   const avatar =
     options.enabled !== false && avatarState.partitionKey === currentPartitionKey
       ? avatarState.record
@@ -150,10 +165,7 @@ export function useWalletExchange(options: UseWalletExchangeOptions) {
     options.enabled !== false &&
     connectionState.partitionKey === currentPartitionKey
       ? connectionState
-      : {
-          status: "loading" as const,
-          message: "กำลังเตรียม holder key และตรวจ Portal provisioning",
-        };
+      : loadingConnection;
   const provisioningReady =
     activeRuntime !== null && connection.status === "ready";
 

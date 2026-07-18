@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { ImageOff } from "lucide-react";
+import { UserRound } from "lucide-react";
 import { useLoadedPhotoCandidate } from "@trustcare/ui-web";
 import {
   initialsFromName,
@@ -81,7 +81,7 @@ export function CredentialSubjectAvatar({ card }: { card: WalletCard }) {
           : "ไม่พบรูปผู้ถือเอกสารใน credential ต้นฉบับ"
       }
     >
-      <ImageOff aria-hidden="true" />
+      <UserRound className="credential-avatar-placeholder" aria-hidden="true" />
       {candidate && imageSrc ? (
         <img
           className={isLoaded ? "loaded" : ""}

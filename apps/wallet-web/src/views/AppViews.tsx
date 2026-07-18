@@ -22,6 +22,7 @@ import {
   Link2,
   ListChecks,
   LockKeyhole,
+  Maximize2,
   Network,
   Pill,
   Printer,
@@ -33,6 +34,7 @@ import {
   Upload,
   UserCheck,
   Wallet,
+  X,
 } from "lucide-react";
 import * as shareGatewayApi from "@trustcare/api-client/shareGatewayClient";
 import type { WalletExchangeWorkflow } from "@trustcare/api-client/walletExchangeWorkflow";
@@ -73,7 +75,6 @@ import {
   walletCardForCredentialRendering,
   readinessContextLabels,
   readinessContextValues,
-  recommendPolicyForDraft,
   resolveShareDisclosureIntent,
   shareModePatientDescription,
   shareModePatientLabel,
@@ -107,12 +108,12 @@ import {
 } from "@trustcare/wallet-core";
 import { AcquisitionPlanner } from "../components/acquisition/AcquisitionPlanner";
 import { DisabledReason } from "../components/common/DisabledReason";
+import { EmptyState } from "../components/common/EmptyState";
 import { ImportHub } from "../components/import/ImportHub";
 import { MissingDocumentCard } from "../components/prepare/MissingDocumentCard";
 import { PayerOrchestrationPanel } from "../components/payer/PayerOrchestrationPanel";
 import { PurposePickerCard } from "../components/prepare/PurposePickerCard";
 import { ReadinessSummaryCard } from "../components/prepare/ReadinessSummaryCard";
-import { SharePacketComposer } from "../components/share/SharePacketComposer";
 import { TrustChecklist } from "../components/trust/TrustChecklist";
 import { toQrDataUrl } from "../utils/qrCode";
 import {
@@ -521,10 +522,10 @@ export function HomeView({
         <section className="clinical-evidence-alert" role="status">
           <AlertTriangle aria-hidden="true" />
           <span>
-            <strong>ยังต้องตรวจหลักฐาน</strong>
+            <strong>รอโรงพยาบาลรับรอง {evidenceReviewCards.length} รายการ</strong>
             <small>
-              มี {evidenceReviewCards.length} เอกสารที่ยังตรวจ proof, issuer,
-              status, expiry หรือ policy ไม่ครบ
+              เอกสารเหล่านี้ยังใช้แชร์แบบรับรองไม่ได้
+              จนกว่าโรงพยาบาลผู้ออกเอกสารจะยืนยันความถูกต้อง
             </small>
           </span>
           <button
@@ -612,8 +613,8 @@ export function ReceiveView({
           <div>
             <h2>สแกน QR เอกสารสุขภาพ</h2>
             <p>
-              รองรับ SHL, OID4VCI offer, OID4VP request, VP link และ QR
-              ตรวจสอบของ TrustCare
+              รองรับ QR รับเอกสาร ลิงก์สุขภาพ และ QR ตรวจสอบของ TrustCare
+              ระบบแยกประเภทให้อัตโนมัติ
             </p>
           </div>
           <Button onClick={onOpenScanner}>
@@ -820,6 +821,7 @@ export function ShareView({
   );
   const [timeAnchor, setTimeAnchor] = useState<TimeAnchor>("record");
   const [shareQrDataUrl, setShareQrDataUrl] = useState("");
+  const [qrFullscreen, setQrFullscreen] = useState(false);
   const [sharePayload, setSharePayload] = useState("");
   const [shareExportPayload, setShareExportPayload] = useState("");
   const [sharePublication, setSharePublication] =
@@ -973,14 +975,6 @@ export function ShareView({
       user.id,
     ],
   );
-  const packetRecommendation = useMemo(
-    () =>
-      recommendPolicyForDraft(shareDraft, {
-        recipientSupportsShl: true,
-        trustcareCertificationAvailable: shareGatewayReady,
-      }),
-    [shareDraft, shareGatewayReady],
-  );
   const shareValidation = useMemo<ShareValidationResult>(
     () =>
       validateShareDraft(shareDraft, sharePolicy, {
@@ -1006,10 +1000,10 @@ export function ShareView({
   );
   const shareCopyLabel =
     packageProtocol === "vp"
-      ? "คัดลอก VP"
+      ? "คัดลอกชุดข้อมูลที่แชร์"
       : packageProtocol === "shl"
-        ? "คัดลอก SHL"
-        : "คัดลอก SHL + Manifest VP";
+        ? "คัดลอกลิงก์สุขภาพ"
+        : "คัดลอกลิงก์สุขภาพพร้อมใบรับรอง";
 
   const toggleSelectedCard = (cardId: number) => {
     setSelectedCardIds((previous) =>
@@ -1436,19 +1430,6 @@ export function ShareView({
   return (
     <div className="view-stack">
       {scanOutcome && <ScanOutcomePanel outcome={scanOutcome} />}
-      <SharePacketComposer
-        purpose={purpose}
-        recipient={recipient}
-        readiness={purposeReadiness}
-        selectedCount={selectedCards.length}
-        biometricRequired={shareProfile.biometricRequired}
-        biometricReady={biometricEnabled}
-        recommendation={packetRecommendation}
-        mode={sharePackageMode}
-        modeLabel={shareModePatientLabel(sharePackageMode)}
-        modeDescription={shareModePatientDescription(sharePackageMode)}
-        validation={shareValidation}
-      />
       <Surface className="share-flow premium-share-flow">
         <div className="section-title-row">
           <div>
@@ -1819,14 +1800,14 @@ export function ShareView({
                   className={timeAnchor === "record" ? "active" : ""}
                   onClick={() => setTimeAnchor("record")}
                 >
-                  Record time
+                  เรียงตามวันที่ในเอกสาร
                 </button>
                 <button
                   type="button"
                   className={timeAnchor === "package" ? "active" : ""}
                   onClick={() => setTimeAnchor("package")}
                 >
-                  Package time
+                  เรียงตามวันที่จัดชุด
                 </button>
               </div>
               <div className="biometric-note">
@@ -1887,7 +1868,18 @@ export function ShareView({
                 </div>
               )}
               {shareQrDataUrl ? (
-                <img src={shareQrDataUrl} alt="Share package QR" />
+                <button
+                  type="button"
+                  className="share-qr-open"
+                  data-testid="share-qr-fullscreen-open"
+                  title="แตะเพื่อแสดง QR เต็มจอ"
+                  onClick={() => setQrFullscreen(true)}
+                >
+                  <img src={shareQrDataUrl} alt="Share package QR" />
+                  <span>
+                    <Maximize2 size={15} /> แสดงเต็มจอสำหรับให้เจ้าหน้าที่สแกน
+                  </span>
+                </button>
               ) : (
                 <div className="qr-placeholder">
                   <QrCode size={54} />
@@ -1930,11 +1922,11 @@ export function ShareView({
             </div>
             <div className="timeline-panel share-timeline-panel">
               <div>
-                <span className="eyebrow">Timeline ที่จะส่ง</span>
+                <span className="eyebrow">ลำดับเอกสารที่จะส่ง</span>
                 <strong>
                   {timeAnchor === "record"
-                    ? "ยึดเวลาของ record"
-                    : "ยึดเวลาที่จัด package"}
+                    ? "เรียงตามวันที่ในเอกสาร"
+                    : "เรียงตามวันที่จัดชุด"}
                 </strong>
               </div>
               <div className="timeline-list">
@@ -1946,13 +1938,13 @@ export function ShareView({
                     <span>{item.displayDate}</span>
                     <strong>{item.title}</strong>
                     <small>
-                      {item.source} · record {item.recordDate} · package{" "}
+                      วันที่ในเอกสาร {item.recordDate} · จัดชุดเมื่อ{" "}
                       {item.packageDate}
                     </small>
                   </div>
                 ))}
                 {!selectedTimeline.length && (
-                  <p className="muted">เลือกเอกสารเพื่อดู timeline ก่อนแชร์</p>
+                  <p className="muted">เลือกเอกสารเพื่อดูลำดับก่อนแชร์</p>
                 )}
               </div>
             </div>
@@ -2131,6 +2123,34 @@ export function ShareView({
           })}
         </section>
       </details>
+      {qrFullscreen && shareQrDataUrl ? (
+        <div
+          className="qr-fullscreen-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="QR สำหรับให้เจ้าหน้าที่สแกน"
+          data-testid="share-qr-fullscreen"
+          onClick={() => setQrFullscreen(false)}
+        >
+          <div
+            className="qr-fullscreen-card"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header>
+              <strong>{recipient || "ผู้รับปลายทาง"}</strong>
+              <span>{readinessContextLabels[purpose].th}</span>
+            </header>
+            <img src={shareQrDataUrl} alt="Share package QR ขนาดใหญ่" />
+            <p>
+              ใช้ได้ {expiryMinutes} นาทีนับจากสร้าง ·
+              ปิดหน้านี้เมื่อเจ้าหน้าที่สแกนเสร็จ
+            </p>
+            <Button onClick={() => setQrFullscreen(false)}>
+              <X size={18} /> ปิด
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -2514,7 +2534,7 @@ export function PrepareView({
   const selectedServiceLabel = readinessContextLabels[context].th;
   const serviceDocumentCaption = `เอกสารที่ใช้ในบริการนี้ - ${selectedServiceLabel}`;
   const serviceDocumentDescription = activeContract
-    ? `${activeContract.patientLabel} · ${activeContract.bundleTypes.patient}`
+    ? activeContract.patientLabel
     : readinessPurposeTh[context];
   const purposeCards = useMemo(
     () => buildPurposePickerCards(context),
@@ -2553,7 +2573,7 @@ export function PrepareView({
     {
       title: "ไปหน้าแชร์เอกสาร",
       description: isPrepared
-        ? "พร้อมเลือกผู้รับ วัตถุประสงค์ รูปแบบ VP/SHL และเงื่อนไขการเปิดเผย"
+        ? "พร้อมเลือกผู้รับ วัตถุประสงค์ และข้อมูลที่จะเปิดเผย"
         : "เตรียมเอกสารจำเป็นให้ครบก่อนแชร์",
       status: isPrepared ? "พร้อมแชร์" : "รอข้อมูล",
       complete: isPrepared,
@@ -2576,9 +2596,7 @@ export function PrepareView({
                 {activeContract?.patientLabel ?? readinessPurposeTh[context]}
               </p>
             </div>
-            <Badge tone="blue">
-              Contract Hub {contractHub?.version ?? "demo"}
-            </Badge>
+            <Badge tone="blue">อิงกติกาบริการล่าสุดของโรงพยาบาล</Badge>
           </div>
           <div className="service-context-grid">
             {purposeCards.map((card) => (
@@ -2596,8 +2614,8 @@ export function PrepareView({
             <div>
               <h2>2. ตรวจเอกสารที่ระบบจะใช้</h2>
               <p>
-                รายการนี้เปลี่ยนตามบริการที่เลือก ส่วนการเลือก VP, SHL, Manifest
-                VP และเงื่อนไขการเปิดเผยอยู่ในหน้าแชร์
+                รายการนี้เปลี่ยนตามบริการที่เลือก
+                ส่วนรูปแบบการแชร์และเงื่อนไขการเปิดเผยจะเลือกได้ในหน้าแชร์
               </p>
             </div>
             <Badge tone={canCreateFullPacket ? "green" : "yellow"}>
@@ -2762,8 +2780,8 @@ export function PrepareView({
             <h2>4. ไปหน้าแชร์เอกสาร</h2>
             <p>
               หน้าเตรียมบริการตรวจความพร้อมเท่านั้น
-              หลังจากนี้หน้าแชร์จะให้เลือกผู้รับ วัตถุประสงค์ รูปแบบ VP/SHL
-              และเงื่อนไขการเปิดเผยก่อนสร้าง QR
+              หลังจากนี้หน้าแชร์จะให้เลือกผู้รับ วัตถุประสงค์
+              และข้อมูลที่จะเปิดเผยก่อนสร้าง QR
             </p>
           </div>
           <Badge tone={isPrepared ? "green" : "yellow"}>
@@ -2788,8 +2806,8 @@ export function PrepareView({
             <small>{serviceDocumentDescription}</small>
           </div>
           <div>
-            <strong>เลือก Package ในหน้าแชร์</strong>
-            <small>Direct VP, Purpose VP, SHL หรือ SHL + Manifest VP</small>
+            <strong>เลือกวิธีส่งในหน้าแชร์</strong>
+            <small>ระบบแนะนำรูปแบบ QR หรือลิงก์สุขภาพที่เหมาะสมให้</small>
           </div>
           <div>
             <strong>
@@ -2997,10 +3015,10 @@ export function StoreView({
     <div className="view-stack">
       <Surface className="share-command">
         <div>
-          <h2>คลัง VC/VP/SHL</h2>
+          <h2>คลังพกพา</h2>
           <p>
-            เก็บ VC, holder VP, SHL, Manifest Credential, sync receipts, OID4VCI
-            offers และ OID4VP requests ใน wallet เดียว
+            เก็บเอกสารรับรอง หลักฐานการแชร์ ลิงก์สุขภาพ
+            และรายการที่รับเข้ามาทั้งหมดไว้ในเครื่องนี้
           </p>
         </div>
         <Button onClick={() => onExport(exportWalletObjects(allObjects))}>
@@ -3044,6 +3062,13 @@ export function StoreView({
         </div>
       </Surface>
 
+      {objects.length === 0 && (
+        <EmptyState
+          icon={<FileJson size={30} />}
+          title="คลังพกพายังว่าง"
+          description="เอกสาร ลิงก์สุขภาพ และหลักฐานการแชร์ที่รับเข้ามาจะเก็บไว้ที่นี่ เริ่มจากการสแกน QR หรือวางลิงก์ในหน้ารับเอกสาร"
+        />
+      )}
       <div className="store-grid">
         {objects.map((object) => (
           <Surface key={object.id} className="store-object">

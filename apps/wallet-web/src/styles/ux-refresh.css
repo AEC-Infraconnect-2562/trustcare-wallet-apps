@@ -1,0 +1,620 @@
+/*
+ * TrustCare Wallet — UX refresh layer (2026-07)
+ *
+ * Benchmark-derived overrides loaded after index.css / premium-wallet.css.
+ * Principles (docs/UX_UI_RESEARCH.md):
+ *  1. documents-first: quiet chrome, cards are the hero
+ *  2. per-document-type visual identity (Apple/Google Wallet, NFT galleries)
+ *  3. trust states: quiet when normal, loud only when actionable (Phantom)
+ *  4. grouped-list settings (iOS / Revolut)
+ *  5. continuous single-flow pages: no nested scroll regions (user-reported
+ *     rendering discontinuity on /prepare)
+ */
+
+/*
+ * Per-type identity colors mirror packages/design-tokens gradients.ts
+ * (accentForCardType): the gradient start color is the type's identity on
+ * both platforms; soft = same hue at 14% alpha.
+ */
+:root {
+  --doc-identity: #4f67f2;
+  --doc-identity-soft: rgba(79, 103, 242, 0.14);
+  --doc-coverage: #059669;
+  --doc-coverage-soft: rgba(5, 150, 105, 0.14);
+  --doc-medication: #3b82f6;
+  --doc-medication-soft: rgba(59, 130, 246, 0.14);
+  --doc-prescription: #0284c7;
+  --doc-prescription-soft: rgba(2, 132, 199, 0.14);
+  --doc-allergy: #ef4444;
+  --doc-allergy-soft: rgba(239, 68, 68, 0.14);
+  --doc-appointment: #9333ea;
+  --doc-appointment-soft: rgba(147, 51, 234, 0.14);
+  --doc-lab: #65a30d;
+  --doc-lab-soft: rgba(101, 163, 13, 0.14);
+  --doc-summary: #475569;
+  --doc-summary-soft: rgba(71, 85, 105, 0.14);
+  --doc-referral: #06b6d4;
+  --doc-referral-soft: rgba(6, 182, 212, 0.14);
+  --doc-certificate: #0d9488;
+  --doc-certificate-soft: rgba(13, 148, 136, 0.14);
+}
+
+/* ------------------------------------------------------------------ */
+/* 1. Quiet chrome: slim status strip + compact environment banner     */
+/* ------------------------------------------------------------------ */
+
+.status-strip {
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface, #fff) 82%, transparent);
+  box-shadow: none;
+}
+
+.status-strip > div,
+.status-strip > button {
+  padding: 4px 10px;
+  font-size: 12.5px;
+}
+
+.status-strip svg {
+  width: 14px;
+  height: 14px;
+}
+
+.environment-banner {
+  padding: 5px 12px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.environment-banner strong {
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.environment-banner span {
+  opacity: 0.85;
+}
+
+.login-runtime-banner {
+  font-size: 12.5px;
+  padding: 6px 12px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 2. Per-type document identity                                       */
+/*    Applied through data-document-type already present on rows/cards */
+/* ------------------------------------------------------------------ */
+
+:where(.clinical-document-pass, .record-v2-row, .clinical-recent-list > button) {
+  --doc-accent: var(--doc-summary);
+  --doc-accent-soft: var(--doc-summary-soft);
+}
+
+[data-document-type="patient_identity"] {
+  --doc-accent: var(--doc-identity);
+  --doc-accent-soft: var(--doc-identity-soft);
+}
+
+[data-document-type*="coverage"],
+[data-document-type*="eligibility"],
+[data-document-type*="insurance"] {
+  --doc-accent: var(--doc-coverage);
+  --doc-accent-soft: var(--doc-coverage-soft);
+}
+
+[data-document-type*="medication"],
+[data-document-type*="pharmacy"] {
+  --doc-accent: var(--doc-medication);
+  --doc-accent-soft: var(--doc-medication-soft);
+}
+
+[data-document-type="prescription"] {
+  --doc-accent: var(--doc-prescription);
+  --doc-accent-soft: var(--doc-prescription-soft);
+}
+
+[data-document-type*="allergy"] {
+  --doc-accent: var(--doc-allergy);
+  --doc-accent-soft: var(--doc-allergy-soft);
+}
+
+[data-document-type="appointment"] {
+  --doc-accent: var(--doc-appointment);
+  --doc-accent-soft: var(--doc-appointment-soft);
+}
+
+[data-document-type*="lab"],
+[data-document-type*="observation"],
+[data-document-type*="result"] {
+  --doc-accent: var(--doc-lab);
+  --doc-accent-soft: var(--doc-lab-soft);
+}
+
+[data-document-type*="referral"] {
+  --doc-accent: var(--doc-referral);
+  --doc-accent-soft: var(--doc-referral-soft);
+}
+
+[data-document-type*="certificate"],
+[data-document-type*="discharge"] {
+  --doc-accent: var(--doc-certificate);
+  --doc-accent-soft: var(--doc-certificate-soft);
+}
+
+/* icon tiles pick up the accent */
+.clinical-document-pass .clinical-pass-icon,
+.record-v2-row .record-v2-icon,
+.clinical-recent-list > button .clinical-list-icon {
+  background: var(--doc-accent-soft);
+  color: var(--doc-accent);
+}
+
+/* subtle accent edge, like a wallet pass color strip */
+.clinical-document-pass {
+  border-top: 3px solid var(--doc-accent);
+}
+
+.record-v2-row {
+  border-inline-start: 3px solid var(--doc-accent);
+}
+
+.dark .clinical-document-pass .clinical-pass-icon,
+.dark .record-v2-row .record-v2-icon,
+.dark .clinical-recent-list > button .clinical-list-icon {
+  background: color-mix(in srgb, var(--doc-accent) 24%, transparent);
+  color: color-mix(in srgb, var(--doc-accent) 55%, #fff);
+}
+
+/* ------------------------------------------------------------------ */
+/* 3. Trust states: quiet when pending, solid only when verified       */
+/* ------------------------------------------------------------------ */
+
+.clinical-trust-state {
+  background: transparent;
+  border: 1px solid currentColor;
+  opacity: 0.75;
+  font-weight: 500;
+}
+
+.clinical-trust-state.tone-green,
+.clinical-trust-state.tone-blue {
+  opacity: 1;
+  border: none;
+  font-weight: 600;
+}
+
+.clinical-list-trust.tone-yellow {
+  background: transparent;
+  border: 1px solid rgba(180, 83, 9, 0.45);
+  color: #92400e;
+  font-weight: 500;
+}
+
+.dark .clinical-list-trust.tone-yellow {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+/* ------------------------------------------------------------------ */
+/* 4. Person placeholder (no borrowed photos, but never "broken")      */
+/* ------------------------------------------------------------------ */
+
+.credential-subject-avatar,
+.record-v2-photo.is-missing {
+  background: var(--doc-identity-soft);
+  color: var(--doc-identity);
+}
+
+.credential-subject-avatar .credential-avatar-placeholder,
+.record-v2-photo-fallback {
+  opacity: 0.55;
+}
+
+.dark .credential-subject-avatar,
+.dark .record-v2-photo.is-missing {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+
+/* ------------------------------------------------------------------ */
+/* 5. Continuous prepare page: kill nested scroll + sticky gaps        */
+/* ------------------------------------------------------------------ */
+
+.service-context-panel {
+  max-height: none;
+  overflow: visible;
+}
+
+.prepare-decision-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.prepare-decision-grid .package-policy-panel {
+  position: static;
+  top: auto;
+}
+
+.prepare-decision-grid .service-context-grid,
+.service-context-grid {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.purpose-picker-card,
+.service-context-card {
+  min-height: 0;
+}
+
+/* Prepare: sections 3-5 flow as one continuous column as well */
+.prep-main-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+[data-view="prepare"] .view-stack {
+  max-width: 1020px;
+  margin-inline: auto;
+  width: 100%;
+}
+
+/* ------------------------------------------------------------------ */
+/* 5b. Continuous share page: steps 1→4 read top-to-bottom             */
+/* ------------------------------------------------------------------ */
+
+.share-workspace,
+.premium-share-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.share-live-panel {
+  position: static;
+  top: auto;
+}
+
+.premium-share-flow {
+  max-width: 1020px;
+}
+
+[data-view="share"] .view-stack {
+  max-width: 1020px;
+  margin-inline: auto;
+  width: 100%;
+}
+
+/* ------------------------------------------------------------------ */
+/* 6. Grouped settings list                                            */
+/* ------------------------------------------------------------------ */
+
+.settings-list {
+  display: grid;
+  gap: 22px;
+  max-width: 720px;
+}
+
+.settings-group {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-group-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--text-muted, #64748b);
+  padding-inline: 4px;
+}
+
+.settings-group-body {
+  display: grid;
+  gap: 0;
+  padding: 4px 0;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+}
+
+.settings-row + .settings-row {
+  border-top: 1px solid var(--border-soft, rgba(100, 116, 139, 0.16));
+}
+
+.settings-row-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--doc-summary-soft);
+  color: var(--doc-summary);
+  flex-shrink: 0;
+}
+
+.dark .settings-row-icon {
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+}
+
+.settings-row-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-row-copy strong {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.settings-row-copy small {
+  font-size: 12.5px;
+  color: var(--text-muted, #64748b);
+  line-height: 1.4;
+}
+
+.settings-row-action {
+  flex-shrink: 0;
+}
+
+.settings-choice {
+  border: 1px solid var(--border-soft, rgba(100, 116, 139, 0.28));
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-choice:hover {
+  background: rgba(100, 116, 139, 0.08);
+}
+
+.settings-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #64748b);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.settings-switch i {
+  width: 40px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.35);
+  position: relative;
+  transition: background 0.15s ease;
+}
+
+.settings-switch i::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.3);
+}
+
+.settings-switch.is-on {
+  color: #047857;
+}
+
+.settings-switch.is-on i {
+  background: #059669;
+}
+
+.settings-switch.is-on i::after {
+  transform: translateX(16px);
+}
+
+.settings-advanced {
+  margin: 4px 18px 12px;
+  border-top: 1px solid var(--border-soft, rgba(100, 116, 139, 0.16));
+  padding-top: 10px;
+  font-size: 13px;
+}
+
+.settings-advanced summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--text-muted, #64748b);
+  font-weight: 600;
+}
+
+.settings-advanced p {
+  color: var(--text-muted, #64748b);
+  font-size: 12.5px;
+}
+
+.settings-advanced .test-session-details {
+  font-size: 12.5px;
+  word-break: break-all;
+}
+
+/* ------------------------------------------------------------------ */
+/* 5c. Share steps read as one sheet (EUDI request-screen feel)        */
+/* ------------------------------------------------------------------ */
+
+.premium-share-flow .share-step,
+.premium-share-flow .share-result-card {
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
+  border-top: 1px solid var(--border-soft, rgba(100, 116, 139, 0.16));
+  padding-inline: 4px;
+}
+
+.premium-share-flow .share-form-column > .share-step:first-child {
+  border-top: none;
+}
+
+.premium-share-flow .step-number {
+  width: 24px;
+  height: 24px;
+  font-size: 12.5px;
+}
+
+.premium-share-flow .share-live-panel .timeline-panel {
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  border-top: 1px solid var(--border-soft, rgba(100, 116, 139, 0.16));
+  border-radius: 0;
+  padding-inline: 4px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 5d. Empty states                                                    */
+/* ------------------------------------------------------------------ */
+
+.empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 44px 24px;
+}
+
+.empty-state-icon {
+  display: grid;
+  place-items: center;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: var(--doc-summary-soft);
+  color: var(--doc-summary);
+  margin-bottom: 4px;
+}
+
+.empty-state h3 {
+  margin: 0;
+  font-size: 16.5px;
+}
+
+.empty-state p {
+  margin: 0;
+  max-width: 420px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-muted, #64748b);
+}
+
+.empty-state-action {
+  margin-top: 8px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 6b. Full-screen QR ("boarding pass moment")                         */
+/* ------------------------------------------------------------------ */
+
+.share-qr-open {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+  padding: 0;
+}
+
+.share-qr-open img {
+  display: block;
+}
+
+.share-qr-open > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+}
+
+.qr-fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+.qr-fullscreen-card {
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+  width: min(440px, 94vw);
+  padding: 26px 24px;
+  border-radius: 22px;
+  background: #fff;
+  color: #0f172a;
+  text-align: center;
+  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.45);
+}
+
+.qr-fullscreen-card header {
+  display: grid;
+  gap: 2px;
+}
+
+.qr-fullscreen-card header strong {
+  font-size: 18px;
+}
+
+.qr-fullscreen-card header span {
+  font-size: 13.5px;
+  color: #475569;
+}
+
+.qr-fullscreen-card img {
+  width: min(78vw, 340px);
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.qr-fullscreen-card p {
+  margin: 0;
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+/* ------------------------------------------------------------------ */
+/* 7. Evidence alert on Home: caution, not alarm                       */
+/* ------------------------------------------------------------------ */
+
+.clinical-evidence-alert {
+  border-radius: 14px;
+  border: 1px solid rgba(180, 83, 9, 0.25);
+  background: rgba(255, 251, 235, 0.7);
+}
+
+.dark .clinical-evidence-alert {
+  background: rgba(120, 78, 15, 0.16);
+  border-color: rgba(251, 191, 36, 0.25);
+}

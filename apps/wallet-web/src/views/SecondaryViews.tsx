@@ -1,17 +1,22 @@
+import type { ReactNode } from "react";
 import {
-  Globe2,
+  Download,
   History as HistoryIcon,
   KeyRound,
+  Languages,
+  Moon,
   QrCode,
-  Shield,
+  ShieldCheck,
   Smartphone,
+  Sun,
 } from "lucide-react";
-import { Badge, Button, Surface } from "@trustcare/ui-web";
+import { Badge, Surface } from "@trustcare/ui-web";
 import type {
   PresentationHistoryItem,
   WalletDemoUser,
   WalletTestUserProfile,
 } from "@trustcare/wallet-core";
+import { EmptyState } from "../components/common/EmptyState";
 import type { SandboxTestSession } from "../sandbox/sandboxTestSessionStore";
 import type { useWebAuthn } from "../hooks/useWebAuthn";
 import type { ScanOutcome } from "./appViewModel";
@@ -24,6 +29,15 @@ export function HistoryView({
   history: PresentationHistoryItem[];
   scanHistory: ScanOutcome[];
 }) {
+  if (!history.length && !scanHistory.length) {
+    return (
+      <EmptyState
+        icon={<HistoryIcon size={30} />}
+        title="ยังไม่มีกิจกรรม"
+        description="เมื่อคุณรับเอกสาร แชร์ หรือสแกน QR ประวัติการใช้งานจะแสดงที่นี่ เพื่อให้ตรวจย้อนหลังได้ว่าข้อมูลถูกเปิดเมื่อไรและกับใคร"
+      />
+    );
+  }
   return (
     <div className="history-list large">
       {scanHistory.map((item) => (
@@ -65,10 +79,38 @@ export function HistoryView({
   );
 }
 
+function SettingsRow({
+  icon,
+  title,
+  description,
+  action,
+}: {
+  icon: ReactNode;
+  title: string;
+  description?: string;
+  action: ReactNode;
+}) {
+  return (
+    <div className="settings-row">
+      <span className="settings-row-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <span className="settings-row-copy">
+        <strong>{title}</strong>
+        {description ? <small>{description}</small> : null}
+      </span>
+      <span className="settings-row-action">{action}</span>
+    </div>
+  );
+}
+
 export function SettingsView({
   webAuthn,
   theme,
   setTheme,
+  lang,
+  setLang,
+  onExportAll,
   developerMode,
   setDeveloperMode,
   user,
@@ -79,6 +121,9 @@ export function SettingsView({
   webAuthn: ReturnType<typeof useWebAuthn>;
   theme: "light" | "dark";
   setTheme: (theme: "light" | "dark") => void;
+  lang: string;
+  setLang: (lang: "th" | "en") => void;
+  onExportAll: () => void;
   developerMode: boolean;
   setDeveloperMode: (enabled: boolean) => void;
   user: WalletDemoUser;
@@ -87,88 +132,159 @@ export function SettingsView({
   testSessions?: SandboxTestSession[];
 }) {
   return (
-    <div className="settings-grid">
-      <Surface>
-        <Smartphone size={28} />
-        <h3>พร้อมใช้งานบนมือถือ</h3>
-        <p>
-          รองรับ SecureStore, SQLite, LocalAuthentication, Camera QR, SHL
-          และการนำเข้า-ส่งออก VC/VP ใน Expo app
-        </p>
-      </Surface>
-      {testProfile && testSession ? (
-        <Surface>
-          <HistoryIcon size={28} />
-          <h3>สถานะ Test Session</h3>
-          <p>
-            Session นี้เก็บเฉพาะ metadata และ state ของการทดสอบ ไม่เก็บ token,
-            password หรือ private key
-          </p>
-          <dl className="test-session-details">
-            <dt>Session ID</dt>
-            <dd>{testSession.id}</dd>
-            <dt>Portal fixture</dt>
-            <dd>{testProfile.portalFixtureOpenId ?? "external wallet"}</dd>
-            <dt>Role scope</dt>
-            <dd>
-              {testProfile.portalRole} · {testProfile.dataScope}
-            </dd>
-            <dt>Wallet Exchange</dt>
-            <dd>{testSession.snapshot.walletExchangeState}</dd>
-            <dt>เอกสาร / Store</dt>
-            <dd>
-              {testSession.snapshot.documentCount} /{" "}
-              {testSession.snapshot.storedObjectCount}
-            </dd>
-            <dt>Request / Pending submission</dt>
-            <dd>
-              {testSession.snapshot.credentialRequestCount} /{" "}
-              {testSession.snapshot.pendingSubmissionCount}
-            </dd>
-            <dt>Sessions ที่ติดตาม</dt>
-            <dd>{testSessions?.length ?? 1}</dd>
-          </dl>
+    <div className="settings-list">
+      <section className="settings-group">
+        <h3 className="settings-group-title">ความปลอดภัย</h3>
+        <Surface className="settings-group-body">
+          <SettingsRow
+            icon={<ShieldCheck size={20} />}
+            title="ยืนยันตัวตนก่อนแสดง QR"
+            description={
+              webAuthn.isRegistered
+                ? "เปิดใช้งานอยู่ · ต้องยืนยันตัวตนทุกครั้งก่อนแชร์เอกสาร"
+                : "ปิดอยู่ · แนะนำให้เปิดเพื่อป้องกันการแชร์โดยไม่ตั้งใจ"
+            }
+            action={
+              <button
+                type="button"
+                role="switch"
+                aria-checked={webAuthn.isRegistered}
+                className={`settings-switch${webAuthn.isRegistered ? " is-on" : ""}`}
+                onClick={() =>
+                  webAuthn.isRegistered
+                    ? webAuthn.unregister()
+                    : void webAuthn.register(
+                        String(user.patientId),
+                        user.nameTh,
+                      )
+                }
+              >
+                <i aria-hidden="true" />
+                {webAuthn.isRegistered ? "เปิด" : "ปิด"}
+              </button>
+            }
+          />
         </Surface>
-      ) : null}
-      <Surface>
-        <Shield size={28} />
-        <h3>ยืนยันตัวตนด้วย Biometric</h3>
-        <p>
-          {webAuthn.isRegistered
-            ? "เปิดการยืนยันก่อนแสดง QR แล้ว"
-            : "ยังไม่ได้ตั้งค่า biometric gate"}
-        </p>
-        <Button
-          onClick={() =>
-            webAuthn.isRegistered
-              ? webAuthn.unregister()
-              : void webAuthn.register(String(user.patientId), user.nameTh)
-          }
-        >
-          {webAuthn.isRegistered ? "ปิด Biometric" : "ตั้งค่า Biometric"}
-        </Button>
-      </Surface>
-      <Surface>
-        <Globe2 size={28} />
-        <h3>ธีม</h3>
-        <Button onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
-          {theme === "light" ? "โหมดมืด" : "โหมดสว่าง"}
-        </Button>
-      </Surface>
-      <Surface>
-        <KeyRound size={28} />
-        <h3>โหมดนักพัฒนา</h3>
-        <p>
-          แสดง payload และเครื่องมือทดสอบ protocol ในหน้ารับเอกสาร
-          โดยไม่ปนกับประสบการณ์ใช้งานปกติของ Wallet
-        </p>
-        <Button
-          className={developerMode ? "green" : "secondary"}
-          onClick={() => setDeveloperMode(!developerMode)}
-        >
-          {developerMode ? "เปิดโหมดนักพัฒนา" : "ปิดโหมดนักพัฒนา"}
-        </Button>
-      </Surface>
+      </section>
+
+      <section className="settings-group">
+        <h3 className="settings-group-title">การแสดงผล</h3>
+        <Surface className="settings-group-body">
+          <SettingsRow
+            icon={theme === "light" ? <Sun size={20} /> : <Moon size={20} />}
+            title="ธีม"
+            description={theme === "light" ? "โหมดสว่าง" : "โหมดมืด"}
+            action={
+              <button
+                type="button"
+                className="settings-choice"
+                onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+              >
+                {theme === "light" ? "เปลี่ยนเป็นโหมดมืด" : "เปลี่ยนเป็นโหมดสว่าง"}
+              </button>
+            }
+          />
+          <SettingsRow
+            icon={<Languages size={20} />}
+            title="ภาษา"
+            description={lang === "th" ? "ไทย" : "English"}
+            action={
+              <button
+                type="button"
+                className="settings-choice"
+                onClick={() => setLang(lang === "th" ? "en" : "th")}
+              >
+                {lang === "th" ? "English" : "ไทย"}
+              </button>
+            }
+          />
+        </Surface>
+      </section>
+
+      <section className="settings-group">
+        <h3 className="settings-group-title">ข้อมูลของฉัน</h3>
+        <Surface className="settings-group-body">
+          <SettingsRow
+            icon={<Download size={20} />}
+            title="ส่งออกเอกสารทั้งหมด"
+            description="ดาวน์โหลดสำเนาเอกสาร ประวัติ และลิงก์สุขภาพเก็บไว้เอง"
+            action={
+              <button
+                type="button"
+                className="settings-choice"
+                onClick={onExportAll}
+              >
+                ส่งออก
+              </button>
+            }
+          />
+          <SettingsRow
+            icon={<Smartphone size={20} />}
+            title="ใช้งานบนมือถือ"
+            description="TrustCare Wallet มีแอปมือถือ รองรับการสแกน QR และใช้งานออฟไลน์"
+            action={<Badge tone="blue">พร้อมใช้งาน</Badge>}
+          />
+        </Surface>
+      </section>
+
+      <section className="settings-group">
+        <h3 className="settings-group-title">สำหรับนักพัฒนา</h3>
+        <Surface className="settings-group-body">
+          <SettingsRow
+            icon={<KeyRound size={20} />}
+            title="โหมดนักพัฒนา"
+            description="แสดงเครื่องมือทดสอบโปรโตคอลและข้อมูลทางเทคนิค"
+            action={
+              <button
+                type="button"
+                role="switch"
+                aria-checked={developerMode}
+                className={`settings-switch${developerMode ? " is-on" : ""}`}
+                onClick={() => setDeveloperMode(!developerMode)}
+              >
+                <i aria-hidden="true" />
+                {developerMode ? "เปิด" : "ปิด"}
+              </button>
+            }
+          />
+          {testProfile && testSession ? (
+            <details className="settings-advanced">
+              <summary>
+                <HistoryIcon size={16} aria-hidden="true" /> รายละเอียด test
+                session
+              </summary>
+              <p>
+                Session นี้เก็บเฉพาะ metadata และ state ของการทดสอบ ไม่เก็บ
+                token, password หรือ private key
+              </p>
+              <dl className="test-session-details">
+                <dt>Session ID</dt>
+                <dd>{testSession.id}</dd>
+                <dt>Portal fixture</dt>
+                <dd>{testProfile.portalFixtureOpenId ?? "external wallet"}</dd>
+                <dt>Role scope</dt>
+                <dd>
+                  {testProfile.portalRole} · {testProfile.dataScope}
+                </dd>
+                <dt>Wallet Exchange</dt>
+                <dd>{testSession.snapshot.walletExchangeState}</dd>
+                <dt>เอกสาร / Store</dt>
+                <dd>
+                  {testSession.snapshot.documentCount} /{" "}
+                  {testSession.snapshot.storedObjectCount}
+                </dd>
+                <dt>Request / Pending submission</dt>
+                <dd>
+                  {testSession.snapshot.credentialRequestCount} /{" "}
+                  {testSession.snapshot.pendingSubmissionCount}
+                </dd>
+                <dt>Sessions ที่ติดตาม</dt>
+                <dd>{testSessions?.length ?? 1}</dd>
+              </dl>
+            </details>
+          ) : null}
+        </Surface>
+      </section>
     </div>
   );
 }
