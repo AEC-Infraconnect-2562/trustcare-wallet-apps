@@ -20,7 +20,6 @@ import {
   authorizeGatewayMutation,
   immutableArtifactDecision,
   publicationRequestDigest,
-  unsignedCredentialPublicationPolicy,
   validateDemoPayerIssuanceRequest,
 } from "./share-gateway-policy.mjs";
 import { evaluateStoredVpVerificationEvidence } from "./share-gateway-verification.mjs";
@@ -116,6 +115,11 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (/^\/s\/[A-Za-z0-9_-]{43}$/.test(requestUrl.pathname)) {
+      await handlePlainShlManifestRequest(request, response, requestUrl);
+      return;
+    }
+
     if (requestUrl.pathname.startsWith("/api/share-gateway")) {
       await handleShareGatewayRequest(request, response, requestUrl);
       return;
@@ -142,6 +146,75 @@ const server = createServer(async (request, response) => {
     });
   }
 });
+
+async function handlePlainShlManifestRequest(request, response, requestUrl) {
+  if (request.method !== "POST") {
+    response.setHeader("Allow", "POST");
+    json(response, 405, {
+      ok: false,
+      errors: ["Plain SHL manifest retrieval requires POST."],
+    });
+    return;
+  }
+  if (!isJsonRequest(request)) {
+    json(response, 415, {
+      ok: false,
+      errors: ["Content-Type must be application/json."],
+    });
+    return;
+  }
+  const requestBody = await readJsonBody(request);
+  const allowedKeys = new Set(["recipient", "passcode", "embeddedLengthMax"]);
+  const unknownKey = Object.keys(requestBody).find(
+    (key) => !allowedKeys.has(key),
+  );
+  if (unknownKey) {
+    json(response, 400, {
+      ok: false,
+      errors: [`Plain SHL manifest request field ${unknownKey} is not allowed.`],
+    });
+    return;
+  }
+  if (!stringValue(requestBody.recipient)) {
+    json(response, 400, {
+      ok: false,
+      errors: ["Plain SHL manifest request recipient is required."],
+    });
+    return;
+  }
+  if (
+    requestBody.passcode !== undefined &&
+    typeof requestBody.passcode !== "string"
+  ) {
+    json(response, 400, {
+      ok: false,
+      errors: ["Plain SHL manifest request passcode must be a string."],
+    });
+    return;
+  }
+  if (
+    requestBody.embeddedLengthMax !== undefined &&
+    (!Number.isSafeInteger(requestBody.embeddedLengthMax) ||
+      requestBody.embeddedLengthMax < 0)
+  ) {
+    json(response, 400, {
+      ok: false,
+      errors: [
+        "Plain SHL manifest request embeddedLengthMax must be a non-negative integer.",
+      ],
+    });
+    return;
+  }
+
+  const artifactId = requestUrl.pathname.slice("/s/".length);
+  const stored = await artifactStore.get("standard_shl_manifest", artifactId);
+  if (!stored) {
+    json(response, 404, { ok: false, errors: ["SHL manifest not found."] });
+    return;
+  }
+  if (respondIfArtifactExpired(response, stored)) return;
+  json(response, 200, stored.payload);
+}
 
 async function handleShareGatewayRequest(request, response, requestUrl) {
   const origin = requestOrigin(request);
@@ -368,10 +441,37 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
       });
       return;
     }
-    if (kind === "vp" && !isRecord(body.payload)) {
+    if (kind === "vp" && !looksLikeJwt(body.payload)) {
       json(response, 400, {
         ok: false,
-        errors: ["VP payload must be a JSON object."],
+        errors: ["VP payload must be the exact Wallet-signed compact JWT."],
+      });
+      return;
+    }
+    if (kind === "standard_shl_manifest") {
+      if (!/^[A-Za-z0-9_-]{43}$/.test(artifactId)) {
+        json(response, 400, {
+          ok: false,
+          errors: [
+            "Plain SHL artifactId must be a 43-character base64url token.",
+          ],
+        });
+        return;
+      }
+      try {
+        assertPlainShlManifest(body.payload);
+      } catch (error) {
+        json(response, 400, {
+          ok: false,
+          errors: [safeErrorMessage(error, 400)],
+        });
+        return;
+      }
+    }
+    if (kind === "shl_file" && !looksLikeCompactJwe(body.payload)) {
+      json(response, 400, {
+        ok: false,
+        errors: ["SHL file payload must be a compact JWE."],
       });
       return;
     }
@@ -412,18 +512,14 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
     let contentType = stringValue(body.contentType) || "application/json";
 
     if (kind === "vp") {
-      const context = await getSigningContext(origin);
-      const signed = await signPresentationJwt({
-        vp: isRecord(body.payload) ? body.payload : {},
-        context,
-        origin,
-        purpose: stringValue(body.purpose),
-        expiresAt: stringValue(body.expiresAt),
-        audience: "https://trustcare.network/verifier",
-      });
-      payload = signed.jwt;
+      payload = body.payload;
       contentType = "application/vp+jwt";
-      warnings.push(...signed.warnings);
+    } else if (kind === "shl_file") {
+      payload = body.payload;
+      contentType = "application/jose";
+    } else if (kind === "standard_shl_manifest") {
+      payload = assertPlainShlManifest(body.payload);
+      contentType = "application/json";
     }
 
     const writeResult = await artifactStore.set({
@@ -461,21 +557,6 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
     return;
   }
 
-  const manifestMatch = /^\/manifests\/([^/]+)\.json$/.exec(pathname);
-  if (manifestMatch) {
-    const artifactId = decodeURIComponent(manifestMatch[1]);
-    const stored =
-      (await artifactStore.get("certified_shl_manifest", artifactId)) ??
-      (await artifactStore.get("standard_shl_manifest", artifactId));
-    if (!stored) {
-      json(response, 404, { ok: false, errors: ["SHL manifest not found."] });
-      return;
-    }
-    if (respondIfArtifactExpired(response, stored)) return;
-    json(response, 200, stored.payload);
-    return;
-  }
-
   const artifactRoute = matchArtifactRoute(pathname);
   if (artifactRoute) {
     const stored = await artifactStore.get(
@@ -502,159 +583,7 @@ async function handleShareGatewayRequest(request, response, requestUrl) {
     return;
   }
 
-  const fileMatch = /^\/files\/([^/]+)\/([^/]+)\.jwe$/.exec(pathname);
-  if (fileMatch) {
-    const publicationId = decodeURIComponent(fileMatch[1]);
-    const fileId = decodeURIComponent(fileMatch[2]);
-    json(response, 200, {
-      resourceType: "Bundle",
-      id: `${publicationId}:${fileId}`,
-      type: "document",
-      note: productionGateway
-        ? "TrustCare Wallet share gateway does not publish SHL file payloads here. Use the Portal SHL backend for encrypted file delivery."
-        : "Local wallet gateway returns plaintext FHIR-like content for development verification only.",
-    });
-    return;
-  }
-
   json(response, 404, { ok: false, errors: ["Unknown share gateway route."] });
-}
-
-async function signPresentationJwt(input) {
-  const now = new Date();
-  const expiresAt =
-    input.expiresAt ||
-    stringValue(input.vp.validUntil) ||
-    new Date(now.getTime() + 10 * 60_000).toISOString();
-  const rawCredentials = Array.isArray(input.vp.verifiableCredential)
-    ? input.vp.verifiableCredential
-    : [];
-  const credentialJwts = [];
-  const warnings = [];
-
-  for (const credential of rawCredentials) {
-    const existingJwt = extractCredentialJwt(credential);
-    if (existingJwt) {
-      credentialJwts.push(existingJwt);
-      continue;
-    }
-    if (!isRecord(credential)) {
-      throw httpError(
-        422,
-        "Every VP credential must be an issuer-signed vc+jwt envelope or a source-aware JSON credential.",
-      );
-    }
-    const unsignedPolicy = unsignedCredentialPublicationPolicy({
-      production: productionGateway,
-      credential,
-    });
-    throw httpError(
-      422,
-      unsignedPolicy.ok
-        ? "Unsigned credentials are not accepted. Obtain a newly issued Portal hospital vc+jwt; the Wallet gateway does not rewrite or re-sign credentials."
-        : unsignedPolicy.message,
-    );
-  }
-
-  const credentialJwtDigests = await Promise.all(credentialJwts.map(sha256Hex));
-  const vp = stripUndefined({
-    ...input.vp,
-    type: ensureArray(input.vp.type, "VerifiablePresentation"),
-    holder: stringValue(
-      input.vp.holder,
-      stringValue(input.vp.holderDid, input.context.issuerDid),
-    ),
-    purpose: input.purpose || input.vp.purpose,
-    validUntil: expiresAt,
-    verifiableCredential: credentialJwts.map(envelopedCredentialFromJwt),
-    trustcare: {
-      ...objectValue(input.vp.trustcare),
-      jwtProfile: "w3c-vc-jose-cose",
-      signingStatus: "jwt_signed",
-      signingAlgorithm: "ES256",
-      signingKid: input.context.kid,
-      signingJwksUrl: input.context.jku,
-      credentialJwtCount: credentialJwts.length,
-      credentialJwtDigests,
-    },
-  });
-  const presentationHash = await sha256Hex({
-    holder: vp.holder,
-    credentialJwts,
-    expiresAt,
-  });
-  const presentationId = stringValue(
-    vp.id,
-    `vp_${presentationHash.slice(0, 16)}`,
-  );
-  const jwtPresentation = stripUndefined({ ...vp, id: presentationId });
-  const issuedAt = Math.floor(now.getTime() / 1000);
-  const expirationTime = Math.floor(new Date(expiresAt).getTime() / 1000);
-  const jwtSubject = stringValue(vp.holder, input.context.issuerDid);
-  const proofReadyPresentation = stripUndefined({
-    ...jwtPresentation,
-    iss: input.context.issuerDid,
-    sub: jwtSubject,
-    aud: input.audience,
-    jti: presentationId,
-    iat: issuedAt,
-    exp: expirationTime,
-    trustcare: {
-      ...objectValue(jwtPresentation.trustcare),
-      dataIntegrityCryptosuite: "ecdsa-jcs-2019",
-      dataIntegrityProofPurpose: "authentication",
-      dataIntegrityVerificationMethod: input.context.kid,
-    },
-  });
-  const proof = await createDataIntegrityProof(proofReadyPresentation, {
-    context: input.context,
-    created: now.toISOString(),
-    expires: expiresAt,
-  });
-  const signedPresentation = stripUndefined({
-    ...proofReadyPresentation,
-    proof,
-  });
-  const jwt = await new SignJWT(signedPresentation)
-    .setProtectedHeader({
-      alg: "ES256",
-      typ: "vp+jwt",
-      kid: input.context.kid,
-      jku: input.context.jku,
-    })
-    .setIssuer(input.context.issuerDid)
-    .setSubject(jwtSubject)
-    .setAudience(input.audience)
-    .setJti(presentationId)
-    .setIssuedAt(issuedAt)
-    .setExpirationTime(expirationTime)
-    .sign(input.context.privateKey);
-
-  return { jwt, vp: signedPresentation, credentialJwts, warnings };
-}
-
-async function createDataIntegrityProof(document, input) {
-  const proof = stripUndefined({
-    type: "DataIntegrityProof",
-    cryptosuite: "ecdsa-jcs-2019",
-    created: input.created,
-    expires: input.expires,
-    verificationMethod: input.context.kid,
-    proofPurpose: "authentication",
-    "@context": document["@context"],
-  });
-  const signingData = await buildDataIntegritySigningData(document, proof);
-  const signature = new Uint8Array(
-    await globalThis.crypto.subtle.sign(
-      { name: "ECDSA", hash: "SHA-256" },
-      input.context.privateKey,
-      signingData,
-    ),
-  );
-  return {
-    ...proof,
-    proofValue: `z${base58Encode(signature)}`,
-  };
 }
 
 async function signCredentialJwt(input) {
@@ -901,61 +830,125 @@ function sanitizeCredential(credential, context, expiresAt) {
   });
 }
 
-function extractCredentialJwt(value) {
-  if (typeof value === "string") {
-    return jwtFromDataUrl(value, "vc") ?? (looksLikeJwt(value) ? value : null);
-  }
-  if (!isRecord(value)) return null;
-  if (typeof value.id === "string") {
-    const fromId = jwtFromDataUrl(value.id, "vc");
-    if (fromId) return fromId;
-  }
-  for (const key of ["jwt", "vcJwt", "sdJwtVc"]) {
-    const candidate = value[key];
-    if (typeof candidate !== "string") continue;
-    const fromDataUrl = jwtFromDataUrl(candidate, "vc");
-    if (fromDataUrl) return fromDataUrl;
-    if (looksLikeJwt(candidate)) return candidate;
-  }
-  return null;
-}
-
-function jwtFromDataUrl(value, kind) {
-  if (!value.startsWith("data:")) return null;
-  const commaIndex = value.indexOf(",");
-  if (commaIndex < 0) return null;
-  const metadata = value.slice("data:".length, commaIndex).toLowerCase();
-  const encoded = value.slice(commaIndex + 1);
-  const [mediaType, ...parameters] = metadata.split(";");
-  const expected = kind === "vc" ? "application/vc+jwt" : "application/vp+jwt";
-  if (mediaType !== expected) return null;
-  const jwt = parameters.includes("base64")
-    ? Buffer.from(encoded, "base64").toString("utf8")
-    : decodeURIComponent(encoded);
-  return looksLikeJwt(jwt) ? jwt : null;
-}
-
 function looksLikeJwt(value) {
+  if (typeof value !== "string") return false;
   const issuerJwt = value.trim().split("~")[0];
   const parts = issuerJwt.split(".");
   return parts.length === 3 && parts[0]?.startsWith("eyJ");
 }
 
-function envelopedCredentialFromJwt(jwt) {
-  return {
-    "@context": ["https://www.w3.org/ns/credentials/v2"],
-    id: `data:application/vc+jwt,${encodeURIComponent(jwt)}`,
-    type: ["VerifiableCredential", "EnvelopedVerifiableCredential"],
-  };
+function looksLikeCompactJwe(value) {
+  if (typeof value !== "string") return false;
+  const parts = value.trim().split(".");
+  if (parts.length !== 5 || !parts.every((part, index) => index === 1 || part)) {
+    return false;
+  }
+  try {
+    const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+    return (
+      header.alg === "dir" &&
+      header.enc === "A256GCM" &&
+      [
+        "application/smart-health-card",
+        "application/fhir+json",
+        "application/smart-api-access",
+      ].includes(header.cty)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function assertPlainShlManifest(value) {
+  if (!isRecord(value)) {
+    throw httpError(400, "Plain SHL manifest must be a JSON object.");
+  }
+  assertExactObjectKeys(value, ["status", "list", "files"], "Plain SHL manifest");
+  if (
+    value.status !== undefined &&
+    !["finalized", "can-change", "no-longer-valid"].includes(value.status)
+  ) {
+    throw httpError(400, "Plain SHL manifest status is invalid.");
+  }
+  if (value.list !== undefined) {
+    if (!isRecord(value.list) || value.list.resourceType !== "List") {
+      throw httpError(400, "Plain SHL list must be a FHIR List resource.");
+    }
+  }
+  if (!Array.isArray(value.files)) {
+    throw httpError(400, "Plain SHL manifest files must be an array.");
+  }
+  const files = value.files.map((entry, index) => {
+    const label = `Plain SHL manifest file ${index + 1}`;
+    if (!isRecord(entry)) {
+      throw httpError(400, `${label} must be a JSON object.`);
+    }
+    assertExactObjectKeys(
+      entry,
+      ["contentType", "location", "embedded", "lastUpdated"],
+      label,
+    );
+    if (
+      ![
+        "application/smart-health-card",
+        "application/fhir+json",
+        "application/smart-api-access",
+      ].includes(entry.contentType)
+    ) {
+      throw httpError(400, `${label} contentType is invalid.`);
+    }
+    const hasLocation = Boolean(stringValue(entry.location));
+    const hasEmbedded = Boolean(stringValue(entry.embedded));
+    if (hasLocation === hasEmbedded) {
+      throw httpError(
+        400,
+        `${label} must contain exactly one of location or embedded.`,
+      );
+    }
+    if (hasLocation) {
+      let location;
+      try {
+        location = new URL(entry.location);
+      } catch {
+        throw httpError(400, `${label} location is invalid.`);
+      }
+      if (location.protocol !== "https:") {
+        throw httpError(400, `${label} location must use HTTPS.`);
+      }
+    }
+    if (
+      entry.lastUpdated !== undefined &&
+      (typeof entry.lastUpdated !== "string" ||
+        !validIsoDateOrNull(entry.lastUpdated))
+    ) {
+      throw httpError(400, `${label} lastUpdated is invalid.`);
+    }
+    return stripUndefined({
+      contentType: entry.contentType,
+      location: hasLocation ? entry.location : undefined,
+      embedded: hasEmbedded ? entry.embedded : undefined,
+      lastUpdated: entry.lastUpdated,
+    });
+  });
+  return stripUndefined({
+    status: value.status,
+    list: value.list,
+    files,
+  });
+}
+
+function assertExactObjectKeys(value, allowedKeys, label) {
+  const allowed = new Set(allowedKeys);
+  const unknown = Object.keys(value).find((key) => !allowed.has(key));
+  if (unknown) {
+    throw httpError(400, `${label} field ${unknown} is not allowed.`);
+  }
 }
 
 function matchArtifactRoute(pathname) {
   const routes = [
-    [/^\/presentations\/([^/]+)\.json$/, "vp", "json"],
     [/^\/presentations\/([^/]+)\.jwt$/, "vp", "jwt"],
-    [/^\/manifest-vps\/([^/]+)\.jwt$/, "manifest_vp", "jwt"],
-    [/^\/manifest-credentials\/([^/]+)\.jwt$/, "manifest_credential", "jwt"],
-    [/^\/files\/([^/]+)\.jwe$/, "shl_file", "jwe"],
+    [/^\/files\/([^/]+)$/, "shl_file", "jwe"],
   ];
   for (const [pattern, kind, extension] of routes) {
     const match = pattern.exec(pathname);
@@ -970,15 +963,10 @@ function publicArtifactPath(kind, artifactId) {
   switch (kind) {
     case "vp":
       return `/api/share-gateway/presentations/${encoded}.jwt`;
-    case "manifest_vp":
-      return `/api/share-gateway/manifest-vps/${encoded}.jwt`;
-    case "manifest_credential":
-      return `/api/share-gateway/manifest-credentials/${encoded}.jwt`;
     case "shl_file":
-      return `/api/share-gateway/files/${encoded}.jwe`;
+      return `/api/share-gateway/files/${encoded}`;
     case "standard_shl_manifest":
-    case "certified_shl_manifest":
-      return `/api/share-gateway/manifests/${encoded}.json`;
+      return `/s/${encoded}`;
     default:
       return `/api/share-gateway/artifacts/${encoded}.json`;
   }
@@ -1061,95 +1049,6 @@ async function sha256Hex(value) {
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
-}
-
-async function buildDataIntegritySigningData(document, proof) {
-  const unsecuredDocument = stripProofForDataIntegrity(document);
-  const proofConfig = stripUndefined({ ...proof });
-  delete proofConfig.proofValue;
-  delete proofConfig.jws;
-  if (proofConfig["@context"]) {
-    unsecuredDocument["@context"] = proofConfig["@context"];
-  }
-  const proofConfigHash = await sha256Bytes(
-    new TextEncoder().encode(jcsCanonicalize(proofConfig)),
-  );
-  const documentHash = await sha256Bytes(
-    new TextEncoder().encode(jcsCanonicalize(unsecuredDocument)),
-  );
-  return concatBytes(proofConfigHash, documentHash);
-}
-
-async function sha256Bytes(bytes) {
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
-  return new Uint8Array(digest);
-}
-
-function concatBytes(left, right) {
-  const output = new Uint8Array(left.length + right.length);
-  output.set(left, 0);
-  output.set(right, left.length);
-  return output;
-}
-
-function stripProofForDataIntegrity(value) {
-  const copy = deepJsonClone(value);
-  delete copy.proof;
-  return copy;
-}
-
-function deepJsonClone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function jcsCanonicalize(value) {
-  if (value === null) return "null";
-  if (typeof value === "string") return JSON.stringify(value);
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) {
-      throw new Error("JCS cannot canonicalize non-finite numbers.");
-    }
-    return JSON.stringify(value);
-  }
-  if (typeof value === "boolean") return value ? "true" : "false";
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => jcsCanonicalize(item)).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value)
-      .filter((key) => value[key] !== undefined)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${jcsCanonicalize(value[key])}`)
-      .join(",")}}`;
-  }
-  throw new Error(`JCS cannot canonicalize ${typeof value}.`);
-}
-
-function base58Encode(bytes) {
-  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  if (!bytes.length) return "";
-  const digits = [0];
-  for (const byte of bytes) {
-    let carry = byte;
-    for (let index = 0; index < digits.length; index += 1) {
-      const value = digits[index] * 256 + carry;
-      digits[index] = value % 58;
-      carry = Math.floor(value / 58);
-    }
-    while (carry > 0) {
-      digits.push(carry % 58);
-      carry = Math.floor(carry / 58);
-    }
-  }
-  let output = "";
-  for (const byte of bytes) {
-    if (byte !== 0) break;
-    output += "1";
-  }
-  for (let index = digits.length - 1; index >= 0; index -= 1) {
-    output += alphabet[digits[index]];
-  }
-  return output;
 }
 
 function stableStringify(value) {

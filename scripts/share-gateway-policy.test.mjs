@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  SUPPORTED_SHARE_ARTIFACT_KINDS,
   authorizeGatewayMutation,
   credentialSourceMetadata,
   immutableArtifactDecision,
@@ -10,6 +11,14 @@ import {
 } from "./share-gateway-policy.mjs";
 
 const artifactPath = "/api/share-gateway/artifacts";
+
+test("generic gateway exposes only hard-cutover artifact kinds", () => {
+  assert.deepEqual([...SUPPORTED_SHARE_ARTIFACT_KINDS], [
+    "vp",
+    "standard_shl_manifest",
+    "shl_file",
+  ]);
+});
 
 test("production mutations require a trusted Origin or configured service token", () => {
   for (const pathname of [

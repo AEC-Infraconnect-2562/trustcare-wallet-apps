@@ -72,6 +72,20 @@ beforeAll(async () => {
   network = await createNetworkFixture();
 });
 
+describe("Wallet Exchange discovery routing", () => {
+  it("exposes the validated live Share Gateway instead of deriving one from the app origin", async () => {
+    const fake = fakeClient();
+    const workflow = createWorkflow({
+      persistence: freshPersistence(),
+      fake,
+    });
+
+    await expect(workflow.shareGatewayBaseUrl()).resolves.toBe(
+      `${portalOrigin}/api/share-gateway`,
+    );
+  });
+});
+
 describe("credentialTypesForDocumentRequest", () => {
   const manifest = {
     contracts: [

@@ -8,9 +8,6 @@ export const GATEWAY_MUTATION_PATHS = new Set([
 export const SUPPORTED_SHARE_ARTIFACT_KINDS = new Set([
   "vp",
   "standard_shl_manifest",
-  "certified_shl_manifest",
-  "manifest_vp",
-  "manifest_credential",
   "shl_file",
 ]);
 
