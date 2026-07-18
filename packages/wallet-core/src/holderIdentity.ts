@@ -154,6 +154,45 @@ export function publicKeyMultibaseFromJwk(publicJwk: JWK): string {
   return `z${encoded}`;
 }
 
+/** Resolve the public key carried by a TrustCare holder did:key locally. */
+export function publicJwkFromDidKey(did: string): JWK {
+  const prefix = "did:key:z";
+  if (!did.startsWith(prefix)) {
+    throw new Error("Holder DID must be a base58btc did:key identifier.");
+  }
+  const multicodec = base58Decode(did.slice(prefix.length));
+  let publicJwk: JWK;
+  if (
+    multicodec.length === 34 &&
+    multicodec[0] === multicodecHeader.Ed25519[0] &&
+    multicodec[1] === multicodecHeader.Ed25519[1]
+  ) {
+    publicJwk = {
+      kty: "OKP",
+      crv: "Ed25519",
+      x: base64url.encode(multicodec.slice(2)),
+    };
+  } else if (
+    multicodec.length === 35 &&
+    multicodec[0] === multicodecHeader["P-256"][0] &&
+    multicodec[1] === multicodecHeader["P-256"][1]
+  ) {
+    const point = decompressP256Point(multicodec.slice(2));
+    publicJwk = {
+      kty: "EC",
+      crv: "P-256",
+      x: base64url.encode(point.x),
+      y: base64url.encode(point.y),
+    };
+  } else {
+    throw new Error("Holder did:key multicodec is not Ed25519 or P-256.");
+  }
+  if (didKeyFromPublicJwk(publicJwk) !== did) {
+    throw new Error("Holder did:key is not canonically encoded.");
+  }
+  return publicJwk;
+}
+
 export function verificationMethodKidFromDidKey(did: string): string {
   const prefix = "did:key:";
   if (!did.startsWith(prefix) || !did.slice(prefix.length).startsWith("z")) {
@@ -429,4 +468,91 @@ function base58Encode(bytes: Uint8Array): string {
     .map((digit) => BASE58_BTC_ALPHABET[digit])
     .join("");
   return `${"1".repeat(leadingZeroes)}${encoded}`;
+}
+
+function base58Decode(value: string): Uint8Array {
+  if (!value) throw new Error("Holder did:key has no public key material.");
+  let leadingZeroes = 0;
+  while (leadingZeroes < value.length && value[leadingZeroes] === "1") {
+    leadingZeroes += 1;
+  }
+  const bytes: number[] = [];
+  for (const character of value.slice(leadingZeroes)) {
+    const digit = BASE58_BTC_ALPHABET.indexOf(character);
+    if (digit < 0) throw new Error("Holder did:key is not base58btc.");
+    let carry = digit;
+    for (let index = 0; index < bytes.length; index += 1) {
+      const decoded = bytes[index] * 58 + carry;
+      bytes[index] = decoded & 0xff;
+      carry = decoded >>> 8;
+    }
+    while (carry > 0) {
+      bytes.push(carry & 0xff);
+      carry >>>= 8;
+    }
+  }
+  const result = new Uint8Array(leadingZeroes + bytes.length);
+  for (let index = 0; index < bytes.length; index += 1) {
+    result[result.length - 1 - index] = bytes[index];
+  }
+  return result;
+}
+
+function decompressP256Point(compressed: Uint8Array): {
+  x: Uint8Array;
+  y: Uint8Array;
+} {
+  if (
+    compressed.length !== 33 ||
+    (compressed[0] !== 0x02 && compressed[0] !== 0x03)
+  ) {
+    throw new Error("Holder P-256 did:key has an invalid compressed point.");
+  }
+  const prime =
+    0xffffffff00000001000000000000000000000000ffffffffffffffffffffffffn;
+  const curveB =
+    0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604bn;
+  const x = bytesToBigInt(compressed.slice(1));
+  if (x >= prime) throw new Error("Holder P-256 did:key x-coordinate is invalid.");
+  const rhs = modulo(x * x * x - 3n * x + curveB, prime);
+  let y = modularExponent(rhs, (prime + 1n) / 4n, prime);
+  if (modulo(y * y, prime) !== rhs) {
+    throw new Error("Holder P-256 did:key point is not on the curve.");
+  }
+  const odd = compressed[0] === 0x03;
+  if (((y & 1n) === 1n) !== odd) y = prime - y;
+  return { x: bigIntToBytes(x, 32), y: bigIntToBytes(y, 32) };
+}
+
+function bytesToBigInt(bytes: Uint8Array): bigint {
+  let result = 0n;
+  for (const byte of bytes) result = (result << 8n) | BigInt(byte);
+  return result;
+}
+
+function bigIntToBytes(value: bigint, length: number): Uint8Array {
+  const bytes = new Uint8Array(length);
+  let remaining = value;
+  for (let index = length - 1; index >= 0; index -= 1) {
+    bytes[index] = Number(remaining & 0xffn);
+    remaining >>= 8n;
+  }
+  return bytes;
+}
+
+function modulo(value: bigint, modulus: bigint): bigint {
+  const result = value % modulus;
+  return result >= 0n ? result : result + modulus;
+}
+
+function modularExponent(base: bigint, exponent: bigint, modulus: bigint) {
+  let result = 1n;
+  let factor = modulo(base, modulus);
+  let remaining = exponent;
+  while (remaining > 0n) {
+    if (remaining & 1n) result = (result * factor) % modulus;
+    factor = (factor * factor) % modulus;
+    remaining >>= 1n;
+  }
+  return result;
 }

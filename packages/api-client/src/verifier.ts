@@ -21,6 +21,7 @@ import {
   parseShlLink,
   parseUrl,
   parseTrustCareQr,
+  publicJwkFromDidKey,
   REQUIRED_VERIFICATION_CHECK_KEYS,
   sha256Hex,
   fetchShlManifest,
@@ -533,7 +534,20 @@ function artifactSubjectDid(
 function artifactValidUntil(
   artifact: Record<string, unknown> | null | undefined,
 ): string | undefined {
-  return stringOrUndefined(artifact?.validUntil ?? artifact?.expirationDate);
+  return stringOrUndefined(
+    artifact?.validUntil ??
+      artifact?.expirationDate ??
+      objectValue(artifact?.trustcare)?.expiresAt,
+  );
+}
+
+function trustCareVpAudience(
+  payload: Record<string, unknown>,
+): string | undefined {
+  return (
+    audienceSummary(payload.aud) ??
+    stringOrUndefined(objectValue(payload.trustcare)?.audience)
+  );
 }
 
 async function resolvePublishedVp(
@@ -887,14 +901,21 @@ async function verifyResolvedVpPayload(
     expectedProofPurpose: "authentication",
   });
   const jwtSignerDid = resolved.jwtVerification?.verified
-    ? resolved.jwtVerification.issuer
+    ? controllerDid(resolved.jwtVerification.kid ?? "")
     : undefined;
   const dataIntegritySignerDid = dataIntegrity.verified
     ? controllerDid(dataIntegrity.verificationMethod ?? "")
     : undefined;
   const vpSignerDid = jwtSignerDid ?? dataIntegritySignerDid;
+  const expectedJwtController = jwtSignerDid?.startsWith("did:key:")
+    ? holderDid
+    : jwtSignerDid;
   const vpLocalProof =
-    localJwtProof(resolved.jwtVerification, jwtSignerDid, "authentication") ??
+    localJwtProof(
+      resolved.jwtVerification,
+      expectedJwtController,
+      "authentication",
+    ) ??
     localDataIntegrityProof(
       dataIntegrity,
       dataIntegritySignerDid,
@@ -939,9 +960,11 @@ async function verifyResolvedVpPayload(
   const nestedCredentialVerified =
     credentialInputs.length > 0 &&
     credentialInputs.every((credential) => Boolean(credential.localProof));
-  const purpose = stringOrUndefined(payload.purpose);
-  const recipient = stringOrUndefined(payload.recipient);
-  const audience = resolved.jwtVerification?.audience;
+  const trustcare = objectValue(payload.trustcare);
+  const purpose = stringOrUndefined(payload.purpose ?? trustcare?.purpose);
+  const recipient = stringOrUndefined(payload.recipient ?? trustcare?.recipient);
+  const audience =
+    resolved.jwtVerification?.audience ?? stringOrUndefined(trustcare?.audience);
   const purposeBound = Boolean(purpose && (recipient || audience));
   const evidence = await evaluateArtifactTrust(
     resolvedVpEvidenceOptions(options, resolved),
@@ -969,8 +992,8 @@ async function verifyResolvedVpPayload(
     },
   );
   const hasVerifiedProof = Boolean(vpLocalProof);
-  const notExpired =
-    !payload.validUntil || Date.parse(String(payload.validUntil)) > Date.now();
+  const validUntil = artifactValidUntil(payload);
+  const notExpired = !validUntil || Date.parse(validUntil) > Date.now();
   const verified =
     credentialCount > 0 &&
     hasVerifiedProof &&
@@ -1020,7 +1043,7 @@ async function verifyResolvedVpPayload(
         label: "Signature status",
         ok: hasVerifiedProof,
         detail: resolved.jwtVerification?.verified
-          ? `ES256 / ${resolved.jwtVerification?.kid ?? "-"}`
+          ? `${resolved.jwtVerification.alg ?? "-"} / ${resolved.jwtVerification?.kid ?? "-"}`
           : dataIntegrity.verified
             ? `${dataIntegrity.cryptosuite ?? "Data Integrity"} / ${dataIntegrity.verificationMethod ?? "-"}`
             : dataIntegrity.present
@@ -1071,7 +1094,7 @@ async function verifyResolvedVpPayload(
         key: "expiry",
         label: "ยังไม่หมดอายุ",
         ok: notExpired,
-        detail: String(payload.validUntil ?? "-"),
+        detail: String(validUntil ?? "-"),
       },
       {
         key: "schema",
@@ -1142,8 +1165,8 @@ async function verifyResolvedVpPayload(
       purpose,
       recipient,
       audience,
-      validFrom: stringOrUndefined(payload.validFrom),
-      validUntil: stringOrUndefined(payload.validUntil),
+      validFrom: stringOrUndefined(payload.validFrom ?? trustcare?.issuedAt),
+      validUntil,
       selectedFields: Array.isArray(payload.selectedFields)
         ? payload.selectedFields.map(String)
         : undefined,
@@ -1413,6 +1436,72 @@ async function verifyJwtArtifact(
     });
   }
   const verificationAlg = alg as "ES256" | "EdDSA";
+
+  const signingController = kid ? controllerDid(kid) : undefined;
+  if (kind === "vp" && signingController?.startsWith("did:key:")) {
+    const holderDid = stringOrUndefined(decodedPayload.holder);
+    const expectedKid = `${signingController}#${signingController.slice("did:key:".length)}`;
+    if (kid !== expectedKid) {
+      errors.push(
+        "Holder VP kid is not the canonical verification method for its did:key.",
+      );
+    }
+    if (holderDid !== signingController) {
+      errors.push("Holder VP signing key does not control the signed holder DID.");
+    }
+    if (header.typ !== "vp+jwt" || header.cty !== "vp") {
+      errors.push("Holder VP must use typ=vp+jwt and cty=vp.");
+    }
+    try {
+      const jwk = publicJwkFromDidKey(signingController);
+      const expectedAlg = jwk.kty === "OKP" ? "EdDSA" : "ES256";
+      if (verificationAlg !== expectedAlg) {
+        errors.push(`Holder did:key requires ${expectedAlg}, not ${verificationAlg}.`);
+      }
+      if (!errors.length) {
+        const key = await importJWK(jwk, verificationAlg);
+        const result = await jwtVerify(token.issuerJwt, key, {
+          algorithms: [verificationAlg],
+        });
+        const payload = result.payload as Record<string, any>;
+        errors.push(...artifactTimeErrors(payload, kind, new Date()));
+        if (!errors.length) {
+          return {
+            kind,
+            verified: true,
+            alg,
+            kid,
+            jku,
+            disclosureCount: token.disclosures.length,
+            issuer: signingController,
+            subject: holderDid,
+            audience: trustCareVpAudience(payload),
+            credentialId: stringOrUndefined(unwrapVpPayload(payload)?.id),
+            jwksUrl: signingController,
+            payload,
+            warnings,
+            errors: [],
+          };
+        }
+      }
+    } catch (error) {
+      errors.push(
+        error instanceof Error
+          ? error.message
+          : "Holder did:key signature verification failed.",
+      );
+    }
+    return failedJwtVerification({
+      kind,
+      alg,
+      kid,
+      jku,
+      token,
+      payload: decodedPayload,
+      warnings,
+      errors,
+    });
+  }
 
   const jwksCandidateResult = buildTrustCareJwksCandidateResult({
     header,

@@ -12,6 +12,7 @@ import {
   holderIdentityFromPublicKey,
   holderJwsProtectedHeader,
   publicKeyMultibaseFromJwk,
+  publicJwkFromDidKey,
   signHolderCompactJws,
   verificationMethodKidFromDidKey,
   type HolderJwsPurpose,
@@ -34,6 +35,7 @@ describe("holder identity", () => {
     expect(verificationMethodKidFromDidKey(expectedDid)).toBe(
       `${expectedDid}#${expectedDid.slice("did:key:".length)}`,
     );
+    expect(publicJwkFromDidKey(expectedDid)).toEqual(publicJwk);
 
     const identity = await holderIdentityFromPublicKey(publicJwk);
     expect(identity.did).toBe(expectedDid);
@@ -61,6 +63,20 @@ describe("holder identity", () => {
       expect(identity.publicJwk).not.toHaveProperty("d");
     },
   );
+
+  it.each(["Ed25519" as const, "P-256" as const])(
+    "round-trips a %s did:key back to its public JWK",
+    async (algorithm) => {
+      const identity = await generateHolderIdentity({ algorithm });
+
+      expect(publicJwkFromDidKey(identity.did)).toEqual(identity.publicJwk);
+    },
+  );
+
+  it("rejects unsupported and malformed did:key material", () => {
+    expect(() => publicJwkFromDidKey("did:key:z0invalid")).toThrow();
+    expect(() => publicJwkFromDidKey("did:web:holder.example")).toThrow();
+  });
 
   it("signs exact session, DPoP and VP compact JWS payload bytes", async () => {
     const identity = await generateHolderIdentity({ algorithm: "Ed25519" });
