@@ -3,12 +3,12 @@ import {
   ArrowLeft,
   FileText,
   Fingerprint,
-  ImageOff,
   KeyRound,
   RefreshCw,
   Search,
   Share2,
   ShieldCheck,
+  UserRound,
 } from "lucide-react";
 import {
   Badge,
@@ -549,7 +549,7 @@ function RecordV2Thumbnail({ record }: { record: WalletDocumentRecordV2 }) {
           : "ไม่พบรูปผู้ถือเอกสารใน credential ต้นฉบับ"
       }
     >
-      <ImageOff className="record-v2-photo-fallback" aria-hidden="true" />
+      <UserRound className="record-v2-photo-fallback" aria-hidden="true" />
       {candidate && imageSrc ? (
         <img
           className={isLoaded ? "loaded" : ""}

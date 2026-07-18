@@ -35,8 +35,8 @@ export function ImportHub({
             <span className="eyebrow">รับเอกสารเข้า Wallet</span>
             <h2>สแกน วาง อัปโหลด หรือ Sync จาก Portal</h2>
             <p>
-              ระบบจะแยกให้อัตโนมัติว่าเป็น VP, SHL, credential offer, FHIR
-              หรือไฟล์นำเข้า แล้วบอกสถานะความเชื่อถือก่อนบันทึกเข้ากระเป๋า
+              วางลิงก์หรือข้อมูลที่ได้รับมา
+              ระบบจะแยกประเภทให้อัตโนมัติและบอกความน่าเชื่อถือก่อนบันทึกเข้ากระเป๋า
             </p>
           </div>
         </div>
@@ -72,7 +72,7 @@ export function ImportHub({
           <textarea
             value={payload}
             onChange={(event) => onPayload(event.target.value)}
-            placeholder="วาง SHL, VP link, VC/VP JSON/JWT, OID4VCI offer, FHIR DocumentReference หรือ Bundle"
+            placeholder="วางลิงก์สุขภาพ ลิงก์รับเอกสาร หรือข้อมูลเอกสารที่ได้รับมา"
           />
         </label>
         <Button

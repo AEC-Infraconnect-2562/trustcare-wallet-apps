@@ -12,17 +12,13 @@ import {
   ArrowLeft,
   Bell,
   Camera,
-  Download,
   Fingerprint,
   KeyRound,
-  Languages,
   LogOut,
-  Moon,
   Network,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
-  Sun,
   Wallet,
 } from "lucide-react";
 import * as payerApi from "@trustcare/api-client/payer";
@@ -1595,7 +1591,10 @@ export default function App() {
           onSelect={setSelectedUserId}
           onLogin={(userId) => void loginAs(userId)}
           onOpenScanner={() => setScannerOpen(true)}
-          error={portalLoginMessage || portalWalletSession.error}
+          error={
+            portalLoginMessage ||
+            (loginUsers.length ? "" : portalWalletSession.error)
+          }
         />
         <Suspense fallback={<DialogLoadingFallback />}>
           {scannerOpen && (
@@ -1773,12 +1772,14 @@ export default function App() {
               ? "ผู้ใช้จาก TrustCare Portal"
               : "ผู้ใช้จาก Wallet นี้"}
           </div>
-          <div className="status-holder">
-            <Fingerprint size={18} />{" "}
-            <strong>
-              {shortDid(walletExchange.holderDid ?? activeUser.holderDid)}
-            </strong>
-          </div>
+          {developerMode && (
+            <div className="status-holder">
+              <Fingerprint size={18} />{" "}
+              <strong>
+                {shortDid(walletExchange.holderDid ?? activeUser.holderDid)}
+              </strong>
+            </div>
+          )}
           <div
             className={`status-connectivity ${offlineWallet.isOnline ? "online" : "offline"}`}
           >
@@ -1814,27 +1815,6 @@ export default function App() {
               <Fingerprint size={18} /> ยืนยันผูกกับ Portal
             </button>
           )}
-          <button
-            type="button"
-            className="status-export"
-            onClick={() => exportResult(exportWalletObjects(storedObjects))}
-          >
-            <Download size={18} /> ส่งออกทั้งหมด
-          </button>
-          <button
-            type="button"
-            className="status-theme"
-            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-          >
-            {theme === "light" ? <Moon size={18} /> : <Sun size={18} />} ธีม
-          </button>
-          <button
-            type="button"
-            className="status-language"
-            onClick={() => setLang(lang === "th" ? "en" : "th")}
-          >
-            <Languages size={18} /> {lang.toUpperCase()}
-          </button>
         </div>
 
         {lastImportMessage && (
@@ -2026,6 +2006,11 @@ export default function App() {
               webAuthn={webAuthn}
               theme={theme}
               setTheme={setTheme}
+              lang={lang}
+              setLang={setLang}
+              onExportAll={() =>
+                exportResult(exportWalletObjects(storedObjects))
+              }
               developerMode={developerMode}
               setDeveloperMode={setDeveloperMode}
               user={activeUser}

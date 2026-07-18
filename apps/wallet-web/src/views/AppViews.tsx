@@ -521,10 +521,10 @@ export function HomeView({
         <section className="clinical-evidence-alert" role="status">
           <AlertTriangle aria-hidden="true" />
           <span>
-            <strong>ยังต้องตรวจหลักฐาน</strong>
+            <strong>รอโรงพยาบาลรับรอง {evidenceReviewCards.length} รายการ</strong>
             <small>
-              มี {evidenceReviewCards.length} เอกสารที่ยังตรวจ proof, issuer,
-              status, expiry หรือ policy ไม่ครบ
+              เอกสารเหล่านี้ยังใช้แชร์แบบรับรองไม่ได้
+              จนกว่าโรงพยาบาลผู้ออกเอกสารจะยืนยันความถูกต้อง
             </small>
           </span>
           <button
@@ -612,8 +612,8 @@ export function ReceiveView({
           <div>
             <h2>สแกน QR เอกสารสุขภาพ</h2>
             <p>
-              รองรับ SHL, OID4VCI offer, OID4VP request, VP link และ QR
-              ตรวจสอบของ TrustCare
+              รองรับ QR รับเอกสาร ลิงก์สุขภาพ และ QR ตรวจสอบของ TrustCare
+              ระบบแยกประเภทให้อัตโนมัติ
             </p>
           </div>
           <Button onClick={onOpenScanner}>
@@ -2514,7 +2514,7 @@ export function PrepareView({
   const selectedServiceLabel = readinessContextLabels[context].th;
   const serviceDocumentCaption = `เอกสารที่ใช้ในบริการนี้ - ${selectedServiceLabel}`;
   const serviceDocumentDescription = activeContract
-    ? `${activeContract.patientLabel} · ${activeContract.bundleTypes.patient}`
+    ? activeContract.patientLabel
     : readinessPurposeTh[context];
   const purposeCards = useMemo(
     () => buildPurposePickerCards(context),
@@ -2553,7 +2553,7 @@ export function PrepareView({
     {
       title: "ไปหน้าแชร์เอกสาร",
       description: isPrepared
-        ? "พร้อมเลือกผู้รับ วัตถุประสงค์ รูปแบบ VP/SHL และเงื่อนไขการเปิดเผย"
+        ? "พร้อมเลือกผู้รับ วัตถุประสงค์ และข้อมูลที่จะเปิดเผย"
         : "เตรียมเอกสารจำเป็นให้ครบก่อนแชร์",
       status: isPrepared ? "พร้อมแชร์" : "รอข้อมูล",
       complete: isPrepared,
@@ -2576,9 +2576,7 @@ export function PrepareView({
                 {activeContract?.patientLabel ?? readinessPurposeTh[context]}
               </p>
             </div>
-            <Badge tone="blue">
-              Contract Hub {contractHub?.version ?? "demo"}
-            </Badge>
+            <Badge tone="blue">อิงกติกาบริการล่าสุดของโรงพยาบาล</Badge>
           </div>
           <div className="service-context-grid">
             {purposeCards.map((card) => (
@@ -2596,8 +2594,8 @@ export function PrepareView({
             <div>
               <h2>2. ตรวจเอกสารที่ระบบจะใช้</h2>
               <p>
-                รายการนี้เปลี่ยนตามบริการที่เลือก ส่วนการเลือก VP, SHL, Manifest
-                VP และเงื่อนไขการเปิดเผยอยู่ในหน้าแชร์
+                รายการนี้เปลี่ยนตามบริการที่เลือก
+                ส่วนรูปแบบการแชร์และเงื่อนไขการเปิดเผยจะเลือกได้ในหน้าแชร์
               </p>
             </div>
             <Badge tone={canCreateFullPacket ? "green" : "yellow"}>
@@ -2762,8 +2760,8 @@ export function PrepareView({
             <h2>4. ไปหน้าแชร์เอกสาร</h2>
             <p>
               หน้าเตรียมบริการตรวจความพร้อมเท่านั้น
-              หลังจากนี้หน้าแชร์จะให้เลือกผู้รับ วัตถุประสงค์ รูปแบบ VP/SHL
-              และเงื่อนไขการเปิดเผยก่อนสร้าง QR
+              หลังจากนี้หน้าแชร์จะให้เลือกผู้รับ วัตถุประสงค์
+              และข้อมูลที่จะเปิดเผยก่อนสร้าง QR
             </p>
           </div>
           <Badge tone={isPrepared ? "green" : "yellow"}>
@@ -2788,8 +2786,8 @@ export function PrepareView({
             <small>{serviceDocumentDescription}</small>
           </div>
           <div>
-            <strong>เลือก Package ในหน้าแชร์</strong>
-            <small>Direct VP, Purpose VP, SHL หรือ SHL + Manifest VP</small>
+            <strong>เลือกวิธีส่งในหน้าแชร์</strong>
+            <small>ระบบแนะนำรูปแบบ QR หรือลิงก์สุขภาพที่เหมาะสมให้</small>
           </div>
           <div>
             <strong>
@@ -2997,10 +2995,10 @@ export function StoreView({
     <div className="view-stack">
       <Surface className="share-command">
         <div>
-          <h2>คลัง VC/VP/SHL</h2>
+          <h2>คลังพกพา</h2>
           <p>
-            เก็บ VC, holder VP, SHL, Manifest Credential, sync receipts, OID4VCI
-            offers และ OID4VP requests ใน wallet เดียว
+            เก็บเอกสารรับรอง หลักฐานการแชร์ ลิงก์สุขภาพ
+            และรายการที่รับเข้ามาทั้งหมดไว้ในเครื่องนี้
           </p>
         </div>
         <Button onClick={() => onExport(exportWalletObjects(allObjects))}>

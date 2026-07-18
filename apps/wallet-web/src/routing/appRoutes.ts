@@ -54,7 +54,7 @@ export const walletRouteDefinitions: readonly WalletRouteDefinition[] = [
     view: "store",
     title: "คลังพกพา",
     subtitle:
-      "ตรวจดูและส่งออก VC, holder VP, SHL, Manifest Credential และ sync receipt ในเครื่อง",
+      "ตรวจดูและส่งออกเอกสาร ลิงก์สุขภาพ และหลักฐานการแชร์ที่เก็บไว้ในเครื่องนี้",
     breadcrumb: "คลังข้อมูล",
   },
   {
@@ -63,7 +63,7 @@ export const walletRouteDefinitions: readonly WalletRouteDefinition[] = [
     view: "receive",
     title: "รับเอกสาร",
     subtitle:
-      "สแกน วาง หรือ import OID4VCI offer, OID4VP request, SHL และ VC/VP",
+      "สแกน QR วางลิงก์ หรืออัปโหลดไฟล์ เพื่อรับเอกสารสุขภาพเข้ากระเป๋า",
     breadcrumb: "รับเอกสาร",
   },
   {
@@ -72,7 +72,7 @@ export const walletRouteDefinitions: readonly WalletRouteDefinition[] = [
     view: "prepare",
     title: "เตรียมเข้ารับบริการ",
     subtitle:
-      "ตรวจความพร้อมจากกติกา Contract Hub แล้วส่งต่อไปสร้าง QR ในหน้าแชร์",
+      "ตรวจว่าเอกสารพร้อมสำหรับบริการที่จะไป แล้วไปสร้าง QR ในหน้าแชร์",
     breadcrumb: "เตรียมบริการ",
   },
   {
@@ -128,8 +128,7 @@ export const walletRouteDefinitions: readonly WalletRouteDefinition[] = [
     path: "/verify",
     view: null,
     title: "ตรวจสอบเอกสาร",
-    subtitle:
-      "เปิดและตรวจ proof, issuer, status, expiry และ policy จาก Public URL",
+    subtitle: "ตรวจสอบความถูกต้องของเอกสารที่ได้รับจากลิงก์หรือ QR",
     breadcrumb: "ตรวจสอบ",
   },
 ] as const;
