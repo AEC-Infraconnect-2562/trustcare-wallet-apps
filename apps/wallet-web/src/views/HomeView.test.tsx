@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   getCompleteWalletSeed,
   getDemoUser,
+  walletDocumentRecordV2FromCard,
 } from "@trustcare/wallet-core";
 import { HomeView, NavButton } from "./AppViews";
 import type { ServiceReadinessSummary } from "./appViewModel";
@@ -74,6 +75,48 @@ describe("premium patient Home", () => {
 
     expect(html).toContain('aria-current="page"');
     expect(html).toContain('aria-label="หน้าแรก"');
+  });
+
+  it("explains deferred share policy without claiming hospital certification is missing", () => {
+    const card = cards[0]!;
+    const checkedAt = "2026-07-18T10:00:00.000Z";
+    const record = walletDocumentRecordV2FromCard(card, { now: checkedAt });
+    record.trust = {
+      state: "issuer_signed_untrusted",
+      checks: [
+        ...["proof", "issuer", "status", "expiry", "holder"].map((key) => ({
+          key,
+          status: "passed" as const,
+          checkedAt,
+        })),
+        {
+          key: "policy",
+          status: "pending",
+          detail: "public_issuer_status_policy_unavailable",
+          checkedAt,
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(
+      <HomeView
+        cards={[card]}
+        exchangeDocuments={[record]}
+        user={user}
+        offlineOnline
+        onOpenCard={vi.fn()}
+        onView={vi.fn()}
+        serviceReadiness={serviceReadiness}
+        activeReadinessContext="opd_visit"
+        canSyncPortalWallet
+        portalSyncBusy={false}
+        onSyncPortal={vi.fn()}
+        onPrepareContext={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("ตรวจที่มาแล้ว · ตรวจนโยบายเมื่อแชร์");
+    expect(html).not.toContain("รอโรงพยาบาลรับรอง");
   });
 
   it("uses the canonical appointment start instead of credential expiry", () => {

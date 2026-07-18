@@ -1884,6 +1884,7 @@ export default function App() {
         {routeView === "home" && (
           <HomeView
             cards={allCards}
+            exchangeDocuments={walletExchange.documents}
             user={activeUser}
             offlineOnline={offlineWallet.isOnline}
             onOpenCard={openRecord}
