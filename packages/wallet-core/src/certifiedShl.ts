@@ -881,9 +881,9 @@ function assertPresentablePortalCredential(input: {
  * check) remains fail-closed. The exact event policy is subsequently embedded
  * in, and signed with, the holder authorization VP.
  */
-function isWalletDocumentEligibleForHolderAuthorizedPresentation(
+export function isWalletDocumentEligibleForHolderAuthorizedPresentation(
   record: WalletDocumentRecordV2,
-  now: Date,
+  now = new Date(),
 ): boolean {
   if (
     record.trust.state !== "verified" &&

@@ -649,6 +649,9 @@ describe("shared credential renderer", () => {
     const model = credentialRenderModelFromCard(card);
 
     expect(card.credentialData).toEqual(source.credentialData);
+    expect(card.id).toBeGreaterThan(0);
+    expect(card.credentialStatus).toBe("active");
+    expect(walletCardForDocumentRendering(record).id).toBe(card.id);
     expect(model.documentType).toBe("prescription");
     expect(
       model.paper.sections.some((section) => section.kind === "table"),
