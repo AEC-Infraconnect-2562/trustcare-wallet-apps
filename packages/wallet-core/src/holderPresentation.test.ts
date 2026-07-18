@@ -107,6 +107,24 @@ describe("createHolderSignedDirectVp", () => {
     expect(first.vpJwt).not.toBe(second.vpJwt);
   });
 
+  it("rejects a non-versioned or non-HTTPS TrustCare credential context", async () => {
+    const identity = await generateHolderIdentity();
+    const credentialJwt = await issuerCredentialJwt(identity.did);
+    await expect(
+      createHolderSignedDirectVp({
+        identity,
+        audience: AUDIENCE,
+        recipient: RECIPIENT,
+        credentialContext: "http://portal.example/context.jsonld",
+        context: "referral",
+        purpose: "Referral intake",
+        consentRef: "urn:trustcare:consent:referral",
+        credentialJwts: [credentialJwt],
+        now: NOW,
+      }),
+    ).rejects.toThrow(/versioned HTTPS TrustCare credential context/);
+  });
+
   it("rejects an empty or unsigned nested credential collection", async () => {
     const identity = await generateHolderIdentity();
     const base = {

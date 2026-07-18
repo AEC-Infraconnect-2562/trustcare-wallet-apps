@@ -85,6 +85,21 @@ describe("Wallet Exchange discovery routing", () => {
     );
   });
 
+  it("resolves a holder VP audience, context and recipient DID from one live Portal contract set", async () => {
+    const workflow = createWorkflow({
+      persistence: freshPersistence(),
+      fake: fakeClient(),
+    });
+
+    await expect(
+      workflow.holderPresentationBindingForHospital("TCP"),
+    ).resolves.toEqual({
+      audience: `${portalOrigin}/verifier`,
+      recipient: network.issuers.TCP.issuerDid,
+      credentialContext: `${portalOrigin}/contexts/trustcare-credentials-v1.jsonld`,
+    });
+  });
+
   it("installs live Portal issuers before durable state is validated", async () => {
     const fake = fakeClient();
     const persistence = freshPersistence();

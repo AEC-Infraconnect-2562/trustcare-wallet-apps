@@ -86,6 +86,16 @@ export function classifyQrPayload(raw: string): QrPayloadClassification {
   }
   const url = parseUrl(value);
   if (url) {
+    const wrappedPayload = scanPayloadFromFragment(url.hash);
+    if (wrappedPayload) {
+      const nested = classifyQrPayload(wrappedPayload);
+      return result(
+        nested.kind,
+        url.protocol === "https:" && nested.verifierResolvable,
+        url.protocol === "https:" && nested.productionResolvable,
+        `HTTPS web scanner wrapper for ${nested.reason}`,
+      );
+    }
     if (
       url.searchParams.get("tc_resolver") === "vp" &&
       url.searchParams.get("tc_id")
@@ -113,6 +123,27 @@ export function classifyQrPayload(raw: string): QrPayloadClassification {
       );
   }
   return result("unknown", false, false, "unknown QR payload");
+}
+
+/**
+ * Production cross-device QR values are short HTTPS entry points. The signed
+ * VP/VC remains behind a resolver; SHL secrets remain in a URL fragment so a
+ * normal camera can open the web receiver without sending them to the server.
+ */
+export function assertProductionCrossDeviceQrPayload(raw: string): void {
+  const value = raw.trim();
+  const url = parseUrl(value);
+  const classification = classifyQrPayload(value);
+  if (
+    !url ||
+    url.protocol !== "https:" ||
+    !classification.verifierResolvable ||
+    !classification.productionResolvable
+  ) {
+    throw new Error(
+      `Production cross-device QR must use a verifier-resolvable HTTPS URL: ${classification.reason}`,
+    );
+  }
 }
 
 export function assertPrimaryVerifierQrPayload(raw: string): void {
@@ -161,6 +192,17 @@ function parseJson(value: string): Record<string, unknown> | null {
 function parseUrl(value: string): URL | null {
   try {
     return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+function scanPayloadFromFragment(hash: string): string | null {
+  const marker = "#scan=";
+  if (!hash.startsWith(marker)) return null;
+  try {
+    const decoded = decodeURIComponent(hash.slice(marker.length));
+    return decoded.trim() || null;
   } catch {
     return null;
   }
