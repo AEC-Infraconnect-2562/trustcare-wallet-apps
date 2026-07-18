@@ -321,7 +321,7 @@ function importJsonObject(
       },
       warnings: parsed
         ? [
-            "นำเข้า SHL JSON แล้ว และ TrustCare Manifest VP binding ยังอยู่ในสถานะรอ Manifest verification ก่อนยกระดับความน่าเชื่อถือภายใน TrustCare.",
+            "นำเข้า Standard SHL แล้ว และการรับรองยังรอการตรวจ Portal-signed Manifest VC กับ Wallet-signed Holder VP ก่อนยกระดับความน่าเชื่อถือภายใน TrustCare.",
           ]
         : [
             "นำเข้า SHL JSON แล้ว แต่ embedded QR payload ยัง decode ในเครื่องนี้ไม่ได้.",
@@ -494,7 +494,7 @@ function getStringish(value: unknown, key: string): string | undefined {
 
 function formatForStoredObject(type: WalletStoredObjectType) {
   if (type === "shl") return "shl-json";
-  if (type === "vp" || type === "service_packet" || type === "manifest_vp")
+  if (type === "vp" || type === "service_packet")
     return "trustcare-vp-json";
   if (type === "vc" || type === "shl_manifest" || type === "sync_receipt")
     return "trustcare-vc-json";

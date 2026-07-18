@@ -24,9 +24,11 @@ import {
   type JsonDocument,
 } from "./directDocumentProfile";
 import { type WalletDocumentRecordV2 } from "./walletDocumentV2";
+import {
+  assertPortalPlainShlManifestUrl,
+  type PlainShlManifest,
+} from "./shl";
 
-const CERTIFIED_SHL_MANIFEST_SCHEMA =
-  "trustcare.certified-shl.manifest.v1" as const;
 const CERTIFIED_SHL_BINDING_TYPE =
   "TrustCareCertifiedShlManifestBinding" as const;
 const HOLDER_ATTESTED_VP_TYPE =
@@ -48,7 +50,7 @@ export type CertifiedShlAccessPolicy = Readonly<{
   maxAccessCount: number;
 }>;
 
-export type CertifiedShlManifestFile = Readonly<{
+export type ShlPackageDocumentBinding = Readonly<{
   id: string;
   documentId: string;
   credentialId: string;
@@ -63,15 +65,14 @@ export type CertifiedShlManifestFile = Readonly<{
   jweSha256: string;
 }>;
 
-export type CertifiedShlManifest = Readonly<{
-  schema: typeof CERTIFIED_SHL_MANIFEST_SCHEMA;
+export type ShlPackageBinding = Readonly<{
   publicationId: string;
   holderDid: string;
   manifestUrl: string;
   createdAt: string;
   expiresAt: string;
   accessPolicy: CertifiedShlAccessPolicy;
-  documents: readonly CertifiedShlManifestFile[];
+  documents: readonly ShlPackageDocumentBinding[];
 }>;
 
 export type CertifiedShlEncryptedFile = Readonly<{
@@ -123,7 +124,8 @@ export type ShlCertificationRequest = Readonly<{
 
 export type PreparedHolderAttestedShl = Readonly<{
   trustMode: "holder_attested";
-  manifest: CertifiedShlManifest;
+  manifest: PlainShlManifest;
+  packageBinding: ShlPackageBinding;
   manifestJson: string;
   manifestHash: string;
   accessPolicyHash: string;
@@ -164,7 +166,8 @@ export type ManifestCredentialVerifier = (
 
 export type CertifiedShlPublication = Readonly<{
   trustMode: "hospital_certified";
-  manifest: CertifiedShlManifest;
+  manifest: PlainShlManifest;
+  packageBinding: ShlPackageBinding;
   manifestJson: string;
   manifestHash: string;
   files: readonly CertifiedShlEncryptedFile[];
@@ -266,22 +269,22 @@ export function durableShlCertificationBinding(
 ): DurableShlCertificationBinding {
   return deepFreeze({
     schema: "trustcare.wallet.shl-certification-binding.v1" as const,
-    shlPackageId: prepared.manifest.publicationId,
-    holderDid: prepared.manifest.holderDid,
-    manifestUrl: prepared.manifest.manifestUrl,
+    shlPackageId: prepared.packageBinding.publicationId,
+    holderDid: prepared.packageBinding.holderDid,
+    manifestUrl: prepared.packageBinding.manifestUrl,
     manifestHash: prepared.manifestHash,
     sourceBundleHash: prepared.sourceBundleHash,
     fileHashes: prepared.files.map((file) => file.jweSha256),
-    purpose: prepared.manifest.accessPolicy.purpose,
-    recipient: prepared.manifest.accessPolicy.recipient,
-    audience: prepared.manifest.accessPolicy.audience,
-    context: prepared.manifest.accessPolicy.context,
-    consentRef: prepared.manifest.accessPolicy.consentRef,
-    issuedAt: prepared.manifest.accessPolicy.issuedAt,
-    expiresAt: prepared.manifest.accessPolicy.expiresAt,
+    purpose: prepared.packageBinding.accessPolicy.purpose,
+    recipient: prepared.packageBinding.accessPolicy.recipient,
+    audience: prepared.packageBinding.accessPolicy.audience,
+    context: prepared.packageBinding.accessPolicy.context,
+    consentRef: prepared.packageBinding.accessPolicy.consentRef,
+    issuedAt: prepared.packageBinding.accessPolicy.issuedAt,
+    expiresAt: prepared.packageBinding.accessPolicy.expiresAt,
     holderPresentationId: prepared.holderPresentationId,
     holderPresentationJwt: prepared.holderPresentationJwt,
-    sourceCredentials: prepared.manifest.documents.map((document) => ({
+    sourceCredentials: prepared.packageBinding.documents.map((document) => ({
       documentId: document.documentId,
       credentialId: document.credentialId,
       plaintextSha256: document.plaintextSha256,
@@ -301,7 +304,7 @@ export async function prepareHolderAttestedShl(
 ): Promise<PreparedHolderAttestedShl> {
   assertNoPatientId(input);
   assertHolderIdentity(input.identity);
-  normalizeHttpsUrl(input.portalOrigin, "Portal origin");
+  const portalOrigin = normalizeHttpsUrl(input.portalOrigin, "Portal origin");
   const trustedIssuerDids = new Set(
     input.trustedIssuerDids.map((issuerDid) =>
       requireDidWeb(issuerDid, "trusted issuer DID"),
@@ -316,7 +319,10 @@ export async function prepareHolderAttestedShl(
     input.publicationId,
     "publication ID",
   );
-  const manifestUrl = normalizeHttpsUrl(input.manifestUrl, "manifest URL");
+  const manifestUrl = assertPortalPlainShlManifestUrl(
+    input.manifestUrl,
+    portalOrigin,
+  );
   const fileBaseUrl = normalizeHttpsUrl(input.fileBaseUrl, "file base URL");
   const now = input.now ?? new Date();
   const issuedAt = isoDate(now, "SHL issued-at time");
@@ -354,7 +360,7 @@ export async function prepareHolderAttestedShl(
   const shlContentKeyBytes = randomBytes(A256GCM_KEY_BYTES);
   const shlContentKey = base64UrlEncode(shlContentKeyBytes);
   const files: CertifiedShlEncryptedFile[] = [];
-  const manifestFiles: CertifiedShlManifestFile[] = [];
+  const documentBindings: ShlPackageDocumentBinding[] = [];
   const seenDocumentIds = new Set<string>();
   const seenCredentialIds = new Set<string>();
   const seenIvs = new Set<string>();
@@ -387,7 +393,11 @@ export async function prepareHolderAttestedShl(
     const plaintext = new TextEncoder().encode(credential.jwt);
     const iv = freshUniqueIv(seenIvs);
     const jwe = await new CompactEncrypt(plaintext)
-      .setProtectedHeader({ alg: "dir", enc: "A256GCM" })
+      .setProtectedHeader({
+        alg: "dir",
+        enc: "A256GCM",
+        cty: "application/smart-health-card",
+      })
       .setInitializationVector(iv)
       .encrypt(shlContentKeyBytes);
     const plaintextSha256 = await sha256Urn(plaintext);
@@ -403,7 +413,7 @@ export async function prepareHolderAttestedShl(
         jweSha256,
       }),
     );
-    manifestFiles.push(
+    documentBindings.push(
       deepFreeze({
         id: fileId,
         documentId: record.id,
@@ -424,17 +434,27 @@ export async function prepareHolderAttestedShl(
     );
   }
 
-  const immutableManifestFiles = deepFreeze([...manifestFiles]);
-  const manifest = deepFreeze({
-    schema: CERTIFIED_SHL_MANIFEST_SCHEMA,
+  const immutableDocumentBindings = deepFreeze([...documentBindings]);
+  const packageBinding = deepFreeze({
     publicationId,
     holderDid: input.identity.did,
     manifestUrl,
     createdAt: issuedAt,
     expiresAt,
     accessPolicy,
-    documents: immutableManifestFiles,
-  }) satisfies CertifiedShlManifest;
+    documents: immutableDocumentBindings,
+  }) satisfies ShlPackageBinding;
+  const manifest = deepFreeze({
+    status: "finalized" as const,
+    files: deepFreeze(
+      immutableDocumentBindings.map((document) =>
+        deepFreeze({
+          contentType: "application/smart-health-card" as const,
+          location: document.location,
+        }),
+      ),
+    ),
+  }) satisfies PlainShlManifest;
   const manifestJson = canonicalJson(manifest);
   const manifestHash = await sha256Urn(new TextEncoder().encode(manifestJson));
   const accessPolicyHash = await sha256Urn(
@@ -442,7 +462,7 @@ export async function prepareHolderAttestedShl(
   );
   const holderPresentationId = `urn:uuid:${freshUuid()}`;
   const sourceCredentials = deepFreeze(
-    immutableManifestFiles.map((file) =>
+    immutableDocumentBindings.map((file) =>
       deepFreeze({
         documentId: file.documentId,
         credentialId: file.credentialId,
@@ -510,7 +530,7 @@ export async function prepareHolderAttestedShl(
         expiresAt: accessPolicy.expiresAt,
       },
     },
-    verifiableCredential: immutableManifestFiles.map((file) =>
+    verifiableCredential: immutableDocumentBindings.map((file) =>
       envelopCredentialJwt(
         requireCompactJwt(
           input.documents.find((record) => record.id === file.documentId)
@@ -551,6 +571,7 @@ export async function prepareHolderAttestedShl(
   return deepFreeze({
     trustMode: "holder_attested" as const,
     manifest,
+    packageBinding,
     manifestJson,
     manifestHash,
     accessPolicyHash,
@@ -574,7 +595,7 @@ export async function finalizeCertifiedShl(
 ): Promise<CertifiedShlPublication> {
   assertNoPatientId(input);
   assertHolderIdentity(input.identity);
-  if (input.identity.did !== input.prepared.manifest.holderDid) {
+  if (input.identity.did !== input.prepared.packageBinding.holderDid) {
     throw new Error(
       "Certified SHL holder signer does not match the prepared holder.",
     );
@@ -592,6 +613,7 @@ export async function finalizeCertifiedShl(
   return deepFreeze({
     trustMode: "hospital_certified" as const,
     manifest: input.prepared.manifest,
+    packageBinding: input.prepared.packageBinding,
     manifestJson: input.prepared.manifestJson,
     manifestHash: input.prepared.manifestHash,
     files: input.prepared.files,
@@ -715,9 +737,12 @@ export async function decryptCertifiedShlFile(input: {
   }
   if (
     decrypted.protectedHeader.alg !== "dir" ||
-    decrypted.protectedHeader.enc !== "A256GCM"
+    decrypted.protectedHeader.enc !== "A256GCM" ||
+    decrypted.protectedHeader.cty !== "application/smart-health-card"
   ) {
-    throw new Error("Certified SHL JWE must use alg=dir and enc=A256GCM.");
+    throw new Error(
+      "Certified SHL JWE must use alg=dir, enc=A256GCM, and cty=application/smart-health-card.",
+    );
   }
   const plaintextHash = await sha256Urn(decrypted.plaintext);
   if (plaintextHash !== input.file.plaintextSha256) {
@@ -926,7 +951,9 @@ async function assertPreparedIntegrity(
   }
   if (
     (await sha256Urn(
-      new TextEncoder().encode(canonicalJson(prepared.manifest.accessPolicy)),
+      new TextEncoder().encode(
+        canonicalJson(prepared.packageBinding.accessPolicy),
+      ),
     )) !== prepared.accessPolicyHash
   ) {
     throw new Error(
@@ -936,14 +963,29 @@ async function assertPreparedIntegrity(
   if (base64UrlDecode(prepared.shlContentKey).length !== A256GCM_KEY_BYTES) {
     throw new Error("Certified SHL A256GCM content key must be 256 bits.");
   }
-  if (prepared.files.length !== prepared.manifest.documents.length) {
+  if (prepared.files.length !== prepared.packageBinding.documents.length) {
     throw new Error(
       "Certified SHL manifest and publication file counts differ.",
     );
   }
+  if (
+    prepared.manifest.status !== "finalized" ||
+    prepared.manifest.files.length !== prepared.files.length ||
+    prepared.manifest.files.some(
+      (file, index) =>
+        file.contentType !== "application/smart-health-card" ||
+        file.location !== prepared.files[index]?.location ||
+        file.embedded !== undefined ||
+        file.lastUpdated !== undefined,
+    )
+  ) {
+    throw new Error(
+      "Certified SHL wire manifest is not the canonical Plain SHL manifest.",
+    );
+  }
   const contentKey = base64UrlDecode(prepared.shlContentKey);
   for (const [index, file] of prepared.files.entries()) {
-    const manifestFile = prepared.manifest.documents[index];
+    const manifestFile = prepared.packageBinding.documents[index];
     if (
       manifestFile.id !== file.id ||
       manifestFile.documentId !== file.documentId ||
@@ -979,7 +1021,7 @@ async function assertPreparedIntegrity(
   const expectedSourceBundleHash = await sha256Urn(
     new TextEncoder().encode(
       canonicalJson(
-        prepared.manifest.documents.map((document) => ({
+        prepared.packageBinding.documents.map((document) => ({
           credentialId: document.credentialId,
           plaintextSha256: document.plaintextSha256,
         })),
@@ -993,16 +1035,16 @@ async function assertPreparedIntegrity(
     canonicalJson(prepared.expectedManifestCredentialBinding) !==
     canonicalJson({
       type: CERTIFIED_SHL_BINDING_TYPE,
-      shlPackageId: prepared.manifest.publicationId,
-      holderDid: prepared.manifest.holderDid,
-      manifestUrl: prepared.manifest.manifestUrl,
+      shlPackageId: prepared.packageBinding.publicationId,
+      holderDid: prepared.packageBinding.holderDid,
+      manifestUrl: prepared.packageBinding.manifestUrl,
       manifestHash: prepared.manifestHash,
       sourceBundleHash: prepared.sourceBundleHash,
       fileHashes: prepared.files.map((file) => file.jweSha256),
-      purpose: prepared.manifest.accessPolicy.purpose,
-      context: prepared.manifest.accessPolicy.context,
-      consentRef: prepared.manifest.accessPolicy.consentRef,
-      expiresAt: prepared.manifest.accessPolicy.expiresAt,
+      purpose: prepared.packageBinding.accessPolicy.purpose,
+      context: prepared.packageBinding.accessPolicy.context,
+      consentRef: prepared.packageBinding.accessPolicy.consentRef,
+      expiresAt: prepared.packageBinding.accessPolicy.expiresAt,
       holderAuthorizationPresentationId: prepared.holderPresentationId,
     })
   ) {
@@ -1157,7 +1199,9 @@ async function assertHolderPresentationIntegrity(
   if (
     credentialJwts.length !== prepared.manifest.documents.length ||
     credentialJwts.some(
-      (jwt, index) => decodeJwt(jwt).id !== prepared.manifest.documents[index].credentialId,
+      (jwt, index) =>
+        decodeJwt(jwt).id !==
+        prepared.manifest.documents[index].credentialId,
     )
   ) {
     throw new Error("Holder-attested SHL VP source credential envelopes changed after preparation.");

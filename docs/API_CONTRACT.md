@@ -116,7 +116,7 @@ Implementation rule:
 - `listDocuments` returns canonical `WalletDocumentRecord` records with FHIR `DocumentReference`.
 - `importFromMhd` imports evidence as unverified until a trusted issuer signs or TrustCare certifies it.
 - `importFromShl` parses/fetches SHL and reports `transport_valid`, `trustcare_pending`, or `trustcare_certified`.
-- `createSharePackage` creates exactly one of DirectVP, PurposeVP, StandardSHL, or CertifiedSHLManifestPackage.
+- `createSharePackage` creates exactly one of DirectVP, PurposeVP, StandardSHL, or CertifiedSHLPackage.
 - `resolveSharePackage` and `verifySharePackage` classify the QR payload before trust decisions are shown.
 - Legacy `wallet.buildServiceBundle` remains only for compatibility and must not be exposed as a primary verifier QR flow.
 
@@ -129,7 +129,7 @@ AEC-Infraconnect-2562/trustcare-hospital-network-railway
 docs/WALLET_EXCHANGE_V2_IMPLEMENTATION_GUIDE.md
 ```
 
-The wallet mirrors the current Contract Hub direction for service readiness contexts, external wallet deployment handshakes, document imports, canonical share packages, Standard SHL, and Certified SHL + Manifest VP packages.
+The wallet mirrors the current Contract Hub direction for service readiness contexts, external wallet deployment handshakes, document imports, canonical share packages, Standard SHL, and Certified SHL packages with a Portal-signed Manifest VC plus a Wallet-signed Holder VP.
 
 `ServiceBundleEnvelope`, legacy Service VP packets, and check-in SHL packet routes may remain as backend compatibility contracts while TrustCare Portal catches up. The standalone Wallet UI must not expose them as primary QR/verifier payloads; Prepare only checks readiness and Share creates exactly one resolver-backed package.
 

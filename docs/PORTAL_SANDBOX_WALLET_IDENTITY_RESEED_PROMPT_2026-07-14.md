@@ -47,7 +47,7 @@ Wallet must continue to reject these credentials. Do not copy sync metadata `hol
 
 The current Wallet uses the live Share Gateway contract and publishes a
 Standard SHL manifest at the exact Portal-generated path
-`/api/share-gateway/manifests/{artifactId}.json`. The certification service in
+`/s/{43-character-base64url-token}`. The certification service in
 `server/walletExchange/service.ts#requestShlCertification()` currently tests
 the final path segment directly against `^[A-Za-z0-9_-]{43}$`. The actual final
 segment is `{artifactId}.json`, so every legitimate Share Gateway manifest URL

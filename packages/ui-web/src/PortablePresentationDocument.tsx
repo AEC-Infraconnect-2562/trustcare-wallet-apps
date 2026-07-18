@@ -175,7 +175,7 @@ function modeLabel(mode: PortablePresentationEnvelope["mode"]): string {
     DirectVP: "Direct VP",
     PurposeVP: "Purpose-bound VP",
     StandardSHL: "SMART Health Link",
-    CertifiedSHLManifestPackage: "Certified SHL + Manifest VP",
+    CertifiedSHLPackage: "Certified SHL package",
     SmartApiAccess: "SMART API Access",
   };
   return labels[mode];

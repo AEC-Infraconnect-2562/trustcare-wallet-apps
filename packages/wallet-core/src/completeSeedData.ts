@@ -9,7 +9,6 @@ import {
   SANDBOX_PAYER_ISSUER_DIDS,
   trustCarePortalPersonImages,
 } from "./demoSeedAssets";
-import { createTrustCareShlGatewayPublication } from "./shlGateway";
 
 /**
  * TrustCare Wallet complete realistic seed data.
@@ -1263,7 +1262,7 @@ export const completeWalletSeedCards: WalletCard[] = [
           "TrustCare Phuket International Hospital, International Clinic, Room IC-03",
         practitioner,
         checkinInstruction:
-          "กรุณามาถึงก่อนเวลานัด 20 นาที พร้อมแสดง VP QR, Standard SHL หรือ Certified SHL + Manifest VP จาก Wallet",
+          "กรุณามาถึงก่อนเวลานัด 20 นาที พร้อมแสดง VP QR, Standard SHL หรือ SHL ที่โรงพยาบาลรับรองจาก Wallet",
         requiredDocuments: [
           "patient_identity",
           "patient_summary",
@@ -1306,75 +1305,10 @@ export const completeWalletPresentationHistory: PresentationHistoryItem[] = [
   },
 ];
 
-export const completeWalletShlPackages: ShlPackageDetail[] =
-  createCompleteWalletShlPackages();
-
-function createCompleteWalletShlPackages(): ShlPackageDetail[] {
-  const shlCards = completeWalletSeedCards.filter(
-    (card) =>
-      card.ownerUserId === completePatient.ownerUserId &&
-      [
-        "patient_identity",
-        "patient_summary",
-        "allergy_alert",
-        "medication_summary",
-        "lab_result",
-        "insurance_eligibility",
-      ].includes(card.cardType),
-  );
-  const publication = createTrustCareShlGatewayPublication({
-    context: "opd_visit",
-    ownerUserId: completePatient.ownerUserId,
-    selectedCardIds: shlCards.map((card) => card.id),
-    cards: shlCards,
-    receiver: "TrustCare Phuket International Hospital",
-    purpose: "opd_visit",
-    gatewayBaseUrl: "https://sandbox-share-gateway.invalid/api/shl",
-    origin: "https://aec-infraconnect-2562.github.io/trustcare-wallet-apps",
-    requestHospitalCertification: true,
-    policy: {
-      expiresAt: "2030-07-15T16:59:59.000Z",
-      passcodeRequired: false,
-      passcodeHint: null,
-      accessCodeDelivery: "not_required",
-      maxAccessCount: 5,
-    },
-  });
-  return [
-    {
-      ...publication,
-      id: 7001,
-      label: "OPD readiness SHL - Somchai Jaidee",
-      purpose: "opd_visit",
-      context: "opd_visit",
-      status: "active",
-      trustcareCertification: {
-        status: "pending_maker_checker",
-        ownerConfirmed: false,
-        networkHospitalDid: hospital.issuerDid,
-        consentReceiptId: "urn:uuid:TCW-COMPLETE-0003-consent_receipt",
-        policyVersion: "trustcare-shl-governance-2026.07",
-      },
-      currentAccessCount: 1,
-      files: publication.manifest.files,
-      versions: [
-        {
-          version: 1,
-          createdAt: "2026-07-01T04:50:00.000Z",
-        },
-      ],
-      accessLogs: [
-        {
-          id: "log-1",
-          recipient: "TrustCare Phuket International Hospital",
-          accessedAt: "2026-07-01T05:00:00.000Z",
-          result: "granted",
-        },
-      ],
-      documentBundle: publication.manifest.documentBundle,
-    },
-  ];
-}
+// SHL transport objects are intentionally never seeded. Sandbox packages are
+// created only from live Portal discovery, holder consent, and Wallet-owned
+// keys so retired identifiers cannot re-enter the current/usable view.
+export const completeWalletShlPackages: ShlPackageDetail[] = [];
 
 export function completeCardsByCategory(
   cards: WalletCard[] = completeWalletSeedCards,

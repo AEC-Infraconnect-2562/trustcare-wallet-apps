@@ -106,7 +106,7 @@ export function verifyShlManifestTrust(
         ...standardChecks,
         {
           key: "trustcare_certified",
-          label: "ผ่าน TrustCare Manifest VP",
+          label: "ผ่าน Manifest VC และ Holder VP",
           ok: false,
           detail: trustLayerStatus,
         },

@@ -65,11 +65,13 @@ hospital-certified.
    hospital signature, issuer/kid, issuer and credential status, holder,
    manifest/file hashes, purpose, audience and expiry, then associates it with
    the original holder VP byte-for-byte. The Wallet does not sign again.
-6. The gateway publishes the encrypted files and trust artifacts. A service
-   token, if required, is used only by a Wallet server/BFF and is never placed
-   in a Vite or Expo bundle.
-7. Wallet displays the canonical `shlink:/...` payload or a public viewer URL
-   that retains the canonical SHL value. Passcodes are delivered separately.
+6. The gateway publishes only the strict Standard SHL manifest and encrypted
+   files. Manifest VC and Holder VP stay associated through Wallet Exchange;
+   they are never republished as generic gateway sidecars. A service token, if
+   required, is used only by a Wallet server/BFF and is never placed in a Vite
+   or Expo bundle.
+7. Wallet encodes the canonical `shlink:/...` value in the QR. Passcodes are
+   delivered separately and are never embedded in the QR.
 
 The implementation is shared in
 `packages/wallet-core/src/certifiedShl.ts`. The older
@@ -80,8 +82,9 @@ production.
 
 ## Verification order
 
-1. Resolve the SHL manifest and enforce passcode, expiry, access-count, and
-   revocation policy.
+1. Resolve the strict SHL manifest with `POST` only and enforce passcode,
+   expiry, access-count, and revocation policy. The response is limited to
+   `{ status?, list?, files }`; trust sidecars are rejected.
 2. Decrypt each file and compare both ciphertext and plaintext hashes.
 3. Verify the Manifest VC against its original issuer DID/JWKS and require the
    exact prepared manifest digest.

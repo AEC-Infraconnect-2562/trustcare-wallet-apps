@@ -6,16 +6,18 @@ import {
   fetchShlManifest,
 } from "./shl";
 
+const MANIFEST_ORIGIN = "https://portal.example";
+const MANIFEST_URL = `${MANIFEST_ORIGIN}/s/${"A".repeat(43)}`;
+
 describe("SMART Health Links manifest decryption", () => {
   it("decrypts embedded compact JWE files with the SHL content key", async () => {
     const key = createShlContentKey();
     const payload = fhirBundle("embedded-file-1");
     const jwe = await encryptCompactJwe(payload, key);
     const manifest = {
-      resourceType: "TrustCareShlManifest",
+      status: "finalized",
       files: [
         {
-          id: "embedded-file-1",
           contentType: "application/fhir+json",
           embedded: jwe,
         },
@@ -24,17 +26,19 @@ describe("SMART Health Links manifest decryption", () => {
 
     const result = await fetchShlManifest(
       createShlLinkPayload({
-        url: "https://gateway.example/shl/manifest",
+        url: MANIFEST_URL,
         key,
       }),
-      { fetcher: jsonManifestFetcher(manifest) },
+      {
+        fetcher: jsonManifestFetcher(manifest),
+        expectedManifestOrigin: MANIFEST_ORIGIN,
+      },
     );
 
     expect(result.ok).toBe(true);
     expect(result.fileCount).toBe(1);
     expect(result.decryptedFileCount).toBe(1);
     expect(result.resolvedFiles[0]).toMatchObject({
-      id: "embedded-file-1",
       source: "embedded",
       encrypted: true,
       ok: true,
@@ -47,30 +51,29 @@ describe("SMART Health Links manifest decryption", () => {
     const payload = fhirBundle("location-file-1");
     const jwe = await encryptCompactJwe(payload, key);
     const manifest = {
-      resourceType: "TrustCareShlManifest",
       files: [
         {
-          id: "location-file-1",
           contentType: "application/fhir+json",
-          location: "https://gateway.example/shl/files/location-file-1.jwe",
+          location: "https://portal.example/api/share-gateway/files/location-file-1",
         },
       ],
     };
     const fetcher: typeof fetch = async (url, init) => {
       const requestUrl = String(url);
-      if (requestUrl.endsWith("/manifest")) {
+      if (requestUrl === MANIFEST_URL) {
+        expect(init?.method).toBe("POST");
         return jsonResponse(manifest);
       }
       expect(init?.method).toBe("GET");
       expect(requestUrl).toBe(
-        "https://gateway.example/shl/files/location-file-1.jwe",
+        "https://portal.example/api/share-gateway/files/location-file-1",
       );
       return textResponse(jwe, "application/jose");
     };
 
     const result = await fetchShlManifest(
       createShlLinkPayload({
-        url: "https://gateway.example/shl/manifest",
+        url: MANIFEST_URL,
         key,
       }),
       { fetcher },
@@ -87,12 +90,12 @@ describe("SMART Health Links manifest decryption", () => {
   });
 
   it("sends passcode-protected manifest requests through POST", async () => {
+    const key = createShlContentKey();
     const manifest = {
-      resourceType: "TrustCareShlManifest",
       files: [
         {
-          id: "plain-file-1",
-          embedded: fhirBundle("plain-file-1"),
+          contentType: "application/fhir+json",
+          embedded: await encryptCompactJwe(fhirBundle("plain-file-1"), key),
         },
       ],
     };
@@ -105,63 +108,64 @@ describe("SMART Health Links manifest decryption", () => {
 
     const result = await fetchShlManifest(
       createShlLinkPayload({
-        url: "https://gateway.example/shl/manifest",
+        url: MANIFEST_URL,
+        key,
         passcodeRequired: true,
       }),
-      { fetcher, passcode: "246810", recipient: "Unit verifier" },
+      {
+        fetcher,
+        passcode: "246810",
+        recipient: "Unit verifier",
+        embeddedLengthMax: 2_000_000,
+      },
     );
 
     expect(result.ok).toBe(true);
     expect(result.requestMethod).toBe("POST");
     expect(seenBodies).toEqual([
-      { recipient: "Unit verifier", passcode: "246810" },
-    ]);
-    expect(result.resolvedFiles[0]?.encrypted).toBe(false);
-  });
-
-  it("preserves existing unencrypted embedded manifest files", async () => {
-    const payload = fhirBundle("plain-file-1");
-    const result = await fetchShlManifest(
-      createShlLinkPayload({
-        url: "https://gateway.example/shl/manifest",
-      }),
       {
-        fetcher: jsonManifestFetcher({
-          resourceType: "TrustCareShlManifest",
-          files: [{ id: "plain-file-1", embedded: payload }],
-        }),
+        recipient: "Unit verifier",
+        passcode: "246810",
+        embeddedLengthMax: 2_000_000,
       },
-    );
-
-    expect(result.ok).toBe(true);
-    expect(result.decryptedFileCount).toBe(0);
-    expect(result.resolvedFiles[0]).toMatchObject({
-      encrypted: false,
-      ok: true,
-      payload,
-    });
+    ]);
+    expect(result.resolvedFiles[0]?.encrypted).toBe(true);
   });
 
-  it("rejects encrypted embedded files when the SHL key is missing", async () => {
-    const jwe = await encryptCompactJwe(
-      fhirBundle("missing-key-file"),
-      createShlContentKey(),
-    );
-
+  it("rejects unsigned embedded manifest files", async () => {
+    const payload = fhirBundle("plain-file-1");
+    const key = createShlContentKey();
     const result = await fetchShlManifest(
       createShlLinkPayload({
-        url: "https://gateway.example/shl/manifest",
+        url: MANIFEST_URL,
+        key,
       }),
       {
         fetcher: jsonManifestFetcher({
-          resourceType: "TrustCareShlManifest",
-          files: [{ id: "missing-key-file", embedded: jwe }],
+          files: [
+            {
+              contentType: "application/fhir+json",
+              embedded: JSON.stringify(payload),
+            },
+          ],
         }),
       },
     );
 
     expect(result.ok).toBe(false);
-    expect(result.errors.join("\n")).toContain("requires a content key");
+    expect(result.decryptedFileCount).toBe(0);
+    expect(result.errors.join("\n")).toContain("compact JWE");
+  });
+
+  it("rejects encrypted files when the SHL key is missing", async () => {
+    const jwe = await encryptCompactJwe(
+      fhirBundle("missing-key-file"),
+      createShlContentKey(),
+    );
+
+    await expect(decryptShlCompactJwe(jwe, undefined)).rejects.toThrow(
+      "requires a content key",
+    );
   });
 
   it("decrypts compact JWE directly for lower-level contract tests", async () => {
@@ -210,7 +214,11 @@ async function encryptCompactJwe(
   key: string,
 ): Promise<string> {
   const protectedHeader = base64Url(
-    JSON.stringify({ alg: "dir", enc: "A256GCM" }),
+    JSON.stringify({
+      alg: "dir",
+      enc: "A256GCM",
+      cty: "application/fhir+json",
+    }),
   );
   const keyBytes = base64UrlToBytes(key);
   const cryptoKey = await globalThis.crypto.subtle.importKey(

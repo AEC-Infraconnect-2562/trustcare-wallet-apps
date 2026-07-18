@@ -31,7 +31,7 @@ export const INDEXED_DB_WALLET_EXCHANGE_SCHEMA =
   "wallet-exchange-v2@3" as const;
 // Keep the database namespace stable so the IndexedDB version upgrade preserves
 // holder keys and previously acknowledged Wallet Exchange state.
-export const INDEXED_DB_WALLET_EXCHANGE_VERSION = 5 as const;
+export const INDEXED_DB_WALLET_EXCHANGE_VERSION = 6 as const;
 
 export type IndexedDbWalletExchangeStoreName =
   | "exchange_state"
@@ -1262,8 +1262,9 @@ class BrowserIndexedDbWalletExchangeStorage implements IndexedDbWalletExchangeSt
         this.databaseName,
         INDEXED_DB_WALLET_EXCHANGE_VERSION,
       );
-      request.onupgradeneeded = () => {
+      request.onupgradeneeded = (event) => {
         const database = request.result;
+        const upgradeTransaction = request.transaction;
         for (const store of [
           "exchange_state",
           "documents",
@@ -1283,6 +1284,15 @@ class BrowserIndexedDbWalletExchangeStorage implements IndexedDbWalletExchangeSt
         ] satisfies IndexedDbWalletExchangeStoreName[]) {
           if (!database.objectStoreNames.contains(store)) {
             database.createObjectStore(store);
+          }
+        }
+        const oldVersion = (event as IDBVersionChangeEvent).oldVersion;
+        if (oldVersion > 0 && oldVersion < 6) {
+          for (const store of [
+            "shl_associations",
+            ...clinicalGraphStores,
+          ] satisfies IndexedDbWalletExchangeStoreName[]) {
+            upgradeTransaction?.objectStore(store).clear();
           }
         }
       };

@@ -28,7 +28,6 @@ import {
   CANONICAL_DOCUMENT_CATEGORIES,
   CANONICAL_DOCUMENT_TYPES,
   completeWalletSeedCards,
-  demoShlPackages,
   demoWalletCards,
   exportShlPackage,
   exportWalletCard,
@@ -212,7 +211,18 @@ describe("wallet-core", () => {
   });
 
   it("imports and exports SHL, VC, VP and wallet bundles", () => {
-    const shlExport = exportShlPackage(demoShlPackages[0]);
+    const cards = getDemoWalletCards("demo-patient-complete-001").slice(0, 1);
+    const packageToExport = createTrustCareShlGatewayPublication({
+      context: "opd_visit",
+      ownerUserId: "demo-patient-complete-001",
+      cards,
+      selectedCardIds: cards.map((card) => card.id),
+      gatewayBaseUrl: "https://portal.example/api/shl",
+    });
+    const shlExport = exportShlPackage({
+      ...packageToExport,
+      id: 1,
+    });
     expect(shlExport.ok).toBe(true);
     expect(parseShlLink(shlExport.qrPayload!)).toMatchObject({ kind: "shl" });
 
@@ -232,7 +242,7 @@ describe("wallet-core", () => {
     expect(walletExport.data).toContain("TrustCareWalletExport");
   });
 
-  it("imports standard SHL without requiring TrustCare Manifest VP/VC", () => {
+  it("imports standard SHL without requiring TrustCare certification artifacts", () => {
     const standardShl =
       "shlink:/eyJ1cmwiOiJodHRwczovL2V4YW1wbGUub3JnL3NobCIsImsiOiJzaGwtZXhhbXBsZS1rZXkiLCJmbGFncyI6IkxQIn0";
     const parsed = parseShlLink(standardShl);
@@ -261,7 +271,7 @@ describe("wallet-core", () => {
   it("keeps SHL passcodes out of QR payloads and parses web viewer fragments", () => {
     const expiresAt = "2026-07-07T08:00:00.000Z";
     const shl = createShlLinkPayload({
-      url: "https://example.org/manifest",
+      url: `https://example.org/s/${"a".repeat(43)}`,
       key: createShlContentKey(),
       label: "Unit test SHL",
       flag: "L",
@@ -283,7 +293,7 @@ describe("wallet-core", () => {
     expect(decodedPayload.flag).toContain("P");
   });
 
-  it("creates check-in SHL QR as a web viewer URL while retaining canonical shlink", () => {
+  it("creates check-in SHL QR as the canonical shlink", () => {
     const checkin = createDemoCheckinQr("opd_visit", 3, {
       passcodeRequired: true,
     });
@@ -291,7 +301,7 @@ describe("wallet-core", () => {
 
     expect(checkin.shlUrl.startsWith("shlink:/")).toBe(true);
     expect(checkin.canonicalShlUrl).toBe(checkin.shlUrl);
-    expect(checkin.qrPayload).toContain("#shlink:/");
+    expect(checkin.qrPayload).toBe(checkin.shlUrl);
     expect(parsedQr.kind).toBe("shlink");
     expect(parsedQr.token).toBe(checkin.shlUrl);
   });
@@ -323,10 +333,10 @@ describe("wallet-core", () => {
 
     expect(publication.gatewayMode).toBe("portal_backend");
     expect(publication.storageProvider).toBe("s3");
-    expect(publication.manifestUrl).toContain(
-      "https://portal.example/api/shl/manifests/",
+    expect(publication.manifestUrl).toMatch(
+      /^https:\/\/portal\.example\/s\/[A-Za-z0-9_-]{43}$/,
     );
-    expect(publication.qrPayload).toContain("#shlink:/");
+    expect(publication.qrPayload).toBe(publication.canonicalShlUrl);
     expect(decodedPayload.flag).toContain("P");
     expect(JSON.stringify(decodedPayload)).not.toContain("****");
     expect(publication.manifest.documentBundle.bindingModel).toBe(
@@ -379,7 +389,7 @@ describe("wallet-core", () => {
       context: "opd_visit",
       requirements: [coverageRequirement],
       source: "patient_upload",
-      format: "certified_shl_manifest",
+      format: "certified_shl_package",
       scope: "single_document",
     });
 
@@ -388,7 +398,7 @@ describe("wallet-core", () => {
     ).toBe(true);
     expect(
       plan.formatOptions.find(
-        (option) => option.id === "certified_shl_manifest",
+        (option) => option.id === "certified_shl_package",
       )?.enabled,
     ).toBe(false);
     expect(
@@ -427,7 +437,7 @@ describe("wallet-core", () => {
       context: "opd_visit",
       requirements: [requirement],
       source: "patient_upload",
-      format: "certified_shl_manifest",
+      format: "certified_shl_package",
       scope: "single_document",
       patientId: 9501,
       returnChannel: "shl_link",
@@ -483,7 +493,7 @@ describe("wallet-core", () => {
       context: "referral",
       requirements,
       source: "trustcare_portal",
-      format: "certified_shl_manifest",
+      format: "certified_shl_package",
       scope: "document_bundle",
     });
     const vpPlan = buildDocumentRequestPlan({
@@ -599,7 +609,7 @@ describe("wallet-core", () => {
     }
 
     const shl = buildSharePackage({
-      mode: "CertifiedSHLManifestPackage",
+      mode: "CertifiedSHLPackage",
       context: "referral",
       cards,
       selectedCardIds: cards.map((card) => card.id),
@@ -608,7 +618,7 @@ describe("wallet-core", () => {
       gatewayBaseUrl: "https://portal.example/api/shl",
       shlPolicy: { maxAccessCount: 3 },
     });
-    expect(shl.mode).toBe("CertifiedSHLManifestPackage");
+    expect(shl.mode).toBe("CertifiedSHLPackage");
     expect("shl" in shl).toBe(true);
     if ("shl" in shl) {
       expect(shl.shl.qrPayload.length).toBeLessThan(2000);
@@ -617,7 +627,9 @@ describe("wallet-core", () => {
       );
       expect(shl.shl.gatewayMode).toBe("portal_backend");
       expect(shl.shl.gatewayBaseUrl).toBe("https://portal.example/api/shl");
-      expect(shl.shl.manifestUrl).toContain("/manifests/");
+      expect(shl.shl.manifestUrl).toMatch(
+        /^https:\/\/portal\.example\/s\/[A-Za-z0-9_-]{43}$/,
+      );
       expect(shl.shl.trustLayerStatus).toBe("pending_hospital_certification");
     }
   });
@@ -789,7 +801,7 @@ describe("wallet-core", () => {
 
     expect(opd.mode).toBe("PurposeVP");
     expect(pharmacy.mode).toBe("PurposeVP");
-    expect(referral.mode).toBe("CertifiedSHLManifestPackage");
+    expect(referral.mode).toBe("CertifiedSHLPackage");
     expect(fallback.mode).toBe("StandardSHL");
     expect(fallback.warnings.join(" ")).toContain("Manifest Credential");
   });

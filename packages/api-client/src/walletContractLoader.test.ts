@@ -333,10 +333,12 @@ async function contractFixture(
     },
     protocols: {
       credentialLifecycle: "Wallet Exchange lifecycle v2",
-      presentation: "W3C Verifiable Presentation",
+      presentation:
+        "Wallet-created VP JWT or Certified SHL package association with a separate Holder VP",
       certifiedShl: "Portal KMS manifest VC with holder authorization and VP",
       manifestUrl:
-        "HTTPS, maximum 2048 characters, configured Portal origin and canonical Share Gateway route only",
+        "Plain SHL HTTPS /s/{256-bit-token} URL, maximum 128 characters; no alternate manifest route is accepted",
+      plainShlManifestUrlMaxLength: 128,
       compactJwsDigest:
         "SHA-256 over the exact UTF-8 bytes of the compact JWS string",
       documentMetadata: "FHIR DocumentReference",

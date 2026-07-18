@@ -67,7 +67,7 @@ export type MicroIpsPlusPack = {
   provenance: {
     source: "trustcare-wallet";
     selectedBy: "minimum-necessary";
-    shareOnlyVia: "PurposeVP" | "StandardSHL" | "CertifiedSHLManifestPackage";
+    shareOnlyVia: "PurposeVP" | "StandardSHL" | "CertifiedSHLPackage";
     packageTime: string;
     recordTimeRange?: { start?: string; end?: string };
   };
@@ -190,7 +190,7 @@ export function buildMicroIpsPlusPack(
       source: "trustcare-wallet",
       selectedBy: "minimum-necessary",
       shareOnlyVia:
-        records.length > 3 ? "CertifiedSHLManifestPackage" : "PurposeVP",
+        records.length > 3 ? "CertifiedSHLPackage" : "PurposeVP",
       packageTime: generatedAt,
       recordTimeRange: recordTimeRange(records),
     },

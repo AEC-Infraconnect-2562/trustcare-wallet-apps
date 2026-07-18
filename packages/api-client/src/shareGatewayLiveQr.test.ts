@@ -85,7 +85,7 @@ runLiveGatewayTest("live share gateway QR resolution", () => {
     expect(standardVerification.requestSummary).toContain("Standard SHL");
 
     const certifiedShl = buildSharePackage({
-      mode: "CertifiedSHLManifestPackage",
+      mode: "CertifiedSHLPackage",
       context: "cross_border",
       cards,
       selectedCardIds: cards.map((card) => card.id),
@@ -103,8 +103,8 @@ runLiveGatewayTest("live share gateway QR resolution", () => {
     );
     expect(certifiedFetch.ok).toBe(true);
     expect(certifiedFetch.fileCount).toBe(cards.length);
-    expect((certifiedFetch.manifest?.trustcare as any)?.trustLayerStatus).toBe(
-      "pending_hospital_certification",
+    expect(certifiedFetch.manifest).toEqual(
+      expect.objectContaining({ files: expect.any(Array) }),
     );
     const certifiedVerification = await verifyQr(
       { url: "https://trustcare.example.test/trpc" },
@@ -143,10 +143,7 @@ async function publishShlManifest(
   const publicationId = String(shl.gatewayPublicationId ?? shl.shlId);
   await publishArtifact({
     artifactId: publicationId,
-    kind:
-      shl.trustLayerStatus === "hospital_certified"
-        ? "certified_shl_manifest"
-        : "standard_shl_manifest",
+    kind: "standard_shl_manifest",
     contentType: "application/json",
     payload: shl.manifest,
     purpose: String(sharePackage.payload.purpose ?? ""),

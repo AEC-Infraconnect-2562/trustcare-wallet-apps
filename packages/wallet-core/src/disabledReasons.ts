@@ -112,7 +112,7 @@ export function getDisabledReason(
     }
     if (
       input.packageMode === "StandardSHL" ||
-      input.packageMode === "CertifiedSHLManifestPackage"
+      input.packageMode === "CertifiedSHLPackage"
     ) {
       if (input.shlPasscodeRequired && !input.shlPasscodeReady) {
         return reason(
@@ -124,7 +124,7 @@ export function getDisabledReason(
       }
     }
     if (
-      input.packageMode === "CertifiedSHLManifestPackage" &&
+      input.packageMode === "CertifiedSHLPackage" &&
       !input.trustcareCertificationAvailable
     ) {
       return reason(

@@ -139,7 +139,7 @@ describe("wallet UX status and policy hardening", () => {
     expect(validation.ok).toBe(true);
     expect(pack.standards.systemOfRecord).toBe(false);
     expect(pack.provenance.selectedBy).toBe("minimum-necessary");
-    expect(["PurposeVP", "CertifiedSHLManifestPackage"]).toContain(
+    expect(["PurposeVP", "CertifiedSHLPackage"]).toContain(
       pack.provenance.shareOnlyVia,
     );
   });

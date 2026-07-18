@@ -62,7 +62,7 @@ Allowed bundle outputs:
 
 - `PurposeVP`: one VP containing selected VC references or embedded VCs.
 - `StandardSHL`: SHL manifest with standard `files[].location` or `files[].embedded`.
-- `CertifiedSHLManifestPackage`: holder-attested Standard SHL plus a verified Portal/KMS-signed Manifest Credential.
+- `CertifiedSHLPackage`: holder-attested Standard SHL plus a verified Portal/KMS-signed Manifest Credential.
 - `FHIR Bundle`: clinical evidence bundle for import or review, not a green verifier proof by itself.
 
 Forbidden bundle outputs:
@@ -87,7 +87,7 @@ Forbidden bundle outputs:
 3. User chooses package type:
    - `VC/VP` for small, directly verifiable packages.
    - `Standard SHL` for large or time-series clinical packages.
-   - `SHL + Manifest VP` for TrustCare-certified large packages.
+   - `Certified SHL package` for large packages, with SHL transport, a Portal-signed Manifest VC, and a Wallet-signed Holder VP kept as separate artifacts.
 4. Wallet enables only controls compatible with the chosen package:
    - VC/VP: selective disclosure, expiry, recipient binding, biometric confirmation.
    - Standard SHL: passcode policy, expiry, access count, manifest files.

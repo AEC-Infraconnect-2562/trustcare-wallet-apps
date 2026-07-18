@@ -46,7 +46,7 @@ describe("payer API facade", () => {
 
     expect(packageResult.documentTypes).toContain("claim_package");
     expect(packageResult.recommendedPackageMode).toBe(
-      "CertifiedSHLManifestPackage",
+      "CertifiedSHLPackage",
     );
   });
 

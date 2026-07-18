@@ -1141,6 +1141,27 @@ async function initializeDatabase(
     CREATE INDEX IF NOT EXISTS wallet_exchange_v2_partition_idx
       ON ${recordTable} (partition_key, store_name, record_key);
   `);
+  const versionRow = await database.getFirstAsync<Record<string, unknown>>(
+    "PRAGMA user_version;",
+  );
+  const userVersion = Number(
+    versionRow ? Object.values(versionRow)[0] : 0,
+  );
+  if (!Number.isFinite(userVersion) || userVersion < 3) {
+    await database.execAsync(`
+      DELETE FROM ${recordTable}
+      WHERE store_name IN (
+        'shl_associations',
+        'clinical_graph_objects',
+        'clinical_graph_edges',
+        'clinical_bundle_members',
+        'clinical_graph_changes',
+        'clinical_graph_cursors',
+        'clinical_graph_quarantine'
+      );
+      PRAGMA user_version = 3;
+    `);
+  }
 }
 
 function partitionKeyFromRecord(value: unknown): string {

@@ -57,7 +57,7 @@ describe("IndexedDbWalletExchangePersistence", () => {
 
   it("uses a versioned database namespace partitioned by normalized Portal origin and holder", () => {
     expect(INDEXED_DB_WALLET_EXCHANGE_SCHEMA).toBe("wallet-exchange-v2@3");
-    expect(INDEXED_DB_WALLET_EXCHANGE_VERSION).toBe(5);
+    expect(INDEXED_DB_WALLET_EXCHANGE_VERSION).toBe(6);
     const name = createIndexedDbWalletExchangeDatabaseName({
       portalOrigin,
       holderDid,
@@ -682,10 +682,12 @@ function shlAssociationResponse(
     associatedAt: "2026-07-11T11:00:01.000Z",
     issuedAt: "2026-07-11T11:00:00.000Z",
     expiresAt: "2026-07-11T12:00:00.000Z",
+    holderPresentationExpiresAt: "2026-07-11T11:10:00.000Z",
     lifecycle: {
       status: "active",
       effectiveAt: "2026-07-11T11:00:01.000Z",
       reasonCode: null,
+      holderPresentationStatus: "verified_at_association",
     },
     idempotent: false,
   };

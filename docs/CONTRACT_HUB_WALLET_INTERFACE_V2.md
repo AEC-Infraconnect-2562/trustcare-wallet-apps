@@ -58,7 +58,7 @@ type ServiceProfileContract = {
   recipientPolicy: RecipientPolicyContract;
   defaultAccessPolicy: AccessPolicyContract;
   recommendedShareMode:
-    "DirectVP" | "PurposeVP" | "StandardSHL" | "CertifiedSHLManifestPackage";
+    "DirectVP" | "PurposeVP" | "StandardSHL" | "CertifiedSHLPackage";
   capabilities?: string[];
   effectiveFrom: string;
   expiresAt?: string;
@@ -84,7 +84,7 @@ type ServiceProfileContract = {
 - Accepted document profiles, credential types and formats.
 - Freshness, lifecycle, trust, consent, recipient and access-policy rules.
 - Recommended one of DirectVP, PurposeVP, StandardSHL or
-  CertifiedSHLManifestPackage.
+  CertifiedSHLPackage.
 - Capability references and replacement/deprecation metadata.
 
 ## Compatibility and cache rules

@@ -277,7 +277,7 @@ describe("Wallet Exchange v2 client", () => {
       context: "opd_visit" as const,
       purpose: "OPD registration",
       consentRef: "consent:001",
-      manifestUrl: `https://share.example/manifests/${shlPackageId}.json`,
+      manifestUrl: `${PORTAL_ORIGIN}/s/${shlPackageId}`,
       manifestHash: `sha256:${"b".repeat(64)}`,
       sourceBundleHash: `sha256:${"c".repeat(64)}`,
       fileHashes: [`sha256:${"d".repeat(64)}`],
@@ -328,10 +328,12 @@ describe("Wallet Exchange v2 client", () => {
       associatedAt: FIXED_NOW.toISOString(),
       issuedAt: FIXED_NOW.toISOString(),
       expiresAt: "2026-07-11T12:10:00.000Z",
+      holderPresentationExpiresAt: "2026-07-11T12:05:00.000Z",
       lifecycle: {
         status: "active",
         effectiveAt: FIXED_NOW.toISOString(),
         reasonCode: null,
+        holderPresentationStatus: "verified_at_association" as const,
       },
       idempotent: false,
     };
@@ -878,10 +880,12 @@ function contractSet(): WalletExchangeContractSet {
     },
     protocols: {
       credentialLifecycle: "Wallet Exchange lifecycle v2",
-      presentation: "W3C Verifiable Presentation",
+      presentation:
+        "Wallet-created VP JWT or Certified SHL package association with a separate Holder VP" as const,
       certifiedShl: "Portal KMS manifest VC and holder VP association",
       manifestUrl:
-        "HTTPS, maximum 2048 characters, configured Portal origin and canonical Share Gateway route only" as const,
+        "Plain SHL HTTPS /s/{256-bit-token} URL, maximum 128 characters; no alternate manifest route is accepted" as const,
+      plainShlManifestUrlMaxLength: 128 as const,
       compactJwsDigest:
         "SHA-256 over the exact UTF-8 bytes of the compact JWS string" as const,
       documentMetadata: "FHIR DocumentReference",

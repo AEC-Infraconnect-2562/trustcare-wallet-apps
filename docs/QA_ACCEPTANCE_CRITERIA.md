@@ -4,11 +4,11 @@
 
 - Web and mobile apps share domain models, tokens, translations, and demo data.
 - Wallet can use demo data without backend and can be pointed at TrustCare backend.
-- Share generates exactly one resolver-backed package: DirectVP, PurposeVP, StandardSHL, or CertifiedSHLManifestPackage.
+- Share generates exactly one resolver-backed package: DirectVP, PurposeVP, StandardSHL, or CertifiedSHLPackage.
 - Prepare only checks readiness and routes the user to Share with the correct purpose and documents.
 - Selective disclosure requires at least one selected field.
 - SHL package detail shows QR/policy/trust bindings.
-- QR scanner can parse TrustCare VP URLs, resolver URLs, raw IDs, Standard SHL, and Certified SHL + Manifest VP packages with deterministic trust status.
+- QR scanner can parse TrustCare VP URLs, resolver URLs, raw IDs, Standard SHL, and Certified SHL packages with separate Manifest VC and Holder VP trust results.
 
 ## Security
 

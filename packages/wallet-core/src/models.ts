@@ -373,7 +373,7 @@ export type CheckinQrResponse = {
   gatewayPublicationId?: string;
   gatewayBaseUrl?: string;
   storageProvider?: "s3" | string;
-  manifestEndpointMethod?: "POST" | "GET" | "BOTH" | string;
+  manifestEndpointMethod?: "POST" | string;
   trustLayerStatus?:
     | "standard_shl"
     | "holder_attested"
@@ -419,7 +419,6 @@ export type WalletStoredObjectType =
   | "vp"
   | "shl"
   | "shl_manifest"
-  | "manifest_vp"
   | "sync_receipt"
   | "document_reference"
   | "oid4vci_offer"

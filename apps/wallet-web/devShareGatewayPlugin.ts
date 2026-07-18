@@ -3,9 +3,9 @@ import {
   createEphemeralEs256SigningKey,
   publicJwksForSigningKey,
   signTrustCareCredentialJwt,
-  signTrustCarePresentationJwt,
   type TrustCareSigningKey,
 } from "../../packages/wallet-core/src/trustcareJwt.ts";
+import { assertPlainShlManifest } from "../../packages/wallet-core/src/shl.ts";
 import {
   DEMO_PAYER_ISSUER_PROFILES,
   validateDemoPayerIssuanceRequest,
@@ -77,7 +77,10 @@ export function devShareGatewayPlugin(): Plugin {
         );
         return;
       }
-      if (!url.pathname.startsWith("/api/share-gateway")) {
+      if (
+        !url.pathname.startsWith("/api/share-gateway") &&
+        !/^\/s\/[A-Za-z0-9_-]{43}$/.test(url.pathname)
+      ) {
         next();
         return;
       }
@@ -233,31 +236,50 @@ async function handleGatewayRequest(
       });
       return;
     }
+    if (
+      !(["vp", "standard_shl_manifest", "shl_file"] as const).includes(
+        kind as never,
+      )
+    ) {
+      json(res, 400, {
+        ok: false,
+        errors: [
+          "Generic Share Gateway accepts only vp, standard_shl_manifest, and shl_file artifacts.",
+        ],
+      });
+      return;
+    }
     const contentType = stringValue(body.contentType) || "application/json";
     let storedPayload = body.payload;
     let storedContentType = contentType;
     const warnings = [
       "Local dev gateway ใช้ contract เดียวกับ Portal Backend แต่เก็บ artifact ใน memory ของ Vite server สำหรับทดสอบเท่านั้น.",
     ];
-    const jku = `${origin}/api/share-gateway/.well-known/jwks.json`;
     if (kind === "vp") {
-      const baseSigningKey = await getSigningKey();
-      const signed = await signTrustCarePresentationJwt({
-        vp: isRecord(body.payload) ? body.payload : {},
-        signingKey: {
-          ...baseSigningKey,
-          jku,
-        },
-        purpose: stringValue(body.purpose),
-        expiresAt: stringValue(body.expiresAt) || undefined,
-        signUnsignedCredentials: false,
-      });
-      storedPayload = signed.jwt;
+      if (!looksLikeCompactJwt(body.payload)) {
+        json(res, 400, {
+          ok: false,
+          errors: ["VP must be the exact Wallet-signed compact JWT."],
+        });
+        return;
+      }
+      storedPayload = body.payload;
       storedContentType = "application/vp+jwt";
-      warnings.push(
-        "VP ถูก sign ด้วย ES256 ใน local gateway และเปิด public JWKS สำหรับ verifier ที่ต้องตรวจลายเซ็นจริง.",
-        ...signed.warnings,
-      );
+    }
+    if (kind === "standard_shl_manifest") {
+      try {
+        storedPayload = assertPlainShlManifest(body.payload);
+      } catch (error) {
+        json(res, 400, {
+          ok: false,
+          errors: [
+            error instanceof Error
+              ? error.message
+              : "Invalid Plain SHL manifest.",
+          ],
+        });
+        return;
+      }
     }
     artifacts.set(artifactKey(kind, artifactId), {
       kind,
@@ -274,37 +296,26 @@ async function handleGatewayRequest(
       kind,
       publicUrl,
       qrPayload: publicUrl,
-      jwksUrl: kind === "vp" ? jku : undefined,
       warnings,
       errors: [],
     });
     return;
   }
 
-  const manifestMatch = /^\/manifests\/([^/]+)\.json$/.exec(pathname);
+  const manifestMatch = /^\/s\/([A-Za-z0-9_-]{43})$/.exec(url.pathname);
   if (manifestMatch) {
     const artifactId = decodeURIComponent(manifestMatch[1]);
-    if (req.method === "POST" || req.method === "PUT") {
-      const body = await readJsonBody(req);
-      if (body?.resourceType === "TrustCareShlManifest") {
-        artifacts.set(artifactKey("certified_shl_manifest", artifactId), {
-          kind: "certified_shl_manifest",
-          artifactId,
-          contentType: "application/json",
-          payload: body,
-          createdAt: new Date().toISOString(),
-        });
-        json(res, 201, {
-          ok: true,
-          artifactId,
-          kind: "certified_shl_manifest",
-        });
-        return;
-      }
+    if (req.method !== "POST") {
+      json(res, 405, {
+        ok: false,
+        errors: ["Plain SHL retrieval requires POST."],
+      });
+      return;
     }
-    const stored =
-      artifacts.get(artifactKey("certified_shl_manifest", artifactId)) ??
-      artifacts.get(artifactKey("standard_shl_manifest", artifactId));
+    await readJsonBody(req);
+    const stored = artifacts.get(
+      artifactKey("standard_shl_manifest", artifactId),
+    );
     if (!stored) {
       json(res, 404, { ok: false, errors: ["SHL manifest not found."] });
       return;
@@ -358,8 +369,7 @@ function matchArtifactRoute(
   const routes: Array<[RegExp, string, "json" | "jwt"]> = [
     [/^\/presentations\/([^/]+)\.json$/, "vp", "json"],
     [/^\/presentations\/([^/]+)\.jwt$/, "vp", "jwt"],
-    [/^\/manifest-vps\/([^/]+)\.jwt$/, "manifest_vp", "jwt"],
-    [/^\/manifest-credentials\/([^/]+)\.jwt$/, "manifest_credential", "jwt"],
+    [/^\/files\/([^/]+)$/, "shl_file", "jwt"],
   ];
   for (const [pattern, kind, extension] of routes) {
     const match = pattern.exec(pathname);
@@ -374,13 +384,10 @@ function publicArtifactPath(kind: string, artifactId: string): string {
   switch (kind) {
     case "vp":
       return `/api/share-gateway/presentations/${encoded}.jwt`;
-    case "manifest_vp":
-      return `/api/share-gateway/manifest-vps/${encoded}.jwt`;
-    case "manifest_credential":
-      return `/api/share-gateway/manifest-credentials/${encoded}.jwt`;
     case "standard_shl_manifest":
-    case "certified_shl_manifest":
-      return `/api/share-gateway/manifests/${encoded}.json`;
+      return `/s/${encoded}`;
+    case "shl_file":
+      return `/api/share-gateway/files/${encoded}`;
     default:
       return `/api/share-gateway/artifacts/${encoded}.json`;
   }
@@ -599,6 +606,14 @@ function requestOrigin(req: IncomingMessage): string {
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function looksLikeCompactJwt(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.split(".").length === 3 &&
+    value.split(".").every((part) => /^[A-Za-z0-9_-]+$/.test(part))
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -7,7 +7,6 @@ import type {
 } from "./models";
 import {
   completeWalletPresentationHistory,
-  completeWalletShlPackages,
   getCompleteWalletCardsByCategory,
   getCompleteWalletSeed,
 } from "./completeSeedData";
@@ -15,7 +14,6 @@ import {
   createDemoResolverReferenceUrl,
   type DemoResolvedPayload,
 } from "./demoResolvers";
-import { createTrustCareShlGatewayPublication } from "./shlGateway";
 import {
   SANDBOX_ISSUER_DIDS,
   TRUSTCARE_PORTAL_ASSET_ORIGIN,
@@ -39,7 +37,6 @@ export {
 } from "./completeSeedData";
 
 const now = new Date("2026-07-04T09:41:00+07:00");
-const demoShlPolicyExpiresAt = "2030-07-15T16:59:59.000Z";
 
 function isoOffset(days: number): string {
   const date = new Date(now);
@@ -776,96 +773,9 @@ export function getDemoHistory(
 }
 
 export function getDemoShlPackages(
-  userId?: string | number,
+  _userId?: string | number,
 ): ShlPackageDetail[] {
-  const user = getDemoUser(userId);
-  if (user.tags.includes("empty_wallet")) return [];
-  if (user.id === "demo-patient-complete-001") return completeWalletShlPackages;
-  if (user.id === "demo-staff-complete-001") return [];
-  if (user.role !== "patient") return [];
-  const trustcareCertified = user.source === "trustcare_portal";
-  const context = user.tags.includes("medical_tourist")
-    ? "medical_tourist"
-    : user.tags.includes("cross_border")
-      ? "cross_border"
-      : user.tags.includes("referral")
-        ? "referral"
-        : "opd_visit";
-  const cards = getDemoWalletCards(user.id).filter((card) =>
-    [
-      "patient_identity",
-      "patient_summary",
-      "allergy_alert",
-      "medication_summary",
-      "prescription",
-      "lab_result",
-      "diagnostic_report",
-      "referral_vc",
-      "insurance_eligibility",
-      "travel_document_verification",
-    ].includes(card.cardType),
-  );
-  const publication = createTrustCareShlGatewayPublication({
-    context,
-    ownerUserId: user.id,
-    selectedCardIds: cards.map((card) => card.id),
-    cards,
-    receiver:
-      user.source === "trustcare_portal"
-        ? "HealthPass Partner Verifier"
-        : "TrustCare Portal",
-    gatewayBaseUrl: "https://sandbox-share-gateway.invalid/api/shl",
-    purpose: user.tags.includes("medical_tourist")
-      ? "medical_tourist_intake"
-      : "patient_summary",
-    origin: "https://aec-infraconnect-2562.github.io/trustcare-wallet-apps",
-    requestHospitalCertification: trustcareCertified,
-    policy: {
-      expiresAt: demoShlPolicyExpiresAt,
-      passcodeRequired: false,
-      passcodeHint: null,
-      accessCodeDelivery: "not_required",
-      maxAccessCount: 5,
-    },
-  });
-  return [
-    {
-      ...publication,
-      id: user.cardBase + 701,
-      label: `${user.nameEn} Service Share Package`,
-      purpose: user.tags.includes("medical_tourist")
-        ? "medical_tourist_intake"
-        : "patient_summary",
-      context: user.tags.includes("insurance") ? "insurance" : "treatment",
-      status: "active",
-      trustcareCertification: trustcareCertified
-        ? {
-            status: "pending_maker_checker",
-            ownerConfirmed: false,
-            networkHospitalDid: user.issuerDid,
-            consentReceiptId: `consent-${user.id}`,
-            policyVersion: "trustcare-shl-governance-2026.07",
-          }
-        : {
-            status: "not_applicable",
-            ownerConfirmed: false,
-            policyVersion: "standard-shl-transport",
-          },
-      currentAccessCount: user.source === "trustcare_portal" ? 1 : 0,
-      files: publication.manifest.files,
-      versions: [{ version: 1, status: "active" }],
-      accessLogs: [
-        {
-          recipient:
-            user.source === "trustcare_portal"
-              ? "HealthPass Partner Verifier"
-              : "TrustCare Portal Verifier",
-          at: isoOffset(-1),
-        },
-      ],
-      documentBundle: publication.manifest.documentBundle,
-    },
-  ];
+  return [];
 }
 
 export const demoWalletCards: WalletCard[] = getDemoWalletCards(demoPatient.id);

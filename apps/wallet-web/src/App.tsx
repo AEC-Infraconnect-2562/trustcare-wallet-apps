@@ -1286,7 +1286,7 @@ export default function App() {
           status: "needs_review",
           protocol:
             draft.format === "standard_shl" ||
-            draft.format === "certified_shl_manifest"
+            draft.format === "certified_shl_package"
               ? "shl"
               : draft.format.startsWith("fhir")
                 ? "fhir"

@@ -33,10 +33,8 @@ import {
   unwrapVpPayload,
   validateOid4vpBinding,
   verifyDataIntegrityProof,
-  verifyShlManifestTrust,
   verificationEvidenceCheckPassed,
   type LocallyVerifiedProof,
-  type ShlCryptographicVerificationEvidence,
   type VerificationArtifactRole,
   type VerificationCheckKey,
   type VerificationContext,
@@ -93,7 +91,6 @@ const verificationArtifactRoles = new Set<VerificationArtifactRole>([
   "vc",
   "vp",
   "manifest_vc",
-  "manifest_vp",
 ]);
 const verificationCheckKeys = new Set<string>(REQUIRED_VERIFICATION_CHECK_KEYS);
 
@@ -239,45 +236,25 @@ async function verifyQrUnsafe(
   if (directJwt) return directJwt;
   const shl = parseShlLink(qrData);
   if (shl) {
-    const fetched = await fetchShlManifest(qrData);
-    const trustcare = objectValue(fetched.manifest?.trustcare) ?? {};
-    const cryptographicEvidence = fetched.ok
-      ? await verifyShlCryptographicEvidence(
-          trustcare,
-          fetched.manifest ?? {},
-          options,
-        )
-      : undefined;
-    const trustResult = fetched.ok
-      ? verifyShlManifestTrust(
-          fetched.manifest,
-          new Date(),
-          cryptographicEvidence,
-        )
-      : null;
-    const manifestVp = objectValue(trustcare.manifestVp);
+    const fetched = await fetchShlManifest(qrData, {
+      recipient: "TrustCare Wallet Verifier",
+      embeddedLengthMax: 2_000_000,
+      expectedManifestOrigin: new URL(options.url).origin,
+    });
     const passcodeMissing = shl.passcodeRequired && !fetched.ok;
     return {
-      verified: Boolean(trustResult?.verified),
-      trustLevel:
-        trustResult?.trustLevel ?? (passcodeMissing ? "yellow" : "red"),
+      verified: false,
+      trustLevel: fetched.ok || passcodeMissing ? "yellow" : "red",
       protocol: "shl",
-      issuer:
-        trustResult?.status === "trustcare_certified"
-          ? "TrustCare Certified SHL"
-          : fetched.ok
-            ? "SMART Health Links transport"
-            : "SMART Health Links parser",
-      holderDid:
-        typeof manifestVp?.holder === "string" ? manifestVp.holder : undefined,
+      issuer: fetched.ok
+        ? "SMART Health Links transport"
+        : "SMART Health Links parser",
       requestSummary:
-        trustResult?.status === "trustcare_certified"
-          ? `Certified SHL + Manifest VP / เอกสาร ${fetched.fileCount} รายการ`
-          : fetched.ok
-            ? `Standard SHL transport-valid / เอกสาร ${fetched.fileCount} รายการ`
-            : "อ่าน SHL ได้ แต่ยังดึง manifest ไม่สำเร็จ",
+        fetched.ok
+          ? `Standard SHL transport-valid / เอกสาร ${fetched.fileCount} รายการ`
+          : "อ่าน SHL ได้ แต่ยังดึง manifest ไม่สำเร็จ",
       credentials: fetched.manifest ? [fetched.manifest] : [],
-      verificationChecklist: trustResult?.checklist ?? [
+      verificationChecklist: [
         {
           key: "parsed",
           label: "อ่าน SHL QR ได้",
@@ -290,130 +267,33 @@ async function verifyQrUnsafe(
           ok: fetched.ok,
           detail: fetched.requestMethod ?? "-",
         },
+        {
+          key: "transport_files",
+          label: "ถอดรหัสไฟล์ SHL ได้",
+          ok: fetched.ok,
+          detail: `${fetched.decryptedFileCount}/${fetched.fileCount}`,
+        },
+        {
+          key: "certification",
+          label: "ตรวจหลักฐานการรับรองแยกต่างหาก",
+          ok: false,
+          detail: "requires Wallet Exchange Manifest VC and Holder VP association",
+        },
       ],
       warnings: [
         ...fetched.warnings,
-        ...(trustResult?.warnings ?? []),
         ...(shl.passcodeRequired
           ? [
               "SHL นี้ต้องใช้ passcode โดย passcode ต้องส่งผ่านช่องทางแยกจาก QR.",
             ]
           : []),
-        ...(!trustResult?.verified && fetched.ok
+        ...(fetched.ok
           ? [
-              "SHL นี้ใช้ส่งข้อมูลได้และผู้ถือกุญแจยืนยันได้ แต่ยังไม่ถือว่าโรงพยาบาลรับรองจนกว่า holder VP และ Manifest Credential จะตรวจผ่านครบ.",
+              "Standard SHL เป็น transport เท่านั้น การรับรองต้องตรวจ Manifest VC และ Holder VP association ผ่าน Wallet Exchange แยกต่างหาก.",
             ]
           : []),
       ],
-      errors: [...fetched.errors, ...(trustResult?.errors ?? [])],
-    };
-  }
-  const jsonPayload = parseJson(qrData);
-  if (jsonPayload?.type === "TrustCareShlManifestVP") {
-    const documentCount = Array.isArray(jsonPayload.documents)
-      ? jsonPayload.documents.length
-      : 0;
-    const certification =
-      jsonPayload.trustcareCertification &&
-      typeof jsonPayload.trustcareCertification === "object"
-        ? (jsonPayload.trustcareCertification as Record<string, any>)
-        : {};
-    const trustcarePolicyApproved = Boolean(
-      certification.status === "maker_checker_approved" &&
-      certification.ownerConfirmed &&
-      certification.makerApprovedAt &&
-      certification.checkerApprovedAt,
-    );
-    const hasManifestBinding = Boolean(
-      jsonPayload.manifestCredentialId &&
-      jsonPayload.holderPresentationId &&
-      !String(jsonPayload.manifestCredentialId).startsWith(
-        "pending:trustcare",
-      ) &&
-      !String(jsonPayload.holderPresentationId).startsWith("pending:trustcare"),
-    );
-    return {
-      verified: false,
-      trustLevel:
-        hasManifestBinding && trustcarePolicyApproved
-          ? "yellow"
-          : hasManifestBinding
-            ? "yellow"
-            : "red",
-      protocol: "shl",
-      issuer: "TrustCare SHL Manifest Verifier",
-      holderDid:
-        typeof jsonPayload.holderDid === "string"
-          ? jsonPayload.holderDid
-          : undefined,
-      requestSummary: `Manifest VP ${jsonPayload.manifestCredentialId ?? "-"} / เอกสาร ${documentCount} รายการ`,
-      matchedCredentialIds: Array.isArray(jsonPayload.documents)
-        ? jsonPayload.documents
-            .map((document: any) => document.manifestCredentialId)
-            .filter(Boolean)
-        : [],
-      credentials: Array.isArray(jsonPayload.documents)
-        ? jsonPayload.documents
-        : [],
-      verificationChecklist: [
-        {
-          key: "manifest_vc",
-          label: "ผูกกับ Manifest VC",
-          ok: Boolean(jsonPayload.manifestCredentialId),
-          detail: String(jsonPayload.manifestCredentialId ?? "-"),
-        },
-        {
-          key: "holder_vp",
-          label: "ผูกกับ Holder VP",
-          ok: Boolean(jsonPayload.holderPresentationId),
-          detail: String(jsonPayload.holderPresentationId ?? "-"),
-        },
-        {
-          key: "maker_checker",
-          label: "ผ่าน TrustCare Manifest policy",
-          ok: trustcarePolicyApproved,
-          detail: trustcarePolicyApproved
-            ? "approved"
-            : certification.status
-              ? "pending_manifest_policy"
-              : "-",
-        },
-        {
-          key: "document_reference",
-          label: "มี FHIR DocumentReference",
-          ok: documentCount > 0,
-          detail: `เอกสารที่ผูกไว้ ${documentCount} รายการ`,
-        },
-        {
-          key: "cryptographic_proof",
-          label: "ตรวจลายเซ็นและผู้ออกจริง",
-          ok: false,
-          detail: "internal_json_is_not_a_verifier_artifact",
-        },
-      ],
-      warnings: [
-        "JSON นี้เป็นข้อมูลสรุปภายใน ไม่ใช่ verifier artifact ต้องเปิด resolver-backed VP หรือ canonical SHL แล้วตรวจ proof จริง.",
-        ...(jsonPayload.passcodeRequired
-          ? [
-              "SHL นี้มี passcode/access policy; verifier ต้องบังคับใช้นโยบายก่อนดึงไฟล์",
-            ]
-          : []),
-        ...(!trustcarePolicyApproved
-          ? [
-              "พบ holder VP/Manifest Credential แต่ยังไม่นับว่าโรงพยาบาลรับรองจนกว่าจะตรวจ proof ผู้ออก สถานะ hashes ผู้ถือ และ policy ครบ",
-            ]
-          : []),
-        ...(JSON.stringify(jsonPayload).includes("pending:trustcare")
-          ? [
-              "พบ placeholder pending:trustcare จึงไม่ใช้เป็นหลักฐานความน่าเชื่อถือ",
-            ]
-          : []),
-      ],
-      errors: hasManifestBinding
-        ? []
-        : [
-            "Manifest VP payload ขาด manifestCredentialId หรือ holderPresentationId",
-          ],
+      errors: fetched.errors,
     };
   }
   if (usesDemoRuntime(options)) {
@@ -423,7 +303,7 @@ async function verifyQrUnsafe(
       verified: false,
       trustLevel: isStandardShl
         ? "blue"
-        : parsed.kind === "unknown"
+        : parsed.kind === "unknown" || parsed.kind === "json"
           ? "red"
           : "yellow",
       protocol:
@@ -440,7 +320,6 @@ async function verifyQrUnsafe(
         parsed.kind === "shlink"
           ? "SMART Health Link transport"
           : "TrustCare VP resolver",
-      holderDid: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
       requestSummary: parsed.presentationId
         ? `Presentation ID ${parsed.presentationId}`
         : isStandardShl
@@ -455,9 +334,15 @@ async function verifyQrUnsafe(
             ? [
                 "อ่านรูปแบบ VP resolver ได้ แต่ยัง fetch/verify payload ไม่สำเร็จ จึงยังไม่ให้ green badge.",
               ]
+            : parsed.kind === "json"
+              ? [
+                  "Unsigned JSON is not a verifier artifact; use a signed direct VC/VP or a Standard SHL transport.",
+                ]
             : [],
       errors:
-        parsed.kind === "unknown"
+        parsed.kind === "json"
+          ? ["Unsigned JSON cannot be verified."]
+          : parsed.kind === "unknown"
           ? ["QR code นี้ไม่ใช่รูปแบบ TrustCare VP ที่ระบบรู้จัก"]
           : [],
     };
@@ -466,33 +351,6 @@ async function verifyQrUnsafe(
     qrData,
     source: "camera",
   });
-}
-
-async function verifyShlCryptographicEvidence(
-  trustcare: Record<string, unknown>,
-  _manifest: Record<string, unknown>,
-  _options: VerifierApiOptions,
-): Promise<ShlCryptographicVerificationEvidence> {
-  // Raw embedded JSON credentials and copied issuer identifiers are never
-  // accepted. Hospital certification is promoted only by the dedicated
-  // Certified SHL finalizer after vc+jwt and holder VP verification succeeds.
-  // The generic SHL parser therefore remains pending instead of inventing
-  // cryptographic evidence from manifest metadata.
-  void trustcare.manifestCredentialJwt;
-  void trustcare.holderPresentationJwt;
-  return {
-    manifestCredentialSignatureVerified: false,
-    holderPresentationSignatureVerified: false,
-    issuerTrusted: false,
-    credentialStatusValid: false,
-    subjectBindingVerified: false,
-    manifestHashVerified: false,
-    fileHashesVerified: false,
-    purposeVerified: false,
-    audienceVerified: false,
-    expiryVerified: false,
-    policyVerified: false,
-  };
 }
 
 type ArtifactTrustInput = {
