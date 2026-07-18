@@ -143,7 +143,7 @@ describe("premium share flow policy and validation", () => {
     );
   });
 
-  it("blocks strict sharing when a required document is missing", () => {
+  it("allows a holder to share verified available documents while warning that the purpose set is incomplete", () => {
     const cards = [card(1, "patient_identity"), card(2, "allergy_alert")];
     const readiness = assessLocalReadiness(cards, "opd_visit");
     const draft = createShareDraftFromPrepare({
@@ -158,9 +158,48 @@ describe("premium share flow policy and validation", () => {
       { shareGatewayReady: true },
     );
 
+    expect(validation.ok).toBe(true);
+    expect(validation.publishEnabled).toBe(true);
+    expect(validation.requiredMissingCount).toBe(1);
+    expect(validation.primaryDisabledReason).toBeNull();
+    expect(validation.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "missing_required",
+          severity: "warning",
+        }),
+      ]),
+    );
+  });
+
+  it("still blocks an incomplete verifier-locked request", () => {
+    const cards = [card(1, "patient_identity"), card(2, "allergy_alert")];
+    const readiness = assessLocalReadiness(cards, "opd_visit");
+    const draft = createShareDraft({
+      source: "oid4vp_request",
+      context: "opd_visit",
+      cards,
+      readiness,
+      selectedCardIds: readiness.selectedCardIds,
+      lockedCardIds: readiness.selectedCardIds,
+      sourceRequestId: "oid4vp-required-documents",
+    });
+    const validation = validateShareDraft(
+      draft,
+      createSharePolicy({ mode: "PurposeVP", selectedFields: ["identity"] }),
+      { shareGatewayReady: true, oid4vpLocked: true },
+    );
+
     expect(validation.ok).toBe(false);
     expect(validation.requiredMissingCount).toBe(1);
-    expect(validation.primaryDisabledReason?.reason).toContain("ยังขาด");
+    expect(validation.blockers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "missing_required",
+          severity: "blocked",
+        }),
+      ]),
+    );
   });
 
   it("does not allow unverified patient uploads to become Certified SHL proof", () => {

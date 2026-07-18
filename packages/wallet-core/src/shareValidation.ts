@@ -50,6 +50,8 @@ export function validateShareDraft(
   const disabledReasons: DisabledReason[] = [];
   const shareGatewayReady = options.shareGatewayReady ?? false;
   const requireResolvableQr = options.requireResolvableQr ?? true;
+  const strictRequiredDocuments =
+    options.oid4vpLocked === true || draft.source === "oid4vp_request";
 
   if (!selected.length) {
     pushReason(disabledReasons, {
@@ -67,17 +69,20 @@ export function validateShareDraft(
   }
 
   if (requiredMissing.length > 0) {
-    pushReason(disabledReasons, {
-      action: "create_share_package",
-      packageMode: policy.mode,
-      selectedDocumentCount: selected.length,
-      missingRequiredCount: requiredMissing.length,
-    });
-    blockers.push(
+    if (strictRequiredDocuments) {
+      pushReason(disabledReasons, {
+        action: "create_share_package",
+        packageMode: policy.mode,
+        selectedDocumentCount: selected.length,
+        missingRequiredCount: requiredMissing.length,
+      });
+    }
+    (strictRequiredDocuments ? blockers : warnings).push(
       issue(
         "missing_required",
         `ยังขาดเอกสารจำเป็น ${requiredMissing.length} รายการ`,
         "ขอเอกสารจากแหล่งข้อมูลที่แนะนำ หรือนำเข้าเอกสารก่อนสร้างชุดแชร์",
+        strictRequiredDocuments ? "blocked" : "warning",
       ),
     );
   }
