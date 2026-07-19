@@ -92,6 +92,10 @@ import { useWebAuthn } from "./hooks/useWebAuthn";
 import { useWalletExchange } from "./hooks/useWalletExchange";
 import { usePortalWalletSession } from "./hooks/usePortalWalletSession";
 import {
+  QrInteroperabilityConsentDialog,
+  type PendingQrInteroperabilityConsent,
+} from "./components/QrInteroperabilityConsentDialog";
+import {
   credentialRequestStatusLabel,
   createMissingCredentialRequestInput,
   createdCredentialRequestViewModel,
@@ -200,6 +204,10 @@ export default function App() {
   const [detailOpen, setDetailOpen] = useState(false);
   const detailReturnPathRef = useRef("/home");
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [pendingQrConsent, setPendingQrConsent] =
+    useState<PendingQrInteroperabilityConsent | null>(null);
+  const [qrConsentBusy, setQrConsentBusy] = useState(false);
+  const [qrConsentError, setQrConsentError] = useState("");
   const [verifierResult, setVerifierResult] = useState<VerifierResult | null>(
     null,
   );
@@ -1050,12 +1058,118 @@ export default function App() {
     [addStoredObject, allCards],
   );
 
+  const beginQrInteroperability = useCallback(
+    async (value: string) => {
+      const workflow = walletExchange.workflow;
+      if (!workflow) {
+        throw new Error(
+          walletExchange.error ||
+            "Wallet Exchange ยังไม่พร้อม จึงยังไม่สามารถตรวจรายการ QR นี้ได้",
+        );
+      }
+      const descriptor = describeScannablePayload(value);
+      const payload = descriptor.canonicalPayload;
+      setQrConsentError("");
+      setQrConsentBusy(true);
+      try {
+        if (descriptor.payloadKind === "oid4vci") {
+          const offer = await workflow.resolveOid4vciConsentRequest(payload);
+          setPendingQrConsent({ kind: "oid4vci", qrPayload: payload, offer });
+          return true;
+        }
+        if (descriptor.payloadKind === "oid4vp") {
+          const consentRequest = await workflow.resolveOid4vpConsentRequest({
+            qrPayload: payload,
+            walletNonce: globalThis.crypto.randomUUID(),
+          });
+          setPendingQrConsent({ kind: "oid4vp", consentRequest });
+          return true;
+        }
+        return false;
+      } finally {
+        setQrConsentBusy(false);
+      }
+    },
+    [walletExchange.error, walletExchange.workflow],
+  );
+
+  const acceptPendingOid4vci = useCallback(
+    async (transactionCode?: string) => {
+      const workflow = walletExchange.workflow;
+      if (!workflow || pendingQrConsent?.kind !== "oid4vci") return;
+      setQrConsentBusy(true);
+      setQrConsentError("");
+      try {
+        const accepted = await workflow.acceptOid4vciCredential({
+          qrPayload: pendingQrConsent.qrPayload,
+          transactionCode,
+        });
+        await walletExchange.reload();
+        setPendingQrConsent(null);
+        setLastImportMessage(
+          `ตรวจและรับเอกสารจากโรงพยาบาลสำเร็จ · ${accepted.documentId}`,
+        );
+        navigateTo("store");
+      } catch (error) {
+        setQrConsentError(
+          friendlyWalletRuntimeError(error, "รับเอกสารไม่สำเร็จ"),
+        );
+      } finally {
+        setQrConsentBusy(false);
+      }
+    },
+    [
+      navigateTo,
+      pendingQrConsent,
+      walletExchange.reload,
+      walletExchange.workflow,
+    ],
+  );
+
+  const completePendingOid4vp = useCallback(async () => {
+    const workflow = walletExchange.workflow;
+    if (!workflow || pendingQrConsent?.kind !== "oid4vp") return;
+    setQrConsentBusy(true);
+    setQrConsentError("");
+    try {
+      const receipt = await workflow.completeOid4vpConsent({
+        consentRequest: pendingQrConsent.consentRequest,
+        consentRef: `urn:trustcare:consent:oid4vp:${globalThis.crypto.randomUUID()}`,
+      });
+      addStoredObject({
+        id: `oid4vp:${receipt.transactionId}`,
+        type: "vp",
+        title: "หลักฐานการแชร์ตามคำขอ",
+        subtitle: "Portal ตรวจลายเซ็นและเงื่อนไขครบ 6 รายการแล้ว",
+        status: "verified",
+        protocol: "oid4vp",
+        createdAt: receipt.verifiedAt,
+        payload: receipt,
+      });
+      setPendingQrConsent(null);
+      setLastImportMessage(
+        `แชร์สำเร็จและผู้รับตรวจสอบผ่าน ${receipt.checks.length} รายการ`,
+      );
+      navigateTo("store");
+    } catch (error) {
+      setQrConsentError(
+        friendlyWalletRuntimeError(error, "แชร์เอกสารไม่สำเร็จ"),
+      );
+    } finally {
+      setQrConsentBusy(false);
+    }
+  }, [
+    addStoredObject,
+    navigateTo,
+    pendingQrConsent,
+    walletExchange.workflow,
+  ]);
+
   const acceptCredentialOffer = useCallback(
     async (value: string) => {
       if (!env.demoMode) {
-        throw new Error(
-          "OID4VCI receive is not enabled for the live Portal contract; Wallet will not fall back to the legacy API.",
-        );
+        await beginQrInteroperability(value);
+        return;
       }
       const payload = extractScannablePayload(value);
       const result = await walletApi.acceptCredentialOffer(apiOptions, {
@@ -1077,13 +1191,35 @@ export default function App() {
       );
       return result;
     },
-    [addStoredObject, allCards, apiOptions, offlineWallet],
+    [
+      addStoredObject,
+      allCards,
+      apiOptions,
+      beginQrInteroperability,
+      offlineWallet,
+    ],
   );
 
   const verifyScan = useCallback(
     async (value: string, contextOverride?: ScanOutcome["context"]) => {
       const descriptor = describeScannablePayload(value);
       const payload = descriptor.canonicalPayload;
+      if (
+        descriptor.payloadKind === "oid4vci" ||
+        descriptor.payloadKind === "oid4vp"
+      ) {
+        try {
+          await beginQrInteroperability(payload);
+        } catch (error) {
+          const message = friendlyWalletRuntimeError(
+            error,
+            "ตรวจรายการ QR ไม่สำเร็จ",
+          );
+          setQrConsentError(message);
+          setLastImportMessage(message);
+        }
+        return;
+      }
       const imported = importPayload(payload);
       let manifestFetch: ShlManifestFetchResult | undefined;
       if (descriptor.payloadKind === "shl") {
@@ -1138,6 +1274,7 @@ export default function App() {
       activeUser.id,
       addScanHistory,
       apiOptions,
+      beginQrInteroperability,
       importPayload,
       navigateTo,
       readinessContext,
@@ -1940,6 +2077,21 @@ export default function App() {
             onOpenScanner={() => setScannerOpen(true)}
             onSyncPortal={() => void syncActiveWalletFromPortal()}
             onImportPayload={(value) => {
+              const descriptor = describeScannablePayload(value);
+              if (
+                descriptor.payloadKind === "oid4vci" ||
+                descriptor.payloadKind === "oid4vp"
+              ) {
+                void beginQrInteroperability(value).catch((error) => {
+                  setLastImportMessage(
+                    friendlyWalletRuntimeError(
+                      error,
+                      "ตรวจรายการ QR ไม่สำเร็จ",
+                    ),
+                  );
+                });
+                return;
+              }
               importPayload(value);
               navigateTo("store");
             }}
@@ -2113,6 +2265,20 @@ export default function App() {
           />
         )}
       </Suspense>
+      <QrInteroperabilityConsentDialog
+        pending={pendingQrConsent}
+        busy={qrConsentBusy}
+        error={qrConsentError}
+        onClose={() => {
+          if (qrConsentBusy) return;
+          setPendingQrConsent(null);
+          setQrConsentError("");
+        }}
+        onAcceptCredential={(transactionCode) =>
+          void acceptPendingOid4vci(transactionCode)
+        }
+        onSharePresentation={() => void completePendingOid4vp()}
+      />
       <ScanResponseDialog
         open={scanResponseOpen}
         outcome={scanOutcome}

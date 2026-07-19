@@ -93,6 +93,7 @@ export function ShareScreen() {
         userId: user.id,
         holderDid: user.holderDid,
         shareGatewayUrl: env.shareGatewayUrl,
+        audience: `${env.portalBaseUrl}/verifier`,
         mode,
         context,
         validMinutes: mode === "PurposeVP" ? 10 : 24 * 60,

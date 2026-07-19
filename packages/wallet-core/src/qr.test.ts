@@ -1,146 +1,71 @@
 import QRCode from "qrcode";
 import { describe, expect, it } from "vitest";
-import { createDemoResolverReferenceUrl } from "./demoResolvers";
 import {
   createPresentationQrPayload,
-  demoPresentationUrl,
   parseTrustCareQr,
-  presentationQrInlineMaxLength,
 } from "./qr";
 import {
+  assertImmutablePresentationResolverQrPayload,
   assertProductionCrossDeviceQrPayload,
   classifyQrPayload,
 } from "./qrContracts";
 
-describe("presentation QR payloads", () => {
-  it("accepts a public HTTPS verifier wrapper around a production VP resolver", () => {
-    const resolver =
-      "https://wallet.example/api/share-gateway/presentations/vp_123.jwt";
-    const wrapper = `https://wallet.example/verify#scan=${encodeURIComponent(resolver)}`;
+describe("presentation QR hard cutover", () => {
+  const resolver =
+    "https://portal.example/api/share-gateway/presentations/vp_123.jwt";
 
-    expect(classifyQrPayload(wrapper)).toMatchObject({
-      kind: "vp_resolver",
-      verifierResolvable: true,
-      productionResolvable: true,
-    });
-    expect(() => assertProductionCrossDeviceQrPayload(wrapper)).not.toThrow();
-  });
-
-  it("rejects inline health JWTs and non-HTTPS links as production cross-device QR payloads", () => {
-    expect(() =>
-      assertProductionCrossDeviceQrPayload("eyJhbGciOiJFUzI1NiJ9.eyJ0eXBlIjpbIlZlcmlmaWFibGVQcmVzZW50YXRpb24iXX0.signature"),
-    ).toThrow(/HTTPS URL/);
-    expect(() =>
-      assertProductionCrossDeviceQrPayload(
-        "http://wallet.example/presentations/vp_123.jwt",
-      ),
-    ).toThrow(/HTTPS URL/);
-  });
-  it("keeps short direct payloads inline", () => {
+  it("uses only the exact immutable Share Gateway resolver", async () => {
     expect(
       createPresentationQrPayload({
-        origin: "https://wallet.example",
-        presentationId: "vp_short",
-        qrData: "ey.short.jwt",
-      }),
-    ).toBe("ey.short.jwt");
-  });
-
-  it("uses a resolver URL for oversized presentation payloads", async () => {
-    const payload = createPresentationQrPayload({
-      origin: "https://wallet.example/",
-      presentationId: "vc_large_payload",
-      qrData: `eyJ${"a".repeat(presentationQrInlineMaxLength + 1)}.sig`,
-    });
-
-    expect(payload).toBe(
-      demoPresentationUrl("https://wallet.example", "vc_large_payload"),
-    );
-    expect(payload.length).toBeLessThan(120);
-    await expect(QRCode.toDataURL(payload)).resolves.toContain(
-      "data:image/png;base64,",
-    );
-  });
-
-  it("does not wrap an existing presentation resolver URL again", () => {
-    const resolver = "https://wallet.example/presentations/vp_123.jwt";
-    expect(
-      createPresentationQrPayload({
-        origin: "https://wallet.example",
+        origin: "https://portal.example",
         presentationId: "vp_123",
-        qrData: resolver,
-      }),
-    ).toBe(resolver);
-  });
-
-  it("keeps deterministic demo VP resolver references as scannable resolver URLs", () => {
-    const resolver = createDemoResolverReferenceUrl(
-      "https://wallet.example",
-      "vp",
-      "vp_demo_1008_abc",
-    );
-
-    expect(
-      createPresentationQrPayload({
-        origin: "https://wallet.example",
-        presentationId: "vp_demo_1008_abc",
         qrData: resolver,
       }),
     ).toBe(resolver);
     expect(parseTrustCareQr(resolver)).toMatchObject({
       kind: "vp-url",
-      presentationId: "vp_demo_1008_abc",
+      presentationId: "vp_123",
     });
     expect(classifyQrPayload(resolver)).toMatchObject({
       kind: "vp_resolver",
       verifierResolvable: true,
+      productionResolvable: true,
     });
-  });
-
-  it("normalizes legacy demo verifier URLs to deterministic resolver references", () => {
-    const payload = createPresentationQrPayload({
-      origin: "https://wallet.example",
-      presentationId: "vp_demo_1008_abc",
-      qrData: "https://wallet.example/verifier?vp=vp_demo_1008_abc",
-      expiresAt: "2026-07-08T10:00:00.000Z",
-      selectedFields: ["credentialSubject.coverage.status"],
-    });
-
-    expect(payload).toContain("tc_resolver=vp");
-    expect(payload).toContain("tc_id=vp_demo_1008_abc");
-    expect(payload).toContain("tc_ref=1");
-    expect(payload).toContain("tc_exp=2026-07-08T10%3A00%3A00.000Z");
-    expect(payload).toContain("tc_fields=credentialSubject.coverage.status");
-    expect(payload).not.toContain("/verifier?vp=");
-    expect(parseTrustCareQr(payload)).toMatchObject({
-      kind: "vp-url",
-      presentationId: "vp_demo_1008_abc",
-    });
-  });
-
-  it("normalizes legacy demo verifier URLs wrapped inside web scan links", () => {
-    const legacyPayload =
-      "https://wallet.example/verifier?vp=vp_demo_1008_abc";
-    const payload = createPresentationQrPayload({
-      origin: "https://wallet.example",
-      presentationId: "vp_demo_1008_abc",
-      qrData: `https://wallet.example/#scan=${encodeURIComponent(legacyPayload)}`,
-    });
-
-    expect(payload).toContain("tc_resolver=vp");
-    expect(payload).toContain("tc_id=vp_demo_1008_abc");
-    expect(payload).not.toContain("#scan=");
-    expect(payload).not.toContain("/verifier?vp=");
-  });
-
-  it("keeps non-demo presentation resolver URLs unchanged", () => {
-    const resolver = "https://wallet.example/verifier?vp=vp_prod_123";
-    expect(
-      createPresentationQrPayload({
-        origin: "https://wallet.example",
-        presentationId: "vp_prod_123",
-        qrData: resolver,
+    expect(() =>
+      assertImmutablePresentationResolverQrPayload(resolver, {
+        origin: "https://portal.example",
+        artifactId: "vp_123",
       }),
-    ).toBe(resolver);
+    ).not.toThrow();
+    await expect(QRCode.toDataURL(resolver)).resolves.toContain(
+      "data:image/png;base64,",
+    );
+  });
+
+  it.each([
+    "eyJhbGciOiJFZERTQSJ9.eyJ0eXBlIjpbIlZlcmlmaWFibGVQcmVzZW50YXRpb24iXX0.signature",
+    "https://portal.example/verifier?vp=vp_123",
+    "https://portal.example/verify?vc=vc_123",
+    "https://portal.example/verify?token=secret",
+    "https://portal.example/verify#scan=payload",
+    "https://portal.example/api/share-gateway/presentations/vp_123.jwt?download=1",
+    "http://portal.example/api/share-gateway/presentations/vp_123.jwt",
+    "vp_123",
+  ])("rejects prohibited public QR payload %s", (payload) => {
+    expect(() => assertProductionCrossDeviceQrPayload(payload)).toThrow();
+    expect(() =>
+      assertImmutablePresentationResolverQrPayload(payload),
+    ).toThrow();
+    expect(parseTrustCareQr(payload).kind).toBe("unknown");
+  });
+
+  it("never falls back from inline or oversized VP bytes", () => {
+    expect(() =>
+      createPresentationQrPayload({
+        origin: "https://portal.example",
+        presentationId: "vp_123",
+        qrData: "ey.inline.jwt",
+      }),
+    ).toThrow(/immutable HTTPS/);
   });
 });

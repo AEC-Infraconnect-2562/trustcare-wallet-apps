@@ -64,6 +64,14 @@ import {
   type WalletExchangeV2Client,
 } from "./walletExchangeV2";
 import { TrustCareApiError } from "./errors";
+import {
+  loadPortalInteroperabilityDiscovery,
+  PortalQrInteroperabilityClient,
+  type Oid4vpPassReceipt,
+  type RedeemedOid4vciCredential,
+  type ResolvedOid4vciOffer,
+  type VerifiedOid4vpRequest,
+} from "./qrInteroperability";
 export type PrepareHolderAttestedShlInput = Omit<
   CorePrepareHolderAttestedShlInput,
   | "identity"
@@ -276,6 +284,21 @@ export type WalletHolderPresentationBinding = {
   credentialContext: string;
 };
 
+export type WalletOid4vpConsentRequest = {
+  request: VerifiedOid4vpRequest;
+  documents: Array<{
+    id: string;
+    title: string;
+    credentialType: string;
+  }>;
+};
+
+export type WalletOid4vciAcceptance = {
+  credential: RedeemedOid4vciCredential;
+  sync: WalletExchangeSyncResult;
+  documentId: string;
+};
+
 const allScopes = [
   "credentials:read",
   "credentials:request",
@@ -308,6 +331,137 @@ export class WalletExchangeWorkflow {
    */
   async initializePersistenceTrust(): Promise<void> {
     await this.issuers();
+  }
+
+  /**
+   * Reloads every QR/OID discovery resource for a new interoperability
+   * transaction. This intentionally has no long-lived cache: profile and
+   * schema versions, not a Portal Git revision, are the compatibility gate.
+   */
+  async qrInteroperabilityClient(): Promise<PortalQrInteroperabilityClient> {
+    const [discovery, issuers] = await Promise.all([
+      loadPortalInteroperabilityDiscovery({
+        portalBaseUrl: this.options.portalBaseUrl,
+        fetchImpl: this.options.fetchImpl,
+        now: this.options.now,
+      }),
+      this.issuers(),
+    ]);
+    return new PortalQrInteroperabilityClient({
+      discovery,
+      identity: this.options.identity,
+      issuers,
+      fetchImpl: this.options.fetchImpl,
+      now: this.options.now,
+    });
+  }
+
+  /** Resolves and verifies a signed OID4VP request before consent is shown. */
+  async resolveOid4vpConsentRequest(input: {
+    qrPayload: string;
+    walletNonce: string;
+  }): Promise<WalletOid4vpConsentRequest> {
+    const request = await (
+      await this.qrInteroperabilityClient()
+    ).resolveOid4vpRequest(input.qrPayload, input.walletNonce);
+    const state = await this.options.persistence.loadOrCreateState();
+    const documents = request.requiredCredentialTypes.map((credentialType) => {
+      const document = state.documents.find(
+        (candidate) =>
+          candidate.credential.credentialType === credentialType &&
+          candidate.owner.id === this.options.identity.did &&
+          isEligibleForBoundPresentation(candidate) &&
+          !["revoked", "expired", "suspended", "superseded"].includes(
+            candidate.lifecycle.status,
+          ) &&
+          Boolean(candidate.credential.jwt),
+      );
+      if (!document) {
+        throw new TrustCareApiError(
+          `Wallet has no verified ${credentialType} credential for this request.`,
+          { code: "oid4vp_required_credential_missing" },
+        );
+      }
+      return {
+        id: document.id,
+        title: document.title.th || document.title.en || credentialType,
+        credentialType,
+      };
+    });
+    return { request, documents };
+  }
+
+  /** Resolves a reference offer without consuming its one-time grant. */
+  async resolveOid4vciConsentRequest(
+    qrPayload: string,
+  ): Promise<ResolvedOid4vciOffer> {
+    return (
+      await this.qrInteroperabilityClient()
+    ).resolveOid4vciOffer(qrPayload);
+  }
+
+  /** Creates the Holder VP only after the patient confirms this exact list. */
+  async completeOid4vpConsent(input: {
+    consentRequest: WalletOid4vpConsentRequest;
+    consentRef: string;
+  }): Promise<Oid4vpPassReceipt> {
+    const state = await this.options.persistence.loadOrCreateState();
+    const credentialJwts = input.consentRequest.documents.map((selected) => {
+      const document = state.documents.find(
+        (candidate) => candidate.id === selected.id,
+      );
+      if (
+        !document?.credential.jwt ||
+        document.credential.credentialType !== selected.credentialType ||
+        document.owner.id !== this.options.identity.did ||
+        !isEligibleForBoundPresentation(document) ||
+        ["revoked", "expired", "suspended", "superseded"].includes(
+          document.lifecycle.status,
+        )
+      ) {
+        throw new TrustCareApiError(
+          `Selected Wallet document is no longer eligible: ${selected.id}`,
+          { code: "oid4vp_selected_credential_ineligible" },
+        );
+      }
+      return document.credential.jwt;
+    });
+    return (
+      await this.qrInteroperabilityClient()
+    ).completeOid4vp({
+      request: input.consentRequest.request,
+      consentRef: input.consentRef,
+      credentialJwts,
+    });
+  }
+
+  /**
+   * Completes the one-time OID4VCI flow, then uses the existing delta/ACK
+   * transaction to make the exact issuer bytes durable before reporting
+   * success to the UI.
+   */
+  async acceptOid4vciCredential(input: {
+    qrPayload: string;
+    transactionCode?: string;
+  }): Promise<WalletOid4vciAcceptance> {
+    const client = await this.qrInteroperabilityClient();
+    const offer = await client.resolveOid4vciOffer(input.qrPayload);
+    const credential = await client.redeemOid4vciOffer({
+      offer,
+      transactionCode: input.transactionCode,
+      expectedHolderDid: this.options.identity.did,
+    });
+    const sync = await this.synchronize();
+    const document = sync.state.documents.find(
+      (candidate) => candidate.credential.jwt === credential.credentialJwt,
+    );
+    if (!document) {
+      throw new TrustCareApiError(
+        "The exact OID4VCI credential was verified but was not present in the acknowledged Wallet delta.",
+        { code: "oid4vci_credential_not_persisted" },
+      );
+    }
+    return { credential, sync, documentId: document.id };
   }
   private clientPromise?: Promise<WalletExchangeV2Client>;
   private issuersPromise?: Promise<ResolvedPortalHospitalIssuer[]>;
@@ -1462,7 +1616,7 @@ export class WalletExchangeWorkflow {
       document.documentType !== "shl_manifest" ||
       !document.credential.jwt ||
       document.owner.id !== this.options.identity.did ||
-      !isVerifiedManifestAssociationSource(document)
+      !isEligibleForBoundPresentation(document)
     ) {
       throw new TrustCareApiError(
         "A verified Portal Manifest Credential for this holder is required.",
@@ -1961,7 +2115,7 @@ function shlAssociationEndpoint(template: string, shlId: number): string {
     : `${template.replace(/\/+$/, "")}/${encoded}`;
 }
 
-function isVerifiedManifestAssociationSource(
+function isEligibleForBoundPresentation(
   document: WalletExchangeState["documents"][number],
 ): boolean {
   if (

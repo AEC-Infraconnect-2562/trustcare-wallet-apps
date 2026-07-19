@@ -300,6 +300,9 @@ async function verifyQrUnsafe(
   if (usesDemoRuntime(options)) {
     const parsed = parseTrustCareQr(qrData);
     const isStandardShl = parsed.kind === "shlink";
+    const isUnsignedJson =
+      parsed.kind === "unknown" && Boolean(parseJson(qrData));
+    const isRawJwt = parsed.kind === "unknown" && looksLikeJwt(qrData);
     return {
       verified: false,
       trustLevel: isStandardShl
@@ -310,9 +313,9 @@ async function verifyQrUnsafe(
       protocol:
         parsed.kind === "shlink"
           ? "shl"
-          : parsed.kind === "jwt"
+          : parsed.kind === "jwt" || isRawJwt
             ? "jwt"
-            : parsed.kind === "json"
+            : parsed.kind === "json" || isUnsignedJson
               ? "json"
               : parsed.kind === "unknown"
                 ? "unknown"
@@ -335,14 +338,20 @@ async function verifyQrUnsafe(
             ? [
                 "อ่านรูปแบบ VP resolver ได้ แต่ยัง fetch/verify payload ไม่สำเร็จ จึงยังไม่ให้ green badge.",
               ]
-            : parsed.kind === "json"
+            : parsed.kind === "json" || isUnsignedJson
               ? [
                   "Unsigned JSON is not a verifier artifact; use a signed direct VC/VP or a Standard SHL transport.",
                 ]
+            : isRawJwt
+              ? [
+                  "Raw JWT is not a scannable TrustCare QR artifact; use an immutable HTTPS resolver or a standards-based reference QR.",
+                ]
             : [],
       errors:
-        parsed.kind === "json"
+        parsed.kind === "json" || isUnsignedJson
           ? ["Unsigned JSON cannot be verified."]
+          : isRawJwt
+            ? ["Raw JWT QR payloads are prohibited."]
           : parsed.kind === "unknown"
           ? ["QR code นี้ไม่ใช่รูปแบบ TrustCare VP ที่ระบบรู้จัก"]
           : [],

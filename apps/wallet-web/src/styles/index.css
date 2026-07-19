@@ -4386,6 +4386,134 @@ button:disabled {
   width: min(580px, 100%);
 }
 
+.qr-consent-dialog {
+  width: min(560px, 100%);
+  max-height: min(90vh, 760px);
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow: var(--shadow-md);
+}
+
+.qr-consent-content {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.qr-consent-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--primary) 6%, var(--card));
+  padding: 17px;
+}
+
+.qr-consent-summary > svg {
+  flex: 0 0 auto;
+  color: var(--primary);
+}
+
+.qr-consent-summary strong,
+.qr-disclosure-list strong {
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+.qr-consent-summary p {
+  margin: 5px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.qr-transaction-code {
+  display: grid;
+  gap: 8px;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.qr-transaction-code input {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--foreground);
+  padding: 0 15px;
+  font: inherit;
+  font-size: 17px;
+  letter-spacing: 0.16em;
+}
+
+.qr-transaction-code small,
+.qr-disclosure-list small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.qr-disclosure-list {
+  display: grid;
+  gap: 9px;
+}
+
+.qr-disclosure-list > span {
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.qr-disclosure-list > div {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+.qr-disclosure-list > div > svg {
+  flex: 0 0 auto;
+  color: var(--success);
+}
+
+.qr-disclosure-list > div > div {
+  display: grid;
+  gap: 2px;
+}
+
+.qr-consent-error {
+  margin: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 9%, var(--card));
+  color: var(--danger);
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.qr-consent-actions {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  padding: 14px 22px 18px;
+  backdrop-filter: blur(16px);
+}
+
+.qr-consent-actions > button {
+  width: 100%;
+}
+
 .scanner-stage {
   position: relative;
   background: #0b1020;
@@ -4599,6 +4727,7 @@ button:disabled {
 
   .credential-dialog,
   .scanner-dialog,
+  .qr-consent-dialog,
   .compact-dialog {
     max-height: 96vh;
   }

@@ -28,7 +28,7 @@ export const env = {
     "trustcare-wallet-production",
   shareGatewayUrl:
     process.env.EXPO_PUBLIC_TRUSTCARE_SHARE_GATEWAY_URL ??
-    "https://wallet-web-production-6a00.up.railway.app/api/share-gateway",
+    `${portalBaseUrl}/api/share-gateway`,
   runtimeEnvironment,
   environmentBanner,
   demoMode: runtimeAllowsSyntheticData(runtimeEnvironment),
