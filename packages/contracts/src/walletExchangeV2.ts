@@ -6,7 +6,7 @@ import {
 export const WALLET_EXCHANGE_V2_CONTRACT_VERSION =
   "2026.07.wallet-exchange.v2.1.strict-w3c" as const;
 export const PORTAL_WALLET_V2_CONTRACT_VERSION =
-  "2026.07.portal-wallet.v5" as const;
+  "2026.07.portal-wallet.v6" as const;
 /** Inspected Wallet baseline for provenance only; never a compatibility gate. */
 export const WALLET_RENDERER_REFERENCE_COMMIT =
   "d45a8283e6440fb722cb6774ceb4f17bad0d9d4f" as const;

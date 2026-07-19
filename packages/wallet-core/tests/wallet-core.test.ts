@@ -55,12 +55,15 @@ describe("wallet-core", () => {
     expect(sorted[0]?.cardType).toBe("patient_identity");
   });
 
-  it("parses TrustCare VP URLs", () => {
+  it("parses only immutable Share Gateway VP resolver URLs", () => {
     const parsed = parseTrustCareQr(
-      "https://trustcare.example.com/verifier?vp=vp_123",
+      "https://trustcare.example.com/api/share-gateway/presentations/vp_123.jwt",
     );
     expect(parsed.kind).toBe("vp-url");
     expect(parsed.presentationId).toBe("vp_123");
+    expect(
+      parseTrustCareQr("https://trustcare.example.com/verifier?vp=vp_123").kind,
+    ).toBe("unknown");
   });
 
   it("rejects expired QR timestamps", () => {

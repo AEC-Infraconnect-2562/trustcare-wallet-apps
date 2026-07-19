@@ -1,5 +1,3 @@
-import { createDemoResolverReferenceUrl } from "./demoResolvers";
-
 export function isExpired(isoDate?: string | null, now = new Date()): boolean {
   if (!isoDate) return false;
   return new Date(isoDate).getTime() <= now.getTime();
@@ -7,6 +5,12 @@ export function isExpired(isoDate?: string | null, now = new Date()): boolean {
 
 export const presentationQrInlineMaxLength = 1800;
 
+/**
+ * Direct Holder VP QR is a reference transport. The Wallet must publish the
+ * exact signed bytes first and use the immutable HTTPS resolver returned by
+ * the Share Gateway; this helper never falls back to an inline JWT or query
+ * parameter URL.
+ */
 export function createPresentationQrPayload(input: {
   origin: string;
   presentationId: string;
@@ -16,14 +20,22 @@ export function createPresentationQrPayload(input: {
   selectedFields?: string[];
 }): string {
   const raw = input.qrData.trim();
-  if (!raw) return raw;
-  const normalizedDemoResolver = normalizeDemoPresentationResolverUrl(input);
-  if (normalizedDemoResolver) return normalizedDemoResolver;
-  if (isPresentationResolverUrl(raw)) return raw;
-  const maxInlineLength =
-    input.maxInlineLength ?? presentationQrInlineMaxLength;
-  if (raw.length <= maxInlineLength) return raw;
-  return demoPresentationUrl(input.origin, input.presentationId);
+  const resolver = presentationResolver(raw);
+  if (!resolver) {
+    throw new Error(
+      "Holder VP QR requires an immutable HTTPS Share Gateway resolver URL.",
+    );
+  }
+  const expectedOrigin = new URL(input.origin).origin;
+  if (
+    resolver.url.origin !== expectedOrigin ||
+    resolver.artifactId !== input.presentationId
+  ) {
+    throw new Error(
+      "Holder VP QR resolver does not match its publication origin or artifact ID.",
+    );
+  }
+  return resolver.url.toString();
 }
 
 export function parseTrustCareQr(raw: string): {
@@ -34,141 +46,50 @@ export function parseTrustCareQr(raw: string): {
 } {
   const value = raw.trim();
   if (!value) return { raw, kind: "unknown" };
-  if (value.startsWith("shlink:/"))
+  if (value.startsWith("shlink:/")) {
     return { raw: value, kind: "shlink", token: value };
-  if (value.startsWith("{")) return { raw: value, kind: "json", token: value };
-  if (value.startsWith("eyJ")) return { raw: value, kind: "jwt", token: value };
-  if (/^https?:\/\//.test(value)) {
-    try {
-      const url = new URL(value);
-      const hashPayload = decodeURIComponent(url.hash.replace(/^#/, ""));
-      if (hashPayload.startsWith("shlink:/"))
-        return { raw: value, kind: "shlink", token: hashPayload };
-      const scanPayload = url.searchParams.get("scan");
-      if (scanPayload?.startsWith("shlink:/"))
-        return { raw: value, kind: "shlink", token: scanPayload };
-      const demoResolverKind = url.searchParams.get("tc_resolver");
-      const demoResolverId = url.searchParams.get("tc_id");
-      if (demoResolverKind === "vp" && demoResolverId) {
-        return {
-          raw: value,
-          kind: "vp-url",
-          presentationId: demoResolverId,
-          token: value,
-        };
-      }
-      const presentationId =
-        url.searchParams.get("vp") ??
-        url.searchParams.get("presentationId") ??
-        undefined;
-      const token =
-        url.searchParams.get("token") ??
-        url.searchParams.get("vc") ??
-        undefined;
-      return {
-        raw: value,
-        kind: presentationId ? "vp-url" : "unknown",
-        presentationId,
-        token,
-      };
-    } catch {
-      return { raw: value, kind: "unknown" };
-    }
   }
-  if (value.length < 300 && /^[a-zA-Z0-9:_-]+$/.test(value)) {
-    return { raw: value, kind: "presentation-id", presentationId: value };
+  const resolver = presentationResolver(value);
+  if (resolver) {
+    return {
+      raw: value,
+      kind: "vp-url",
+      presentationId: resolver.artifactId,
+      token: value,
+    };
+  }
+  try {
+    const url = new URL(value);
+    const hashPayload = decodeURIComponent(url.hash.replace(/^#/, ""));
+    if (hashPayload.startsWith("shlink:/")) {
+      return { raw: value, kind: "shlink", token: hashPayload };
+    }
+  } catch {
+    // Fall through to an explicit unknown result. Raw JWT/JSON and standalone
+    // identifiers are intentionally not accepted as public QR artifacts.
   }
   return { raw: value, kind: "unknown" };
 }
 
-export function demoPresentationUrl(
-  origin: string,
-  presentationId: string,
-): string {
-  return `${origin.replace(/\/$/, "")}/verifier?vp=${encodeURIComponent(presentationId)}`;
-}
-
-function isPresentationResolverUrl(raw: string): boolean {
+function presentationResolver(value: string): {
+  url: URL;
+  artifactId: string;
+} | null {
   try {
-    const url = new URL(raw);
-    return Boolean(
-      url.searchParams.get("tc_resolver") === "vp" ||
-      url.searchParams.get("vp") ||
-      url.searchParams.get("presentationId") ||
-      url.pathname.includes("/presentations/"),
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) {
+      return null;
+    }
+    const match = url.pathname.match(
+      /^\/api\/share-gateway\/presentations\/([A-Za-z0-9._:-]{1,100})\.jwt$/,
     );
-  } catch {
-    return false;
-  }
-}
-
-function normalizeDemoPresentationResolverUrl(input: {
-  origin: string;
-  presentationId: string;
-  qrData: string;
-  expiresAt?: string;
-  selectedFields?: string[];
-}): string | null {
-  const raw = input.qrData.trim();
-  const unwrappedPayload = unwrapScannablePayload(raw);
-  if (unwrappedPayload && unwrappedPayload !== raw) {
-    return normalizeDemoPresentationResolverUrl({
-      ...input,
-      qrData: unwrappedPayload,
-    });
-  }
-
-  const parsed = parseUrl(raw);
-  if (!parsed) return null;
-  const currentResolver = parsed.searchParams.get("tc_resolver");
-  const currentId = parsed.searchParams.get("tc_id");
-  if (currentResolver === "vp" && currentId?.startsWith("vp_demo_")) {
-    return raw;
-  }
-
-  const legacyId =
-    parsed.searchParams.get("vp") ??
-    parsed.searchParams.get("presentationId") ??
-    input.presentationId;
-  if (!legacyId.startsWith("vp_demo_")) return null;
-  if (
-    !parsed.searchParams.has("vp") &&
-    !parsed.searchParams.has("presentationId")
-  ) {
-    return null;
-  }
-
-  const resolver = new URL(
-    createDemoResolverReferenceUrl(input.origin, "vp", legacyId),
-  );
-  if (input.expiresAt) resolver.searchParams.set("tc_exp", input.expiresAt);
-  const selectedFields = (input.selectedFields ?? [])
-    .map((field) => field.trim())
-    .filter(Boolean);
-  if (selectedFields.length) {
-    resolver.searchParams.set("tc_fields", selectedFields.join(","));
-  }
-  return resolver.toString();
-}
-
-function unwrapScannablePayload(value: string): string | null {
-  const parsed = parseUrl(value);
-  if (!parsed) return null;
-  const scanParam = parsed.searchParams.get("scan");
-  if (scanParam) return scanParam;
-  const hash = parsed.hash.replace(/^#/, "");
-  if (!hash) return null;
-  try {
-    const params = new URLSearchParams(hash.replace(/^\?/, ""));
-    return params.get("scan");
-  } catch {
-    return null;
-  }
-}
-
-function parseUrl(value: string): URL | null {
-  try {
-    return new URL(value);
+    return match ? { url, artifactId: match[1] } : null;
   } catch {
     return null;
   }

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { SignJWT, generateKeyPair } from "jose";
 import {
   buildSharePackage,
+  createHolderSignedDirectVp,
+  generateHolderIdentity,
   getDemoWalletCards,
   type PreparedHolderAttestedShl,
   type ShareGatewayArtifactKind,
@@ -16,21 +19,39 @@ import {
   requestBodyForShareGateway,
   shareGatewayJwksUrl,
 } from "./shareGatewayClient";
+import { PortalInteroperabilityProblemError } from "./qrInteroperability";
 
 describe("shareGatewayClient", () => {
   const cards = getDemoWalletCards("demo-patient-complete-001").slice(0, 3);
   const gatewayBaseUrl = "https://portal.example/api/share-gateway";
 
   it("publishes VP packages with the shared ShareGatewayPublicationRequest shape", async () => {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 10 * 60_000).toISOString();
+    const purpose = "เตรียมเข้ารับบริการ OPD";
+    const recipient = "did:web:verifier.example";
+    const identity = await generateHolderIdentity({ algorithm: "P-256" });
+    const holderPresentation = await createHolderSignedDirectVp({
+      identity,
+      audience: "https://portal.example/verifier",
+      recipient,
+      context: "opd_visit",
+      purpose,
+      consentRef: "urn:trustcare:consent:share-gateway-test",
+      credentialJwts: [await issuerCredentialJwt(identity.did, now)],
+      expiresAt,
+      now,
+    });
+    const vpDigest = await sha256Digest(holderPresentation.vpJwt);
     const packageResult = buildSharePackage({
       mode: "PurposeVP",
       context: "opd_visit",
       cards,
       selectedCardIds: cards.slice(0, 2).map((card) => card.id),
-      holderDid: "did:key:holder",
-      recipient: "Verifier",
-      purpose: "เตรียมเข้ารับบริการ OPD",
-      expiresAt: "2026-07-08T09:00:00.000Z",
+      holderDid: identity.did,
+      recipient,
+      purpose,
+      expiresAt,
       gatewayBaseUrl,
     });
     if (!("presentation" in packageResult)) {
@@ -42,6 +63,52 @@ describe("shareGatewayClient", () => {
       body: Record<string, unknown>;
     }> = [];
     const fetchImpl = async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).endsWith(".jwt")) {
+        return new Response(holderPresentation.vpJwt, {
+          status: 200,
+          headers: { "content-type": "application/vp+jwt" },
+        });
+      }
+      if (String(url).endsWith("/verification-evidence")) {
+        return jsonResponse({
+          version: "1",
+          providerId: "portal-test",
+          artifactId: packageResult.presentation.presentationId,
+          resolverUrl: `${gatewayBaseUrl}/presentations/${packageResult.presentation.presentationId}.jwt`,
+          packageDigest: vpDigest,
+          contextDigest: vpDigest,
+          subjects: [
+            {
+              role: "vp",
+              digest: "sha256:canonical-payload-digest",
+              contentHash: vpDigest,
+              holderDid: identity.did,
+            },
+          ],
+          policy: { id: "trustcare", version: "1" },
+          checkedAt: now.toISOString(),
+          expiresAt,
+          verified: true,
+          checks: [
+            "proof",
+            "issuer",
+            "status",
+            "expiry",
+            "policy",
+            "binding",
+          ].map((key) => ({
+            key,
+            state: "pass",
+            subjectDigests: [vpDigest],
+            checkedAt: now.toISOString(),
+            authority: "portal-test",
+          })),
+          requestId: "request-test",
+          correlationId: "correlation-test",
+          ok: true,
+          mode: "portal_backend",
+        });
+      }
       const body = JSON.parse(String(init?.body ?? "{}")) as Record<
         string,
         unknown
@@ -63,12 +130,15 @@ describe("shareGatewayClient", () => {
       gatewayBaseUrl,
       fetchImpl: fetchImpl as typeof fetch,
       result: packageResult,
-      holderPresentationJwt: "eyJhbGciOiJFZERTQSIsInR5cCI6InZwK2p3dCIsImtpZCI6ImRpZDprZXk6dGVzdCN0ZXN0In0.eyJpc3MiOiJkaWQ6a2V5OnRlc3QifQ.c2lnbmF0dXJl",
+      holderPresentationJwt: holderPresentation.vpJwt,
       userId: "demo-patient-complete-001",
-      holderDid: "did:key:holder",
+      holderDid: identity.did,
+      audience: "https://portal.example/verifier",
+      consentRef: "urn:trustcare:consent:share-gateway-test",
       purpose: "opd_visit",
-      recipient: "Verifier",
-      expiresAt: "2026-07-08T09:00:00.000Z",
+      purposeLabel: purpose,
+      recipient,
+      expiresAt,
     });
 
     expect(response.ok).toBe(true);
@@ -79,13 +149,13 @@ describe("shareGatewayClient", () => {
         artifactId: packageResult.presentation.presentationId,
         kind: "vp",
         contentType: "application/vp+jwt",
-        payload: "eyJhbGciOiJFZERTQSIsInR5cCI6InZwK2p3dCIsImtpZCI6ImRpZDprZXk6dGVzdCN0ZXN0In0.eyJpc3MiOiJkaWQ6a2V5OnRlc3QifQ.c2lnbmF0dXJl",
+        payload: holderPresentation.vpJwt,
         ownerUserId: "demo-patient-complete-001",
-        holderDid: "did:key:holder",
+        holderDid: identity.did,
         context: "opd_visit",
-        purpose: "เตรียมเข้ารับบริการ OPD",
-        recipient: "Verifier",
-        expiresAt: "2026-07-08T09:00:00.000Z",
+        purpose,
+        recipient,
+        expiresAt,
         trustcare: {
           signingStatus: "wallet_holder_signed",
           expectedProof: ["ES256", "EdDSA"],
@@ -162,21 +232,27 @@ describe("shareGatewayClient", () => {
     );
   });
 
-  it("surfaces gateway error details before validating the success contract", async () => {
+  it("preserves RFC 9457 gateway failure status, code, and trace identifiers", async () => {
     const fetchImpl = async () =>
       new Response(
         JSON.stringify({
-          ok: false,
-          errors: ["JSON request body exceeds 1000000 bytes."],
+          type: "https://trustcare.example/problems/payload-too-large",
+          title: "Payload too large",
+          status: 413,
+          code: "share_gateway_payload_too_large",
+          detail: "JSON request body exceeds 1000000 bytes.",
         }),
         {
           status: 413,
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/problem+json",
+            "x-request-id": "req-share-413",
+            "x-correlation-id": "corr-share-413",
+          },
         },
       );
 
-    await expect(
-      publishShareArtifact({
+    const failure = await publishShareArtifact({
         gatewayBaseUrl,
         fetchImpl: fetchImpl as typeof fetch,
         request: {
@@ -185,8 +261,17 @@ describe("shareGatewayClient", () => {
           contentType: "application/vp+json",
           payload: { type: ["VerifiablePresentation"] },
         },
-      }),
-    ).rejects.toThrow("JSON request body exceeds 1000000 bytes.");
+      }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(PortalInteroperabilityProblemError);
+    expect(failure).toMatchObject({
+      status: 413,
+      code: "share_gateway_payload_too_large",
+      requestId: "req-share-413",
+      correlationId: "corr-share-413",
+    });
+    expect((failure as Error).message).toContain(
+      "JSON request body exceeds 1000000 bytes.",
+    );
   });
 
   it("issues payer artifacts only through the explicit demo payer integration endpoint", async () => {
@@ -411,6 +496,51 @@ describe("shareGatewayClient", () => {
   });
 
 });
+
+async function issuerCredentialJwt(
+  holderDid: string,
+  now: Date,
+): Promise<string> {
+  const issuerDid = "did:web:portal.example:hospital:tcc";
+  const keyPair = await generateKeyPair("ES256");
+  return new SignJWT({
+    "@context": [
+      "https://www.w3.org/ns/credentials/v2",
+      "https://portal.example/contexts/trustcare-credentials-v1.jsonld",
+    ],
+    id: "urn:uuid:share-gateway-test-credential",
+    type: ["VerifiableCredential", "PatientIdentityCredential"],
+    issuer: issuerDid,
+    credentialSubject: { id: holderDid, data: {} },
+    validFrom: now.toISOString(),
+    validUntil: new Date(now.getTime() + 60 * 60_000).toISOString(),
+    credentialStatus: [
+      {
+        id: "https://portal.example/status/1#0",
+        type: "BitstringStatusListEntry",
+        statusPurpose: "revocation",
+        statusListIndex: "0",
+        statusListCredential: "https://portal.example/status/1",
+      },
+    ],
+  })
+    .setProtectedHeader({
+      alg: "ES256",
+      typ: "vc+jwt",
+      cty: "vc",
+      kid: `${issuerDid}#test`,
+    })
+    .sign(keyPair.privateKey);
+}
+
+async function sha256Digest(value: string): Promise<`sha256:${string}`> {
+  const bytes = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
+  );
+  return `sha256:${Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("")}`;
+}
 
 function jsonResponse(
   input: Partial<ShareGatewayPublicationResponse> &

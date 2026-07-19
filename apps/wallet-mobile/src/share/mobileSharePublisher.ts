@@ -42,6 +42,7 @@ export async function publishMobileVpShare(input: {
   holderDid: string;
   holderIdentity?: HolderSigningIdentity;
   shareGatewayUrl: string;
+  audience: string;
   context?: ReadinessContext;
   recipient?: string;
   selectedFields?: string[];
@@ -72,6 +73,7 @@ export async function publishMobileSharePackage(input: {
   holderDid: string;
   holderIdentity?: HolderSigningIdentity;
   shareGatewayUrl: string;
+  audience: string;
   mode: SharePackageMode;
   context: ReadinessContext;
   recipient?: string;
@@ -138,15 +140,16 @@ export async function publishMobileSharePackage(input: {
   if (credentialJwts.some((jwt) => !jwt)) {
     throw new Error("เอกสารที่เลือกต้องมีลายเซ็น issuer ครบทุกฉบับก่อนสร้าง VP");
   }
+  const consentRef = `urn:trustcare:consent:share-event:${result.presentation.presentationId}`;
   const holderPresentation = await createHolderSignedDirectVp({
     identity: input.holderIdentity,
     holderDid,
     presentationId: result.presentation.presentationId,
-    audience: "https://trustcare.network/verifier",
+    audience: input.audience,
     recipient,
     context,
     purpose: purposeLabel,
-    consentRef: `urn:trustcare:consent:share-event:${result.presentation.presentationId}`,
+    consentRef,
     credentialJwts: credentialJwts as string[],
     expiresAt,
   });
@@ -156,6 +159,8 @@ export async function publishMobileSharePackage(input: {
           holderPresentationJwt: holderPresentation.vpJwt,
           userId: input.userId,
           holderDid,
+          audience: input.audience,
+          consentRef,
           purpose: context,
           purposeLabel,
           recipient,

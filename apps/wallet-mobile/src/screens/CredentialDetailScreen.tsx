@@ -105,6 +105,7 @@ export function CredentialDetailScreen() {
         userId: user.id,
         holderDid: user.holderDid,
         shareGatewayUrl: env.shareGatewayUrl,
+        audience: `${env.portalBaseUrl}/verifier`,
         selectedFields: [],
         validMinutes: 10,
       });

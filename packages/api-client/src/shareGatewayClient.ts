@@ -1,9 +1,12 @@
 import { assertShareGatewayPublicationResponse } from "@trustcare/contracts";
 import {
+  assertImmutablePresentationResolverQrPayload,
+  assertTrustCareDirectPresentation,
   createShareGatewayPublicationRequest,
   assertPlainShlManifest,
   createShlLinkPayload,
   normalizeShareGatewayBaseUrl,
+  publicJwkFromDidKey,
   readinessContextLabels,
   type BuiltSharePackage,
   type CertifiedShlPublication,
@@ -11,7 +14,14 @@ import {
   type ReadinessContext,
   type ShareGatewayPublicationRequest,
   type ShareGatewayPublicationResponse,
+  verificationMethodKidFromDidKey,
 } from "@trustcare/wallet-core";
+import {
+  compactVerify,
+  decodeProtectedHeader,
+  importJWK,
+} from "jose";
+import { PortalInteroperabilityProblemError } from "./qrInteroperability";
 
 export type PublishedHolderAttestedShl = {
   trustMode: "holder_attested";
@@ -41,11 +51,52 @@ export type PublishVpSharePackageInput = {
   holderPresentationJwt: string;
   userId: string | number;
   holderDid: string;
+  audience: string;
+  consentRef: string;
   purpose: ReadinessContext;
   purposeLabel?: string;
   recipient: string;
   expiresAt: string;
 };
+
+export type PublicPresentationVerificationEvidence = {
+  version: "1";
+  providerId: string;
+  artifactId: string;
+  resolverUrl: string;
+  packageDigest: `sha256:${string}`;
+  contextDigest: `sha256:${string}`;
+  subjects: Array<{
+    role: "vc" | "vp" | "manifest_vc";
+    digest: `sha256:${string}`;
+    contentHash?: `sha256:${string}`;
+    issuerDid?: string;
+    holderDid?: string;
+    validUntil?: string;
+    statusReference?: unknown;
+  }>;
+  policy: { id: string; version: string };
+  checkedAt: string;
+  expiresAt: string;
+  verified: true;
+  checks: Array<{
+    key: "proof" | "issuer" | "status" | "expiry" | "policy" | "binding";
+    state: "pass";
+    subjectDigests: `sha256:${string}`[];
+    checkedAt: string;
+    authority: string;
+    detail?: string;
+  }>;
+  requestId: string;
+  correlationId: string;
+};
+
+export type VerifiedVpShareGatewayPublication =
+  ShareGatewayPublicationResponse & {
+    publicUrl: string;
+    qrPayload: string;
+    verificationEvidence: PublicPresentationVerificationEvidence;
+  };
 
 export type PublishShlSharePackageInput = {
   result: Extract<BuiltSharePackage, { shl: unknown }>;
@@ -94,11 +145,20 @@ export type IssuePayerCredentialWithGatewayResponse =
 export type ShareGatewayClient = {
   publishVp(
     input: PublishVpSharePackageInput,
-  ): Promise<ShareGatewayPublicationResponse>;
+  ): Promise<VerifiedVpShareGatewayPublication>;
   publishShl(
     input: PublishShlSharePackageInput,
   ): Promise<ShareGatewayPublicationResponse>;
   resolvePresentation(presentationId: string): Promise<string>;
+  verifyPresentationPublication(input: {
+    artifactId: string;
+    expectedJwt: string;
+    holderDid: string;
+    audience?: string;
+    recipient?: string;
+    purpose?: string;
+    consentRef?: string;
+  }): Promise<PublicPresentationVerificationEvidence>;
   jwksUrl(): string;
 };
 
@@ -118,14 +178,20 @@ export function createShareGatewayClient(
       publishShlSharePackage({ ...input, gatewayBaseUrl, fetchImpl }),
     resolvePresentation: (presentationId) =>
       resolvePresentation(gatewayBaseUrl, presentationId, fetchImpl),
+    verifyPresentationPublication: (input) =>
+      verifyPublishedPresentation({
+        ...input,
+        gatewayBaseUrl,
+        fetchImpl,
+      }),
     jwksUrl: () => shareGatewayJwksUrl(gatewayBaseUrl),
   };
 }
 
 export async function publishVpSharePackage(
   input: PublishVpSharePackageInput & ShareGatewayClientOptions,
-): Promise<ShareGatewayPublicationResponse> {
-  return publishShareArtifact({
+): Promise<VerifiedVpShareGatewayPublication> {
+  const publication = await publishShareArtifact({
     gatewayBaseUrl: input.gatewayBaseUrl,
     fetchImpl: input.fetchImpl,
     request: {
@@ -146,6 +212,41 @@ export async function publishVpSharePackage(
       },
     },
   });
+  if (!publication.publicUrl || !publication.qrPayload) {
+    throw new Error(
+      "Share Gateway did not return an immutable presentation resolver URL.",
+    );
+  }
+  assertImmutablePresentationResolverQrPayload(publication.publicUrl, {
+    origin: input.gatewayBaseUrl,
+    artifactId: input.result.presentation.presentationId,
+  });
+  assertImmutablePresentationResolverQrPayload(publication.qrPayload, {
+    origin: input.gatewayBaseUrl,
+    artifactId: input.result.presentation.presentationId,
+  });
+  if (publication.publicUrl !== publication.qrPayload) {
+    throw new Error(
+      "Share Gateway QR must be the exact immutable presentation resolver URL.",
+    );
+  }
+  const verificationEvidence = await verifyPublishedPresentation({
+    gatewayBaseUrl: input.gatewayBaseUrl,
+    fetchImpl: input.fetchImpl,
+    artifactId: input.result.presentation.presentationId,
+    expectedJwt: input.holderPresentationJwt,
+    holderDid: input.holderDid,
+    audience: input.audience,
+    recipient: input.recipient,
+    purpose: purposeLabel(input.purpose, input.purposeLabel),
+    consentRef: input.consentRef,
+  });
+  return {
+    ...publication,
+    publicUrl: publication.publicUrl,
+    qrPayload: publication.qrPayload,
+    verificationEvidence,
+  };
 }
 
 export async function publishShlSharePackage(
@@ -337,38 +438,12 @@ export async function publishShareArtifact(input: {
       body: JSON.stringify(createShareGatewayPublicationRequest(input.request)),
     },
   );
-  const payload = await response.json().catch(() => null);
-  const failure = shareGatewayFailureMessage(payload);
-  if (!response.ok || failure) {
-    const fallback = [response.status, response.statusText]
-      .filter(Boolean)
-      .join(" ");
-    throw new Error(
-      `Share Gateway publish failed: ${failure || fallback || "Unknown error"}`,
-    );
+  if (!response.ok) {
+    throw await shareGatewayProblem(response);
   }
+  const payload = await response.json().catch(() => null);
   const gatewayPayload = assertShareGatewayPublicationResponse(payload);
   return gatewayPayload;
-}
-
-function shareGatewayFailureMessage(payload: unknown): string | null {
-  const object = recordValue(payload);
-  if (!object) return null;
-  const errors = Array.isArray(object.errors)
-    ? object.errors.filter(
-        (error): error is string =>
-          typeof error === "string" && Boolean(error.trim()),
-      )
-    : [];
-  if (errors.length) return errors.join(" ");
-  if (object.ok === false) {
-    for (const key of ["detail", "message", "title"] as const) {
-      const value = object[key];
-      if (typeof value === "string" && value.trim()) return value.trim();
-    }
-    return "Gateway rejected the publication request.";
-  }
-  return null;
 }
 
 export async function issuePayerCredentialWithShareGateway(
@@ -429,6 +504,208 @@ export async function resolvePresentation(
     );
   }
   return payload;
+}
+
+export async function verifyPublishedPresentation(input: {
+  gatewayBaseUrl: string;
+  artifactId: string;
+  expectedJwt: string;
+  holderDid: string;
+  audience?: string;
+  recipient?: string;
+  purpose?: string;
+  consentRef?: string;
+  fetchImpl?: ShareGatewayFetch;
+}): Promise<PublicPresentationVerificationEvidence> {
+  const gatewayBaseUrl = normalizeShareGatewayBaseUrl(input.gatewayBaseUrl);
+  const resolverUrl = `${gatewayBaseUrl}/presentations/${encodeURIComponent(input.artifactId)}.jwt`;
+  assertImmutablePresentationResolverQrPayload(resolverUrl, {
+    origin: gatewayBaseUrl,
+    artifactId: input.artifactId,
+  });
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const resolvedResponse = await fetchImpl(resolverUrl, {
+    headers: {
+      accept: "application/vp+jwt, text/plain, application/problem+json",
+    },
+    cache: "no-store",
+  });
+  if (!resolvedResponse.ok) {
+    throw await shareGatewayProblem(resolvedResponse);
+  }
+  const resolved = await resolvedResponse.text();
+  if (resolved !== input.expectedJwt) {
+    throw new PortalInteroperabilityProblemError(
+      "Share Gateway resolver changed the exact Wallet-signed Holder VP bytes.",
+      {
+        status: resolvedResponse.status,
+        code: "share_gateway_holder_vp_bytes_changed",
+        requestId: resolvedResponse.headers.get("x-request-id") ?? undefined,
+        correlationId:
+          resolvedResponse.headers.get("x-correlation-id") ?? undefined,
+      },
+    );
+  }
+  await verifyHolderVpLocally(input);
+  const evidenceUrl = `${gatewayBaseUrl}/presentations/${encodeURIComponent(input.artifactId)}/verification-evidence`;
+  const evidenceResponse = await fetchImpl(evidenceUrl, {
+    headers: { accept: "application/json, application/problem+json" },
+    cache: "no-store",
+  });
+  if (!evidenceResponse.ok) {
+    throw await shareGatewayProblem(evidenceResponse);
+  }
+  const evidence = recordValue(await evidenceResponse.json().catch(() => null));
+  if (!evidence) {
+    throw new PortalInteroperabilityProblemError(
+      "Share Gateway verification evidence is malformed.",
+      {
+        status: evidenceResponse.status,
+        code: "share_gateway_evidence_invalid",
+        requestId: evidenceResponse.headers.get("x-request-id") ?? undefined,
+        correlationId:
+          evidenceResponse.headers.get("x-correlation-id") ?? undefined,
+      },
+    );
+  }
+  const expectedVpContentHash = await sha256Digest(input.expectedJwt);
+  assertPublicEvidence({
+    evidence,
+    artifactId: input.artifactId,
+    resolverUrl,
+    expectedVpContentHash,
+  });
+  return evidence as PublicPresentationVerificationEvidence;
+}
+
+async function verifyHolderVpLocally(input: {
+  expectedJwt: string;
+  holderDid: string;
+  audience?: string;
+  recipient?: string;
+  purpose?: string;
+  consentRef?: string;
+}): Promise<void> {
+  const header = decodeProtectedHeader(input.expectedJwt);
+  if (
+    !["EdDSA", "ES256"].includes(String(header.alg)) ||
+    header.typ !== "vp+jwt" ||
+    header.cty !== "vp" ||
+    header.kid !== verificationMethodKidFromDidKey(input.holderDid)
+  ) {
+    throw new Error("Holder VP protected header is invalid.");
+  }
+  const verified = await compactVerify(
+    input.expectedJwt,
+    await importJWK(publicJwkFromDidKey(input.holderDid), String(header.alg)),
+    { algorithms: [String(header.alg)] },
+  );
+  const payload = JSON.parse(
+    new TextDecoder().decode(verified.payload),
+  ) as Record<string, unknown>;
+  assertTrustCareDirectPresentation({
+    payload,
+    expectedHolderDid: input.holderDid,
+    expectedAudience: input.audience,
+    expectedRecipient: input.recipient,
+    expectedPurpose: input.purpose,
+    expectedConsentRef: input.consentRef,
+  });
+}
+
+function assertPublicEvidence(input: {
+  evidence: Record<string, unknown>;
+  artifactId: string;
+  resolverUrl: string;
+  expectedVpContentHash: `sha256:${string}`;
+}): void {
+  const checks = Array.isArray(input.evidence.checks)
+    ? input.evidence.checks.map(recordValue)
+    : [];
+  const expectedChecks = [
+    "proof",
+    "issuer",
+    "status",
+    "expiry",
+    "policy",
+    "binding",
+  ];
+  const subjects = Array.isArray(input.evidence.subjects)
+    ? input.evidence.subjects.map(recordValue)
+    : [];
+  const vpSubject = subjects.find(
+    (subject) =>
+      subject?.role === "vp" &&
+      subject.contentHash === input.expectedVpContentHash,
+  );
+  if (
+    input.evidence.version !== "1" ||
+    input.evidence.verified !== true ||
+    input.evidence.artifactId !== input.artifactId ||
+    input.evidence.resolverUrl !== input.resolverUrl ||
+    typeof input.evidence.requestId !== "string" ||
+    typeof input.evidence.correlationId !== "string" ||
+    !vpSubject ||
+    checks.length !== expectedChecks.length ||
+    expectedChecks.some(
+      (key) =>
+        checks.filter(
+          (check) => check?.key === key && check.state === "pass",
+        ).length !== 1,
+    )
+  ) {
+    throw new PortalInteroperabilityProblemError(
+      "Share Gateway public evidence is not an exact six-check pass for the published Holder VP.",
+      {
+        code: "share_gateway_evidence_not_verified",
+        requestId:
+          typeof input.evidence.requestId === "string"
+            ? input.evidence.requestId
+            : undefined,
+        correlationId:
+          typeof input.evidence.correlationId === "string"
+            ? input.evidence.correlationId
+            : undefined,
+        problem: input.evidence,
+      },
+    );
+  }
+}
+
+async function shareGatewayProblem(
+  response: Response,
+): Promise<PortalInteroperabilityProblemError> {
+  const contentType = (response.headers.get("content-type") ?? "")
+    .split(";", 1)[0]
+    ?.trim()
+    .toLowerCase();
+  const problem = recordValue(await response.clone().json().catch(() => null));
+  return new PortalInteroperabilityProblemError(
+    typeof problem?.detail === "string"
+      ? problem.detail
+      : `Share Gateway request failed with HTTP ${response.status}.`,
+    {
+      status: response.status,
+      code:
+        contentType === "application/problem+json" &&
+        typeof problem?.code === "string"
+          ? problem.code
+          : "share_gateway_problem_invalid",
+      requestId: response.headers.get("x-request-id") ?? undefined,
+      correlationId:
+        response.headers.get("x-correlation-id") ?? undefined,
+      problem: problem ?? undefined,
+    },
+  );
+}
+
+async function sha256Digest(value: string): Promise<`sha256:${string}`> {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
+  );
+  return `sha256:${Array.from(digest, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("")}`;
 }
 
 export function shareGatewayJwksUrl(gatewayBaseUrl: string): string {

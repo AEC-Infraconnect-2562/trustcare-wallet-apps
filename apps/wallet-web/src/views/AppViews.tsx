@@ -59,7 +59,7 @@ import {
   createShareDraftFromPrepare,
   createShlPackageId,
   createHolderSignedDirectVp,
-  assertProductionCrossDeviceQrPayload,
+  assertImmutablePresentationResolverQrPayload,
   createSharePolicy,
   createShlViewerUrl,
   credentialCompactSummaryRows,
@@ -1333,6 +1333,8 @@ export function ShareView({
           holderPresentationJwt: holderPresentation.vpJwt,
           userId: user.id,
           holderDid: holderIdentity.did,
+          audience: presentationBinding.audience,
+          consentRef: String(consentRef),
           purpose,
           purposeLabel: readinessContextLabels[purpose].th,
           recipient: presentationBinding.recipient,
@@ -1341,11 +1343,15 @@ export function ShareView({
         if (!publication.qrPayload) {
           throw new Error("Share Gateway ไม่ได้ส่ง VP resolver URL กลับมา");
         }
-        const webScanPayload = createScannableWebUrl(publication.qrPayload);
-        assertProductionCrossDeviceQrPayload(webScanPayload);
-        setSharePayload(webScanPayload);
+        assertImmutablePresentationResolverQrPayload(publication.qrPayload, {
+          origin: shareGatewayBaseUrl,
+          artifactId: publication.artifactId,
+        });
+        setSharePayload(publication.qrPayload);
         setShareExportPayload(exportPayload);
-        setShareQrDataUrl(await toQrDataUrl(webScanPayload, { width: 320 }));
+        setShareQrDataUrl(
+          await toQrDataUrl(publication.qrPayload, { width: 320 }),
+        );
         setSharePublication({
           state: "published",
           message:

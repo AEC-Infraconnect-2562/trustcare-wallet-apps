@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { decodeJwt } from "jose";
 import {
   buildClinicalDocumentGraphPresentation,
+  buildSharePackage,
   createHolderSignedDirectVp,
   createHolderSignedShlAssociationVp,
   createShlPackageId,
@@ -21,6 +22,12 @@ import {
   verifyWalletExchangeContentHash,
 } from "./walletExchangeCredential";
 import { synchronizeWalletAvatar } from "./walletAvatarSync";
+import { publishVpSharePackage } from "./shareGatewayClient";
+import {
+  loadPortalInteroperabilityDiscovery,
+  PortalInteroperabilityProblemError,
+  PortalQrInteroperabilityClient,
+} from "./qrInteroperability";
 import {
   WalletExchangeProblemError,
   WalletExchangeV2Client,
@@ -38,6 +45,7 @@ const liveEnabled = process.env.TRUSTCARE_PORTAL_LIVE_BINDING_TEST === "1";
 const negativeLiveEnabled =
   process.env.TRUSTCARE_PORTAL_LIVE_NEGATIVE_TEST === "1";
 const p0LiveEnabled = process.env.TRUSTCARE_PORTAL_LIVE_P0_TEST === "1";
+const qrLiveEnabled = process.env.TRUSTCARE_PORTAL_LIVE_QR_TEST === "1";
 const portalBaseUrl =
   process.env.TRUSTCARE_PORTAL_BASE_URL ??
   "https://trustcare-hospital-network-production.up.railway.app";
@@ -49,6 +57,9 @@ const linkedUsernames = (
   .map((value) => value.trim())
   .filter(Boolean);
 const appId = "trustcare-wallet-production";
+const walletProductionOrigin =
+  process.env.TRUSTCARE_WALLET_TEST_APP_ORIGIN ??
+  "https://wallet-web-production-6a00.up.railway.app";
 
 describe.skipIf(!liveEnabled)("live Portal Wallet binding and sync", () => {
   it.each(linkedUsernames)("%s completes test-login -> binding -> DPoP session -> sync", async (username) => {
@@ -479,7 +490,18 @@ describe.skipIf(!liveEnabled)("live Portal Wallet binding and sync", () => {
         graphState,
       });
     }
-  }, p0LiveEnabled ? 300_000 : 120_000);
+    if (qrLiveEnabled && username === linkedUsernames[0]) {
+      await runPortalQrClosure({
+        username,
+        holder,
+        exchange,
+        contracts,
+        issuers,
+        documents,
+        initialPage: page,
+      });
+    }
+  }, p0LiveEnabled || qrLiveEnabled ? 300_000 : 120_000);
 });
 
 describe.skipIf(!negativeLiveEnabled)(
@@ -565,6 +587,217 @@ type PortalStaffSession = {
 };
 
 const staffSessionCache = new Map<string, Promise<PortalStaffSession>>();
+
+async function runPortalQrClosure(input: {
+  username: string;
+  holder: HolderSigningIdentity;
+  exchange: WalletExchangeV2Client;
+  contracts: LiveContracts;
+  issuers: LiveIssuers;
+  documents: WalletDocumentRecordV2[];
+  initialPage: LiveSyncPage;
+}): Promise<void> {
+  const tcc = input.issuers.find((issuer) => issuer.hospitalCode === "TCC");
+  if (!tcc) throw new Error("Portal TCC issuer discovery is unavailable.");
+  const source = input.documents.find(
+    (document) =>
+      document.provenance.issuerDid === tcc.issuerDid &&
+      document.credential.credentialId &&
+      document.credential.credentialType &&
+      document.credential.jwt &&
+      ["verified", "issuer_signed_untrusted"].includes(
+        document.trust.state,
+      ) &&
+      !isTerminalDocumentStatus(document.lifecycle.status),
+  );
+  if (
+    !source?.credential.credentialId ||
+    !source.credential.credentialType ||
+    !source.credential.jwt
+  ) {
+    throw new Error("No active TCC credential is available for QR closure.");
+  }
+  const maker = await portalStaffLogin("demo-nurse-001", "issuer_maker");
+  const discovery = await loadPortalInteroperabilityDiscovery({
+    portalBaseUrl,
+  });
+  const client = new PortalQrInteroperabilityClient({
+    discovery,
+    identity: input.holder,
+    issuers: input.issuers,
+  });
+  const offerCreated = await portalStaffJson<{
+    transactionId: string;
+    qrPayload: string;
+    transactionCode: string;
+  }>(maker, discovery.qr.endpoints.oid4vciOfferCreate, {
+    hospitalId: maker.user.hospitalId,
+    credentialId: source.credential.credentialId,
+    expiresInSeconds: 600,
+    requireTransactionCode: true,
+  });
+  const offer = await client.resolveOid4vciOffer(offerCreated.body.qrPayload);
+  const issued = await client.redeemOid4vciOffer({
+    offer,
+    transactionCode: offerCreated.body.transactionCode,
+    expectedHolderDid: input.holder.did,
+  });
+  expect(issued.credentialJwt).toBe(source.credential.jwt);
+  expect(new Set(issued.statusPurposes)).toEqual(
+    new Set(["revocation", "suspension"]),
+  );
+  let oid4vciReplay: PortalInteroperabilityProblemError | undefined;
+  try {
+    await client.redeemOid4vciOffer({
+      offer,
+      transactionCode: offerCreated.body.transactionCode,
+      expectedHolderDid: input.holder.did,
+    });
+  } catch (reason) {
+    oid4vciReplay =
+      reason instanceof PortalInteroperabilityProblemError
+        ? reason
+        : undefined;
+  }
+  expect(oid4vciReplay).toMatchObject({
+    status: 400,
+    code: "invalid_grant",
+  });
+
+  const requestCreated = await portalStaffJson<{
+    transactionId: string;
+    qrPayload: string;
+  }>(maker, discovery.qr.endpoints.oid4vpCreate, {
+    hospitalId: maker.user.hospitalId,
+    purpose: "continuity_of_care",
+    context: "opd_visit",
+    recipient: tcc.issuerDid,
+    requiredCredentialTypes: [source.credential.credentialType],
+    expiresInSeconds: 300,
+  });
+  const request = await client.resolveOid4vpRequest(
+    requestCreated.body.qrPayload,
+    `wallet-${globalThis.crypto.randomUUID()}`,
+  );
+  const receipt = await client.completeOid4vp({
+    request,
+    consentRef: `urn:trustcare:consent:oid4vp:${globalThis.crypto.randomUUID()}`,
+    credentialJwts: [source.credential.jwt],
+  });
+  expect(receipt.checks.map((check) => check.key).sort()).toEqual(
+    ["binding", "expiry", "issuer", "policy", "proof", "status"].sort(),
+  );
+  expect(receipt.holderVpJwt).toMatch(/^[^.]+\.[^.]+\.[^.]+$/);
+  const sourceCard = walletCardForDocumentRendering(source);
+  const sharePackage = buildSharePackage({
+    mode: "PurposeVP",
+    context: request.context,
+    cards: [sourceCard],
+    selectedCardIds: [sourceCard.id],
+    holderDid: input.holder.did,
+    recipient: request.recipient,
+    purpose: request.purpose,
+    expiresAt: request.expiresAt,
+    gatewayBaseUrl: input.contracts.discovery.endpoints.shareGateway,
+  });
+  if (!("presentation" in sharePackage)) {
+    throw new Error("Direct Holder VP package was not created.");
+  }
+  const publicConsentRef =
+    `urn:trustcare:consent:public-vp:${globalThis.crypto.randomUUID()}`;
+  const publicHolderVp = await createHolderSignedDirectVp({
+    identity: input.holder,
+    presentationId: sharePackage.presentation.presentationId,
+    audience: `${portalBaseUrl}/verifier`,
+    recipient: request.recipient,
+    context: request.context,
+    purpose: request.purpose,
+    consentRef: publicConsentRef,
+    credentialJwts: [source.credential.jwt],
+    expiresAt: request.expiresAt,
+  });
+  expect(publicHolderVp.vpJwt).not.toBe(receipt.holderVpJwt);
+  const publicPublication = await publishVpSharePackage({
+    gatewayBaseUrl: input.contracts.discovery.endpoints.shareGateway,
+    fetchImpl: portalGatewayOriginFetch,
+    result: sharePackage,
+    holderPresentationJwt: publicHolderVp.vpJwt,
+    userId: input.username,
+    holderDid: input.holder.did,
+    audience: `${portalBaseUrl}/verifier`,
+    consentRef: publicConsentRef,
+    purpose: request.context,
+    purposeLabel: request.purpose,
+    recipient: request.recipient,
+    expiresAt: request.expiresAt,
+  });
+  expect(publicPublication.publicUrl).toBe(publicPublication.qrPayload);
+  expect(publicPublication.verificationEvidence.checks).toHaveLength(6);
+  let oid4vpReplay: PortalInteroperabilityProblemError | undefined;
+  try {
+    await client.completeOid4vp({
+      request,
+      consentRef: `urn:trustcare:consent:oid4vp-replay:${globalThis.crypto.randomUUID()}`,
+      credentialJwts: [source.credential.jwt],
+    });
+  } catch (reason) {
+    oid4vpReplay =
+      reason instanceof PortalInteroperabilityProblemError
+        ? reason
+        : undefined;
+  }
+  expect(oid4vpReplay).toMatchObject({
+    status: 409,
+    code: "oid4vp_response_replayed",
+  });
+
+  const knownCredentials = new Map(
+    input.initialPage.changes.flatMap((change) =>
+      change.type === "credential.upsert"
+        ? [[change.credentialId, change.contentHash] as const]
+        : [],
+    ),
+  );
+  const acknowledged = await syncVerifyAndAck({
+    exchange: input.exchange,
+    contracts: input.contracts,
+    issuers: input.issuers,
+    holderDid: input.holder.did,
+    cursor: input.initialPage.nextCursor,
+    knownCredentials,
+    ackKey: `qr-closure-ack-${input.username}-${globalThis.crypto.randomUUID()}`,
+  });
+  console.info("Live Wallet QR closure", {
+    username: input.username,
+    portalRevision: discovery.portalRevision,
+    qrContractVersion: discovery.qr.contractVersion,
+    oid4vciTransactionId: offerCreated.body.transactionId,
+    oid4vciCredentialId: issued.credentialId,
+    oid4vciReplayCode: oid4vciReplay?.code,
+    oid4vciReplayRequestId: oid4vciReplay?.requestId,
+    oid4vciReplayCorrelationId: oid4vciReplay?.correlationId,
+    oid4vpTransactionId: request.transactionId,
+    oid4vpArtifactId: receipt.artifactId,
+    oid4vpChecks: receipt.checks.length,
+    directHolderVpResolver: publicPublication.qrPayload,
+    publicEvidenceRequestId:
+      publicPublication.verificationEvidence.requestId,
+    publicEvidenceCorrelationId:
+      publicPublication.verificationEvidence.correlationId,
+    oid4vpReplayCode: oid4vpReplay?.code,
+    oid4vpReplayRequestId: oid4vpReplay?.requestId,
+    oid4vpReplayCorrelationId: oid4vpReplay?.correlationId,
+    ackCursor: acknowledged.nextCursor,
+    requestId: input.exchange.lastResponseTrace?.requestId,
+    correlationId: input.exchange.lastResponseTrace?.correlationId,
+  });
+}
+
+const portalGatewayOriginFetch: typeof fetch = async (request, init) => {
+  const headers = new Headers(init?.headers);
+  headers.set("origin", walletProductionOrigin);
+  return fetch(request, { ...init, headers });
+};
 
 async function runPortalP0Completion(input: {
   username: string;
@@ -1153,6 +1386,37 @@ async function portalStaffLogin(
     staffSessionCache.delete(key);
     throw reason;
   }
+}
+
+async function portalStaffJson<T>(
+  session: PortalStaffSession,
+  url: string,
+  input: Record<string, unknown>,
+): Promise<{
+  body: T;
+  requestId?: string;
+  correlationId?: string;
+}> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      accept: "application/json, application/problem+json",
+      "content-type": "application/json",
+      cookie: session.cookie,
+      "x-request-id": `wallet-qr-staff-${globalThis.crypto.randomUUID()}`,
+    },
+    body: JSON.stringify(input),
+    cache: "no-store",
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw tracedHttpError("Portal QR staff request failed", response, payload);
+  }
+  return {
+    body: payload as T,
+    requestId: response.headers.get("x-request-id") ?? undefined,
+    correlationId: response.headers.get("x-correlation-id") ?? undefined,
+  };
 }
 
 async function portalTrpc<T>(

@@ -46,12 +46,13 @@ export function classifyQrPayload(raw: string): QrPayloadClassification {
   }
   if (looksLikeJwt(value)) {
     const payload = decodeJwtPayload(value);
-    const types = typeList(payload?.vp ?? payload);
-    if (types.includes("VerifiablePresentation"))
-      return result("vp_jwt", true, true, "W3C VP JWT");
-    if (types.includes("VerifiableCredential"))
-      return result("vc_jwt", true, true, "W3C VC JWT");
-    return result("json", true, false, "JWT-shaped payload without VC/VP type");
+    const types = typeList(payload);
+    return result(
+      types.includes("VerifiablePresentation") ? "vp_jwt" : "vc_jwt",
+      false,
+      false,
+      "raw compact JWT is prohibited as a public QR payload",
+    );
   }
   const json = parseJson(value);
   if (json) {
@@ -86,33 +87,29 @@ export function classifyQrPayload(raw: string): QrPayloadClassification {
   }
   const url = parseUrl(value);
   if (url) {
-    const wrappedPayload = scanPayloadFromFragment(url.hash);
-    if (wrappedPayload) {
-      const nested = classifyQrPayload(wrappedPayload);
-      return result(
-        nested.kind,
-        url.protocol === "https:" && nested.verifierResolvable,
-        url.protocol === "https:" && nested.productionResolvable,
-        `HTTPS web scanner wrapper for ${nested.reason}`,
-      );
-    }
-    if (
-      url.searchParams.get("tc_resolver") === "vp" &&
-      url.searchParams.get("tc_id")
-    ) {
+    if (isImmutablePresentationResolver(url)) {
       return result(
         "vp_resolver",
         true,
-        false,
-        "TrustCare demo VP resolver URL",
+        true,
+        "immutable Share Gateway VP resolver URL",
       );
     }
     if (
-      url.searchParams.get("vp") ||
-      url.searchParams.get("presentationId") ||
-      url.pathname.includes("/presentations/")
+      url.searchParams.has("vp") ||
+      url.searchParams.has("vc") ||
+      url.searchParams.has("token") ||
+      url.searchParams.has("presentationId") ||
+      url.searchParams.has("scan") ||
+      url.searchParams.has("tc_resolver") ||
+      scanPayloadFromFragment(url.hash)
     ) {
-      return result("vp_resolver", true, true, "VP resolver URL");
+      return result(
+        "unknown",
+        false,
+        false,
+        "legacy query/fragment QR resolver is prohibited",
+      );
     }
     if (url.hash.startsWith("#shlink:/"))
       return result(
@@ -143,6 +140,25 @@ export function assertProductionCrossDeviceQrPayload(raw: string): void {
     throw new Error(
       `Production cross-device QR must use a verifier-resolvable HTTPS URL: ${classification.reason}`,
     );
+  }
+}
+
+export function assertImmutablePresentationResolverQrPayload(
+  raw: string,
+  expected?: { origin?: string; artifactId?: string },
+): void {
+  const url = parseUrl(raw.trim());
+  if (!url || !isImmutablePresentationResolver(url)) {
+    throw new Error(
+      "Direct Holder VP QR must be an immutable HTTPS Share Gateway resolver URL without query or fragment.",
+    );
+  }
+  if (expected?.origin && url.origin !== new URL(expected.origin).origin) {
+    throw new Error("Direct Holder VP QR resolver origin is not trusted.");
+  }
+  const artifactId = presentationArtifactId(url);
+  if (expected?.artifactId && artifactId !== expected.artifactId) {
+    throw new Error("Direct Holder VP QR resolver artifact ID does not match.");
   }
 }
 
@@ -206,6 +222,25 @@ function scanPayloadFromFragment(hash: string): string | null {
   } catch {
     return null;
   }
+}
+
+function isImmutablePresentationResolver(url: URL): boolean {
+  return Boolean(
+    url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      presentationArtifactId(url),
+  );
+}
+
+function presentationArtifactId(url: URL): string | null {
+  return (
+    url.pathname.match(
+      /^\/api\/share-gateway\/presentations\/([A-Za-z0-9._:-]{1,100})\.jwt$/,
+    )?.[1] ?? null
+  );
 }
 
 function looksLikeJwt(value: string): boolean {

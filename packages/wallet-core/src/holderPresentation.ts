@@ -27,6 +27,8 @@ export type HolderSignedDirectVpInput = {
   context: WalletExchangeServiceContext;
   purpose: string;
   consentRef: string;
+  /** OID4VP authorization request nonce. It is signed into the VP binding. */
+  nonce?: string;
   presentationId?: string;
   /** Issuer-signed compact VC JWTs. Their exact bytes and order are retained. */
   credentialJwts: readonly string[];
@@ -45,6 +47,7 @@ export type HolderSignedDirectVpPayload = {
     consentRef: string;
     recipient: string;
     audience: string;
+    nonce?: string;
     issuedAt: string;
     expiresAt: string;
   };
@@ -142,6 +145,9 @@ export async function createHolderSignedDirectVp(
   );
   const purpose = requireText(input.purpose, "VP purpose", 128);
   const consentRef = requireText(input.consentRef, "VP consent reference", 255);
+  const nonce = input.nonce
+    ? requireText(input.nonce, "VP authorization nonce", 255)
+    : undefined;
   if (!WALLET_EXCHANGE_V2_CONTEXTS.includes(input.context)) {
     throw new Error("Holder VP service context is not supported.");
   }
@@ -178,6 +184,7 @@ export async function createHolderSignedDirectVp(
       consentRef,
       recipient,
       audience,
+      ...(nonce ? { nonce } : {}),
       issuedAt: issuedAtIso,
       expiresAt: expiresAtIso,
     },

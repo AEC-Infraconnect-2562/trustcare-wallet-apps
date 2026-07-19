@@ -20,6 +20,7 @@ export * from "./walletExchangePersistencePolicy";
 export * from "./walletProvisioning";
 export * from "./walletOidc";
 export * from "./walletAvatarSync";
+export * from "./qrInteroperability";
 export * from "./shlCertification";
 export * from "./queryKeys";
 export * from "./walletRepository";
