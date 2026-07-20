@@ -171,10 +171,7 @@ export async function createHolderSignedDirectVp(
   const issuedAtIso = new Date(issuedAt * 1_000).toISOString();
   const expiresAtIso = new Date(expirationTime * 1_000).toISOString();
   const payload: HolderSignedDirectVpPayload = {
-    "@context": [
-      "https://www.w3.org/ns/credentials/v2",
-      credentialContext,
-    ],
+    "@context": ["https://www.w3.org/ns/credentials/v2", credentialContext],
     id: presentationId,
     type: ["VerifiablePresentation", "TrustcarePatientPresentation"],
     holder: input.identity.did,
@@ -231,14 +228,20 @@ export async function createHolderSignedShlAssociationVp(
       )
     : issuedAt + DIRECT_VP_DEFAULT_LIFETIME_SECONDS;
   if (expirationTime <= issuedAt) {
-    throw new Error("SHL association VP expiry must be later than its issued-at time.");
+    throw new Error(
+      "SHL association VP expiry must be later than its issued-at time.",
+    );
   }
   if (expirationTime - issuedAt > DIRECT_VP_MAX_LIFETIME_SECONDS) {
     throw new Error("SHL association VP lifetime must not exceed 15 minutes.");
   }
 
   const audience = requireAudience(input.audience);
-  const recipient = requireText(input.recipient, "SHL association recipient", 700);
+  const recipient = requireText(
+    input.recipient,
+    "SHL association recipient",
+    700,
+  );
   const purpose = requireText(input.purpose, "SHL association purpose", 128);
   const consentRef = requireText(
     input.consentRef,
@@ -268,6 +271,7 @@ export async function createHolderSignedShlAssociationVp(
     recipient,
     context: input.context,
     purpose,
+    consentRef,
     shlId: input.shlId,
     manifestHash,
     sourceBundleHash,
@@ -283,10 +287,7 @@ export async function createHolderSignedShlAssociationVp(
       `${new URL(audience).origin}/contexts/trustcare-credentials-v1.jsonld`,
     ],
     id: presentationId,
-    type: [
-      "VerifiablePresentation",
-      "TrustcareShlAssociationPresentation",
-    ],
+    type: ["VerifiablePresentation", "TrustcareShlAssociationPresentation"],
     holder: input.identity.did,
     purpose,
     trustcare: {
@@ -416,6 +417,7 @@ function assertManifestCredentialBinding(input: {
   recipient: string;
   context: WalletExchangeServiceContext;
   purpose: string;
+  consentRef: string;
   shlId: number;
   manifestHash: `sha256:${string}`;
   sourceBundleHash: `sha256:${string}`;
@@ -434,34 +436,49 @@ function assertManifestCredentialBinding(input: {
   }
   const subject = recordValue(payload.credentialSubject);
   if (subject?.id !== input.holderDid) {
-    throw new Error("Manifest VC holder does not match the SHL association signer.");
+    throw new Error(
+      "Manifest VC holder does not match the SHL association signer.",
+    );
   }
   const claims = recordValue(subject?.data);
   if (!claims) {
     throw new Error("Manifest VC credentialSubject.data is required.");
   }
   if (String(claims.smartHealthLinkId) !== String(input.shlId)) {
-    throw new Error("Manifest VC smartHealthLinkId does not match the SHL package.");
+    throw new Error(
+      "Manifest VC smartHealthLinkId does not match the SHL package.",
+    );
   }
   if (claims.manifestHash !== input.manifestHash) {
     throw new Error("Manifest VC manifestHash does not match the SHL package.");
   }
   if (claims.sourceBundleHash !== input.sourceBundleHash) {
-    throw new Error("Manifest VC sourceBundleHash does not match the SHL package.");
+    throw new Error(
+      "Manifest VC sourceBundleHash does not match the SHL package.",
+    );
   }
   if (claims.context !== input.context || claims.purpose !== input.purpose) {
-    throw new Error("Manifest VC context or purpose does not match the SHL association.");
+    throw new Error(
+      "Manifest VC context or purpose does not match the SHL association.",
+    );
+  }
+  if (claims.consentRef !== input.consentRef) {
+    throw new Error("Manifest VC consent does not match the SHL association.");
   }
   const hospital = recordValue(claims.hospital);
   if (hospital?.did !== input.recipient) {
-    throw new Error("Manifest VC hospital DID does not match the SHL recipient.");
+    throw new Error(
+      "Manifest VC hospital DID does not match the SHL recipient.",
+    );
   }
   const manifestUrl = requireAudience(
     requireText(claims.manifestUrl, "Manifest VC manifest URL", 1_000),
   );
   const trustcare = recordValue(payload.trustcare);
   if (trustcare?.intendedAudience !== manifestUrl) {
-    throw new Error("Manifest VC audience does not match its signed manifest URL.");
+    throw new Error(
+      "Manifest VC audience does not match its signed manifest URL.",
+    );
   }
 }
 
@@ -523,10 +540,7 @@ function requireText(value: unknown, label: string, maxLength: number): string {
   return value;
 }
 
-function requireSha256Digest(
-  value: string,
-  label: string,
-): `sha256:${string}` {
+function requireSha256Digest(value: string, label: string): `sha256:${string}` {
   if (!/^sha256:[0-9a-f]{64}$/.test(value)) {
     throw new Error(`SHL association ${label} must be a SHA-256 digest.`);
   }

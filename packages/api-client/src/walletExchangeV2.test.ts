@@ -691,6 +691,7 @@ describe("Wallet Exchange v2 client", () => {
       status: 409,
       code: "cursor_conflict",
       correlationId: "corr-cursor-001",
+      contentType: "application/problem+json",
       problem: {
         type: `${PORTAL_ORIGIN}/problems/cursor_conflict`,
         status: 409,

@@ -48,8 +48,8 @@ describe("Certified SHL trust-layer primitives", () => {
     const first = createShlPackageId();
     const second = createShlPackageId();
 
-    expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(second).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(first).toMatch(/^[A-Za-z0-9][A-Za-z0-9_-]{42}$/);
+    expect(second).toMatch(/^[A-Za-z0-9][A-Za-z0-9_-]{42}$/);
     expect(second).not.toBe(first);
   });
 
@@ -66,9 +66,9 @@ describe("Certified SHL trust-layer primitives", () => {
     const presentation = decodeJwt(prepared.holderPresentationJwt);
 
     expect(prepared.packageBinding.accessPolicy.audience).toBe(PORTAL_ORIGIN);
-    expect(
-      (presentation.trustcare as Record<string, unknown>).audience,
-    ).toBe(PORTAL_ORIGIN);
+    expect((presentation.trustcare as Record<string, unknown>).audience).toBe(
+      PORTAL_ORIGIN,
+    );
   });
 
   it("encrypts exact issuer JWTs with a random A256GCM key and fresh IVs", async () => {
@@ -110,13 +110,18 @@ describe("Certified SHL trust-layer primitives", () => {
     expect(holderClaims).toMatchObject({
       id: prepared.holderPresentationId,
       holder: holder.did,
-      type: ["VerifiablePresentation", "TrustCareHolderAttestedShlPresentation"],
+      type: [
+        "VerifiablePresentation",
+        "TrustCareHolderAttestedShlPresentation",
+      ],
     });
     expect(
-      (((holderClaims.trustcare as Record<string, unknown>).shl as Record<
-        string,
-        unknown
-      >).manifestHash),
+      (
+        (holderClaims.trustcare as Record<string, unknown>).shl as Record<
+          string,
+          unknown
+        >
+      ).manifestHash,
     ).toBe(prepared.manifestHash);
     expect(holderClaims).not.toHaveProperty("vp");
     expect(holderClaims.verifiableCredential).toHaveLength(2);
@@ -182,13 +187,13 @@ describe("Certified SHL trust-layer primitives", () => {
     expect(vpClaims.holder).toBe(holder.did);
     expect(vpClaims.verifiableCredential).toHaveLength(2);
     expect(
-      ((vpClaims.trustcare as Record<string, unknown>).shl as Record<
-        string,
-        unknown
-      >).manifestHash,
-    ).toBe(
-      prepared.manifestHash,
-    );
+      (
+        (vpClaims.trustcare as Record<string, unknown>).shl as Record<
+          string,
+          unknown
+        >
+      ).manifestHash,
+    ).toBe(prepared.manifestHash);
     expect(publication.objectLinks).toMatchObject({
       shlPackageId: prepared.packageBinding.publicationId,
       manifestHash: prepared.manifestHash,
@@ -661,8 +666,7 @@ async function prepare(
     trustedIssuerDids: [TCC_ISSUER],
     purpose: "OPD registration",
     recipient: "TrustCare TCC registration desk",
-    audience:
-      options.audience ?? `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,
+    audience: options.audience ?? `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,
     context: "opd_visit",
     consentRef: "consent:receipt:1",
     targetHospitalCode: "TCC",
@@ -805,13 +809,10 @@ async function signManifestCredential(
       },
     ],
     trustcare: {
-      intendedAudience:
-        options.audience ?? prepared.packageBinding.manifestUrl,
+      intendedAudience: options.audience ?? prepared.packageBinding.manifestUrl,
     },
   };
-  return new SignJWT(
-    options.useVcWrapper ? { vc: directClaims } : directClaims,
-  )
+  return new SignJWT(options.useVcWrapper ? { vc: directClaims } : directClaims)
     .setProtectedHeader({
       alg: "ES256",
       typ: "vc+jwt",
