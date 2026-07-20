@@ -1,4 +1,10 @@
-import { SignJWT, compactVerify, decodeJwt, generateKeyPair, importJWK } from "jose";
+import {
+  SignJWT,
+  compactVerify,
+  decodeJwt,
+  generateKeyPair,
+  importJWK,
+} from "jose";
 import { describe, expect, it } from "vitest";
 import {
   generateHolderIdentity,
@@ -306,10 +312,7 @@ describe("createHolderSignedShlAssociationVp", () => {
     });
     expect(result.payload).toMatchObject({
       id: "urn:uuid:holder-presentation-42",
-      type: [
-        "VerifiablePresentation",
-        "TrustcareShlAssociationPresentation",
-      ],
+      type: ["VerifiablePresentation", "TrustcareShlAssociationPresentation"],
       holder: identity.did,
       purpose: "patient_summary",
       trustcare: {
@@ -376,6 +379,27 @@ describe("createHolderSignedShlAssociationVp", () => {
         now: NOW,
       }),
     ).rejects.toThrow("audience does not match");
+    const wrongConsentJwt = await issuerManifestCredentialJwt(
+      identity.did,
+      undefined,
+      "urn:trustcare:consent:shl:other",
+    );
+    await expect(
+      createHolderSignedShlAssociationVp({
+        identity,
+        audience: `${AUDIENCE.replace(/\/verifier$/, "")}/api/wallet/v2/shl-associations/42`,
+        recipient: RECIPIENT,
+        context: "opd_visit",
+        purpose: "patient_summary",
+        consentRef: "urn:trustcare:consent:shl:42",
+        shlId: 42,
+        manifestHash: `sha256:${"1".repeat(64)}`,
+        sourceBundleHash: `sha256:${"2".repeat(64)}`,
+        manifestCredentialId: "urn:trustcare:vc:shl:42",
+        manifestCredentialJwt: wrongConsentJwt,
+        now: NOW,
+      }),
+    ).rejects.toThrow("consent does not match");
   });
 });
 
@@ -398,13 +422,16 @@ async function issuerCredentialJwt(
     credentialSubject: { id: holderDid, data: {} },
     validFrom: NOW.toISOString(),
     validUntil: "2026-07-11T11:00:00.000Z",
-    credentialStatus: [{
-      id: "https://trustcare-hospital-network-production.up.railway.app/status/1#0",
-      type: "BitstringStatusListEntry",
-      statusPurpose: "revocation",
-      statusListIndex: "0",
-      statusListCredential: "https://trustcare-hospital-network-production.up.railway.app/status/1",
-    }],
+    credentialStatus: [
+      {
+        id: "https://trustcare-hospital-network-production.up.railway.app/status/1#0",
+        type: "BitstringStatusListEntry",
+        statusPurpose: "revocation",
+        statusListIndex: "0",
+        statusListCredential:
+          "https://trustcare-hospital-network-production.up.railway.app/status/1",
+      },
+    ],
   })
     .setProtectedHeader({
       alg: "ES256",
@@ -418,6 +445,7 @@ async function issuerCredentialJwt(
 async function issuerManifestCredentialJwt(
   holderDid: string,
   intendedAudience?: string,
+  consentRef = "urn:trustcare:consent:shl:42",
 ): Promise<string> {
   const keyPair = await generateKeyPair("ES256");
   const manifestUrl =
@@ -439,6 +467,7 @@ async function issuerManifestCredentialJwt(
         sourceBundleHash: `sha256:${"2".repeat(64)}`,
         purpose: "patient_summary",
         context: "opd_visit",
+        consentRef,
         hospital: { did: RECIPIENT },
       },
     },

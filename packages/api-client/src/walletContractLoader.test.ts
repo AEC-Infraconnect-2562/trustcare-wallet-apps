@@ -387,6 +387,9 @@ async function contractFixture(
       "portal_never_accepts_patient_id_from_wallet_requests",
       "unknown_required_fields_fail_closed",
       "shl_is_transport_not_a_verifiable_credential",
+      "certified_shl_manifest_credential_hospital_did_must_match_authorized_recipient",
+      "certified_shl_transport_purpose_is_not_holder_authorization_purpose",
+      "certified_shl_manifest_and_holder_vp_purpose_must_equal_verified_holder_authorization",
     ],
   };
   const canonicalDigest = await sha256Hex(

@@ -43,9 +43,7 @@ import {
 import { createDpopProof } from "./dpop";
 import { TrustCareApiError } from "./errors";
 import type { WalletExchangeContractSet } from "./walletContractLoader";
-import {
-  assertShlCertificationRequest,
-} from "./shlCertification";
+import { assertShlCertificationRequest } from "./shlCertification";
 
 export type WalletExchangeSessionState = {
   accessToken: string;
@@ -79,6 +77,7 @@ export class WalletExchangeProblemError extends TrustCareApiError {
   readonly correlationId?: string;
   readonly retryable?: boolean;
   readonly problem?: WalletProblemDetails;
+  readonly contentType?: string;
 
   constructor(
     message: string,
@@ -89,6 +88,7 @@ export class WalletExchangeProblemError extends TrustCareApiError {
       correlationId?: string;
       retryable?: boolean;
       problem?: WalletProblemDetails;
+      contentType?: string;
     } = {},
   ) {
     super(message, { status: options.status, code: options.code });
@@ -97,6 +97,7 @@ export class WalletExchangeProblemError extends TrustCareApiError {
     this.correlationId = options.correlationId;
     this.retryable = options.retryable;
     this.problem = options.problem;
+    this.contentType = options.contentType;
   }
 }
 
@@ -110,6 +111,7 @@ type ProtectedRequest = {
 };
 
 export type WalletExchangeResponseTrace = {
+  status: number;
   requestId: string;
   correlationId?: string;
 };
@@ -199,7 +201,11 @@ export class WalletExchangeV2Client {
       this.responseTrace,
     );
     if (!challengeResponse.ok) {
-      throw problemError(challengeResponse, challengePayload, challengeRequestId);
+      throw problemError(
+        challengeResponse,
+        challengePayload,
+        challengeRequestId,
+      );
     }
     const challenge = assertWalletSessionChallenge(challengePayload);
     this.assertChallenge(challenge);
@@ -786,6 +792,11 @@ function problemError(
       correlationId,
       retryable: problem?.retryable,
       problem,
+      contentType: response.headers
+        .get("content-type")
+        ?.split(";", 1)[0]
+        ?.trim()
+        .toLowerCase(),
     },
   );
 }
@@ -795,6 +806,7 @@ function responseTrace(
   fallbackRequestId: string,
 ): WalletExchangeResponseTrace {
   return {
+    status: response.status,
     requestId: response.headers.get("x-request-id") ?? fallbackRequestId,
     correlationId: response.headers.get("x-correlation-id") ?? undefined,
   };

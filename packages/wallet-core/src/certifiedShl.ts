@@ -24,10 +24,7 @@ import {
   type JsonDocument,
 } from "./directDocumentProfile";
 import { type WalletDocumentRecordV2 } from "./walletDocumentV2";
-import {
-  assertPortalPlainShlManifestUrl,
-  type PlainShlManifest,
-} from "./shl";
+import { assertPortalPlainShlManifestUrl, type PlainShlManifest } from "./shl";
 
 const CERTIFIED_SHL_BINDING_TYPE =
   "TrustCareCertifiedShlManifestBinding" as const;
@@ -256,7 +253,13 @@ export type CertifiedShlAssociation = Readonly<{
 
 /** Creates the opaque 256-bit identifier used in a public SHL manifest path. */
 export function createShlPackageId(): string {
-  return base64UrlEncode(randomBytes(32));
+  // Portal identifiers must begin with an ASCII letter or digit. Re-sample
+  // instead of rewriting an encoded character so every accepted identifier
+  // still comes entirely from cryptographically secure random bytes.
+  for (;;) {
+    const packageId = base64UrlEncode(randomBytes(32));
+    if (/^[A-Za-z0-9]/.test(packageId)) return packageId;
+  }
 }
 
 /**
@@ -481,9 +484,7 @@ export async function prepareHolderAttestedShl(
       ),
     ),
   );
-  const encryptedFileHashes = deepFreeze(
-    files.map((file) => file.jweSha256),
-  );
+  const encryptedFileHashes = deepFreeze(files.map((file) => file.jweSha256));
   const expectedManifestCredentialBinding = deepFreeze({
     type: CERTIFIED_SHL_BINDING_TYPE,
     shlPackageId: publicationId,
@@ -551,7 +552,9 @@ export async function prepareHolderAttestedShl(
     32,
   ).toUpperCase();
   if (!(["TCC", "TCP", "TCM"] as const).includes(targetHospitalCode as never)) {
-    throw new Error("Target hospital code is not in the live Portal trust registry.");
+    throw new Error(
+      "Target hospital code is not in the live Portal trust registry.",
+    );
   }
   const certificationRequest = deepFreeze({
     clientRequestId: `wallet-shl-certification-${freshUuid()}`,
@@ -1029,7 +1032,9 @@ async function assertPreparedIntegrity(
     ),
   );
   if (prepared.sourceBundleHash !== expectedSourceBundleHash) {
-    throw new Error("Certified SHL source bundle hash changed after preparation.");
+    throw new Error(
+      "Certified SHL source bundle hash changed after preparation.",
+    );
   }
   if (
     canonicalJson(prepared.expectedManifestCredentialBinding) !==
@@ -1110,21 +1115,27 @@ async function assertHolderPresentationIntegrity(
   assertCanonicalCompactJws(prepared.holderPresentationJwt);
   const publicKey = await importJWK(identity.publicJwk, identity.jwsAlgorithm);
   let verifiedPayload: Uint8Array;
-  let protectedHeader: Awaited<ReturnType<typeof compactVerify>>["protectedHeader"];
+  let protectedHeader: Awaited<
+    ReturnType<typeof compactVerify>
+  >["protectedHeader"];
   try {
-    const result = await compactVerify(prepared.holderPresentationJwt, publicKey, {
-      algorithms: [identity.jwsAlgorithm],
-    });
+    const result = await compactVerify(
+      prepared.holderPresentationJwt,
+      publicKey,
+      {
+        algorithms: [identity.jwsAlgorithm],
+      },
+    );
     verifiedPayload = result.payload;
     protectedHeader = result.protectedHeader;
   } catch {
-    throw new Error(
-      "Holder-attested SHL VP signature is invalid.",
-    );
+    throw new Error("Holder-attested SHL VP signature is invalid.");
   }
   let payload: JsonDocument;
   try {
-    payload = JSON.parse(new TextDecoder().decode(verifiedPayload)) as JsonDocument;
+    payload = JSON.parse(
+      new TextDecoder().decode(verifiedPayload),
+    ) as JsonDocument;
   } catch {
     throw new Error("Holder-attested SHL VP payload is not JSON.");
   }
@@ -1200,11 +1211,12 @@ async function assertHolderPresentationIntegrity(
     credentialJwts.length !== prepared.manifest.documents.length ||
     credentialJwts.some(
       (jwt, index) =>
-        decodeJwt(jwt).id !==
-        prepared.manifest.documents[index].credentialId,
+        decodeJwt(jwt).id !== prepared.manifest.documents[index].credentialId,
     )
   ) {
-    throw new Error("Holder-attested SHL VP source credential envelopes changed after preparation.");
+    throw new Error(
+      "Holder-attested SHL VP source credential envelopes changed after preparation.",
+    );
   }
 }
 
@@ -1255,7 +1267,9 @@ function assertManifestCredentialEvidence(input: {
       clockSkewSeconds: MAX_CLOCK_SKEW_SECONDS,
     });
   } catch (error) {
-    throw new Error(`Manifest VC direct profile is invalid: ${errorMessage(error)}.`);
+    throw new Error(
+      `Manifest VC direct profile is invalid: ${errorMessage(error)}.`,
+    );
   }
   if (!direct.issuerDid.startsWith("did:web:")) {
     throw new Error("Manifest VC issuer must be a Portal hospital did:web.");
@@ -1321,7 +1335,9 @@ function assertManifestCredentialEvidence(input: {
     trustcare?.intendedAudience !== undefined &&
     trustcare.intendedAudience !== input.expectedBinding.manifestUrl
   ) {
-    throw new Error("Manifest VC intended audience does not match the SHL manifest URL.");
+    throw new Error(
+      "Manifest VC intended audience does not match the SHL manifest URL.",
+    );
   }
   const subject = recordValue(decodedClaims.credentialSubject);
   const data = recordValue(subject?.data);
@@ -1559,7 +1575,7 @@ function requireIdentifier(value: unknown, label: string): string {
 
 function requireOpaqueShlPackageId(value: unknown, label: string): string {
   const text = requireText(value, label, 43);
-  if (!/^[A-Za-z0-9_-]{43}$/.test(text)) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{42}$/.test(text)) {
     throw new Error(`${label} must be a 256-bit base64url identifier.`);
   }
   return text;
