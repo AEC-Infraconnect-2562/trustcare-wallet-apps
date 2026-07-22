@@ -518,9 +518,17 @@ export async function connectWalkInWallet(
   },
 ) {
   if (usesDemoRuntime(options)) {
+    // A walk-in that is only `ready_to_link`/`pending_consent` has not bound a
+    // holder key yet, so it has no did:key. Emitting `did:key:walkin-<ts>` would
+    // masquerade as a real key-derived DID (see holderIdentity.ts, which encodes
+    // did:key from an actual public key). Use a pre-binding URN reference so the
+    // demo response never claims a cryptographic identity it does not hold; the
+    // real did:key is minted only when the wallet is actually linked.
+    const connectionId = `walkin_${Date.now().toString(36)}`;
     return {
-      connectionId: `walkin_${Date.now().toString(36)}`,
-      holderDid: `did:key:walkin-${Date.now().toString(36)}`,
+      connectionId,
+      holderReference: `urn:trustcare:demo-walkin:${connectionId}`,
+      holderDid: null,
       status: input.consentAttested ? "ready_to_link" : "pending_consent",
       patientIdentityConfidence:
         input.passport || input.phone ? "medium" : "low",

@@ -324,6 +324,9 @@ async function verifyQrUnsafe(
         parsed.kind === "shlink"
           ? "SMART Health Link transport"
           : "TrustCare VP resolver",
+      // Demo scan preview only reads the QR envelope; it has not fetched or
+      // verified a holder VP, so it must not report a holder identity it does
+      // not actually hold. Real holder DIDs are set on the verified paths above.
       requestSummary: parsed.presentationId
         ? `Presentation ID ${parsed.presentationId}`
         : isStandardShl
