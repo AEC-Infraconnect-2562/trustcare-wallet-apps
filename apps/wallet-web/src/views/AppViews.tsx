@@ -78,6 +78,7 @@ import {
   readinessContextLabels,
   readinessContextValues,
   resolveShareDisclosureIntent,
+  walletCardSupportsSelectiveDisclosure,
   shareModePatientDescription,
   shareModePatientLabel,
   shlAccessSummary,
@@ -178,29 +179,11 @@ export {
   currentShareGatewayBaseUrl,
 } from "../utils/runtimeUrls";
 
-const shareDisclosureIntentOptions: Array<{
-  value: ShareDisclosureIntent;
-  label: string;
-  description: string;
-  recommended?: boolean;
-}> = [
-  {
-    value: "minimum_necessary",
-    label: "ใช้ชุดเอกสารที่แนะนำ",
-    description: "ระบบเลือกเอกสารที่ตรงกับวัตถุประสงค์นี้",
-    recommended: true,
-  },
-  {
-    value: "custom_selection",
-    label: "เลือกข้อมูลเอง",
-    description: "ตรวจและปรับรายการก่อนสร้าง QR",
-  },
-  {
-    value: "complete_documents",
-    label: "ส่งเอกสารทั้งฉบับ",
-    description: "ผู้รับเห็นข้อมูลทั้งหมดในเอกสารที่เลือก",
-  },
-];
+// The holder must always stay identifiable to the receiving facility, so the
+// identity attribute is a required (locked-on) part of every VP presentation;
+// all other attributes are optional and can be unticked when the underlying
+// credential actually supports SD-JWT selective disclosure.
+const requiredDisclosureFieldKeys = new Set<string>(["identity"]);
 export function DialogLoadingFallback() {
   return (
     <div className="modal-backdrop" role="status" aria-live="polite">
@@ -907,8 +890,15 @@ export function ShareView({
     () =>
       selectedCards.map((card) => ({
         credentialId: String(card.credentialId || card.id),
+        // Attribute-level selective disclosure is only real when the credential
+        // is an SD-JWT VC carrying disclosures; otherwise the engine sends the
+        // document whole. The TrustCare VP verifier accepts SD presentations.
+        canDeriveSelectiveDisclosure:
+          walletCardSupportsSelectiveDisclosure(card),
+        recipientAcceptsSelectiveDisclosure:
+          protocolRequiresVp(packageProtocol),
       })),
-    [selectedCards],
+    [selectedCards, packageProtocol],
   );
   const disclosureResolution = useMemo(
     () =>
@@ -1644,71 +1634,76 @@ export function ShareView({
               {protocolRequiresVp(packageProtocol) && (
                 <>
                   <div
-                    className="disclosure-intent-grid"
+                    className="eudi-disclosure"
                     role="group"
-                    aria-label="วิธีเลือกข้อมูลสำหรับการแชร์"
+                    aria-label="ข้อมูลที่จะเปิดเผยให้ผู้รับ"
                   >
-                    {shareDisclosureIntentOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={
-                          disclosureIntent === option.value
-                            ? "disclosure-intent-card active"
-                            : "disclosure-intent-card"
-                        }
-                        aria-pressed={disclosureIntent === option.value}
-                        disabled={
-                          option.value === "custom_selection" &&
-                          !customDisclosureAvailable
-                        }
-                        onClick={() => selectDisclosureIntent(option.value)}
-                      >
-                        <span>
-                          <strong>{option.label}</strong>
-                          {option.recommended ? <small>แนะนำ</small> : null}
-                        </span>
-                        <p>
-                          {option.value === "custom_selection" &&
-                          !customDisclosureAvailable
-                            ? "เอกสารชุดนี้ยังเลือกเฉพาะบางข้อมูลไม่ได้"
-                            : option.description}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                  <div
-                    className="field-chip-grid disclosure-field-grid"
-                    role="group"
-                    aria-label="รายการข้อมูลตามวัตถุประสงค์"
-                  >
-                    {shareProfile.fields.map((field) =>
-                      disclosureIntent === "custom_selection" &&
-                      customDisclosureAvailable ? (
+                    <div className="eudi-disclosure-head">
+                      <span>
+                        <Eye size={16} /> ผู้รับ{" "}
+                        <strong>{recipient || "ปลายทาง"}</strong>{" "}
+                        จะเห็นเฉพาะข้อมูลที่ติ๊กไว้
+                      </span>
+                      {customDisclosureAvailable &&
+                      disclosureIntent !== "minimum_necessary" ? (
                         <button
-                          key={field.key}
                           type="button"
-                          className={
-                            selectedFields.includes(field.key) ? "active" : ""
+                          className="clinical-text-action"
+                          onClick={() =>
+                            selectDisclosureIntent("minimum_necessary")
                           }
-                          onClick={() => toggleField(field.key)}
                         >
-                          {field.label}
+                          รีเซ็ตเป็นชุดแนะนำ
                         </button>
-                      ) : (
-                        <span
-                          key={field.key}
-                          className={
-                            disclosureIntent === "complete_documents" ||
-                            selectedFields.includes(field.key)
-                              ? "field-chip-summary active"
-                              : "field-chip-summary"
-                          }
-                        >
-                          {field.label}
-                        </span>
-                      ),
-                    )}
+                      ) : null}
+                    </div>
+                    <ul className="eudi-attribute-list">
+                      {shareProfile.fields.map((field) => {
+                        const required = requiredDisclosureFieldKeys.has(
+                          field.key,
+                        );
+                        const checked =
+                          required || selectedFields.includes(field.key);
+                        const interactive =
+                          customDisclosureAvailable && !required;
+                        return (
+                          <li
+                            key={field.key}
+                            className={checked ? "is-on" : ""}
+                          >
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={!interactive}
+                                onChange={() => {
+                                  if (disclosureIntent !== "custom_selection") {
+                                    setDisclosureIntent("custom_selection");
+                                  }
+                                  toggleField(field.key);
+                                }}
+                              />
+                              <span className="eudi-attr-label">
+                                {field.label}
+                              </span>
+                            </label>
+                            <span className="eudi-attr-tag">
+                              {required
+                                ? "จำเป็น"
+                                : interactive
+                                  ? "เลือกได้"
+                                  : "รวมในเอกสาร"}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {!customDisclosureAvailable ? (
+                      <p className="eudi-disclosure-note">
+                        เอกสารที่เลือกยังไม่รองรับการเปิดเผยเฉพาะข้อมูล
+                        (ไม่ใช่ SD-JWT) ระบบจะส่งเอกสารที่เลือกทั้งฉบับให้ผู้รับ
+                      </p>
+                    ) : null}
                   </div>
                   <div
                     className={`disclosure-auto-summary${

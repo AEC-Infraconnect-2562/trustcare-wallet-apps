@@ -20,6 +20,7 @@ import {
   unwrapVpPayload,
   verifyDataIntegrityProof,
   walletCardHasCryptographicProof,
+  walletCardSupportsSelectiveDisclosure,
 } from "./index";
 import type { WalletCard } from "./models";
 
@@ -391,6 +392,32 @@ describe("credential proof standards layer", () => {
       verified: false,
       cryptosuite: "ecdsa-rdfc-2019",
     });
+  });
+});
+
+describe("selective disclosure capability", () => {
+  const sdJwt = `${makeJwt({ iss: "did:web:issuer.example" })}~WyJzYWx0IiwiZmFtaWx5X25hbWUiLCJTbWl0aCJd`;
+  const plainJwt = makeJwt({ iss: "did:web:issuer.example" });
+
+  it("is true only for SD-JWT credentials that carry disclosure segments", () => {
+    expect(
+      walletCardSupportsSelectiveDisclosure({ credentialJwt: sdJwt }),
+    ).toBe(true);
+    expect(
+      walletCardSupportsSelectiveDisclosure({
+        credentialProof: { jwt: sdJwt },
+      } as Pick<WalletCard, "credentialProof" | "credentialJwt">),
+    ).toBe(true);
+  });
+
+  it("is false for plain JWT VCs, missing proof, or non-JWT material", () => {
+    expect(
+      walletCardSupportsSelectiveDisclosure({ credentialJwt: plainJwt }),
+    ).toBe(false);
+    expect(walletCardSupportsSelectiveDisclosure({})).toBe(false);
+    expect(
+      walletCardSupportsSelectiveDisclosure({ credentialJwt: "not-a-jwt" }),
+    ).toBe(false);
   });
 });
 

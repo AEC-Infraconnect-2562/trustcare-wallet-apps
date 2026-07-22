@@ -256,6 +256,39 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* Prepare service picker → horizontal chip row (compact, wraps).
+   Full document-type detail stays in the "ตรวจเอกสารที่ระบบจะใช้" section. */
+.service-context-panel .service-context-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  grid-template-columns: none;
+}
+
+.service-context-panel .purpose-picker-card {
+  flex: 0 0 auto;
+  min-height: 0;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+}
+
+.service-context-panel .purpose-picker-card > small,
+.service-context-panel .purpose-picker-card .purpose-type-row {
+  display: none;
+}
+
+.service-context-panel .purpose-picker-card-header {
+  gap: 6px;
+}
+
+.service-context-panel .purpose-picker-card-header strong {
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+
 [data-view="prepare"] .view-stack {
   max-width: 1020px;
   margin-inline: auto;
@@ -485,6 +518,121 @@
   border-top: 1px solid var(--border-soft, rgba(100, 116, 139, 0.16));
   border-radius: 0;
   padding-inline: 4px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 5e. EUDI-style per-attribute disclosure checklist                   */
+/* ------------------------------------------------------------------ */
+
+.eudi-disclosure {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border-soft, rgba(100, 116, 139, 0.22));
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--doc-identity-soft) 40%, transparent);
+}
+
+.eudi-disclosure-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--text-muted, #475569);
+}
+
+.eudi-disclosure-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.eudi-disclosure-head strong {
+  color: var(--foreground, #0f172a);
+}
+
+.eudi-attribute-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.eudi-attribute-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--card, #fff);
+  border: 1px solid transparent;
+}
+
+.eudi-attribute-list li.is-on {
+  border-color: color-mix(in srgb, var(--doc-identity) 30%, transparent);
+}
+
+.eudi-attribute-list label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.eudi-attribute-list input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--doc-identity, #4f67f2);
+  flex-shrink: 0;
+}
+
+.eudi-attribute-list input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+}
+
+.eudi-attr-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground, #0f172a);
+}
+
+.eudi-attr-tag {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: rgba(100, 116, 139, 0.12);
+  color: var(--text-muted, #64748b);
+}
+
+.eudi-attribute-list li.is-on .eudi-attr-tag {
+  background: var(--doc-identity-soft);
+  color: var(--doc-identity);
+}
+
+.eudi-disclosure-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #92400e;
+  background: rgba(251, 191, 36, 0.12);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.dark .eudi-disclosure-note {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.dark .eudi-attribute-list li {
+  background: rgba(148, 163, 184, 0.08);
 }
 
 /* ------------------------------------------------------------------ */
