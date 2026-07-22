@@ -985,6 +985,22 @@ export function walletCardHasCryptographicProof(
   return hasProofMaterial && card.portalVerification?.verified === true;
 }
 
+/**
+ * A credential can be presented with per-attribute selective disclosure only
+ * when it is an SD-JWT VC that actually carries disclosure segments
+ * (`<issuer-jwt>~<disclosure>~...`). Demo/plain VC records without disclosures
+ * cannot be reduced attribute-by-attribute, so the share flow must send them
+ * whole rather than pretend a field-level selection took effect.
+ */
+export function walletCardSupportsSelectiveDisclosure(
+  card: Pick<WalletCard, "credentialProof" | "credentialJwt">,
+): boolean {
+  const token = card.credentialProof?.jwt ?? card.credentialJwt;
+  if (typeof token !== "string") return false;
+  const parsed = splitJwtToken(token);
+  return Boolean(parsed && parsed.disclosures.length > 0);
+}
+
 export function buildTrustCareJwksCandidates(input: {
   header: JsonRecord;
   payload: JsonRecord;

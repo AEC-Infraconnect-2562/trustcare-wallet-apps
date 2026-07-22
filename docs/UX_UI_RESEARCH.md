@@ -147,6 +147,21 @@ brand guidelines
 | แปลศัพท์ timeline เป็นภาษาผู้ป่วย: "Record/Package time" → "เรียงตามวันที่ในเอกสาร/วันที่จัดชุด", ตัดชื่อ fixture ภายในออกจากรายการ, "คัดลอก VP/SHL" → "คัดลอกชุดข้อมูลที่แชร์/ลิงก์สุขภาพ" | `AppViews.tsx` | เป๋าตัง/หมอพร้อม |
 | Empty states: คลังพกพาและหน้ากิจกรรม แสดงไอคอน + คำอธิบาย + ทางไปต่อ แทนพื้นที่ว่าง | `EmptyState.tsx`, `SecondaryViews.tsx`, `AppViews.tsx` | ทุก benchmark |
 
+## 5d. สิ่งที่ปรับเพิ่มในรอบสี่ (Implemented)
+
+อ้างอิง standard: eIDAS 2.0 / EUDI ARF 1.4 (SD-JWT VC + OpenID4VP), HAIP profile —
+selective disclosure ต้องเป็น per-attribute จาก credential จริง และต้องซื่อสัตย์เมื่อ
+credential ไม่รองรับ SD
+
+| การเปลี่ยนแปลง | ไฟล์ | มาตรฐาน/เหตุผล |
+|----------------|------|----------------|
+| **ตรวจ SD capability จริง** — เพิ่ม `walletCardSupportsSelectiveDisclosure()` ที่ return true เฉพาะ SD-JWT VC ที่มี disclosure segment (`<jwt>~<disclosure>`) จริง + unit test | `credentialProof.ts` (+test) | SD-JWT VC (IETF) |
+| **แก้ bug: per-attribute SD ใช้ไม่ได้จริง** — เดิม `credentialDisclosureCapabilities` ไม่ใส่ `canDeriveSelectiveDisclosure`/`recipientAcceptsSelectiveDisclosure` → engine fallback เป็น whole_credential เสมอ ตอนนี้ใส่ค่าจาก capability จริง + VP recipient | `AppViews.tsx` | OpenID4VP |
+| **Share → EUDI request-screen (single sheet)** — เปลี่ยน 3-card intent grid + chip ที่ซ่อน เป็น per-attribute checklist: แต่ละ attribute มี checkbox + ป้าย "จำเป็น/เลือกได้/รวมในเอกสาร", ระบุผู้รับชัด, `identity` เป็น required (locked) | `AppViews.tsx`, `ux-refresh.css` | EUDI ARF Request screen |
+| **ซื่อสัตย์เมื่อ SD ไม่ได้** — seed ที่ไม่ใช่ SD-JWT: checkbox disabled + หมายเหตุ "ยังไม่รองรับการเปิดเผยเฉพาะข้อมูล (ไม่ใช่ SD-JWT) ระบบจะส่งทั้งฉบับ" ไม่แสร้งทำ SD | `AppViews.tsx` | หลัก "ห้ามหลอก" |
+| **Prepare → horizontal service chips** — การ์ดบริการ 7 ใบเป็น pill row เดียว (wrap ได้); รายละเอียด document type อยู่ใน section 2 | `ux-refresh.css` | ลด cognitive load |
+| **Empty state mobile history** — `HistoryScreen` เพิ่มสถานะว่างพร้อมคำอธิบาย | `HistoryScreen.tsx` (mobile) | parity กับ web |
+
 ## 6. Roadmap รอบถัดไป
 
 1. **Share flow → single sheet เต็มรูปแบบ**: ยุบ 4 ขั้นเหลือ sheet เดียวแบบ EUDI Request
