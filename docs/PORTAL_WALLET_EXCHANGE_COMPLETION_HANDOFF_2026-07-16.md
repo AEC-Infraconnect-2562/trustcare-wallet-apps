@@ -2,7 +2,9 @@
 
 Date: 2026-07-16
 
-Status: Portal implementation handoff; Wallet remains fail closed
+Status: Historical Portal implementation handoff; Wallet remains fail closed
+
+Superseded runtime baseline: current Wallet/Portal compatibility uses Contract Hub `2026.07.portal-wallet.v8`, QR contract `2026.07.qr-interoperability.v1`, and Clinical Document Graph `2026.07.pcdg.v2` loaded from live Contract Hub endpoints. Do not use the v4 value below as a current compatibility gate.
 
 ## Authoritative scope
 

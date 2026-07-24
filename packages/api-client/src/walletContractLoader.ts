@@ -1,6 +1,7 @@
 import {
   assertClinicalDocumentGraphContract,
   assertClinicalDocumentGraphPresentationSchema,
+  CLINICAL_DOCUMENT_GRAPH_CONTRACT_VERSION,
   PORTAL_WALLET_V2_CONTRACT_VERSION,
   WALLET_EXCHANGE_V2_CONTRACT_VERSION,
   assertWalletExchangeDiscovery,
@@ -66,6 +67,30 @@ export type PortalWalletSchema = Record<string, unknown> & {
   schema: Record<string, unknown>;
 };
 
+const QR_INTEROPERABILITY_CONTRACT_VERSION =
+  "2026.07.qr-interoperability.v1" as const;
+
+export type PortalQrInteroperabilityContract = Record<string, unknown> & {
+  contractVersion: typeof QR_INTEROPERABILITY_CONTRACT_VERSION;
+  portalWalletContractVersion: typeof PORTAL_WALLET_V2_CONTRACT_VERSION;
+  status: "active";
+  purpose: "wallet_graph_qr_acceptance";
+  discoveryEndpoint: "/api/qr/v1";
+  graphContractVersion: typeof CLINICAL_DOCUMENT_GRAPH_CONTRACT_VERSION;
+  limits: Record<string, unknown>;
+  profiles: Record<string, unknown>[];
+  endpoints: Record<string, unknown>;
+  graphBinding: Record<string, unknown>;
+  failClosedRules: string[];
+};
+
+export type PortalSharePackageSchema = Record<string, unknown> & {
+  version: typeof PORTAL_WALLET_V2_CONTRACT_VERSION;
+  families: Record<string, unknown>[];
+  manifestCredentialProfile: Record<string, unknown>;
+  rules: Record<string, unknown>;
+};
+
 export type VerifiedContractResource<T> = {
   payload: T;
   etag: string;
@@ -80,8 +105,10 @@ export type WalletExchangeContractSet = {
   manifest: VerifiedContractResource<PortalWalletManifest>;
   renderContract: VerifiedContractResource<PortalRenderContract>;
   schema: VerifiedContractResource<PortalWalletSchema>;
+  qrInteroperability: VerifiedContractResource<PortalQrInteroperabilityContract>;
   clinicalDocumentGraph: VerifiedContractResource<ClinicalDocumentGraphContract>;
   graphPresentationSchema: VerifiedContractResource<ClinicalDocumentGraphPresentationSchema>;
+  sharePackageSchema: VerifiedContractResource<PortalSharePackageSchema>;
   loadedAt: string;
 };
 
@@ -123,8 +150,10 @@ export async function loadWalletExchangeContracts(input: {
     manifest,
     renderContract,
     schema,
+    qrInteroperability,
     clinicalDocumentGraph,
     graphPresentationSchema,
+    sharePackageSchema,
   ] = await Promise.all([
     fetcher(`${portalOrigin}/api/wallet/v2`, {
       headers: { accept: "application/json" },
@@ -136,7 +165,7 @@ export async function loadWalletExchangeContracts(input: {
     }),
     fetchVerifiedContractResource<PortalWalletManifest>(
       fetcher,
-      `${portalOrigin}/api/public/wallet-contracts/manifest`,
+      `${portalOrigin}/api/public/wallet-contracts`,
     ),
     fetchVerifiedContractResource<PortalRenderContract>(
       fetcher,
@@ -146,6 +175,10 @@ export async function loadWalletExchangeContracts(input: {
       fetcher,
       `${portalOrigin}/api/public/wallet-contracts/schema`,
     ),
+    fetchVerifiedContractResource<PortalQrInteroperabilityContract>(
+      fetcher,
+      `${portalOrigin}/api/public/wallet-contracts/qr-interoperability`,
+    ),
     fetchVerifiedContractResource<ClinicalDocumentGraphContract>(
       fetcher,
       `${portalOrigin}/api/public/wallet-contracts/clinical-document-graph`,
@@ -153,6 +186,10 @@ export async function loadWalletExchangeContracts(input: {
     fetchVerifiedContractResource<ClinicalDocumentGraphPresentationSchema>(
       fetcher,
       `${portalOrigin}/api/public/wallet-contracts/clinical-document-graph/presentation-schema`,
+    ),
+    fetchVerifiedContractResource<PortalSharePackageSchema>(
+      fetcher,
+      `${portalOrigin}/api/public/wallet-contracts/share-package-schema`,
     ),
   ]);
 
@@ -184,6 +221,12 @@ export async function loadWalletExchangeContracts(input: {
   );
   assertRenderContractCompatibility(renderContract.payload);
   assertSchemaCompatibility(schema.payload);
+  assertQrInteroperabilityContractCompatibility({
+    portalOrigin,
+    discovery,
+    contract: qrInteroperability.payload,
+  });
+  assertSharePackageSchemaCompatibility(sharePackageSchema.payload);
   try {
     assertClinicalDocumentGraphContract(clinicalDocumentGraph.payload);
     assertClinicalDocumentGraphPresentationSchema(
@@ -210,12 +253,153 @@ export async function loadWalletExchangeContracts(input: {
     manifest,
     renderContract,
     schema,
+    qrInteroperability,
     clinicalDocumentGraph,
     graphPresentationSchema,
+    sharePackageSchema,
     loadedAt: (input.now?.() ?? new Date()).toISOString(),
   };
 }
 
+function assertQrInteroperabilityContractCompatibility(input: {
+  portalOrigin: string;
+  discovery: WalletExchangeDiscovery;
+  contract: PortalQrInteroperabilityContract;
+}): void {
+  const contract = input.contract;
+  if (
+    contract.contractVersion !== QR_INTEROPERABILITY_CONTRACT_VERSION ||
+    contract.portalWalletContractVersion !== PORTAL_WALLET_V2_CONTRACT_VERSION ||
+    contract.status !== "active" ||
+    contract.purpose !== "wallet_graph_qr_acceptance" ||
+    contract.discoveryEndpoint !== "/api/qr/v1" ||
+    contract.graphContractVersion !== CLINICAL_DOCUMENT_GRAPH_CONTRACT_VERSION
+  ) {
+    incompatible("QR interoperability acceptance contract is incompatible.");
+  }
+  const limits = objectRecord(contract.limits);
+  if (
+    limits.referenceUrlCharacters !== 2048 ||
+    limits.standardShlManifestUrlCharacters !== 128 ||
+    limits.holderVpBytes !== 2_000_000 ||
+    limits.requestObjectBytes !== 32_768
+  ) {
+    incompatible("QR interoperability limits are incompatible.");
+  }
+  const profiles = Array.isArray(contract.profiles)
+    ? contract.profiles.map((profile) => objectRecord(profile).profile)
+    : [];
+  for (const profile of [
+    "openid4vp",
+    "openid4vci",
+    "trustcare-direct-holder-vp",
+    "smart-health-links",
+    "trustcare-certified-shl-sidecars",
+  ]) {
+    if (!profiles.includes(profile)) {
+      incompatible("QR interoperability profile " + profile + " is missing.");
+    }
+  }
+  const endpoints = objectRecord(contract.endpoints);
+  const endpointExpectations: Record<string, string> = {
+    qrDiscovery: "/api/qr/v1",
+    oid4vpCreate: "/api/qr/v1/oid4vp/requests",
+    oid4vpDirectPost: "/api/qr/v1/oid4vp/direct-post",
+    oid4vciOfferCreate: "/api/qr/v1/oid4vci/offers",
+    oid4vciToken: "/api/qr/v1/oid4vci/token",
+    oid4vciCredential: "/api/qr/v1/oid4vci/credential",
+    directHolderVpResolver: "/api/share-gateway/presentations/{artifactId}.jwt",
+    standardShlManifest: "/s/{256-bit-token}",
+    graphChanges: "/api/wallet/v2/clinical-document-graph/changes",
+  };
+  for (const [key, expectedPath] of Object.entries(endpointExpectations)) {
+    if (endpoints[key] !== expectedPath) {
+      incompatible("QR interoperability endpoint " + key + " is incompatible.");
+    }
+  }
+  const graphBinding = objectRecord(contract.graphBinding);
+  if (
+    graphBinding.qrNeverCreatesGraphTruth !== true ||
+    graphBinding.graphChangesAreSyncedByWalletExchange !== true ||
+    graphBinding.immutableUpdates !== "supersede" ||
+    graphBinding.unknownRequiredFields !== "quarantine"
+  ) {
+    incompatible("QR interoperability graph binding is incompatible.");
+  }
+  const failClosedRules = strictStringArray(contract.failClosedRules);
+  if (!failClosedRules) {
+    incompatible("QR interoperability fail-closed rules are malformed.");
+  }
+  for (const rule of [
+    "do_not_accept_raw_vc_or_raw_vp_qr_payloads",
+    "do_not_treat_shlink_as_a_verifiable_credential",
+    "do_not_embed_trustcare_vc_or_vp_fields_in_standard_shl_manifest",
+    "do_not_create_or_repair_holder_vp_in_portal",
+    "do_not_accept_patient_id_from_wallet_or_qr_payload",
+    "reject_unknown_required_graph_or_qr_semantics",
+    "reject_stale_replayed_or_status_uncertain_artifacts",
+  ]) {
+    if (!failClosedRules.includes(rule)) {
+      incompatible("QR interoperability fail-closed rule " + rule + " is missing.");
+    }
+  }
+  const qrDiscoveryUrl = new URL(String(endpoints.qrDiscovery), input.portalOrigin).toString();
+  if (qrDiscoveryUrl !== input.portalOrigin + "/api/qr/v1") {
+    incompatible("QR interoperability discovery endpoint origin is incompatible.");
+  }
+  const graphChangesUrl = new URL(String(endpoints.graphChanges), input.portalOrigin).toString();
+  if (graphChangesUrl !== input.discovery.endpoints.clinicalDocumentGraphChanges) {
+    incompatible("QR interoperability graph endpoint disagrees with Wallet Exchange discovery.");
+  }
+}
+
+function assertSharePackageSchemaCompatibility(
+  schema: PortalSharePackageSchema,
+): void {
+  if (schema.version !== PORTAL_WALLET_V2_CONTRACT_VERSION) {
+    incompatible("Share package schema version is incompatible.");
+  }
+  const families = Array.isArray(schema.families)
+    ? schema.families.map((family) => objectRecord(family))
+    : [];
+  for (const family of ["vc_vp", "standard_shl", "certified_shl_package"]) {
+    if (!families.some((entry) => entry.family === family)) {
+      incompatible("Share package family " + family + " is missing.");
+    }
+  }
+  const rules = objectRecord(schema.rules);
+  if (
+    rules.shlIsTrustProof !== false ||
+    rules.certifiedShlRequiresHolderVp !== true ||
+    rules.walletMayMintHospitalCredential !== false ||
+    rules.hospitalCertificationRequiresPortalKmsSignature !== true ||
+    rules.activationRequiresVerifiedHolderVp !== true ||
+    rules.transportPurposeDistinctFromHolderAuthorizationPurpose !== true ||
+    rules.certifiedShlPurposeComparison !== "exact_holder_authorization_equality" ||
+    rules.passcodeEmbeddedInQr !== false
+  ) {
+    incompatible("Share package trust-boundary rules are incompatible.");
+  }
+  const primaryQrPayloads = strictStringArray(rules.primaryQrPayloads);
+  const forbiddenPrimaryQrPayloads = strictStringArray(rules.forbiddenPrimaryQrPayloads);
+  if (
+    !primaryQrPayloads?.includes("resolver_backed_vp_url") ||
+    !primaryQrPayloads.includes("canonical_shlink") ||
+    !forbiddenPrimaryQrPayloads?.includes("raw_large_jwt") ||
+    !forbiddenPrimaryQrPayloads.includes("service_bundle_envelope")
+  ) {
+    incompatible("Share package QR payload rules are incompatible.");
+  }
+  const manifestProfile = objectRecord(schema.manifestCredentialProfile);
+  if (
+    manifestProfile.format !== "application/vc+jwt" ||
+    manifestProfile.holderAuthorizationSource !==
+      "portal_verified_wallet_holder_vp" ||
+    manifestProfile.immutableUpdatePolicy !== "issue_new_and_supersede"
+  ) {
+    incompatible("Certified SHL manifest credential profile is incompatible.");
+  }
+}
 function assertClinicalDocumentGraphEndpointCompatibility(input: {
   portalOrigin: string;
   discovery: WalletExchangeDiscovery;

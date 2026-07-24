@@ -220,10 +220,10 @@ describe("Wallet Exchange live contract loader", () => {
   it("fails closed when the body digest and ETag do not match", async () => {
     const fixture = await contractFixture();
     const original = fixture.responses.get(
-      `${origin}/api/public/wallet-contracts/manifest`,
+      `${origin}/api/public/wallet-contracts`,
     )!;
     fixture.responses.set(
-      `${origin}/api/public/wallet-contracts/manifest`,
+      `${origin}/api/public/wallet-contracts`,
       new Response(await original.clone().text(), {
         status: 200,
         headers: {
@@ -256,7 +256,7 @@ describe("Wallet Exchange live contract loader", () => {
 
   it("rejects mere signature field presence in pilot without a live cryptographic verification profile", async () => {
     const fixture = await contractFixture();
-    const url = `${origin}/api/public/wallet-contracts/manifest`;
+    const url = `${origin}/api/public/wallet-contracts`;
     const payload = JSON.parse(
       await fixture.responses.get(url)!.clone().text(),
     ) as Record<string, unknown>;
@@ -280,6 +280,43 @@ describe("Wallet Exchange live contract loader", () => {
     ).rejects.toMatchObject({ code: "wallet_contract_incompatible" });
   });
 
+  it("fails closed when the QR acceptance contract drops a required rule", async () => {
+    const fixture = await contractFixture();
+    const url = `${origin}/api/public/wallet-contracts/qr-interoperability`;
+    const payload = JSON.parse(
+      await fixture.responses.get(url)!.clone().text(),
+    ) as Record<string, any>;
+    payload.failClosedRules = payload.failClosedRules.filter(
+      (rule: string) => rule !== "do_not_accept_raw_vc_or_raw_vp_qr_payloads",
+    );
+    fixture.responses.set(url, await integrityResponse(payload));
+
+    await expect(
+      loadWalletExchangeContracts({
+        portalBaseUrl: origin,
+        runtimeEnvironment: "sandbox",
+        fetchImpl: fixture.fetchImpl,
+      }),
+    ).rejects.toMatchObject({ code: "wallet_contract_incompatible" });
+  });
+
+  it("fails closed when the share package schema allows forbidden QR payloads", async () => {
+    const fixture = await contractFixture();
+    const url = `${origin}/api/public/wallet-contracts/share-package-schema`;
+    const payload = JSON.parse(
+      await fixture.responses.get(url)!.clone().text(),
+    ) as Record<string, any>;
+    payload.rules.forbiddenPrimaryQrPayloads = ["oid4vp_request_as_proof"];
+    fixture.responses.set(url, await integrityResponse(payload));
+
+    await expect(
+      loadWalletExchangeContracts({
+        portalBaseUrl: origin,
+        runtimeEnvironment: "sandbox",
+        fetchImpl: fixture.fetchImpl,
+      }),
+    ).rejects.toMatchObject({ code: "wallet_contract_incompatible" });
+  });
   it("rejects discovery endpoints that escape the configured Portal origin", async () => {
     const fixture = await contractFixture({
       credentialSyncOrigin: "https://evil.example",
@@ -325,7 +362,7 @@ async function contractFixture(
       clinicalDocumentGraphChanges: `${origin}/api/wallet/v2/clinical-document-graph/changes`,
       credentialRequests: `${origin}/api/wallet/v2/credential-requests`,
       documentSubmissions: `${origin}/api/wallet/v2/submissions`,
-      publicContracts: `${origin}/api/public/wallet-contracts/manifest`,
+      publicContracts: `${origin}/api/public/wallet-contracts`,
       shareGateway: `${origin}/api/share-gateway`,
       issuerJwks: `${origin}/.well-known/jwks.json`,
       shlAssociations: `${origin}/api/wallet/v2/shl-associations`,
@@ -450,6 +487,78 @@ async function contractFixture(
       additionalProperties: false,
     },
   };
+  const qrInteroperabilityContract = {
+    contractVersion: "2026.07.qr-interoperability.v1",
+    portalWalletContractVersion: PORTAL_WALLET_V2_CONTRACT_VERSION,
+    status: "active",
+    purpose: "wallet_graph_qr_acceptance",
+    discoveryEndpoint: "/api/qr/v1",
+    graphContractVersion: "2026.07.pcdg.v2",
+    limits: {
+      referenceUrlCharacters: 2048,
+      standardShlManifestUrlCharacters: 128,
+      holderVpBytes: 2_000_000,
+      requestObjectBytes: 32_768,
+    },
+    profiles: [
+      { profile: "openid4vp" },
+      { profile: "openid4vci" },
+      { profile: "trustcare-direct-holder-vp" },
+      { profile: "smart-health-links" },
+      { profile: "trustcare-certified-shl-sidecars" },
+    ],
+    endpoints: {
+      qrDiscovery: "/api/qr/v1",
+      oid4vpCreate: "/api/qr/v1/oid4vp/requests",
+      oid4vpDirectPost: "/api/qr/v1/oid4vp/direct-post",
+      oid4vciOfferCreate: "/api/qr/v1/oid4vci/offers",
+      oid4vciToken: "/api/qr/v1/oid4vci/token",
+      oid4vciCredential: "/api/qr/v1/oid4vci/credential",
+      directHolderVpResolver: "/api/share-gateway/presentations/{artifactId}.jwt",
+      standardShlManifest: "/s/{256-bit-token}",
+      graphChanges: "/api/wallet/v2/clinical-document-graph/changes",
+    },
+    graphBinding: {
+      qrNeverCreatesGraphTruth: true,
+      graphChangesAreSyncedByWalletExchange: true,
+      immutableUpdates: "supersede",
+      unknownRequiredFields: "quarantine",
+    },
+    failClosedRules: [
+      "do_not_accept_raw_vc_or_raw_vp_qr_payloads",
+      "do_not_treat_shlink_as_a_verifiable_credential",
+      "do_not_embed_trustcare_vc_or_vp_fields_in_standard_shl_manifest",
+      "do_not_create_or_repair_holder_vp_in_portal",
+      "do_not_accept_patient_id_from_wallet_or_qr_payload",
+      "reject_unknown_required_graph_or_qr_semantics",
+      "reject_stale_replayed_or_status_uncertain_artifacts",
+    ],
+  };
+  const sharePackageSchema = {
+    version: PORTAL_WALLET_V2_CONTRACT_VERSION,
+    families: [
+      { family: "vc_vp" },
+      { family: "standard_shl" },
+      { family: "certified_shl_package" },
+    ],
+    manifestCredentialProfile: {
+      format: "application/vc+jwt",
+      holderAuthorizationSource: "portal_verified_wallet_holder_vp",
+      immutableUpdatePolicy: "issue_new_and_supersede",
+    },
+    rules: {
+      shlIsTrustProof: false,
+      certifiedShlRequiresHolderVp: true,
+      walletMayMintHospitalCredential: false,
+      hospitalCertificationRequiresPortalKmsSignature: true,
+      activationRequiresVerifiedHolderVp: true,
+      transportPurposeDistinctFromHolderAuthorizationPurpose: true,
+      certifiedShlPurposeComparison: "exact_holder_authorization_equality",
+      passcodeEmbeddedInQr: false,
+      primaryQrPayloads: ["resolver_backed_vp_url", "canonical_shlink"],
+      forbiddenPrimaryQrPayloads: ["raw_large_jwt", "service_bundle_envelope"],
+    },
+  };
   const responses = new Map<string, Response>([
     [
       `${origin}/api/wallet/v2`,
@@ -459,7 +568,7 @@ async function contractFixture(
     ],
     [`${origin}/api/wallet/v2/health`, jsonResponse(health)],
     [
-      `${origin}/api/public/wallet-contracts/manifest`,
+      `${origin}/api/public/wallet-contracts`,
       await integrityResponse(manifest),
     ],
     [
@@ -471,12 +580,20 @@ async function contractFixture(
       await integrityResponse(contractSchema),
     ],
     [
+      `${origin}/api/public/wallet-contracts/qr-interoperability`,
+      await integrityResponse(qrInteroperabilityContract),
+    ],
+    [
       `${origin}/api/public/wallet-contracts/clinical-document-graph`,
       await integrityResponse(clinicalDocumentGraphContractFixture(origin)),
     ],
     [
       `${origin}/api/public/wallet-contracts/clinical-document-graph/presentation-schema`,
       await integrityResponse(graphPresentationSchemaFixture()),
+    ],
+    [
+      `${origin}/api/public/wallet-contracts/share-package-schema`,
+      await integrityResponse(sharePackageSchema),
     ],
   ]);
   const fetchImpl: typeof fetch = async (url) => {

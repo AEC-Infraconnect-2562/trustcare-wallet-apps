@@ -875,7 +875,7 @@ function contractSet(): WalletExchangeContractSet {
       documentSubmissions: `${PORTAL_ORIGIN}/api/wallet/v2/submissions`,
       shlAssociations: `${PORTAL_ORIGIN}/api/wallet/v2/shl-associations/{shlId}`,
       shlCertificationRequests: `${PORTAL_ORIGIN}/api/wallet/v2/shl-certification-requests`,
-      publicContracts: `${PORTAL_ORIGIN}/api/public/wallet-contracts/manifest`,
+      publicContracts: `${PORTAL_ORIGIN}/api/public/wallet-contracts`,
       shareGateway: `${PORTAL_ORIGIN}/api/share-gateway`,
       issuerJwks: `${PORTAL_ORIGIN}/.well-known/jwks.json`,
     },
@@ -931,7 +931,7 @@ function contractSet(): WalletExchangeContractSet {
       rendererAuthority: { authority: "wallet" },
     },
     manifest: resource({
-      version: "2026.07.portal-wallet.v4",
+      version: "2026.07.portal-wallet.v8",
       status: "active",
       minimumWalletVersion: "0.1.0",
       compatibilityRules: [],
@@ -943,7 +943,7 @@ function contractSet(): WalletExchangeContractSet {
       },
     }),
     renderContract: resource({
-      version: "2026.07.portal-wallet.v4",
+      version: "2026.07.portal-wallet.v8",
       renderVersion: "trustcare-render-contract-v2",
       authority: "wallet",
       implementationRepository: "AEC-Infraconnect-2562/trustcare-wallet-apps",
@@ -959,9 +959,22 @@ function contractSet(): WalletExchangeContractSet {
       legacyReadCompatibility: [],
       legacyWriteAllowed: false,
     }),
+    qrInteroperability: resource({
+      contractVersion: "2026.07.qr-interoperability.v1",
+      portalWalletContractVersion: "2026.07.portal-wallet.v8",
+      status: "active",
+      purpose: "wallet_graph_qr_acceptance",
+      discoveryEndpoint: "/api/qr/v1",
+      graphContractVersion: "2026.07.pcdg.v2",
+      limits: {},
+      profiles: [],
+      endpoints: {},
+      graphBinding: {},
+      failClosedRules: [],
+    }),
     schema: resource({
-      $id: "urn:trustcare:schema:2026.07.portal-wallet.v4",
-      contractVersion: "2026.07.portal-wallet.v4",
+      $id: "urn:trustcare:schema:2026.07.portal-wallet.v8",
+      contractVersion: "2026.07.portal-wallet.v8",
       schema: {
         $schema: "https://json-schema.org/draft/2020-12/schema",
       },
@@ -970,6 +983,12 @@ function contractSet(): WalletExchangeContractSet {
       clinicalDocumentGraphContractFixture(PORTAL_ORIGIN),
     ),
     graphPresentationSchema: resource(graphPresentationSchemaFixture()),
+    sharePackageSchema: resource({
+      version: "2026.07.portal-wallet.v8",
+      families: [],
+      manifestCredentialProfile: {},
+      rules: {},
+    }),
     loadedAt: FIXED_NOW.toISOString(),
   };
 }

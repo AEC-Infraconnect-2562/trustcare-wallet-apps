@@ -1792,7 +1792,7 @@ async function contractResponses(): Promise<Map<string, Response>> {
       documentSubmissions: `${portalOrigin}/api/wallet/v2/submissions`,
       shlAssociations: `${portalOrigin}/api/wallet/v2/shl-associations/{shlId}`,
       shlCertificationRequests: `${portalOrigin}/api/wallet/v2/shl-certification-requests`,
-      publicContracts: `${portalOrigin}/api/public/wallet-contracts/manifest`,
+      publicContracts: `${portalOrigin}/api/public/wallet-contracts`,
       shareGateway: `${portalOrigin}/api/share-gateway`,
       issuerJwks: `${portalOrigin}/.well-known/jwks.json`,
     },
@@ -1912,6 +1912,78 @@ async function contractResponses(): Promise<Map<string, Response>> {
       additionalProperties: false,
     },
   };
+  const qrInteroperabilityContract = {
+    contractVersion: "2026.07.qr-interoperability.v1",
+    portalWalletContractVersion: PORTAL_WALLET_V2_CONTRACT_VERSION,
+    status: "active",
+    purpose: "wallet_graph_qr_acceptance",
+    discoveryEndpoint: "/api/qr/v1",
+    graphContractVersion: "2026.07.pcdg.v2",
+    limits: {
+      referenceUrlCharacters: 2048,
+      standardShlManifestUrlCharacters: 128,
+      holderVpBytes: 2_000_000,
+      requestObjectBytes: 32_768,
+    },
+    profiles: [
+      { profile: "openid4vp" },
+      { profile: "openid4vci" },
+      { profile: "trustcare-direct-holder-vp" },
+      { profile: "smart-health-links" },
+      { profile: "trustcare-certified-shl-sidecars" },
+    ],
+    endpoints: {
+      qrDiscovery: "/api/qr/v1",
+      oid4vpCreate: "/api/qr/v1/oid4vp/requests",
+      oid4vpDirectPost: "/api/qr/v1/oid4vp/direct-post",
+      oid4vciOfferCreate: "/api/qr/v1/oid4vci/offers",
+      oid4vciToken: "/api/qr/v1/oid4vci/token",
+      oid4vciCredential: "/api/qr/v1/oid4vci/credential",
+      directHolderVpResolver: "/api/share-gateway/presentations/{artifactId}.jwt",
+      standardShlManifest: "/s/{256-bit-token}",
+      graphChanges: "/api/wallet/v2/clinical-document-graph/changes",
+    },
+    graphBinding: {
+      qrNeverCreatesGraphTruth: true,
+      graphChangesAreSyncedByWalletExchange: true,
+      immutableUpdates: "supersede",
+      unknownRequiredFields: "quarantine",
+    },
+    failClosedRules: [
+      "do_not_accept_raw_vc_or_raw_vp_qr_payloads",
+      "do_not_treat_shlink_as_a_verifiable_credential",
+      "do_not_embed_trustcare_vc_or_vp_fields_in_standard_shl_manifest",
+      "do_not_create_or_repair_holder_vp_in_portal",
+      "do_not_accept_patient_id_from_wallet_or_qr_payload",
+      "reject_unknown_required_graph_or_qr_semantics",
+      "reject_stale_replayed_or_status_uncertain_artifacts",
+    ],
+  };
+  const sharePackageSchema = {
+    version: PORTAL_WALLET_V2_CONTRACT_VERSION,
+    families: [
+      { family: "vc_vp" },
+      { family: "standard_shl" },
+      { family: "certified_shl_package" },
+    ],
+    manifestCredentialProfile: {
+      format: "application/vc+jwt",
+      holderAuthorizationSource: "portal_verified_wallet_holder_vp",
+      immutableUpdatePolicy: "issue_new_and_supersede",
+    },
+    rules: {
+      shlIsTrustProof: false,
+      certifiedShlRequiresHolderVp: true,
+      walletMayMintHospitalCredential: false,
+      hospitalCertificationRequiresPortalKmsSignature: true,
+      activationRequiresVerifiedHolderVp: true,
+      transportPurposeDistinctFromHolderAuthorizationPurpose: true,
+      certifiedShlPurposeComparison: "exact_holder_authorization_equality",
+      passcodeEmbeddedInQr: false,
+      primaryQrPayloads: ["resolver_backed_vp_url", "canonical_shlink"],
+      forbiddenPrimaryQrPayloads: ["raw_large_jwt", "service_bundle_envelope"],
+    },
+  };
   return new Map([
     [
       `${portalOrigin}/api/wallet/v2`,
@@ -1921,7 +1993,7 @@ async function contractResponses(): Promise<Map<string, Response>> {
     ],
     [`${portalOrigin}/api/wallet/v2/health`, jsonResponse(health)],
     [
-      `${portalOrigin}/api/public/wallet-contracts/manifest`,
+      `${portalOrigin}/api/public/wallet-contracts`,
       await integrityResponse(manifest),
     ],
     [
@@ -1941,6 +2013,14 @@ async function contractResponses(): Promise<Map<string, Response>> {
     [
       `${portalOrigin}/api/public/wallet-contracts/clinical-document-graph/presentation-schema`,
       await integrityResponse(graphPresentationSchemaFixture()),
+    ],
+    [
+      `${portalOrigin}/api/public/wallet-contracts/qr-interoperability`,
+      await integrityResponse(qrInteroperabilityContract),
+    ],
+    [
+      `${portalOrigin}/api/public/wallet-contracts/share-package-schema`,
+      await integrityResponse(sharePackageSchema),
     ],
   ]);
 }
