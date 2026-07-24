@@ -678,7 +678,7 @@ export default function App() {
       if (!workflow) {
         throw new Error(
           walletExchange.error ||
-            "Wallet Exchange V2 ยังไม่พร้อม ระบบจะไม่ส่งเอกสารผ่านช่องทางเดิม",
+            "TrustCare Portal ยังไม่พร้อม ระบบจะไม่ส่งเอกสารผ่านช่องทางเดิม",
         );
       }
       return submitWalletExchangeRecord({
@@ -704,7 +704,7 @@ export default function App() {
       if (!workflow) {
         throw new Error(
           walletExchange.error ||
-            "Wallet Exchange V2 ยังไม่พร้อม ระบบจะไม่ตรวจสถานะจากช่องทางเดิม",
+            "TrustCare Portal ยังไม่พร้อม ระบบจะไม่ตรวจสถานะจากช่องทางเดิม",
         );
       }
       return refreshWalletExchangeSubmission({
@@ -897,7 +897,7 @@ export default function App() {
     }) => {
       if (!env.demoMode) {
         throw new Error(
-          "Payer sandbox adapters are disabled in Wallet Exchange runtime; configure a real Portal/Contract Hub adapter instead of falling back to demo data.",
+          "This payer flow needs a live TrustCare Portal connection. Demo fallback is disabled.",
         );
       }
       const result = await payerApi.runPayerLifecycle(apiOptions, {
@@ -941,13 +941,13 @@ export default function App() {
     }
     setPortalSyncBusy(true);
     setPortalSyncMessage(
-      "กำลังตรวจ Contract, DPoP และ Sync VC จาก TrustCare Portal...",
+      "Updating documents from TrustCare Portal...",
     );
     try {
       const result = await walletExchange.synchronize();
       setPortalSyncMessage(
         [
-          `Sync Wallet Exchange V2 สำเร็จ ${result.pages} หน้า`,
+          `TrustCare Portal update completed ${result.pages} pages`,
           `รับ/อัปเดต ${result.applied}`,
           `เก็บประวัติสถานะ ${result.archived}`,
           result.rejected ? `กักกัน ${result.rejected}` : null,
@@ -1398,7 +1398,7 @@ export default function App() {
       if (mode === "import") {
         if (!env.demoMode) {
           throw new Error(
-            "Document import is not defined by Wallet Exchange V2; Wallet will not send a Portal patientId or fall back to the legacy API.",
+            "Document import is not defined by TrustCare Portal; Wallet will not send a Portal patientId or fall back to the legacy API.",
           );
         }
         const documentType =
@@ -1449,7 +1449,7 @@ export default function App() {
       if (!workflow) {
         throw new Error(
           walletExchange.error ||
-            "Wallet Exchange V2 ยังไม่พร้อม ระบบจะไม่ส่งคำขอผ่านช่องทางเดิม",
+            "TrustCare Portal ยังไม่พร้อม ระบบจะไม่ส่งคำขอผ่านช่องทางเดิม",
         );
       }
       const requestInput = createMissingCredentialRequestInput({
@@ -1494,7 +1494,7 @@ export default function App() {
       if (!workflow || !request.clientRequestId) {
         throw new Error(
           walletExchange.error ||
-            "ไม่พบคำขอ Wallet Exchange V2 ที่ตรวจสอบสถานะได้",
+            "ไม่พบคำขอ TrustCare Portal ที่ตรวจสอบสถานะได้",
         );
       }
       setDocumentRequests((previous) =>
