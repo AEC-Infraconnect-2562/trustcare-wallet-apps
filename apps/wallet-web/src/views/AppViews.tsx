@@ -28,7 +28,6 @@ import {
   Printer,
   QrCode,
   RefreshCw,
-  Send,
   Shield,
   ShieldCheck,
   Upload,
@@ -64,8 +63,6 @@ import {
   createShlViewerUrl,
   credentialCompactSummaryRows,
   credentialRenderModelFromCard,
-  credentialStatusLabel,
-  credentialStatusTone,
   exportWalletObject,
   exportWalletObjects,
   buildPortalInteroperabilityFixtures,
@@ -2532,7 +2529,6 @@ export function PrepareView({
   context,
   readiness,
   contractHub,
-  workbench,
   requests,
   importJob,
   onContext,
@@ -2578,7 +2574,6 @@ export function PrepareView({
   const missingRequired = missing.filter((item: any) => item.required);
   const canCreateFullPacket = missingRequired.length === 0;
   const packetContents = cardsSelectedByReadiness(cards, readinessResult);
-  const isPrepared = canCreateFullPacket;
   const contextRequests = requests.filter(
     (request) => !request.context || request.context === context,
   );
@@ -2587,7 +2582,6 @@ export function PrepareView({
     ((importJob as any).context ? (importJob as any).context === context : true)
       ? importJob
       : null;
-  const serviceDocumentSummary = [...ready, ...missing].slice(0, 6);
   const selectedServiceLabel = readinessContextLabels[context].th;
   const serviceDocumentCaption = `เอกสารที่ใช้ในบริการนี้ - ${selectedServiceLabel}`;
   const serviceDocumentDescription = activeContract
@@ -2612,30 +2606,6 @@ export function PrepareView({
     }
     onPrepareAll();
   };
-  const prepSteps = [
-    {
-      title: "เลือกประเภทบริการ",
-      description: readinessContextLabels[context].th,
-      status: "เสร็จแล้ว",
-      complete: true,
-    },
-    {
-      title: "ตรวจเอกสารที่ต้องใช้",
-      description: canCreateFullPacket
-        ? `พร้อม ${readinessResult.requiredReady ?? 0}/${readinessResult.requiredTotal ?? 0} รายการจำเป็น`
-        : `ยังขาด ${missingRequired.length} รายการจำเป็น`,
-      status: canCreateFullPacket ? "พร้อม" : "ต้องแก้ไข",
-      complete: canCreateFullPacket,
-    },
-    {
-      title: "ไปหน้าแชร์เอกสาร",
-      description: isPrepared
-        ? "พร้อมเลือกผู้รับ วัตถุประสงค์ และข้อมูลที่จะเปิดเผย"
-        : "เตรียมเอกสารจำเป็นให้ครบก่อนแชร์",
-      status: isPrepared ? "พร้อมแชร์" : "รอข้อมูล",
-      complete: isPrepared,
-    },
-  ];
   return (
     <div className="view-stack">
       <ReadinessSummaryCard
@@ -2644,7 +2614,7 @@ export function PrepareView({
         onImport={() => onImportMissing(missing as ReadinessRequirement[])}
       />
 
-      <section className="prepare-decision-grid">
+      <section className="prepare-decision-grid prepare-service-picker">
         <Surface className="service-context-panel">
           <div className="section-title-row">
             <div>
@@ -2665,80 +2635,13 @@ export function PrepareView({
             ))}
           </div>
         </Surface>
-
-        <Surface className="package-policy-panel readiness-route-panel">
-          <div className="section-title-row">
-            <div>
-              <h2>2. ตรวจเอกสารที่ระบบจะใช้</h2>
-              <p>
-                รายการนี้เปลี่ยนตามบริการที่เลือก
-                ส่วนรูปแบบการแชร์และเงื่อนไขการเปิดเผยจะเลือกได้ในหน้าแชร์
-              </p>
-            </div>
-            <Badge tone={canCreateFullPacket ? "green" : "yellow"}>
-              {canCreateFullPacket ? "ครบตามบริการ" : "ยังขาดเอกสาร"}
-            </Badge>
-          </div>
-          <div className="interop-bridge-strip document-summary-strip">
-            <span className="summary-heading">
-              <FileText size={16} /> {serviceDocumentCaption}
-            </span>
-            {serviceDocumentSummary.map((item: any) => (
-              <span
-                key={item.key}
-                className={
-                  item.matchedCards?.length
-                    ? "ready"
-                    : item.required
-                      ? "missing required"
-                      : "missing"
-                }
-              >
-                {item.matchedCards?.length ? (
-                  <CheckCircle2 size={14} />
-                ) : (
-                  <AlertTriangle size={14} />
-                )}
-                {item.label}
-              </span>
-            ))}
-            {serviceDocumentSummary.length === 0 && (
-              <span>ยังไม่มีเงื่อนไขเอกสาร</span>
-            )}
-          </div>
-        </Surface>
       </section>
 
-      <section className="prep-main-grid">
-        <Surface className="prep-checklist">
-          <div className="section-title-row">
-            <div>
-              <h2>3. ตรวจความพร้อม</h2>
-              <p>ขั้นตอนทั้งหมดที่ผู้ป่วยต้องทำก่อนส่งข้อมูลให้โรงพยาบาล</p>
-            </div>
-            <Badge
-              tone={
-                isPrepared ? "green" : canCreateFullPacket ? "blue" : "yellow"
-              }
-            >
-              {isPrepared
-                ? "พร้อมใช้"
-                : canCreateFullPacket
-                  ? "พร้อมสร้าง"
-                  : "ต้องแก้ไข"}
-            </Badge>
-          </div>
-          <div className="prep-task-list">
-            {prepSteps.map((step, index) => (
-              <PrepTaskRow key={step.title} index={index + 1} {...step} />
-            ))}
-          </div>
-        </Surface>
-
+      <section className="prep-main-grid prepare-document-grid">
         <Surface className="prep-documents-panel">
           <div className="section-title-row">
             <div>
-              <h2>{serviceDocumentCaption}</h2>
+              <h2>2. {serviceDocumentCaption}</h2>
               <p>{serviceDocumentDescription}</p>
             </div>
             <Badge tone={canCreateFullPacket ? "green" : "yellow"}>
@@ -2830,86 +2733,7 @@ export function PrepareView({
         onRunLifecycle={onRunPayerLifecycle}
       />
 
-      <Surface className="bundle-dashboard service-output-panel">
-        <div className="section-title-row">
-          <div>
-            <span className="eyebrow">ขั้นตอนถัดไป</span>
-            <h2>4. ไปหน้าแชร์เอกสาร</h2>
-            <p>
-              หน้าเตรียมบริการตรวจความพร้อมเท่านั้น
-              หลังจากนี้หน้าแชร์จะให้เลือกผู้รับ วัตถุประสงค์
-              และข้อมูลที่จะเปิดเผยก่อนสร้าง QR
-            </p>
-          </div>
-          <Badge tone={isPrepared ? "green" : "yellow"}>
-            {isPrepared ? "พร้อมแชร์" : "ยังไม่พร้อม"}
-          </Badge>
-        </div>
-        <div className="prep-primary-row">
-          <Button
-            className={canCreateFullPacket ? "purple" : "secondary"}
-            onClick={() => onPrepareAll()}
-            disabled={!canCreateFullPacket}
-          >
-            <Send size={18} /> ไปหน้าแชร์เอกสาร
-          </Button>
-          {!canCreateFullPacket && (
-            <span>ไปหน้าแชร์ได้หลังเอกสารจำเป็นครบ</span>
-          )}
-        </div>
-        <div className="share-route-summary">
-          <div>
-            <strong>{selectedServiceLabel}</strong>
-            <small>{serviceDocumentDescription}</small>
-          </div>
-          <div>
-            <strong>เลือกวิธีส่งในหน้าแชร์</strong>
-            <small>ระบบแนะนำรูปแบบ QR หรือลิงก์สุขภาพที่เหมาะสมให้</small>
-          </div>
-          <div>
-            <strong>
-              จำเป็น {readinessResult.requiredReady ?? 0}/
-              {readinessResult.requiredTotal ?? 0}
-            </strong>
-            <small>
-              แนะนำ {readinessResult.recommendedReady ?? 0}/
-              {readinessResult.recommendedTotal ?? 0}
-            </small>
-          </div>
-        </div>
-      </Surface>
 
-      <Surface className="packet-content-preview">
-        <div className="section-title-row">
-          <div>
-            <h3>5. รายการเอกสารที่พร้อมใช้</h3>
-            <p>
-              รายการด้านล่างคือเอกสารที่ตรงเงื่อนไขของบริการนี้
-              และจะถูกส่งต่อไปเป็นค่าเริ่มต้นในหน้าแชร์
-            </p>
-          </div>
-          <Badge tone={canCreateFullPacket ? "green" : "yellow"}>
-            {canCreateFullPacket ? "ครบถ้วน" : "ยังไม่ครบ"}
-          </Badge>
-        </div>
-        <div className="compact-list">
-          {packetContents.map((card: WalletCard) => (
-            <div key={card.id} className="packet-content-row">
-              <ShieldCheck size={18} />
-              <span>
-                <strong>{card.displayNameEn ?? card.displayName}</strong>
-                <small>{categoryLabel(card.documentCategory)}</small>
-              </span>
-              <Badge tone={credentialStatusTone(card.credentialStatus)}>
-                {credentialStatusLabel(card.credentialStatus)}
-              </Badge>
-            </div>
-          ))}
-          {!packetContents.length && (
-            <p className="muted">ยังไม่มีเอกสารที่ตรงเงื่อนไข</p>
-          )}
-        </div>
-      </Surface>
 
       <div className="prepare-support-grid">
         <Surface>
@@ -3009,41 +2833,7 @@ export function PrepareView({
             <p>ยังไม่มีงานนำเข้าสำหรับบริการนี้</p>
           )}
         </Surface>
-        <Surface>
-          <h3>สถานะ Contract Hub</h3>
-          <p>
-            {workbench?.tasks?.length ?? workbench?.actions?.length ?? 0} งานจาก
-            Contract Hub พร้อมตรวจสอบ
-          </p>
-        </Surface>
       </div>
-    </div>
-  );
-}
-
-export function PrepTaskRow({
-  index,
-  title,
-  description,
-  status,
-  complete,
-}: {
-  index: number;
-  title: string;
-  description: string;
-  status: string;
-  complete: boolean;
-}) {
-  return (
-    <div className={complete ? "prep-task-row complete" : "prep-task-row"}>
-      <div className="prep-task-index">
-        {complete ? <CheckCircle2 size={18} /> : index}
-      </div>
-      <span>
-        <strong>{title}</strong>
-        <small>{description}</small>
-      </span>
-      <Badge tone={complete ? "green" : "yellow"}>{status}</Badge>
     </div>
   );
 }
@@ -4897,7 +4687,7 @@ export function friendlyPortalSyncError(error: unknown): string {
     return [
       "Browser ติดต่อ TrustCare Portal ไม่สำเร็จ",
       "กรุณาตรวจ CORS/Network ของ Portal สำหรับ GitHub Pages และ localhost",
-      "โดยต้องอนุญาต Wallet Exchange V2 discovery, session, DPoP sync และ contract endpoints",
+      "Please allow the Wallet app to connect to TrustCare Portal.",
     ].join(" · ");
   }
   return message;
