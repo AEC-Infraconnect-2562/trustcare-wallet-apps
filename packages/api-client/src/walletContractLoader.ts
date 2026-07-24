@@ -130,6 +130,7 @@ const supportedSchemaRootBlocks = [
   "sharePackages",
   "renderContract",
   "clinicalDocumentGraph",
+  "qrInteroperability",
   "problemDetails",
 ] as const;
 
