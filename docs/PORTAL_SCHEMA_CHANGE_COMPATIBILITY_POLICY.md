@@ -11,9 +11,10 @@ The live endpoints remain the source of truth:
 
 - `GET /api/wallet/v2`
 - `GET /api/wallet/v2/health`
-- `GET /api/public/wallet-contracts/manifest`
+- `GET /api/public/wallet-contracts`
 - `GET /api/public/wallet-contracts/render-contract`
 - `GET /api/public/wallet-contracts/schema`
+- `GET /api/public/wallet-contracts/share-package-schema`
 
 Wallet reloads these resources, verifies `ETag` and `Content-Digest`, checks the
 canonical manifest digest, and evaluates compatibility before it opens a DPoP
@@ -25,7 +26,7 @@ compatibility evidence.
 | Contract | Supported value |
 | --- | --- |
 | Wallet Exchange | `2026.07.wallet-exchange.v2.1.strict-w3c` |
-| Portal Wallet contract | `2026.07.portal-wallet.v4` |
+| Portal Wallet contract | `2026.07.portal-wallet.v8` |
 | Renderer contract | `trustcare-render-contract-v2` |
 | Credential render root | `credentialSubject.data.humanDocument` |
 | Required render blocks | `document` |

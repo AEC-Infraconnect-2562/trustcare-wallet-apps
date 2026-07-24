@@ -291,7 +291,51 @@ function interoperabilityDiscovery(): PortalInteroperabilityDiscovery {
   return {
     portalOrigin: ORIGIN,
     portalRevision: "a".repeat(40),
-    catalog: {} as PortalInteroperabilityDiscovery["catalog"],
+    catalog: {
+      payload: { version: "2026.07.portal-wallet.v8", status: "active" },
+    } as PortalInteroperabilityDiscovery["catalog"],
+    qrAcceptance: {
+      etag: `"sha256-${"0".repeat(64)}"`,
+      contentDigest: "sha-256=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:",
+      sha256: "0".repeat(64),
+      payload: {
+        contractVersion: QR_INTEROPERABILITY_CONTRACT_VERSION,
+        portalWalletContractVersion: "2026.07.portal-wallet.v8",
+        status: "active",
+        purpose: "wallet_graph_qr_acceptance",
+        discoveryEndpoint: "/api/qr/v1",
+        graphContractVersion: "2026.07.pcdg.v2",
+        limits: {
+          referenceUrlCharacters: 2048,
+          standardShlManifestUrlCharacters: 128,
+          holderVpBytes: 2_000_000,
+          requestObjectBytes: 32_768,
+        },
+        profiles: [
+          { profile: "openid4vp" },
+          { profile: "openid4vci" },
+          { profile: "trustcare-direct-holder-vp" },
+          { profile: "smart-health-links" },
+          { profile: "trustcare-certified-shl-sidecars" },
+        ],
+        endpoints: { qrDiscovery: "/api/qr/v1" },
+        graphBinding: {
+          qrNeverCreatesGraphTruth: true,
+          graphChangesAreSyncedByWalletExchange: true,
+          immutableUpdates: "supersede",
+          unknownRequiredFields: "quarantine",
+        },
+        failClosedRules: [
+          "do_not_accept_raw_vc_or_raw_vp_qr_payloads",
+          "do_not_treat_shlink_as_a_verifiable_credential",
+          "do_not_embed_trustcare_vc_or_vp_fields_in_standard_shl_manifest",
+          "do_not_create_or_repair_holder_vp_in_portal",
+          "do_not_accept_patient_id_from_wallet_or_qr_payload",
+          "reject_unknown_required_graph_or_qr_semantics",
+          "reject_stale_replayed_or_status_uncertain_artifacts",
+        ],
+      },
+    } as PortalInteroperabilityDiscovery["qrAcceptance"],
     qr: {
       name: "TrustCare QR Interoperability",
       version: "1.0.0",
@@ -322,6 +366,7 @@ function interoperabilityDiscovery(): PortalInteroperabilityDiscovery {
         "shlink",
       ],
       endpoints: {
+        contractHubAcceptance: `${ORIGIN}/api/public/wallet-contracts/qr-interoperability`,
         oid4vpCreate: `${ORIGIN}/api/qr/v1/oid4vp/requests`,
         oid4vpRequestUri: `${ORIGIN}/api/qr/v1/oid4vp/requests/{transactionId}`,
         oid4vpDirectPost: RESPONSE_URI,
@@ -337,6 +382,7 @@ function interoperabilityDiscovery(): PortalInteroperabilityDiscovery {
         requestObjectBytes: 32768,
         holderVpBytes: 2_000_000,
         referenceUrlCharacters: 2048,
+        standardShlManifestUrlCharacters: 128,
         oid4vpTtlSeconds: { min: 60, max: 600 },
         oid4vciTtlSeconds: { min: 60, max: 900 },
       },

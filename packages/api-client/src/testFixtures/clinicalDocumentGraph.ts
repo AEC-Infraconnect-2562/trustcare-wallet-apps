@@ -14,7 +14,7 @@ export function clinicalDocumentGraphContractFixture(
   origin: string,
 ): ClinicalDocumentGraphContract {
   return {
-    version: "2026.07.portal-wallet.v4",
+    version: "2026.07.portal-wallet.v8",
     graphContractVersion: CLINICAL_DOCUMENT_GRAPH_CONTRACT_VERSION,
     clinicalContentOwnership: "hospital_source_or_edge",
     trustDecisionOwnership: "portal",

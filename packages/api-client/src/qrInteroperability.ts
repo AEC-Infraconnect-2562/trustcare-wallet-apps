@@ -28,6 +28,7 @@ import {
 import {
   fetchVerifiedContractResource,
   normalizePortalOrigin,
+  type PortalQrInteroperabilityContract,
   type PortalWalletManifest,
   type VerifiedContractResource,
 } from "./walletContractLoader";
@@ -76,6 +77,7 @@ export type QrInteroperabilityDiscovery = {
   };
   acceptedSchemes: string[];
   endpoints: {
+    contractHubAcceptance: string;
     oid4vpCreate: string;
     oid4vpRequestUri: string;
     oid4vpDirectPost: string;
@@ -91,6 +93,7 @@ export type QrInteroperabilityDiscovery = {
     requestObjectBytes: number;
     holderVpBytes: number;
     referenceUrlCharacters: number;
+    standardShlManifestUrlCharacters: number;
     oid4vpTtlSeconds: { min: number; max: number };
     oid4vciTtlSeconds: { min: number; max: number };
   };
@@ -127,6 +130,7 @@ export type PortalInteroperabilityDiscovery = {
   portalOrigin: string;
   portalRevision: string;
   catalog: VerifiedContractResource<PortalWalletManifest>;
+  qrAcceptance: VerifiedContractResource<PortalQrInteroperabilityContract>;
   qr: QrInteroperabilityDiscovery;
   credentialIssuer: Oid4vciIssuerMetadata;
   authorizationServer: OAuthAuthorizationServerMetadata;
@@ -168,6 +172,7 @@ export async function loadPortalInteroperabilityDiscovery(input: {
   const [
     health,
     catalog,
+    qrAcceptance,
     qr,
     credentialIssuer,
     authorizationServer,
@@ -178,6 +183,10 @@ export async function loadPortalInteroperabilityDiscovery(input: {
     fetchVerifiedContractResource<PortalWalletManifest>(
       fetcher,
       `${portalOrigin}/api/public/wallet-contracts`,
+    ),
+    fetchVerifiedContractResource<PortalQrInteroperabilityContract>(
+      fetcher,
+      `${portalOrigin}/api/public/wallet-contracts/qr-interoperability`,
     ),
     getJson(fetcher, `${portalOrigin}/api/qr/v1`),
     getJson(fetcher, `${portalOrigin}/.well-known/openid-credential-issuer`),
@@ -204,7 +213,14 @@ export async function loadPortalInteroperabilityDiscovery(input: {
     incompatible("Portal Wallet catalog version is not supported.");
   }
 
+  assertQrAcceptanceContract(qrAcceptance.payload, catalog.payload, portalOrigin);
   const validatedQr = assertQrDiscovery(qr, portalOrigin);
+  if (
+    validatedQr.endpoints.contractHubAcceptance !==
+    `${portalOrigin}/api/public/wallet-contracts/qr-interoperability`
+  ) {
+    incompatible("QR discovery is not bound to the live acceptance contract.");
+  }
   const validatedCredentialIssuer = assertCredentialIssuerMetadata(
     credentialIssuer,
     validatedQr,
@@ -232,6 +248,7 @@ export async function loadPortalInteroperabilityDiscovery(input: {
     portalOrigin,
     portalRevision: healthObject.version,
     catalog,
+    qrAcceptance,
     qr: validatedQr,
     credentialIssuer: validatedCredentialIssuer,
     authorizationServer: validatedAuthorizationServer,
@@ -746,6 +763,47 @@ async function verifyOid4vpRequestObject(input: {
   };
 }
 
+function assertQrAcceptanceContract(
+  contract: PortalQrInteroperabilityContract,
+  catalog: PortalWalletManifest,
+  portalOrigin: string,
+): void {
+  if (
+    contract.contractVersion !== QR_INTEROPERABILITY_CONTRACT_VERSION ||
+    contract.portalWalletContractVersion !== PORTAL_WALLET_V2_CONTRACT_VERSION ||
+    contract.portalWalletContractVersion !== catalog.version ||
+    contract.status !== "active" ||
+    contract.purpose !== "wallet_graph_qr_acceptance" ||
+    contract.discoveryEndpoint !== "/api/qr/v1" ||
+    contract.graphContractVersion !== "2026.07.pcdg.v2"
+  ) {
+    incompatible("QR acceptance contract is not compatible with this Wallet.");
+  }
+  const endpoints = record(contract.endpoints, "QR acceptance endpoints");
+  if (
+    new URL(text(endpoints.qrDiscovery, "QR discovery endpoint"), portalOrigin)
+      .toString() !== `${portalOrigin}/api/qr/v1`
+  ) {
+    incompatible("QR acceptance discovery endpoint is not same-origin.");
+  }
+  const failClosedRules = stringArray(
+    contract.failClosedRules,
+    "QR acceptance fail-closed rules",
+  );
+  for (const rule of [
+    "do_not_accept_raw_vc_or_raw_vp_qr_payloads",
+    "do_not_treat_shlink_as_a_verifiable_credential",
+    "do_not_embed_trustcare_vc_or_vp_fields_in_standard_shl_manifest",
+    "do_not_create_or_repair_holder_vp_in_portal",
+    "do_not_accept_patient_id_from_wallet_or_qr_payload",
+    "reject_unknown_required_graph_or_qr_semantics",
+    "reject_stale_replayed_or_status_uncertain_artifacts",
+  ]) {
+    if (!failClosedRules.includes(rule)) {
+      incompatible("QR acceptance rule " + rule + " is missing.");
+    }
+  }
+}
 function assertQrDiscovery(
   value: unknown,
   portalOrigin: string,
@@ -783,6 +841,7 @@ function assertQrDiscovery(
   }
   const typedEndpoints = Object.fromEntries(
     [
+      "contractHubAcceptance",
       "oid4vpCreate",
       "oid4vpRequestUri",
       "oid4vpDirectPost",
@@ -831,6 +890,10 @@ function assertQrDiscovery(
       requestObjectBytes: positiveNumber(limits.requestObjectBytes, "QR request object limit"),
       holderVpBytes: positiveNumber(limits.holderVpBytes, "QR Holder VP limit"),
       referenceUrlCharacters: positiveNumber(limits.referenceUrlCharacters, "QR URL limit"),
+      standardShlManifestUrlCharacters: positiveNumber(
+        limits.standardShlManifestUrlCharacters,
+        "Standard SHL manifest URL limit",
+      ),
       oid4vpTtlSeconds: {
         min: positiveNumber(oid4vpTtlSeconds.min, "OID4VP minimum TTL"),
         max: positiveNumber(oid4vpTtlSeconds.max, "OID4VP maximum TTL"),

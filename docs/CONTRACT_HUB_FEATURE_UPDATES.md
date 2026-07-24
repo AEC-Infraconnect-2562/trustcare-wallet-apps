@@ -28,7 +28,7 @@ truth. The Wallet fails closed when required semantics are unknown.
 ```text
 GET /api/wallet/v2
 GET /api/wallet/v2/health
-GET /api/public/wallet-contracts/manifest
+GET /api/public/wallet-contracts
 GET /api/public/wallet-contracts/render-contract
 GET /api/public/wallet-contracts/schema
 ```
