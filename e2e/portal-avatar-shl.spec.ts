@@ -28,7 +28,7 @@ test("Portal sync keeps one patient avatar and consent-gates SHL association", a
   const sync = page.getByTestId("home-portal-sync");
   await expect(sync).toBeEnabled();
   await sync.click();
-  await expect(page.getByText("Sync Wallet Exchange V2 สำเร็จ")).toBeVisible();
+  await expect(page.getByText(/TrustCare Portal update completed/)).toBeVisible();
 
   const syncEvidence = await readWalletExchangeEvidence(page);
   console.info("Wallet Exchange browser evidence", syncEvidence);
