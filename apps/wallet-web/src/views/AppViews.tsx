@@ -1482,7 +1482,7 @@ export function ShareView({
       <Surface className="share-flow premium-share-flow">
         <div className="section-title-row">
           <div>
-            <span className="eyebrow">Share flow</span>
+            <span className="eyebrow">พร้อมแชร์</span>
             <h2>สร้างชุดแชร์เอกสาร</h2>
             <p>
               เลือกผู้รับ วัตถุประสงค์ เอกสาร และเงื่อนไขการเปิดอ่าน ระบบจะเลือก
